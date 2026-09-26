@@ -492,7 +492,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
 }
 pub unsafe fn cmd_list_new() -> *mut cmd_list {
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    cmdlist = crate::src::shared::rc::new(cmd_list::default(), cmd_list_destroy);
+    cmdlist = crate::src::shared::rc::new(cmd_list::default());
     let fresh6 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = fresh6;
@@ -867,5 +867,11 @@ mod template_replace_tests {
             )
         };
         assert_eq!(owned.as_bytes(), b"x");
+    }
+}
+
+impl Drop for cmd_list {
+    fn drop(&mut self) {
+        unsafe { cmd_list_destroy(self) }
     }
 }

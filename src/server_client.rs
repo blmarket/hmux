@@ -116,8 +116,8 @@ impl client {
     /// # Safety
     /// The caller must serialize access to the global server model and perform
     /// client-loss cleanup before releasing a fully initialized client.
-    pub unsafe fn new() -> std::rc::Rc<crate::src::shared::rc::Allocation<Self>> {
-        unsafe { crate::src::shared::rc::take(crate::src::shared::rc::new(client::empty(), server_client_free)) }
+    pub unsafe fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        unsafe { crate::src::shared::rc::take(crate::src::shared::rc::new(client::empty())) }
     }
 }
 
@@ -128,7 +128,7 @@ pub struct ClientRegistry {
     ordered: Vec<*mut client>,
     indices: std::collections::BTreeMap<usize, usize>,
     successors: std::collections::BTreeMap<usize, *mut client>,
-    observers: Vec<std::rc::Weak<crate::src::shared::rc::Allocation<client>>>,
+    observers: Vec<std::rc::Weak<std::cell::UnsafeCell<client>>>,
 }
 
 impl ClientRegistry {
@@ -155,7 +155,7 @@ impl ClientRegistry {
             .unwrap_or(::core::ptr::null_mut())
     }
 
-    pub(crate) fn push_back(&mut self, owner: std::rc::Rc<crate::src::shared::rc::Allocation<client>>) -> *mut client {
+    pub(crate) fn push_back(&mut self, owner: std::rc::Rc<std::cell::UnsafeCell<client>>) -> *mut client {
         let value = crate::src::shared::rc::as_ptr(&owner);
         let key = value as usize;
         assert!(!self.indices.contains_key(&key), "client registered twice");
@@ -1471,7 +1471,11 @@ unsafe fn server_client_free(c: *mut client) {
         cmdq_free((*c).queue);
     }
     assert!((*c).files.storage.is_none(), "client file index still contains live records at client teardown");
-    clients.release(c);
+    // Server-created clients have a queue before joining the global registry.
+    // Empty standalone records must not touch that registry on drop.
+    if !(*c).queue.is_null() {
+        clients.release(c);
+    }
 }
 pub unsafe fn server_client_suspend(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
@@ -5241,5 +5245,11 @@ mod key_event_owner_tests {
             crate::src::reactor::event_loop();
             assert_eq!(crate::src::shared::rc::strong_count(pointer), 1);
         }
+    }
+}
+
+impl Drop for client {
+    fn drop(&mut self) {
+        unsafe { server_client_free(self) }
     }
 }

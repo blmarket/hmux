@@ -260,10 +260,10 @@ impl Default for window_pane_modes {
 /// alive; this collection only records order.
 #[derive(Default)]
 pub struct window_panes {
-    pub storage: Option<Box<Vec<std::rc::Weak<super::rc::Allocation<window_pane>>>>>,
+    pub storage: Option<Box<Vec<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>>>,
 }
 
-fn checked_window_pane_ptr(weak: &std::rc::Weak<super::rc::Allocation<window_pane>>) -> *mut window_pane {
+fn checked_window_pane_ptr(weak: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> *mut window_pane {
     let owner = weak.upgrade().expect("window pane collection contains an expired owner");
     super::rc::as_ptr(&owner)
 }
@@ -312,7 +312,7 @@ impl window_panes {
             .position(|weak| checked_window_pane_ptr(weak) == pane)
     }
 
-    pub fn push_front(&mut self, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
+    pub fn push_front(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         unsafe {
             self.remove_ptr(checked_window_pane_ptr(&pane));
         }
@@ -321,7 +321,7 @@ impl window_panes {
             .insert(0, pane);
     }
 
-    pub fn push_back(&mut self, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
+    pub fn push_back(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         unsafe {
             self.remove_ptr(checked_window_pane_ptr(&pane));
         }
@@ -333,7 +333,7 @@ impl window_panes {
     pub unsafe fn insert_before(
         &mut self,
         before: *mut window_pane,
-        pane: std::rc::Weak<super::rc::Allocation<window_pane>>,
+        pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     ) {
         let pointer = checked_window_pane_ptr(&pane);
         self.remove_ptr(pointer);
@@ -349,7 +349,7 @@ impl window_panes {
     pub unsafe fn insert_after(
         &mut self,
         after: *mut window_pane,
-        pane: std::rc::Weak<super::rc::Allocation<window_pane>>,
+        pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     ) {
         let pointer = checked_window_pane_ptr(&pane);
         self.remove_ptr(pointer);
@@ -392,7 +392,7 @@ impl window_panes {
             .swap(first_position, second_position);
     }
 
-    pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> std::rc::Weak<super::rc::Allocation<window_pane>> {
+    pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
         let position = self.position(pane).expect("pane is not in collection");
         self.storage
             .as_mut()
@@ -400,7 +400,7 @@ impl window_panes {
             .remove(position)
     }
 
-    pub unsafe fn insert_at(&mut self, position: usize, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
+    pub unsafe fn insert_at(&mut self, position: usize, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         self.storage
             .as_mut()
             .expect("pane collection is present")
@@ -411,7 +411,7 @@ impl window_panes {
 /// Most-recently-visited pane handles, with the newest pane at the front.
 #[derive(Default)]
 pub struct window_pane_history {
-    pub storage: Option<Box<VecDeque<std::rc::Weak<super::rc::Allocation<window_pane>>>>>,
+    pub storage: Option<Box<VecDeque<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>>>,
 }
 
 impl window_pane_history {
@@ -453,7 +453,7 @@ impl window_pane_history {
         old_len != self.storage.as_ref().map_or(0, |value| value.len())
     }
 
-    pub fn push_front(&mut self, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
+    pub fn push_front(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         let pointer = checked_window_pane_ptr(&pane);
         unsafe {
             self.remove_ptr(pointer);

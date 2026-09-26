@@ -221,7 +221,7 @@ unsafe fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
     }
 }
 unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
-    crate::src::shared::rc::new(mode_tree_data::default(), |_| {})
+    crate::src::shared::rc::new(mode_tree_data::default())
 }
 
 #[inline]

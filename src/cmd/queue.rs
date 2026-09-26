@@ -249,7 +249,7 @@ pub unsafe fn cmdq_new_state(
         formats: ::core::ptr::null_mut(),
         event: snapshot,
         current: Default::default(),
-    }, cmdq_destroy_state);
+    });
     if !current.is_null() && cmd_find_valid_state(current) != 0 {
         cmd_find_copy_state(&raw mut (*state).current, current);
     } else {
@@ -1134,5 +1134,11 @@ mod cancellation_tests {
             cmdq_free_detached(item);
         }
         assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);
+    }
+}
+
+impl Drop for cmdq_state {
+    fn drop(&mut self) {
+        unsafe { cmdq_destroy_state(self) }
     }
 }

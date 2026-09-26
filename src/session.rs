@@ -341,18 +341,15 @@ pub unsafe fn session_create(
     mut tio: *mut termios,
 ) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut owner = session {
-        tio: if tio.is_null() {
-            None
-        } else {
-            Some(Box::new(*tio))
-        },
-        cwd: Some(CStr::from_ptr(cwd).to_owned()),
-        name: CString::new("").expect("empty session name has no NUL"),
-        ..session::empty()
+    let mut owner = session::empty();
+    owner.tio = if tio.is_null() {
+        None
+    } else {
+        Some(Box::new(*tio))
     };
+    owner.cwd = Some(CStr::from_ptr(cwd).to_owned());
 
-    s = crate::src::shared::rc::new(owner, session_free);
+    s = crate::src::shared::rc::new(owner);
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.storage = None;
     (*s).lastw.reserved = std::ptr::null_mut();
@@ -419,7 +416,9 @@ pub unsafe fn session_remove_ref(s: *mut session, from: *const ::core::ffi::c_ch
 unsafe fn session_free(s: *mut session) {
     log_debug(c"session %s freed".as_ptr(), (*s).name.as_ptr());
     environ_free((*s).environ);
-    options_free((*s).options);
+    if !(*s).options.is_null() {
+        options_free((*s).options);
+    }
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
 }
 pub unsafe fn session_destroy(
@@ -1169,5 +1168,11 @@ mod session_index_tests {
                 Err(refbox::BorrowError::Dropped)
             ));
         }
+    }
+}
+
+impl Drop for session {
+    fn drop(&mut self) {
+        unsafe { session_free(self) }
     }
 }

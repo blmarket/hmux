@@ -20,14 +20,14 @@ unsafe fn window_indices(w: *mut window) -> Vec<i32> {
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let mut owner = Box::new(session::empty());
-        let first_owner = hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default(), |_| {}));
-        let second_owner = hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default(), |_| {}));
+        let first_owner = hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
+        let second_owner = hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
         let first_window = hmux2::src::shared::rc::as_ptr(&first_owner);
         let second_window = hmux2::src::shared::rc::as_ptr(&second_owner);
         (*first_window).entry.owner = None;
         (*second_window).entry.owner = None;
         // These synthetic windows retain one external reference so moving the
-        // test links never runs the global window destruction path.
+        // test links never destroys a window before the assertions finish.
 
         let first = winlink_add(&raw mut owner.windows, 12);
         let second = winlink_add(&raw mut owner.windows, 3);
@@ -104,7 +104,7 @@ fn close_notification_can_retain_the_last_window_reference() {
     use std::{cell::Cell, rc::Rc};
 
     unsafe {
-        let w = rc::new(window::default(), |_| {});
+        let w = rc::new(window::default());
         let weak = rc::downgrade(w);
         let notified = Rc::new(Cell::new(false));
         let observed = notified.clone();

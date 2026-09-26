@@ -104,14 +104,7 @@ pub const EVBUFFER_ERROR: ::core::ffi::c_int = BEV_EVENT_ERROR;
 static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 
 unsafe fn file_create_owner() -> *mut client_file {
-    crate::src::shared::rc::new(client_file {
-        path: None,
-        wait_item: std::ptr::null_mut(),
-        wait_client: std::ptr::null_mut(),
-        cancel_data: None,
-        terminal_scheduled: false,
-        ..client_file::empty()
-    }, file_destroy)
+    crate::src::shared::rc::new(client_file::empty())
 }
 
 fn file_set_path(cf: &mut client_file, path: CString) {
@@ -308,21 +301,7 @@ pub unsafe fn file_vprint(
     mut fmt: *const ::core::ffi::c_char,
     mut ap: ::core::ffi::VaList,
 ) {
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -358,21 +337,7 @@ pub unsafe fn file_print_buffer(
     mut data: *mut ::core::ffi::c_void,
     mut size: size_t,
 ) {
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -408,21 +373,7 @@ pub unsafe extern "C" fn file_error(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -956,21 +907,7 @@ pub unsafe fn file_write_open(
         stream: 0,
         error: 0,
     };
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_WRONLY | O_CREAT;
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1043,21 +980,7 @@ pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
         fatalx(b"bad MSG_WRITE size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     let msg = read_imsg_payload::<msg_write_data>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let size = msglen - ::core::mem::size_of::<msg_write_data>();
     find.stream = msg.stream;
@@ -1086,21 +1009,7 @@ pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
         fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     let msg = read_imsg_payload::<msg_write_close>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
@@ -1212,21 +1121,7 @@ pub unsafe fn file_read_open(
         stream: 0,
         error: 0,
     };
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_RDONLY;
     let mut error: ::core::ffi::c_int = 0;
@@ -1300,21 +1195,7 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
         fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     let msg = read_imsg_payload::<msg_read_cancel>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
@@ -1333,21 +1214,7 @@ pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::c
         return -1;
     }
     let msg = read_imsg_payload::<msg_write_ready>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
@@ -1368,21 +1235,7 @@ pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::co
         return -1;
     }
     let msg = read_imsg_payload::<msg_write_done>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
@@ -1406,21 +1259,7 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
         return -1;
     }
     let msg = read_imsg_payload::<msg_read_data>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let bdata = imsg.data[::core::mem::size_of::<msg_read_data>()..]
         .as_ptr()
@@ -1452,21 +1291,7 @@ pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::cor
         return -1;
     }
     let msg = read_imsg_payload::<msg_read_done>(imsg).unwrap();
-    let mut find: client_file = client_file {
-        c: ::core::ptr::null_mut::<client>(),
-        peer: ::core::ptr::null_mut::<tmuxpeer>(),
-        tree: ::core::ptr::null_mut::<client_files>(),
-        stream: 0,
-        path: Default::default(),
-        buffer: ::core::ptr::null_mut::<evbuffer>(),
-        event: ::core::ptr::null_mut::<bufferevent>(),
-        fd: 0,
-        error: 0,
-        closed: 0,
-        cb: None,
-        entry: client_file_entry { owner: None },
-        ..client_file::empty()
-    };
+    let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
@@ -1564,4 +1389,10 @@ pub unsafe fn client_files_next(elm: &client_file) -> *mut client_file {
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
+}
+
+impl Drop for client_file {
+    fn drop(&mut self) {
+        unsafe { file_destroy(self) }
+    }
 }

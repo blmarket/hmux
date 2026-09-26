@@ -2909,7 +2909,7 @@ unsafe fn window_customize_init(
         item_list: Vec::new(),
         fs: ::core::ptr::read(fs),
         change: WINDOW_CUSTOMIZE_UNSET,
-    }, window_customize_drop);
+    });
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live customize mode data");
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -2958,11 +2958,6 @@ unsafe fn window_customize_init(
 }
 unsafe fn window_customize_destroy(data: *mut window_customize_modedata) {
     crate::src::shared::rc::release(data);
-}
-unsafe fn window_customize_drop(data: *mut window_customize_modedata) {
-    for item in (*data).item_list.drain(..) {
-        drop(item);
-    }
 }
 unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
@@ -5080,7 +5075,7 @@ mod item_owner_tests {
                     idx: 0,
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,
-            }, window_customize_drop);
+            });
             let first = window_customize_add_item(data);
             (*first).data = data;
             window_customize_set_name(&mut *first, Some(c"stable"));

@@ -70,10 +70,11 @@ pub unsafe fn key_bindings_get_table(
     if !table.is_null() || create == 0 {
         return table;
     }
-    table = crate::src::shared::rc::new(key_table {
-        name: CStr::from_ptr(name).to_owned(),
-        ..key_table::empty()
-    }, key_bindings_destroy_table);
+    table = crate::src::shared::rc::new({
+        let mut value = key_table::empty();
+        value.name = CStr::from_ptr(name).to_owned();
+        value
+    });
     (*table).key_bindings.storage = None;
     (*table).default_key_bindings.storage = None;
     key_tables_insert(&raw mut key_tables, table);
@@ -1171,4 +1172,10 @@ pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
+}
+
+impl Drop for key_table {
+    fn drop(&mut self) {
+        unsafe { key_bindings_destroy_table(self) }
+    }
 }

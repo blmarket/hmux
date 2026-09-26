@@ -1717,7 +1717,7 @@ unsafe fn window_tree_init(
         start: 0,
         end: 0,
         each: 0,
-    }, |_| {});
+    });
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     if args_has(args, 's' as i32 as u_char) != 0 {

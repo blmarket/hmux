@@ -1,11 +1,12 @@
 use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
-use hmux2::src::shared::rc::{self, Allocation};
+use hmux2::src::shared::rc;
 use hmux2::src::window::*;
+use std::cell::UnsafeCell;
 use std::rc::Rc;
 
-fn pane_owner() -> Rc<Allocation<window_pane>> {
+fn pane_owner() -> Rc<UnsafeCell<window_pane>> {
     // Collection fixtures have no display resources requiring model cleanup.
-    unsafe { rc::take(rc::new(window_pane::empty(), |_| {})) }
+    unsafe { rc::take(rc::new(window_pane::empty())) }
 }
 
 #[test]
@@ -32,7 +33,7 @@ fn removing_from_another_history_preserves_membership_and_cleanup() {
 
 #[test]
 fn pane_order_and_visit_history_preserve_stable_weak_entries() {
-    let owners: Vec<Rc<Allocation<window_pane>>> = (0..4).map(|_| pane_owner()).collect();
+    let owners: Vec<Rc<UnsafeCell<window_pane>>> = (0..4).map(|_| pane_owner()).collect();
     let panes: Vec<*mut window_pane> = owners.iter().map(rc::as_ptr).collect();
 
     unsafe {

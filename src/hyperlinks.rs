@@ -10,7 +10,7 @@ use crate::src::text::utf8::utf8_stravis_cstring;
 use std::{collections::VecDeque, ffi::CString};
 
 /// One strong Rc reference to the mutable hyperlink table.
-pub(crate) struct HyperlinksRef(std::rc::Rc<crate::src::shared::rc::Allocation<hyperlinks>>);
+pub(crate) struct HyperlinksRef(std::rc::Rc<std::cell::UnsafeCell<hyperlinks>>);
 
 impl HyperlinksRef {
     pub(crate) unsafe fn new() -> Self {
@@ -142,7 +142,7 @@ pub unsafe fn hyperlinks_get(
 pub unsafe fn hyperlinks_init() -> *mut hyperlinks {
     let mut value = hyperlinks::empty();
     value.next_inner = 1;
-    crate::src::shared::rc::new(value, hyperlinks_reset)
+    crate::src::shared::rc::new(value)
 }
 pub unsafe fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
     crate::src::shared::rc::retain(hl);
@@ -365,5 +365,11 @@ mod hyperlink_index_tests {
             ));
             hyperlinks_free(other);
         }
+    }
+}
+
+impl Drop for hyperlinks {
+    fn drop(&mut self) {
+        unsafe { hyperlinks_reset(self) }
     }
 }

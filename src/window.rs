@@ -1042,7 +1042,7 @@ pub unsafe fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = crate::src::shared::rc::new(window::default(), window_destroy);
+    w = crate::src::shared::rc::new(window::default());
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
@@ -1092,7 +1092,9 @@ unsafe fn window_destroy(mut w: *mut window) {
         (*w).id,
     );
     window_unzoom(w, 0 as ::core::ffi::c_int);
-    windows_remove(&raw mut windows, w);
+    if (*w).entry.owner.is_some() {
+        windows_remove(&raw mut windows, w);
+    }
     layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
     layout_free_cell((*w).saved_layout_root, 0 as ::core::ffi::c_int);
     drop(window_replace_old_layout(w, None));
@@ -1107,7 +1109,9 @@ unsafe fn window_destroy(mut w: *mut window) {
     if event_initialized(&(*w).offset_timer) != 0 {
         event_del(&raw mut (*w).offset_timer);
     }
-    options_free((*w).options);
+    if !(*w).options.is_null() {
+        options_free((*w).options);
+    }
 }
 pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut n: ::core::ffi::c_int = 0;
@@ -2370,7 +2374,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
     wp.id = id;
     return window_pane_tree_find(&*std::ptr::addr_of!(all_window_panes), &wp);
 }
-pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> std::rc::Weak<crate::src::shared::rc::Allocation<window_pane>> {
+pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
     crate::src::shared::rc::downgrade(wp)
 }
 
@@ -2732,7 +2736,7 @@ unsafe fn window_pane_create(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    wp = crate::src::shared::rc::new(window_pane::empty(), window_pane_free);
+    wp = crate::src::shared::rc::new(window_pane::empty());
     (*wp).window = w as *mut window;
     (*wp).options = options_create((*w).options);
     (*wp).flags = PANE_STYLECHANGED;
@@ -2893,9 +2897,15 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
         (*wp).id,
     );
     window_pane_set_searchstr(&mut *wp, None);
-    screen_free(&raw mut (*wp).status_screen);
-    screen_free(&raw mut (*wp).base);
-    options_free((*wp).options);
+    if !(*wp).status_screen.grid.is_null() {
+        screen_free(&raw mut (*wp).status_screen);
+    }
+    if !(*wp).base.grid.is_null() {
+        screen_free(&raw mut (*wp).base);
+    }
+    if !(*wp).options.is_null() {
+        options_free((*wp).options);
+    }
     window_pane_set_cwd(&mut *wp, None);
     window_pane_set_shell(&mut *wp, None);
     colour_palette_free(&raw mut (*wp).palette);
@@ -4427,7 +4437,7 @@ mod collection_index_tests {
         unsafe {
             // No display resources in this fixture; exercise the actual pane
             // retain/release functions with ordinary field drop.
-            let wp = crate::src::shared::rc::new(window_pane::empty(), |_| {});
+            let wp = crate::src::shared::rc::new(window_pane::empty());
             let weak = window_pane_weak(wp);
             window_pane_add_ref(wp, c"callback".as_ptr());
             window_pane_remove_ref(wp, c"pane shutdown".as_ptr());
@@ -4482,13 +4492,13 @@ mod collection_index_tests {
         unsafe {
             let mut head = window_pane_tree { storage: None };
             let mut other = window_pane_tree { storage: None };
-            let first_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty(), |_| {}));
+            let first_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
             let first = crate::src::shared::rc::as_ptr(&first_owner);
             (*first).id = 1;
-            let second_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty(), |_| {}));
+            let second_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
             let second = crate::src::shared::rc::as_ptr(&second_owner);
             (*second).id = 2;
-            let duplicate_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty(), |_| {}));
+            let duplicate_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
             let duplicate = crate::src::shared::rc::as_ptr(&duplicate_owner);
             (*duplicate).id = 1;
 
@@ -4516,5 +4526,17 @@ mod collection_index_tests {
                 Err(refbox::BorrowError::Dropped)
             ));
         }
+    }
+}
+
+impl Drop for window {
+    fn drop(&mut self) {
+        unsafe { window_destroy(self) }
+    }
+}
+
+impl Drop for window_pane {
+    fn drop(&mut self) {
+        unsafe { window_pane_free(self) }
     }
 }
