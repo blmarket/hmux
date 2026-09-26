@@ -1,6 +1,6 @@
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
-use crate::src::ffi::libc::{free, time};
+use crate::src::ffi::libc::time;
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
 use crate::src::shared::events::event_payload;
@@ -59,18 +59,6 @@ unsafe fn paste_new_owned(name: CString) -> *mut paste_buffer {
     });
 
     Box::into_raw(owner).cast::<paste_buffer>()
-}
-
-/// Accepted producer allocations are copied into the owner and released here.
-/// Copy before replacing the old owner data so source bytes remain readable.
-unsafe fn paste_take_data(pb: *mut paste_buffer, data: *mut ::core::ffi::c_char, size: size_t) {
-    let owned = if size == 0 {
-        None
-    } else {
-        Some(std::slice::from_raw_parts(data.cast::<u8>(), size).into())
-    };
-    paste_store_data(&mut *pb, owned);
-    free(data.cast());
 }
 
 fn paste_store_data(pb: &mut paste_buffer, data: Option<Box<[u8]>>) {
@@ -345,25 +333,6 @@ pub unsafe fn paste_free(mut pb: *mut paste_buffer) {
     }
     drop(Box::from_raw(pb));
 }
-pub unsafe fn paste_add(
-    prefix: *const ::core::ffi::c_char,
-    data: *mut ::core::ffi::c_char,
-    size: size_t,
-) {
-    if size == 0 {
-        free(data.cast());
-        return;
-    }
-    let owned = std::slice::from_raw_parts(data.cast::<u8>(), size).into();
-    let prefix = if prefix.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(prefix).to_owned())
-    };
-    paste_add_owned(prefix, owned);
-    free(data.cast());
-}
-
 pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut pb1: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
@@ -530,17 +499,6 @@ pub(crate) unsafe fn paste_set_owned(
     );
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn paste_replace(
-    mut pb: *mut paste_buffer,
-    mut data: *mut ::core::ffi::c_char,
-    mut size: size_t,
-) {
-    paste_take_data(pb, data, size);
-    paste_fire_event(
-        b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*pb).name).as_ptr().cast_mut(),
-    );
-}
 /// Replace a paste buffer with Rust-owned bytes from an internal caller.
 pub(crate) unsafe fn paste_replace_owned(pb: &mut paste_buffer, data: Box<[u8]>) {
     paste_store_data(pb, Some(data));
@@ -575,19 +533,7 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::ffi::libc::malloc;
-    use crate::src::options::{
-        options_create, options_default, options_free, options_search, options_set_number,
-    };
-    use crate::src::tmux::global_options;
     use std::ffi::CString;
-
-    unsafe fn allocated_bytes(bytes: &[u8]) -> *mut ::core::ffi::c_char {
-        let data = malloc(bytes.len()).cast::<u8>();
-        assert!(!data.is_null());
-        ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), data, bytes.len());
-        data.cast()
-    }
 
     #[test]
     fn invalid_names_return_owned_diagnostics() {
@@ -655,69 +601,6 @@ mod tests {
                 CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
                 c"no buffer"
             );
-        }
-    }
-
-    #[test]
-    fn raw_add_snapshots_optional_prefix_before_pruning() {
-        unsafe {
-            let previous_global_options = global_options;
-            global_options = options_create(::core::ptr::null_mut());
-            let buffer_limit = options_search(c"buffer-limit".as_ptr());
-            assert!(!buffer_limit.is_null());
-            options_default(global_options, buffer_limit);
-            options_set_number(global_options, c"buffer-limit".as_ptr(), 50);
-
-            // Empty data must return before attempting to read this invalid prefix.
-            paste_add(
-                1usize as *const ::core::ffi::c_char,
-                ::core::ptr::null_mut(),
-                0,
-            );
-
-            paste_add(::core::ptr::null(), allocated_bytes(b"x"), 1);
-            let default_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None)))
-                .to_bytes()
-                .to_vec();
-            assert!(default_name.starts_with(b"buffer"));
-
-            paste_add(c"".as_ptr(), allocated_bytes(b"x"), 1);
-            let empty_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
-            assert!(!empty_name.is_empty() && empty_name.iter().all(u8::is_ascii_digit));
-
-            paste_add(c"custom-".as_ptr(), allocated_bytes(b"x"), 1);
-            let custom_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
-            assert!(custom_name.starts_with(b"custom-"));
-
-            let binary_prefix = CString::new(b"binary-\xff".to_vec()).unwrap();
-            paste_add(binary_prefix.as_ptr(), allocated_bytes(b"x"), 1);
-            let binary_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
-            assert!(binary_name.starts_with(b"binary-\xff"));
-
-            options_set_number(global_options, c"buffer-limit".as_ptr(), 1);
-            while paste_is_empty() == 0 {
-                let pb = paste_time_tree_minmax_local(RB_NEGINF);
-                assert!(!pb.is_null());
-                paste_free(pb);
-            }
-
-            paste_add(c"prune-prefix-".as_ptr(), allocated_bytes(b"x"), 1);
-            let old = paste_get_top(None);
-            assert!(!old.is_null());
-            let old_name = (*old).name.clone();
-            paste_add(paste_buffer_name(old), allocated_bytes(b"x"), 1);
-
-            assert!(paste_get_name(old_name.as_ptr()).is_null());
-            let new_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
-            assert!(new_name.starts_with(old_name.as_bytes()));
-
-            while paste_is_empty() == 0 {
-                let pb = paste_time_tree_minmax_local(RB_NEGINF);
-                assert!(!pb.is_null());
-                paste_free(pb);
-            }
-            options_free(global_options);
-            global_options = previous_global_options;
         }
     }
 

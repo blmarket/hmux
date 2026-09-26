@@ -9,7 +9,6 @@ pub mod cmd;
 pub mod ffi;
 pub mod compat {
     pub mod fdforkpty;
-    pub mod freezero;
     pub mod getdtablecount;
     pub mod getopt_long;
     pub mod getpeereid;

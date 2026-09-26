@@ -20,17 +20,6 @@ pub unsafe fn xcalloc(mut nmemb: size_t, mut size: size_t) -> *mut ::core::ffi::
     }
     return ptr;
 }
-pub unsafe extern "C" fn xasprintf(
-    mut ret: *mut *mut ::core::ffi::c_char,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) -> ::core::ffi::c_int {
-    let mut ap: ::core::ffi::VaList;
-    let mut i: ::core::ffi::c_int = 0;
-    ap = args.clone();
-    i = xvasprintf(ret, fmt, ap);
-    return i;
-}
 pub unsafe fn xvasprintf(
     mut ret: *mut *mut ::core::ffi::c_char,
     mut fmt: *const ::core::ffi::c_char,

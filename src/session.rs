@@ -7,7 +7,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_uint,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{free, gettimeofday, memcpy, strcmp};
+use crate::src::ffi::libc::{gettimeofday, memcpy, strcmp};
 use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::{options_free, options_get_number};
@@ -52,16 +52,6 @@ pub static mut session_groups: session_groups = session_groups { storage: None }
 /// `session.cwd` borrows this value until replacement or early destruction.
 pub(crate) fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
     s.cwd = cwd;
-}
-
-/// C producers return libc-owned strings, not CString-owned allocations.
-pub(crate) unsafe fn session_set_cwd_from_c_owned(
-    s: *mut session,
-    raw_cwd: *mut ::core::ffi::c_char,
-) {
-    let cwd = CStr::from_ptr(raw_cwd).to_owned();
-    free(raw_cwd.cast());
-    session_set_cwd(&mut *s, Some(cwd));
 }
 
 /// Replace the borrowed public name after callers remove the old map key.
