@@ -81,8 +81,8 @@ pub type input_end_type = ::core::ffi::c_uint;
 #[repr(C)]
 pub struct input_state {
     pub name: &'static ::std::ffi::CStr,
-    pub enter: Option<fn(&mut input_ctx)>,
-    pub exit: Option<fn(&mut input_ctx)>,
+    pub enter: Option<unsafe fn(*mut input_ctx)>,
+    pub exit: Option<unsafe fn(*mut input_ctx)>,
     pub transitions: *const input_transition,
 }
 
@@ -91,7 +91,7 @@ pub struct input_state {
 pub struct input_transition {
     pub first: ::core::ffi::c_int,
     pub last: ::core::ffi::c_int,
-    pub handler: Option<fn(&mut input_ctx) -> ::core::ffi::c_int>,
+    pub handler: Option<unsafe fn(*mut input_ctx) -> ::core::ffi::c_int>,
     pub state: *const input_state,
 }
 
