@@ -33,7 +33,7 @@ use crate::src::mode_tree::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_first, options_array_get, options_array_getv, options_array_item_key,
+    options_array_first, options_array_get, options_array_get_index, options_array_item_key,
     options_array_next, options_array_set, options_create, options_default,
     options_default_to_cstring, options_first, options_free, options_from_string, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
@@ -750,9 +750,7 @@ unsafe fn window_customize_set_option_value(
         if array_key.is_null() {
             idx = 0 as u_int;
             while idx < INT_MAX as u_int {
-                if options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, idx)
-                    .is_null()
-                {
+                if options_array_get_index(o, idx).is_null() {
                     break;
                 }
                 idx = idx.wrapping_add(1);
@@ -3044,9 +3042,7 @@ unsafe fn window_customize_set_option_callback(
         if array_key.is_null() {
             idx = 0 as u_int;
             while idx < INT_MAX as u_int {
-                if options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, idx)
-                    .is_null()
-                {
+                if options_array_get_index(o, idx).is_null() {
                     break;
                 }
                 idx = idx.wrapping_add(1);

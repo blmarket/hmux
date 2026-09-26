@@ -186,17 +186,19 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             options_array_item_value(two)
         );
         assert_eq!(
-            options_array_getv(array, c"%u".as_ptr(), 2u32),
+            options_array_get_index(array, 2),
             options_array_item_value(two)
         );
+        for (index, key) in [(0, c"0"), (u32::MAX, c"4294967295")] {
+            let value = options_array_get_index(array, index);
+            assert!(!value.is_null());
+            assert_eq!(value, options_array_get(array, key.as_ptr()));
+        }
+        assert!(options_array_get_index(array, 3).is_null());
         let non_utf8 = c"\xff";
         let non_utf8_value = options_array_get(array, non_utf8.as_ptr());
         assert!(!non_utf8_value.is_null());
-        assert_eq!(
-            options_array_getv(array, c"%s".as_ptr(), non_utf8.as_ptr()),
-            non_utf8_value
-        );
-        assert!(options_array_getv(array, c"%s".as_ptr(), c"".as_ptr()).is_null());
+        assert!(options_array_get(array, c"".as_ptr()).is_null());
         assert_eq!(
             CStr::from_ptr((*options_array_item_value(two)).string_ptr()),
             c"updated"

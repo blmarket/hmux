@@ -523,14 +523,12 @@ pub unsafe fn options_array_get(
     }
     return &raw mut (*a).value;
 }
-pub unsafe extern "C" fn options_array_getv(
-    mut o: *mut options_entry,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+/// Look up an array value by its decimal numeric index.
+pub unsafe fn options_array_get_index(
+    o: *mut options_entry,
+    index: u_int,
 ) -> *mut options_value {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let key = xvasprintf_cstring(fmt, ap);
+    let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
     options_array_get(o, key.as_ptr())
 }
 pub unsafe fn options_array_set(
@@ -659,9 +657,7 @@ pub unsafe fn options_array_assign(
         }
         i = 0 as u_int;
         while i < UINT_MAX {
-            if options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, i)
-                .is_null()
-            {
+            if options_array_get_index(o, i).is_null() {
                 break;
             }
             i = i.wrapping_add(1);
@@ -695,9 +691,7 @@ pub unsafe fn options_array_assign(
         }
         i = 0 as u_int;
         while i < UINT_MAX {
-            if options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, i)
-                .is_null()
-            {
+            if options_array_get_index(o, i).is_null() {
                 break;
             }
             i = i.wrapping_add(1);

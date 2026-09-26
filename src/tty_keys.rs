@@ -9,7 +9,7 @@ use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::{input_client_has_requests, input_request_reply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
-use crate::src::options::{options_array_getv, options_get, options_get_number};
+use crate::src::options::{options_array_get_index, options_get, options_get_number};
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::{
     evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
@@ -1352,7 +1352,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     if !o.is_null() {
         i = 0 as u_int;
         while i <= KEYC_NUSER as u_int {
-            ov = options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, i);
+            ov = options_array_get_index(o, i);
             if !ov.is_null() {
                 tty_keys_add(
                     tty,

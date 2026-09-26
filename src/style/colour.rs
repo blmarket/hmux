@@ -1,7 +1,7 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
-use crate::src::options::{options_array_first, options_array_getv, options_get};
+use crate::src::options::{options_array_first, options_array_get_index, options_get};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::colour::*;
@@ -3807,7 +3807,7 @@ pub unsafe fn colour_palette_from_option(p: *mut colour_palette, oo: *mut option
     let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
     palette.fill(-1);
     for (i, colour) in palette.iter_mut().enumerate() {
-        let ov = options_array_getv(o, c"%u".as_ptr(), i as u_int);
+        let ov = options_array_get_index(o, i as u_int);
         if !ov.is_null() {
             *colour = (*ov).number() as ::core::ffi::c_int;
         }

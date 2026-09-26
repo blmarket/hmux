@@ -8,7 +8,7 @@ use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_cells_equal, grid_compare};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
-    options_array_getv, options_get, options_get_number, options_get_string,
+    options_array_get_index, options_get, options_get_number, options_get_string,
     options_string_to_style,
 };
 use crate::src::prompt::{
@@ -370,7 +370,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                 i as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            ov = options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, i);
+            ov = options_array_get_index(o, i);
             if ov.is_null() {
                 n = 0 as u_int;
                 while n < width {
