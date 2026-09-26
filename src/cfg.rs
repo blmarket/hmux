@@ -175,11 +175,9 @@ pub unsafe fn load_cfg(
 
     cmdq_add_format(
         state,
-        b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pi.file
-            .as_ref()
-            .map_or(::core::ptr::null(), |file| file.as_ptr()),
+        c"current_file",
+        // Preserve libc's former %s rendering when the filename is absent.
+        pi.file.as_deref().unwrap_or(c"(null)"),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
 
@@ -258,11 +256,9 @@ pub unsafe fn load_cfg_from_buffer(
     }
     cmdq_add_format(
         state,
-        b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pi.file
-            .as_ref()
-            .map_or(::core::ptr::null(), |file| file.as_ptr()),
+        c"current_file",
+        // Preserve libc's former %s rendering when the filename is absent.
+        pi.file.as_deref().unwrap_or(c"(null)"),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {

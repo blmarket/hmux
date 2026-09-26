@@ -19,7 +19,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
-use crate::src::format::{format_add, format_create, format_free, format_merge};
+use crate::src::format::{format_add, format_add_cstr, format_create, format_free, format_merge};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
@@ -282,15 +282,8 @@ unsafe fn cmdq_destroy_state(state: *mut cmdq_state) {
         format_free((*state).formats);
     }
 }
-pub unsafe extern "C" fn cmdq_add_format(
-    mut state: *mut cmdq_state,
-    mut key: *const ::core::ffi::c_char,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let value = xvasprintf_cstring(fmt, ap);
+/// Copy a literal key and value into the command queue state's formats.
+pub unsafe fn cmdq_add_format(state: *mut cmdq_state, key: &CStr, value: &CStr) {
     if (*state).formats.is_null() {
         (*state).formats = format_create(
             ::core::ptr::null_mut::<client>(),
@@ -299,12 +292,7 @@ pub unsafe extern "C" fn cmdq_add_format(
             0 as ::core::ffi::c_int,
         );
     }
-    format_add(
-        (*state).formats,
-        key,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value.as_ptr(),
-    );
+    format_add_cstr((*state).formats, key, value);
 }
 pub unsafe fn cmdq_add_formats(mut state: *mut cmdq_state, mut ft: *mut format_tree) {
     if (*state).formats.is_null() {
