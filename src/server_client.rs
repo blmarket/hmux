@@ -326,12 +326,12 @@ mod client_message_owner_tests {
             assert!(!(*c).message_string.is_none());
 
             // A live message has pushed a status screen. Keep one extra
-            // reference so status_message_clear does not need a full screen.
-            (*c).status.references = 2;
+            // screen user so status_message_clear does not need a full screen.
+            (*c).status.screen_users = 2;
             status_message_clear(c);
             assert!((*c).message_string.is_none());
             assert!(owner.message_string.is_none());
-            assert_eq!((*c).status.references, 1);
+            assert_eq!((*c).status.screen_users, 1);
         }
     }
 

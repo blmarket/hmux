@@ -204,12 +204,12 @@ unsafe fn status_push_screen(mut c: *mut client) {
             0 as u_int,
         );
     }
-    (*sl).references += 1;
+    (*sl).screen_users += 1;
 }
 unsafe fn status_pop_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
-    (*sl).references -= 1;
-    if (*sl).references == 0 as ::core::ffi::c_int {
+    (*sl).screen_users -= 1;
+    if (*sl).screen_users == 0 as ::core::ffi::c_int {
         let mut active = (*sl)
             .active
             .take()
@@ -935,16 +935,16 @@ mod status_screen_tests {
             cell.data.data[0] = b'T';
             grid_set_cell(temporary_grid, 0, 0, &cell);
             status_push_screen(&mut *c);
-            assert_eq!(c.status.references, 2);
+            assert_eq!(c.status.screen_users, 2);
             assert_eq!(c.status.active_screen() as *mut screen, temporary);
             status_pop_screen(&mut *c);
-            assert_eq!(c.status.references, 1);
+            assert_eq!(c.status.screen_users, 1);
             assert_eq!(c.status.active_screen().grid, temporary_grid);
             grid_get_cell(temporary_grid, 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'T');
 
             status_pop_screen(&mut *c);
-            assert_eq!(c.status.references, 0);
+            assert_eq!(c.status.screen_users, 0);
             assert!(c.status.active.is_none());
             assert_eq!(c.status.active_screen() as *mut screen, base);
             assert_eq!(c.status.screen.grid, base_grid);

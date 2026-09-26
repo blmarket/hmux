@@ -17,7 +17,7 @@ pub struct status_line {
     pub screen: screen,
     /// Owns the temporary message/prompt screen; None selects the base screen.
     pub active: Option<Box<screen>>,
-    pub references: ::core::ffi::c_int,
+    pub screen_users: ::core::ffi::c_int,
     pub prompt_cx: u_int,
     pub style: grid_cell,
     pub entries: [style_line_entry; 5],
