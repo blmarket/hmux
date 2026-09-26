@@ -1132,7 +1132,7 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
     scene = Box::into_raw(Box::new(redraw_scene {
         c,
         w,
-        lines: ::core::ptr::null_mut(),
+        lines: Box::default(),
         generation: (*w).redraw_scene_generation,
         sx: bctx.sx,
         sy: bctx.sy,
@@ -1148,10 +1148,10 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         .take(bctx.sy as usize)
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    (*scene).lines = Box::into_raw(lines) as *mut redraw_line;
+    (*scene).lines = lines;
     y = 0 as u_int;
     while y < bctx.sy {
-        line = (*scene).lines.offset(y as isize) as *mut redraw_line;
+        line = &raw mut (&mut (*scene).lines)[y as usize];
         x = 0 as u_int;
         while x < bctx.sx {
             x0 = x;
@@ -1190,10 +1190,6 @@ pub unsafe fn redraw_free_scene(mut scene: *mut redraw_scene) {
         return;
     }
     // Dropping the boxed row slice drops each per-type collection and its spans.
-    drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
-        (*scene).lines,
-        (*scene).sy as usize,
-    )));
     drop(Box::from_raw(scene));
 }
 pub unsafe fn redraw_invalidate_scene(mut w: *mut window) {
@@ -1769,7 +1765,7 @@ unsafe fn redraw_draw_pane_lines(
     }
     y = top;
     while y < bottom {
-        line = (*scene).lines.offset(y as isize) as *mut redraw_line;
+        line = &raw mut (&mut (*scene).lines)[y as usize];
         if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
             cy = (*dctx).status_lines.wrapping_add(y as u_int);
         } else {
@@ -1803,7 +1799,7 @@ unsafe fn redraw_draw_lines(mut dctx: *mut redraw_draw_ctx, mut flags: ::core::f
     let mut type_0: u_int = 0;
     y = 0 as u_int;
     while y < (*scene).sy {
-        line = (*scene).lines.offset(y as isize) as *mut redraw_line;
+        line = &raw mut (&mut (*scene).lines)[y as usize];
         if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
             cy = (*dctx).status_lines.wrapping_add(y);
         } else {
@@ -2220,7 +2216,7 @@ unsafe fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
     let mut cy: u_int = 0;
     y = 0 as u_int;
     while y < (*scene).sy {
-        line = (*scene).lines.offset(y as isize) as *mut redraw_line;
+        line = &raw mut (&mut (*scene).lines)[y as usize];
         if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
             cy = (*dctx).status_lines.wrapping_add(y);
         } else {
@@ -2271,7 +2267,7 @@ unsafe fn redraw_pane_status_width(
     if redraw_pane_status_line(dctx, wp, &raw mut y) == 0 {
         return 0 as u_int;
     }
-    let spans = &mut (*(*scene).lines.offset(y as isize)).spans
+    let spans = &mut (&mut (*scene).lines)[y as usize].spans
         [REDRAW_SPAN_STATUS as ::core::ffi::c_int as usize];
     *spans_out = spans;
     *first_index = spans.entries.len();

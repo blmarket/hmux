@@ -422,22 +422,21 @@ mod tests {
     #[test]
     fn feature_presence_checks_capability_names_before_values() {
         unsafe {
-            let mut codes = vec![tty_code::default(); tty_term_ncodes() as usize];
             let mut term = tty_term::empty();
-            term.codes = codes.as_mut_ptr();
+            term.codes = vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice();
 
-            codes[TTYC_MS as usize].type_0 = TTYCODE_STRING;
+            term.codes[TTYC_MS as usize].type_0 = TTYCODE_STRING;
             assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 1);
-            codes[TTYC_MS as usize].type_0 = TTYCODE_NONE;
+            term.codes[TTYC_MS as usize].type_0 = TTYCODE_NONE;
             assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 0);
 
             term.flags = TERM_256COLOURS | TERM_RGBCOLOURS;
-            codes[TTYC_AX as usize].type_0 = TTYCODE_FLAG;
+            term.codes[TTYC_AX as usize].type_0 = TTYCODE_FLAG;
             for code in [TTYC_SETRGBF, TTYC_SETRGBB, TTYC_SETAB, TTYC_SETAF] {
-                codes[code as usize].type_0 = TTYCODE_STRING;
+                term.codes[code as usize].type_0 = TTYCODE_STRING;
             }
             assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 1);
-            codes[TTYC_SETAF as usize].type_0 = TTYCODE_NONE;
+            term.codes[TTYC_SETAF as usize].type_0 = TTYCODE_NONE;
             assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 0);
         }
     }

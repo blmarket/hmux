@@ -387,7 +387,7 @@ pub struct tty_term {
     pub tty: *mut tty,
     pub applied_features: ::core::ffi::c_int,
     pub acs: [[::core::ffi::c_char; 2]; 256],
-    pub codes: *mut tty_code,
+    pub codes: Box<[tty_code]>,
     pub flags: ::core::ffi::c_int,
     pub entry: tty_term_entry,
     // tty_code_value is a Copy union in a zero-initialized code array. Its string
