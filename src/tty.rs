@@ -145,6 +145,8 @@ pub unsafe fn tty_init(mut tty: *mut tty, mut c: *mut client) -> ::core::ffi::c_
     if isatty((*c).fd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
+    // Drop the owned key tree before the translated field reset below.
+    tty_keys_free(tty);
     // `r` owns a Vec now, so preserve its valid empty value while resetting
     // the translated C fields around it.
     (*tty).r.clear();

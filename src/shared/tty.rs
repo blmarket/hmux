@@ -300,14 +300,14 @@ mod tests {
     }
 }
 
-#[derive(Copy, Clone)]
+/// A ternary search tree node with exclusively owned children.
 #[repr(C)]
 pub struct tty_key {
     pub ch: ::core::ffi::c_char,
     pub key: key_code,
-    pub left: *mut tty_key,
-    pub right: *mut tty_key,
-    pub next: *mut tty_key,
+    pub left: Option<Box<tty_key>>,
+    pub right: Option<Box<tty_key>>,
+    pub next: Option<Box<tty_key>>,
 }
 
 /// A terminal capability owns its payload, including any string allocation.
@@ -371,8 +371,8 @@ pub struct tty {
     pub mouse_drag_update: mouse_drag_update_cb,
     pub mouse_drag_release: mouse_drag_release_cb,
     pub key_timer: event,
-    /// Root of Box-owned nodes, invalid after rebuild or tty_close.
-    pub key_tree: *mut tty_key,
+    /// Exclusively owned terminal key tree; cleared on rebuild or tty_close.
+    pub key_tree: Option<Box<tty_key>>,
 }
 
 pub type mouse_drag_update_cb = Option<Box<dyn FnMut(&mut mouse_event)>>;

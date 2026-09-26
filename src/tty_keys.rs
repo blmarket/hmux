@@ -1235,62 +1235,51 @@ static mut tty_default_code_keys: [tty_default_key_code; 136] = [
             | KEYC_CTRL,
     },
 ];
-unsafe fn tty_keys_add(mut tty: *mut tty, mut s: *const ::core::ffi::c_char, mut key: key_code) {
-    let mut tk: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
-    let mut size: size_t = 0;
-    let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_code) {
+    let bytes = std::ffi::CStr::from_ptr(s).to_bytes();
     let key_string = key_string_format(key, true);
-    keystr = key_string.as_ptr();
-    tk = tty_keys_find(tty, s, strlen(s), &raw mut size);
-    if tk.is_null() {
+    let mut size = 0;
+    if let Some(tk) = tty_keys_find_mut((*tty).key_tree.as_deref_mut(), bytes, &mut size) {
         log_debug(
-            b"new key %s: 0x%llx (%s)\0" as *const u8 as *const ::core::ffi::c_char,
+            c"replacing key %s: 0x%llx (%s)".as_ptr(),
             s,
             key,
-            keystr,
+            key_string.as_ptr(),
         );
-        tty_keys_add1(&raw mut (*tty).key_tree, s, key);
+        tk.key = key;
     } else {
         log_debug(
-            b"replacing key %s: 0x%llx (%s)\0" as *const u8 as *const ::core::ffi::c_char,
+            c"new key %s: 0x%llx (%s)".as_ptr(),
             s,
             key,
-            keystr,
+            key_string.as_ptr(),
         );
-        (*tk).key = key;
+        tty_keys_add1(&mut (*tty).key_tree, bytes, key);
+    }
+}
+
+fn tty_keys_add1(tree: &mut Option<Box<tty_key>>, bytes: &[u8], key: key_code) {
+    let Some((&ch, rest)) = bytes.split_first() else {
+        return;
     };
-}
-unsafe fn tty_keys_add1(
-    mut tkp: *mut *mut tty_key,
-    mut s: *const ::core::ffi::c_char,
-    mut key: key_code,
-) {
-    let mut tk: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
-    tk = *tkp;
-    if tk.is_null() {
-        *tkp = Box::into_raw(Box::new(tty_key {
-            ch: *s,
-            key: KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
-            left: ::core::ptr::null_mut(),
-            right: ::core::ptr::null_mut(),
-            next: ::core::ptr::null_mut(),
-        }));
-        tk = *tkp;
+    let ch = ch as ::core::ffi::c_char;
+    let tk = tree.get_or_insert_with(|| {
+        Box::new(tty_key {
+            ch,
+            key: KEYC_UNKNOWN as key_code,
+            left: None,
+            right: None,
+            next: None,
+        })
+    });
+    match ch.cmp(&tk.ch) {
+        std::cmp::Ordering::Less => tty_keys_add1(&mut tk.left, bytes, key),
+        std::cmp::Ordering::Greater => tty_keys_add1(&mut tk.right, bytes, key),
+        std::cmp::Ordering::Equal if rest.is_empty() => tk.key = key,
+        std::cmp::Ordering::Equal => tty_keys_add1(&mut tk.next, rest, key),
     }
-    if *s as ::core::ffi::c_int == (*tk).ch as ::core::ffi::c_int {
-        s = s.offset(1);
-        if *s as ::core::ffi::c_int == '\0' as i32 {
-            (*tk).key = key;
-            return;
-        }
-        tkp = &raw mut (*tk).next;
-    } else if (*s as ::core::ffi::c_int) < (*tk).ch as ::core::ffi::c_int {
-        tkp = &raw mut (*tk).left;
-    } else if *s as ::core::ffi::c_int > (*tk).ch as ::core::ffi::c_int {
-        tkp = &raw mut (*tk).right;
-    }
-    tty_keys_add1(tkp, s, key);
 }
+
 pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     let mut tdkr: *const tty_default_key_raw = ::core::ptr::null::<tty_default_key_raw>();
     let mut tdkx: *const tty_default_key_xterm = ::core::ptr::null::<tty_default_key_xterm>();
@@ -1302,10 +1291,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut copy: [::core::ffi::c_char; 16] = [0; 16];
     let mut key: key_code = 0;
-    if !(*tty).key_tree.is_null() {
-        tty_keys_free(tty);
-    }
-    (*tty).key_tree = ::core::ptr::null_mut::<tty_key>();
+    tty_keys_free(tty);
     i = 0 as u_int;
     while (i as usize)
         < (::core::mem::size_of::<[tty_default_key_xterm; 30]>() as usize)
@@ -1379,59 +1365,56 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         }
     }
 }
-pub unsafe fn tty_keys_free(mut tty: *mut tty) {
-    tty_keys_free1((*tty).key_tree);
+pub unsafe fn tty_keys_free(tty: *mut tty) {
+    (*tty).key_tree = None;
 }
-unsafe fn tty_keys_free1(mut tk: *mut tty_key) {
-    if !(*tk).next.is_null() {
-        tty_keys_free1((*tk).next);
-    }
-    if !(*tk).left.is_null() {
-        tty_keys_free1((*tk).left);
-    }
-    if !(*tk).right.is_null() {
-        tty_keys_free1((*tk).right);
-    }
-    drop(Box::from_raw(tk));
-}
-unsafe fn tty_keys_find(
-    mut tty: *mut tty,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut size: *mut size_t,
-) -> *mut tty_key {
-    *size = 0 as size_t;
-    return tty_keys_find1((*tty).key_tree, buf, len, size);
-}
-unsafe fn tty_keys_find1(
-    mut tk: *mut tty_key,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut size: *mut size_t,
-) -> *mut tty_key {
-    if len == 0 as size_t {
-        return ::core::ptr::null_mut::<tty_key>();
-    }
-    if tk.is_null() {
-        return ::core::ptr::null_mut::<tty_key>();
-    }
-    if (*tk).ch as ::core::ffi::c_int == *buf as ::core::ffi::c_int {
-        buf = buf.offset(1);
-        len = len.wrapping_sub(1);
-        *size = (*size).wrapping_add(1);
-        if len == 0 as size_t
-            || (*tk).next.is_null() && (*tk).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
-        {
-            return tk;
+
+fn tty_keys_find1<'a>(
+    mut tree: Option<&'a tty_key>,
+    mut bytes: &[u8],
+    size: &mut size_t,
+) -> Option<&'a tty_key> {
+    while let Some(tk) = tree {
+        let (&ch, rest) = bytes.split_first()?;
+        match (ch as ::core::ffi::c_char).cmp(&tk.ch) {
+            std::cmp::Ordering::Less => tree = tk.left.as_deref(),
+            std::cmp::Ordering::Greater => tree = tk.right.as_deref(),
+            std::cmp::Ordering::Equal => {
+                *size += 1;
+                if rest.is_empty() || (tk.next.is_none() && tk.key != KEYC_UNKNOWN as key_code) {
+                    return Some(tk);
+                }
+                bytes = rest;
+                tree = tk.next.as_deref();
+            }
         }
-        tk = (*tk).next;
-    } else if (*buf as ::core::ffi::c_int) < (*tk).ch as ::core::ffi::c_int {
-        tk = (*tk).left;
-    } else if *buf as ::core::ffi::c_int > (*tk).ch as ::core::ffi::c_int {
-        tk = (*tk).right;
     }
-    return tty_keys_find1(tk, buf, len, size);
+    None
 }
+
+fn tty_keys_find_mut<'a>(
+    mut tree: Option<&'a mut tty_key>,
+    mut bytes: &[u8],
+    size: &mut size_t,
+) -> Option<&'a mut tty_key> {
+    while let Some(tk) = tree {
+        let (&ch, rest) = bytes.split_first()?;
+        match (ch as ::core::ffi::c_char).cmp(&tk.ch) {
+            std::cmp::Ordering::Less => tree = tk.left.as_deref_mut(),
+            std::cmp::Ordering::Greater => tree = tk.right.as_deref_mut(),
+            std::cmp::Ordering::Equal => {
+                *size += 1;
+                if rest.is_empty() || (tk.next.is_none() && tk.key != KEYC_UNKNOWN as key_code) {
+                    return Some(tk);
+                }
+                bytes = rest;
+                tree = tk.next.as_deref_mut();
+            }
+        }
+    }
+    None
+}
+
 unsafe fn tty_keys_next1(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
@@ -1441,8 +1424,6 @@ unsafe fn tty_keys_next1(
     mut expired: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut c: *mut client = (*tty).client;
-    let mut tk: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
-    let mut tk1: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -1462,27 +1443,31 @@ unsafe fn tty_keys_next1(
         buf,
         expired,
     );
-    tk = tty_keys_find(tty, buf, len, size);
-    if !tk.is_null() && (*tk).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-        tk1 = tk;
-        loop {
+    *size = 0;
+    let bytes = if len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(buf.cast::<u8>(), len)
+    };
+    if let Some(tk) = tty_keys_find1((*tty).key_tree.as_deref(), bytes, &mut *size)
+        .filter(|tk| tk.key != KEYC_UNKNOWN as key_code)
+    {
+        let mut current = Some(tk);
+        while let Some(node) = current {
             log_debug(
-                b"%s: keys in list: %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
+                c"%s: keys in list: %#llx".as_ptr(),
+                (*c).name
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                (*tk1).key,
+                node.key,
             );
-            tk1 = (*tk1).next;
-            if tk1.is_null() {
-                break;
-            }
+            current = node.next.as_deref();
         }
-        if !(*tk).next.is_null() && expired == 0 {
-            return 1 as ::core::ffi::c_int;
+        if tk.next.is_some() && expired == 0 {
+            return 1;
         }
-        *key = (*tk).key;
-        return 0 as ::core::ffi::c_int;
+        *key = tk.key;
+        return 0;
     }
     more = utf8_open(&raw mut ud, *buf as u_char);
     if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -3438,4 +3423,107 @@ unsafe fn tty_keys_palette(
         &raw mut pd as *mut ::core::ffi::c_void,
     );
     return 0 as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod key_tree_tests {
+    use super::*;
+
+    fn lookup(tree: &Option<Box<tty_key>>, bytes: &[u8]) -> (Option<key_code>, size_t) {
+        let mut size = 0;
+        let key = tty_keys_find1(tree.as_deref(), bytes, &mut size).map(|node| node.key);
+        (key, size)
+    }
+
+    #[test]
+    fn branches_and_partial_sequences_preserve_matching() {
+        let mut tree = None;
+        for (bytes, key) in [
+            (b"mb".as_slice(), 1),
+            (b"a", 2),
+            (b"z", 3),
+            (b"ma", 4),
+            (b"mc", 5),
+            (b"\xff", 6),
+        ] {
+            tty_keys_add1(&mut tree, bytes, key);
+        }
+        for (bytes, expected) in [
+            (b"mb".as_slice(), 1),
+            (b"a", 2),
+            (b"z", 3),
+            (b"ma", 4),
+            (b"mc", 5),
+            (b"\xff", 6),
+        ] {
+            assert_eq!(lookup(&tree, bytes), (Some(expected), bytes.len()));
+        }
+        assert_eq!(lookup(&tree, b"m"), (Some(KEYC_UNKNOWN as key_code), 1));
+        assert_eq!(lookup(&tree, b"md"), (None, 1));
+        assert_eq!(lookup(&tree, b"mbextra"), (Some(1), 2));
+        assert_eq!(lookup(&tree, b""), (None, 0));
+        assert_eq!(lookup(&tree, b"q"), (None, 0));
+    }
+
+    #[test]
+    fn replacing_keys_preserves_existing_prefix_behavior() {
+        let mut terminal = tty::default();
+        unsafe {
+            tty_keys_add(&mut terminal, c"ab".as_ptr(), 1);
+            tty_keys_add(&mut terminal, c"ab".as_ptr(), 2);
+            assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
+            tty_keys_add(&mut terminal, c"a".as_ptr(), 3);
+            assert_eq!(lookup(&terminal.key_tree, b"a"), (Some(3), 1));
+            assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
+            // Existing lookup stops at a complete leaf even with trailing bytes.
+            tty_keys_add(&mut terminal, c"abc".as_ptr(), 4);
+            assert_eq!(lookup(&terminal.key_tree, b"abc"), (Some(4), 2));
+        }
+    }
+
+    #[test]
+    fn ambiguous_key_waits_until_timeout_or_completion() {
+        let mut owner = client::empty();
+        owner.name = Some(c"key-tree-test".to_owned());
+        let mut terminal = tty {
+            client: &mut owner,
+            ..Default::default()
+        };
+        tty_keys_add1(&mut terminal.key_tree, b"ab", 1);
+        tty_keys_add1(&mut terminal.key_tree, b"a", 2);
+        unsafe {
+            let mut key = 0;
+            let mut size = 0;
+            assert_eq!(
+                tty_keys_next1(&mut terminal, c"a".as_ptr(), 1, &mut key, &mut size, 0),
+                1
+            );
+            assert_eq!(size, 1);
+            assert_eq!(
+                tty_keys_next1(&mut terminal, c"a".as_ptr(), 1, &mut key, &mut size, 1),
+                0
+            );
+            assert_eq!((key, size), (2, 1));
+            assert_eq!(
+                tty_keys_next1(&mut terminal, c"ab".as_ptr(), 2, &mut key, &mut size, 0),
+                0
+            );
+            assert_eq!((key, size), (1, 2));
+        }
+    }
+
+    #[test]
+    fn clearing_is_repeatable_and_allows_repopulation() {
+        let mut terminal = tty::default();
+        unsafe {
+            tty_keys_free(&mut terminal);
+            tty_keys_add(&mut terminal, c"old".as_ptr(), 1);
+            tty_keys_free(&mut terminal);
+            assert!(terminal.key_tree.is_none());
+            tty_keys_free(&mut terminal);
+            tty_keys_add(&mut terminal, c"new".as_ptr(), 2);
+            assert_eq!(lookup(&terminal.key_tree, b"new"), (Some(2), 3));
+            assert_eq!(lookup(&terminal.key_tree, b"old"), (None, 0));
+        }
+    }
 }
