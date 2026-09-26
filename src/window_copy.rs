@@ -134,9 +134,8 @@ pub struct window_copy_mode_data {
     pub searchdirection: ::core::ffi::c_int,
     pub searchregex: ::core::ffi::c_int,
     searchstr: Option<CString>,
-    /// Owns searchmark; the pointer is invalidated on replacement or clear.
-    searchmark_owner: Option<Box<[u8]>>,
-    pub searchmark: *mut u_char,
+    /// Empty when no search marks are active; retains capacity between searches.
+    pub searchmark: Vec<u8>,
     pub searchcount: ::core::ffi::c_int,
     pub searchmore: ::core::ffi::c_int,
     pub searchall: ::core::ffi::c_int,
@@ -196,8 +195,7 @@ impl Default for window_copy_mode_data {
             searchdirection: 0,
             searchregex: 0,
             searchstr: None,
-            searchmark_owner: None,
-            searchmark: std::ptr::null_mut(),
+            searchmark: Vec::new(),
             searchcount: 0,
             searchmore: 0,
             searchall: 0,
@@ -698,7 +696,7 @@ unsafe fn window_copy_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     event_del(&raw mut (*data).dragtimer);
     event_del(&raw mut (*data).refresh_timer);
-    window_copy_drop_searchmark(&mut *data);
+    window_copy_clear_searchmark(&mut *data);
     if !(*data).ictx.is_null() {
         input_free((*data).ictx);
     }
@@ -913,7 +911,7 @@ unsafe fn window_copy_scroll1(
         window_pane_reset_mode(wp);
         return;
     }
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -974,7 +972,7 @@ unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::
             window_copy_cursor_end_of_line(wme);
         }
     }
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -1049,7 +1047,7 @@ unsafe fn window_copy_pagedown1(
     if scroll_exit != 0 && (*data).oy == 0 as u_int && (*data).screen.sel.is_none() {
         return 1 as ::core::ffi::c_int;
     }
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -1334,7 +1332,7 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
         ft,
         b"search_present\0" as *const u8 as *const ::core::ffi::c_char,
         b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*data).searchmark != NULL as *mut u_char) as ::core::ffi::c_int,
+        (!(*data).searchmark.is_empty()) as ::core::ffi::c_int,
     );
     format_add(
         ft,
@@ -1385,8 +1383,7 @@ unsafe fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
         scrolled: 0,
         bg: 0,
     };
-    let mut search: ::core::ffi::c_int =
-        ((*data).searchmark != NULL as *mut u_char) as ::core::ffi::c_int;
+    let mut search: ::core::ffi::c_int = (!(*data).searchmark.is_empty()) as ::core::ffi::c_int;
     window_copy_clear_selection(wme);
     window_copy_clear_marks(wme);
     screen_write_start(&raw mut ctx, s);
@@ -2074,7 +2071,7 @@ unsafe fn window_copy_cmd_history_bottom(
         0 as ::core::ffi::c_int,
     );
     (*data).oy = 0 as u_int;
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -2108,7 +2105,7 @@ unsafe fn window_copy_cmd_history_top(
     (*data).cy = 0 as u_int;
     (*data).cx = 0 as u_int;
     (*data).oy = (*(*(*data).backing).grid).hsize;
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -5180,7 +5177,7 @@ unsafe fn window_copy_command(
         b"search-\0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) != 0 as ::core::ffi::c_int
-        && !(*data).searchmark.is_null()
+        && !(*data).searchmark.is_empty()
     {
         keys = options_get_number(
             (*(*wp).window).options,
@@ -5250,7 +5247,7 @@ unsafe fn window_copy_scroll_to(
         }
         (*data).oy = (*gd).hsize.wrapping_sub(offset);
     }
-    if no_redraw == 0 && !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if no_redraw == 0 && !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -6134,12 +6131,11 @@ unsafe fn window_copy_move_after_search_mark(
     let mut at: u_int = 0;
     let mut start: u_int = 0;
     if window_copy_search_mark_at(data, *fx, *fy, &raw mut start) == 0 as ::core::ffi::c_int
-        && *(*data).searchmark.offset(start as isize) as ::core::ffi::c_int
-            != 0 as ::core::ffi::c_int
+        && (&(*data).searchmark)[start as usize] as ::core::ffi::c_int != 0 as ::core::ffi::c_int
     {
         while window_copy_search_mark_at(data, *fx, *fy, &raw mut at) == 0 as ::core::ffi::c_int {
-            if *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int
-                != *(*data).searchmark.offset(start as isize) as ::core::ffi::c_int
+            if (&(*data).searchmark)[at as usize] as ::core::ffi::c_int
+                != (&(*data).searchmark)[start as usize] as ::core::ffi::c_int
             {
                 break;
             }
@@ -6213,7 +6209,7 @@ unsafe fn window_copy_search(
             str,
         ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     }
-    if visible_only == 0 as ::core::ffi::c_int && !(*data).searchmark.is_null() {
+    if visible_only == 0 as ::core::ffi::c_int && !(*data).searchmark.is_empty() {
         window_copy_clear_marks(wme);
     }
     window_pane_set_searchstr(&mut *wp, Some(CStr::from_ptr(str).to_owned()));
@@ -6248,7 +6244,7 @@ unsafe fn window_copy_search(
     ) as ::core::ffi::c_int;
     if direction != 0 {
         if keys == MODEKEY_VI {
-            if !(*data).searchmark.is_null() {
+            if !(*data).searchmark.is_empty() {
                 window_copy_move_after_search_mark(data, &raw mut fx, &raw mut fy, wrapflag);
             } else {
                 window_copy_move_right(s, &raw mut fx, &raw mut fy, wrapflag);
@@ -6272,12 +6268,9 @@ unsafe fn window_copy_search(
         if direction != 0
             && window_copy_search_mark_at(data, fx, fy, &raw mut at) == 0 as ::core::ffi::c_int
             && at > 0 as u_int
-            && !(*data).searchmark.is_null()
-            && *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int
-                == *(*data)
-                    .searchmark
-                    .offset(at.wrapping_sub(1 as u_int) as isize)
-                    as ::core::ffi::c_int
+            && !(*data).searchmark.is_empty()
+            && (&(*data).searchmark)[at as usize] as ::core::ffi::c_int
+                == (&(*data).searchmark)[at.wrapping_sub(1 as u_int) as usize] as ::core::ffi::c_int
         {
             window_copy_move_after_search_mark(data, &raw mut fx, &raw mut fy, wrapflag);
             window_copy_search_jump(
@@ -6301,9 +6294,9 @@ unsafe fn window_copy_search(
             == 0 as ::core::ffi::c_int
         {
             while window_copy_search_mark_at(data, fx, fy, &raw mut at) == 0 as ::core::ffi::c_int
-                && !(*data).searchmark.is_null()
-                && *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int
-                    == *(*data).searchmark.offset(start as isize) as ::core::ffi::c_int
+                && !(*data).searchmark.is_empty()
+                && (&(*data).searchmark)[at as usize] as ::core::ffi::c_int
+                    == (&(*data).searchmark)[start as usize] as ::core::ffi::c_int
             {
                 (*data).cx = fx;
                 (*data).cy = fy
@@ -6416,10 +6409,9 @@ unsafe fn window_copy_search_mark_match(
                 }
                 w = window_copy_clip_width(w, b, sx, sy);
             }
-            if !(*(*data).searchmark.offset(i as isize) as ::core::ffi::c_int
-                != 0 as ::core::ffi::c_int)
+            if !((&(*data).searchmark)[i as usize] as ::core::ffi::c_int != 0 as ::core::ffi::c_int)
             {
-                *(*data).searchmark.offset(i as isize) = (*data).searchgen;
+                (&mut (*data).searchmark)[i as usize] = (*data).searchgen;
             }
             i = i.wrapping_add(1);
         }
@@ -6431,20 +6423,19 @@ unsafe fn window_copy_search_mark_match(
     }
     return w;
 }
-fn window_copy_drop_searchmark(data: &mut window_copy_mode_data) {
-    data.searchmark = ::core::ptr::null_mut::<u_char>();
-    data.searchmark_owner = None;
+fn window_copy_clear_searchmark(data: &mut window_copy_mode_data) {
+    data.searchmark.clear();
 }
 
 unsafe fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u_int, sy: u_int) {
-    window_copy_drop_searchmark(data);
+    window_copy_clear_searchmark(data);
     if sx == 0 || sy == 0 {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     let Some(len) = (sx as usize).checked_mul(sy as usize) else {
         fatalx(b"xcalloc: nmemb * size > SIZE_MAX\0" as *const u8 as *const ::core::ffi::c_char);
     };
-    let mut marks = Vec::new();
+    let marks = &mut data.searchmark;
     if marks.try_reserve_exact(len).is_err() {
         fatal(
             b"xcalloc: allocating %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
@@ -6452,9 +6443,6 @@ unsafe fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u
         );
     }
     marks.resize(len, 0);
-    let mut marks = marks.into_boxed_slice();
-    data.searchmark = marks.as_mut_ptr();
-    data.searchmark_owner = Some(marks);
 }
 
 unsafe fn window_copy_search_marks(
@@ -6549,7 +6537,7 @@ unsafe fn window_copy_search_marks(
             cflags |= REG_ICASE;
         }
         if regcomp(&raw mut reg, sbuf.as_ptr().cast(), cflags) != 0 as ::core::ffi::c_int {
-            window_copy_drop_searchmark(&mut *data);
+            window_copy_clear_searchmark(&mut *data);
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -6655,7 +6643,7 @@ unsafe fn window_copy_clear_marks(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     (*data).searchcount = -(1 as ::core::ffi::c_int);
     (*data).searchmore = 0 as ::core::ffi::c_int;
-    window_copy_drop_searchmark(&mut *data);
+    window_copy_clear_searchmark(&mut *data);
 }
 unsafe fn window_copy_search_up(
     mut wme: *mut window_mode_entry,
@@ -6713,28 +6701,24 @@ unsafe fn window_copy_match_start_end(
 ) {
     let mut gd: *mut grid = (*(*data).backing).grid;
     let mut last: u_int = (*gd).sy.wrapping_mul((*gd).sx).wrapping_sub(1 as u_int);
-    let mut mark: u_char = *(*data).searchmark.offset(at as isize);
+    let mut mark: u_char = (&(*data).searchmark)[at as usize];
     *end = at;
     *start = *end;
     while *start != 0 as u_int
-        && *(*data).searchmark.offset(*start as isize) as ::core::ffi::c_int
+        && (&(*data).searchmark)[*start as usize] as ::core::ffi::c_int
             == mark as ::core::ffi::c_int
     {
         *start = (*start).wrapping_sub(1);
     }
-    if *(*data).searchmark.offset(*start as isize) as ::core::ffi::c_int
-        != mark as ::core::ffi::c_int
-    {
+    if (&(*data).searchmark)[*start as usize] as ::core::ffi::c_int != mark as ::core::ffi::c_int {
         *start = (*start).wrapping_add(1);
     }
     while *end != last
-        && *(*data).searchmark.offset(*end as isize) as ::core::ffi::c_int
-            == mark as ::core::ffi::c_int
+        && (&(*data).searchmark)[*end as usize] as ::core::ffi::c_int == mark as ::core::ffi::c_int
     {
         *end = (*end).wrapping_add(1);
     }
-    if *(*data).searchmark.offset(*end as isize) as ::core::ffi::c_int != mark as ::core::ffi::c_int
-    {
+    if (&(*data).searchmark)[*end as usize] as ::core::ffi::c_int != mark as ::core::ffi::c_int {
         *end = (*end).wrapping_sub(1);
     }
 }
@@ -6764,7 +6748,7 @@ unsafe fn window_copy_match_at_cursor_bytes(
     let mut py: u_int = 0;
     let mut sx: u_int = (*(*(*data).backing).grid).sx;
     let mut output = Vec::<u8>::new();
-    if (*data).searchmark.is_null() {
+    if (*data).searchmark.is_empty() {
         return None;
     }
     cy = (*(*(*data).backing).grid)
@@ -6774,10 +6758,10 @@ unsafe fn window_copy_match_at_cursor_bytes(
     if window_copy_search_mark_at(data, (*data).cx, cy, &raw mut at) != 0 as ::core::ffi::c_int {
         return None;
     }
-    if *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+    if (&(*data).searchmark)[at as usize] as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         if at == 0 as u_int || {
             at = at.wrapping_sub(1);
-            *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int == 0 as ::core::ffi::c_int
+            (&(*data).searchmark)[at as usize] as ::core::ffi::c_int == 0 as ::core::ffi::c_int
         } {
             return None;
         }
@@ -6865,13 +6849,13 @@ unsafe fn window_copy_update_style(
             (*gc).bg = (*mkgc).bg;
         }
     }
-    if (*data).searchmark.is_null() {
+    if (*data).searchmark.is_empty() {
         return;
     }
     if window_copy_search_mark_at(data, fx, fy, &raw mut current) != 0 as ::core::ffi::c_int {
         return;
     }
-    mark = *(*data).searchmark.offset(current as isize) as u_int;
+    mark = (&(*data).searchmark)[current as usize] as u_int;
     if mark == 0 as u_int {
         return;
     }
@@ -6882,15 +6866,11 @@ unsafe fn window_copy_update_style(
             b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
         if cursor != 0 as u_int && keys == MODEKEY_EMACS && (*data).searchdirection != 0 {
-            if *(*data)
-                .searchmark
-                .offset(cursor.wrapping_sub(1 as u_int) as isize) as u_int
-                == mark
-            {
+            if (&(*data).searchmark)[cursor.wrapping_sub(1 as u_int) as usize] as u_int == mark {
                 cursor = cursor.wrapping_sub(1);
                 found = 1 as ::core::ffi::c_int;
             }
-        } else if *(*data).searchmark.offset(cursor as isize) as u_int == mark {
+        } else if (&(*data).searchmark)[cursor as usize] as u_int == mark {
             found = 1 as ::core::ffi::c_int;
         }
         if found != 0 {
@@ -9201,7 +9181,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
     }
     (*data).oy = (*data).oy.wrapping_sub(ny);
     window_pane_scrollbar_show(wp, 1 as ::core::ffi::c_int);
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
@@ -9314,7 +9294,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
     }
     (*data).oy = (*data).oy.wrapping_add(ny);
     window_pane_scrollbar_show(wp, 1 as ::core::ffi::c_int);
-    if !(*data).searchmark.is_null() && (*data).timeout == 0 {
+    if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
             ::core::ptr::null_mut::<screen>(),
