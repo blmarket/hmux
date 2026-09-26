@@ -27,7 +27,6 @@ pub struct session {
     pub attached: u_int,
     pub tio: Option<Box<termios>>,
     pub environ: *mut environ,
-    pub references: ::core::ffi::c_int,
     pub entry: session_entry,
 }
 
@@ -55,7 +54,6 @@ impl session {
             attached: Default::default(),
             tio: Default::default(),
             environ: Default::default(),
-            references: Default::default(),
             entry: session_entry { owner: None },
         }
     }

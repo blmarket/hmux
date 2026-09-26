@@ -299,7 +299,6 @@ pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session
         attached: 0,
         tio: None,
         environ: ::core::ptr::null_mut::<environ>(),
-        references: 0,
         entry: session_entry { owner: None },
     };
     s.name = ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned();
@@ -342,7 +341,7 @@ pub unsafe fn session_create(
     mut tio: *mut termios,
 ) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut owner = Box::new(session {
+    let mut owner = session {
         tio: if tio.is_null() {
             None
         } else {
@@ -351,10 +350,9 @@ pub unsafe fn session_create(
         cwd: Some(CStr::from_ptr(cwd).to_owned()),
         name: CString::new("").expect("empty session name has no NUL"),
         ..session::empty()
-    });
+    };
 
-    s = Box::into_raw(owner).cast::<session>();
-    (*s).references = 1 as ::core::ffi::c_int;
+    s = crate::src::shared::rc::new(owner, session_free);
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.storage = None;
     (*s).lastw.reserved = std::ptr::null_mut();
@@ -405,41 +403,24 @@ pub unsafe fn session_create(
     return s;
 }
 pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi::c_char) {
-    (*s).references += 1;
+    crate::src::shared::rc::retain(s);
     log_debug(
         b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
         b"session_add_ref\0" as *const u8 as *const ::core::ffi::c_char,
         ((*s).name).as_ptr().cast_mut(),
         from,
-        (*s).references,
+        crate::src::shared::rc::strong_count(s) as ::core::ffi::c_int,
     );
 }
-pub unsafe fn session_remove_ref(mut s: *mut session, mut from: *const ::core::ffi::c_char) {
-    (*s).references -= 1;
-    log_debug(
-        b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"session_remove_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
-        from,
-        (*s).references,
-    );
-    if (*s).references == 0 as ::core::ffi::c_int {
-        event_once(move |_, _| unsafe { session_free(s as *mut ::core::ffi::c_void) });
-    }
+pub unsafe fn session_remove_ref(s: *mut session, from: *const ::core::ffi::c_char) {
+    log_debug(c"release session %s (%s)".as_ptr(), (*s).name.as_ptr(), from);
+    crate::src::shared::rc::release_later(crate::src::shared::rc::take(s));
 }
-unsafe fn session_free(mut arg: *mut ::core::ffi::c_void) {
-    let mut s: *mut session = arg as *mut session;
-    log_debug(
-        b"session %s freed (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
-        (*s).references,
-    );
-    if (*s).references == 0 as ::core::ffi::c_int {
-        environ_free((*s).environ);
-        options_free((*s).options);
-        crate::src::window::winlink_stack_clear(&mut (*s).lastw);
-        drop(Box::from_raw(s));
-    }
+unsafe fn session_free(s: *mut session) {
+    log_debug(c"session %s freed".as_ptr(), (*s).name.as_ptr());
+    environ_free((*s).environ);
+    options_free((*s).options);
+    crate::src::window::winlink_stack_clear(&mut (*s).lastw);
 }
 pub unsafe fn session_destroy(
     mut s: *mut session,
