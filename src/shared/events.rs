@@ -19,22 +19,20 @@ pub struct event_payload {
 
 pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
-    pub type_0: event_payload_type,
-    pub c2rust_unnamed: event_payload_item_c2rust_unnamed,
+    pub value: EventPayloadValue,
     /// Weak traversal handle into the payload's ordered item map.
     pub(crate) owner: Option<refbox::Weak<event_payload_tree_storage>>,
-    // The payload union's string variant borrows this allocation until freed.
-    pub(crate) string: Option<std::ffi::CString>,
 }
 
 impl event_payload_item {
+    pub fn type_0(&self) -> event_payload_type {
+        self.value.kind()
+    }
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            type_0: Default::default(),
-            c2rust_unnamed: Default::default(),
+            value: EventPayloadValue::String(Default::default()),
             owner: None,
-            string: Default::default(),
         }
     }
 }
@@ -85,21 +83,90 @@ pub struct event_payload_tree_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut event_payload_item>,
 }
 
-pub union event_payload_item_c2rust_unnamed {
-    pub string: *mut ::core::ffi::c_char,
-    pub time: time_t,
-    pub number: ::core::ffi::c_int,
-    pub unsigned_number: u_int,
-    pub client: *mut client,
-    pub session: *mut session,
-    pub window: *mut window,
-    pub pane: *mut window_pane,
-    pub pointer: std::mem::ManuallyDrop<EventPayloadPointer>,
+pub enum EventPayloadValue {
+    String(std::ffi::CString),
+    Time(time_t),
+    Int(::core::ffi::c_int),
+    Uint(u_int),
+    Client(*mut client),
+    Session(*mut session),
+    Window(*mut window),
+    Pane(*mut window_pane),
+    Pointer(EventPayloadPointer),
 }
-
-impl Default for event_payload_item_c2rust_unnamed {
-    fn default() -> Self {
-        Self { number: 0 }
+impl EventPayloadValue {
+    pub fn kind(&self) -> event_payload_type {
+        match self {
+            Self::String(_) => 0,
+            Self::Time(_) => 1,
+            Self::Int(_) => 2,
+            Self::Uint(_) => 3,
+            Self::Client(_) => 4,
+            Self::Session(_) => 5,
+            Self::Window(_) => 6,
+            Self::Pane(_) => 7,
+            Self::Pointer(_) => 8,
+        }
+    }
+    pub fn string(&self) -> *const ::core::ffi::c_char {
+        let Self::String(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        value.as_ptr()
+    }
+    pub fn time(&self) -> time_t {
+        let Self::Time(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn number(&self) -> ::core::ffi::c_int {
+        let Self::Int(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn unsigned_number(&self) -> u_int {
+        let Self::Uint(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn client(&self) -> *mut client {
+        let Self::Client(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn session(&self) -> *mut session {
+        let Self::Session(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn window(&self) -> *mut window {
+        let Self::Window(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn pane(&self) -> *mut window_pane {
+        let Self::Pane(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        *value
+    }
+    pub fn pointer(&self) -> &EventPayloadPointer {
+        let Self::Pointer(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        value
+    }
+    pub fn pointer_mut(&mut self) -> &mut EventPayloadPointer {
+        let Self::Pointer(value) = self else {
+            panic!("incorrect event payload type")
+        };
+        value
     }
 }
 

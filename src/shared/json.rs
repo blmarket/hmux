@@ -4,53 +4,85 @@ use super::abi::int64_t;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-#[repr(C)]
 pub struct json_node {
-    pub type_0: json_node_type,
     pub key: Option<std::ffi::CString>,
     pub parent: *mut json_node,
-    pub c2rust_unnamed: json_node_c2rust_unnamed,
-    // The tagged union is still Copy and zero-initialized by parser code.
-    // It borrows this string and the array storage below until node teardown;
-    // move these into the variants when migrating the union itself.
-    pub(crate) string: Option<std::ffi::CString>,
-    pub(crate) members: Option<Box<json_members_storage>>,
+    pub value: JsonValue,
 }
 
 impl json_node {
     pub fn empty() -> Self {
         Self {
-            type_0: Default::default(),
-            key: Default::default(),
-            parent: Default::default(),
-            c2rust_unnamed: Default::default(),
-            string: Default::default(),
-            members: Default::default(),
+            key: None,
+            parent: std::ptr::null_mut(),
+            value: JsonValue::String(Default::default()),
         }
     }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union json_node_c2rust_unnamed {
-    pub str_0: *mut ::core::ffi::c_char,
-    pub num: int64_t,
-    pub boolean: ::core::ffi::c_int,
-    pub fields: json_fields,
-    pub members: json_members,
-}
-
-impl Default for json_node_c2rust_unnamed {
-    fn default() -> Self {
-        Self { num: 0 }
+    pub fn type_0(&self) -> json_node_type {
+        self.value.kind()
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-/// Handle to array ordering storage owned by the array node.
-pub struct json_members {
-    pub storage: *mut json_members_storage,
+pub enum JsonValue {
+    String(std::ffi::CString),
+    Number(int64_t),
+    Boolean(::core::ffi::c_int),
+    Object(json_fields),
+    Array(json_members_storage),
+}
+
+impl JsonValue {
+    pub fn kind(&self) -> json_node_type {
+        match self {
+            Self::String(_) => 0,
+            Self::Number(_) => 1,
+            Self::Boolean(_) => 2,
+            Self::Object(_) => 3,
+            Self::Array(_) => 4,
+        }
+    }
+    pub fn string_ptr(&self) -> *const ::core::ffi::c_char {
+        let Self::String(value) = self else {
+            panic!("not a JSON string")
+        };
+        value.as_ptr()
+    }
+    pub fn number(&self) -> int64_t {
+        let Self::Number(value) = self else {
+            panic!("not a JSON number")
+        };
+        *value
+    }
+    pub fn boolean(&self) -> ::core::ffi::c_int {
+        let Self::Boolean(value) = self else {
+            panic!("not a JSON boolean")
+        };
+        *value
+    }
+    pub fn fields(&self) -> &json_fields {
+        let Self::Object(value) = self else {
+            panic!("not a JSON object")
+        };
+        value
+    }
+    pub fn fields_mut(&mut self) -> &mut json_fields {
+        let Self::Object(value) = self else {
+            panic!("not a JSON object")
+        };
+        value
+    }
+    pub fn members(&self) -> &json_members_storage {
+        let Self::Array(value) = self else {
+            panic!("not a JSON array")
+        };
+        value
+    }
+    pub fn members_mut(&mut self) -> &mut json_members_storage {
+        let Self::Array(value) = self else {
+            panic!("not a JSON array")
+        };
+        value
+    }
 }
 
 /// Array order belongs to the array node. Child nodes do not need intrusive links.

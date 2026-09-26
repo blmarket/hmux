@@ -1182,7 +1182,7 @@ pub unsafe fn screen_write_menu(
     );
     i = 0 as u_int;
     while i < (*menu).count {
-        name = (*(*menu).items.as_mut_ptr().offset(i as isize)).name;
+        name = (*(*menu).items.as_mut_ptr().offset(i as isize)).name_ptr();
         if name.is_null() {
             screen_write_cursormove(
                 ctx,

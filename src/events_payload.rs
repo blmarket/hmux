@@ -18,7 +18,7 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::event::*;
 use crate::src::shared::events::{
     event_payload, event_payload_item, event_payload_tree, event_payload_tree_storage,
-    event_payload_type, EventPayloadPointer,
+    event_payload_type, EventPayloadPointer, EventPayloadValue,
 };
 use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
@@ -195,36 +195,25 @@ unsafe fn event_payload_free_target(mut ep: *mut event_payload) {
     }
     cmd_find_clear_state(target, 0 as ::core::ffi::c_int);
 }
-unsafe fn event_payload_free_value(mut epi: *mut event_payload_item) {
-    match (*epi).type_0 as ::core::ffi::c_uint {
-        0 => {}
-        4 => {
-            server_client_unref((*epi).c2rust_unnamed.client);
+unsafe fn event_payload_free_value(epi: *mut event_payload_item) {
+    // Release callbacks and target references while the item's name is still alive.
+    let value = std::mem::replace(
+        &mut (*epi).value,
+        EventPayloadValue::String(Default::default()),
+    );
+    match value {
+        EventPayloadValue::Client(client) => server_client_unref(client),
+        EventPayloadValue::Session(session) => {
+            session_remove_ref(session, c"event_payload_free_value".as_ptr());
         }
-        5 => {
-            session_remove_ref(
-                (*epi).c2rust_unnamed.session,
-                b"event_payload_free_value\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+        EventPayloadValue::Window(window) => {
+            window_remove_ref(window, c"event_payload_free_value".as_ptr());
         }
-        6 => {
-            window_remove_ref(
-                (*epi).c2rust_unnamed.window,
-                b"event_payload_free_value\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+        EventPayloadValue::Pane(pane) => {
+            window_pane_remove_ref(pane, c"event_payload_free_value".as_ptr());
         }
-        7 => {
-            window_pane_remove_ref(
-                (*epi).c2rust_unnamed.pane,
-                b"event_payload_free_value\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-        }
-        8 => {
-            let pointer = std::mem::ManuallyDrop::take(&mut (*epi).c2rust_unnamed.pointer);
-            drop(pointer);
-        }
-        2 | 3 | 1 | _ => {}
-    };
+        _ => {}
+    }
 }
 unsafe fn event_payload_free_item(epi: *mut event_payload_item) {
     event_payload_free_value(epi);
@@ -232,10 +221,8 @@ unsafe fn event_payload_free_item(epi: *mut event_payload_item) {
 }
 
 unsafe fn event_payload_new_item() -> *mut event_payload_item {
-    // Every field is C-style pointer or integer storage, including the union.
     Box::into_raw(Box::new(event_payload_item {
         name: None,
-        string: None,
         ..event_payload_item::empty()
     }))
     .cast()
@@ -405,10 +392,7 @@ pub unsafe extern "C" fn event_payload_set_string(
     ap = args.clone();
     let string = xvasprintf_cstring(fmt, ap);
     let epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_STRING;
-    let owner = &mut *epi;
-    owner.string = Some(string);
-    owner.c2rust_unnamed.string = owner.string.as_ref().unwrap().as_ptr().cast_mut();
+    (*epi).value = EventPayloadValue::String(string);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_time(
@@ -418,8 +402,7 @@ pub unsafe fn event_payload_set_time(
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_TIME;
-    (*epi).c2rust_unnamed.time = value;
+    (*epi).value = EventPayloadValue::Time(value);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_int(
@@ -429,8 +412,7 @@ pub unsafe fn event_payload_set_int(
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_INT;
-    (*epi).c2rust_unnamed.number = value;
+    (*epi).value = EventPayloadValue::Int(value);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_uint(
@@ -440,8 +422,7 @@ pub unsafe fn event_payload_set_uint(
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_UINT;
-    (*epi).c2rust_unnamed.unsigned_number = value;
+    (*epi).value = EventPayloadValue::Uint(value);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_client(
@@ -452,8 +433,7 @@ pub unsafe fn event_payload_set_client(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     (*c).references += 1;
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_CLIENT;
-    (*epi).c2rust_unnamed.client = c;
+    (*epi).value = EventPayloadValue::Client(c);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_session(
@@ -467,8 +447,7 @@ pub unsafe fn event_payload_set_session(
         b"event_payload_set_session\0" as *const u8 as *const ::core::ffi::c_char,
     );
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_SESSION;
-    (*epi).c2rust_unnamed.session = s;
+    (*epi).value = EventPayloadValue::Session(s);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_window(
@@ -482,8 +461,7 @@ pub unsafe fn event_payload_set_window(
         b"event_payload_set_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_WINDOW;
-    (*epi).c2rust_unnamed.window = w;
+    (*epi).value = EventPayloadValue::Window(w);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_pane(
@@ -497,8 +475,7 @@ pub unsafe fn event_payload_set_pane(
         b"event_payload_set_pane\0" as *const u8 as *const ::core::ffi::c_char,
     );
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_PANE;
-    (*epi).c2rust_unnamed.pane = wp;
+    (*epi).value = EventPayloadValue::Pane(wp);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_set_pointer(
@@ -508,8 +485,7 @@ pub unsafe fn event_payload_set_pointer(
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
-    (*epi).type_0 = EVENT_PAYLOAD_POINTER;
-    (*epi).c2rust_unnamed.pointer = std::mem::ManuallyDrop::new(pointer);
+    (*epi).value = EventPayloadValue::Pointer(pointer);
     event_payload_set_item(ep, name, epi);
 }
 pub unsafe fn event_payload_get_string(
@@ -519,48 +495,48 @@ pub unsafe fn event_payload_get_string(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    return (*epi).c2rust_unnamed.string;
+    return (*epi).value.string();
 }
 unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut evbuffer) {
-    match (*epi).type_0 as ::core::ffi::c_uint {
+    match (*epi).type_0() as ::core::ffi::c_uint {
         0 => {
             evbuffer_add_printf(
                 evb,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).c2rust_unnamed.string,
+                (*epi).value.string(),
             );
         }
         1 => {
             evbuffer_add_printf(
                 evb,
                 b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).c2rust_unnamed.time as ::core::ffi::c_longlong,
+                (*epi).value.time() as ::core::ffi::c_longlong,
             );
         }
         2 => {
             evbuffer_add_printf(
                 evb,
                 b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).c2rust_unnamed.number,
+                (*epi).value.number(),
             );
         }
         3 => {
             evbuffer_add_printf(
                 evb,
                 b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).c2rust_unnamed.unsigned_number,
+                (*epi).value.unsigned_number(),
             );
         }
         4 => {
             evbuffer_add_printf(
                 evb,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*(*epi).c2rust_unnamed.client).name)
+                ((*(*epi).value.client()).name)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
@@ -569,25 +545,25 @@ unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut
             evbuffer_add_printf(
                 evb,
                 b"$%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).c2rust_unnamed.session).id,
+                (*(*epi).value.session()).id,
             );
         }
         6 => {
             evbuffer_add_printf(
                 evb,
                 b"@%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).c2rust_unnamed.window).id,
+                (*(*epi).value.window()).id,
             );
         }
         7 => {
             evbuffer_add_printf(
                 evb,
                 b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).c2rust_unnamed.pane).id,
+                (*(*epi).value.pane()).id,
             );
         }
         8 => {
-            let pointer = &mut (*epi).c2rust_unnamed.pointer;
+            let pointer = (*epi).value.pointer_mut();
             if let Some(bytes) = pointer.print() {
                 if !bytes.is_empty() {
                     evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len());
@@ -658,14 +634,14 @@ pub unsafe fn event_payload_add_formats(
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 value.as_ptr().cast::<::core::ffi::c_char>(),
             );
-            let named = if (*epi).type_0 as ::core::ffi::c_uint
+            let named = if (*epi).type_0() as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                Some((*(*epi).c2rust_unnamed.session).name.as_ptr().cast_mut())
-            } else if (*epi).type_0 as ::core::ffi::c_uint
+                Some((*(*epi).value.session()).name.as_ptr().cast_mut())
+            } else if (*epi).type_0() as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                Some((*(*epi).c2rust_unnamed.window).name.as_ptr().cast_mut())
+                Some((*(*epi).value.window()).name.as_ptr().cast_mut())
             } else {
                 None
             };
@@ -698,7 +674,7 @@ pub unsafe fn event_payload_item_name(
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
 pub unsafe fn event_payload_item_type(mut epi: *mut event_payload_item) -> event_payload_type {
-    return (*epi).type_0;
+    return (*epi).type_0();
 }
 pub unsafe extern "C" fn event_payload_log(
     mut ep: *mut event_payload,
@@ -746,12 +722,12 @@ pub unsafe fn event_payload_get_time(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_TIME as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 0 as time_t;
     }
-    return (*epi).c2rust_unnamed.time;
+    return (*epi).value.time();
 }
 pub unsafe fn event_payload_get_int(
     mut ep: *mut event_payload,
@@ -761,12 +737,12 @@ pub unsafe fn event_payload_get_int(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_INT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
     }
-    *value = (*epi).c2rust_unnamed.number;
+    *value = (*epi).value.number();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn event_payload_get_uint(
@@ -777,12 +753,12 @@ pub unsafe fn event_payload_get_uint(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_UINT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
     }
-    *value = (*epi).c2rust_unnamed.unsigned_number;
+    *value = (*epi).value.unsigned_number();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn event_payload_get_client(
@@ -792,12 +768,12 @@ pub unsafe fn event_payload_get_client(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_CLIENT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<client>();
     }
-    return (*epi).c2rust_unnamed.client;
+    return (*epi).value.client();
 }
 pub unsafe fn event_payload_get_session(
     mut ep: *mut event_payload,
@@ -806,12 +782,12 @@ pub unsafe fn event_payload_get_session(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<session>();
     }
-    return (*epi).c2rust_unnamed.session;
+    return (*epi).value.session();
 }
 pub unsafe fn event_payload_get_window(
     mut ep: *mut event_payload,
@@ -820,12 +796,12 @@ pub unsafe fn event_payload_get_window(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<window>();
     }
-    return (*epi).c2rust_unnamed.window;
+    return (*epi).value.window();
 }
 pub unsafe fn event_payload_get_pane(
     mut ep: *mut event_payload,
@@ -834,12 +810,12 @@ pub unsafe fn event_payload_get_pane(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    return (*epi).c2rust_unnamed.pane;
+    return (*epi).value.pane();
 }
 pub unsafe fn event_payload_get_pointer(
     mut ep: *mut event_payload,
@@ -848,12 +824,12 @@ pub unsafe fn event_payload_get_pointer(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
-        || (*epi).type_0 as ::core::ffi::c_uint
+        || (*epi).type_0() as ::core::ffi::c_uint
             != EVENT_PAYLOAD_POINTER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    let pointer = std::ops::Deref::deref(&(*epi).c2rust_unnamed.pointer);
+    let pointer = (*epi).value.pointer();
     return pointer.ptr();
 }
 
@@ -861,7 +837,6 @@ pub unsafe fn event_payload_get_pointer(
 mod tests {
     use super::*;
     use crate::src::reactor::evbuffer_add;
-    use crate::src::shared::events::event_payload_item_c2rust_unnamed;
     use std::ffi::{CStr, CString};
 
     struct TestEventPayload {
@@ -920,13 +895,13 @@ mod tests {
             let first = CString::new(vec![b'a', 0xff]).unwrap();
             event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), first.as_ptr());
             let first_item = event_payload_first(ep);
-            assert_eq!((*first_item).type_0, EVENT_PAYLOAD_STRING);
+            assert_eq!((*first_item).type_0(), EVENT_PAYLOAD_STRING);
             assert_eq!(
                 CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())).to_bytes(),
                 first.to_bytes()
             );
             assert_eq!(
-                (*first_item).c2rust_unnamed.string,
+                (*first_item).value.string(),
                 event_payload_get_string(ep, name.as_ptr()).cast_mut()
             );
 
@@ -940,7 +915,7 @@ mod tests {
 
             event_payload_set_int(ep, name.as_ptr(), 42);
             assert!(event_payload_get_string(ep, name.as_ptr()).is_null());
-            assert_eq!((*event_payload_first(ep)).type_0, EVENT_PAYLOAD_INT);
+            assert_eq!((*event_payload_first(ep)).type_0(), EVENT_PAYLOAD_INT);
 
             let releases = std::rc::Rc::new(std::cell::Cell::new(0usize));
             let release_counter = releases.clone();
@@ -977,7 +952,7 @@ mod tests {
                 CStr::from_ptr(event_payload_item_name(replacement)).to_bytes(),
                 name.as_bytes()
             );
-            assert_eq!((*replacement).c2rust_unnamed.number, 42);
+            assert_eq!((*replacement).value.number(), 42);
             assert_eq!(event_payload_next(replacement), ::core::ptr::null_mut());
             event_payload_free(ep);
         }

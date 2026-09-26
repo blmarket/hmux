@@ -310,11 +310,14 @@ pub struct tty_key {
     pub next: *mut tty_key,
 }
 
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct tty_code {
-    pub type_0: tty_code_type,
-    pub value: tty_code_value,
+/// A terminal capability owns its payload, including any string allocation.
+#[derive(Clone, Default)]
+pub enum tty_code {
+    #[default]
+    None,
+    String(std::ffi::CString),
+    Number(::core::ffi::c_int),
+    Flag(::core::ffi::c_int),
 }
 
 #[derive(Default)]
@@ -390,10 +393,6 @@ pub struct tty_term {
     pub codes: Box<[tty_code]>,
     pub flags: ::core::ffi::c_int,
     pub entry: tty_term_entry,
-    // tty_code_value is a Copy union in a zero-initialized code array. Its string
-    // pointers borrow these allocations; replacement refreshes the code before
-    // the next terminal operation, and tty_term_free drops both together.
-    pub(crate) strings: Vec<Option<std::ffi::CString>>,
 }
 
 impl tty_term {
@@ -406,7 +405,6 @@ impl tty_term {
             codes: Default::default(),
             flags: Default::default(),
             entry: Default::default(),
-            strings: Default::default(),
         }
     }
 }
@@ -479,22 +477,6 @@ pub struct tty_ctx_c2rust_unnamed_data {
 pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &mut client) -> i32>>;
 
 pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union tty_code_value {
-    pub string: *mut ::core::ffi::c_char,
-    pub number: ::core::ffi::c_int,
-    pub flag: ::core::ffi::c_int,
-}
-
-impl Default for tty_code_value {
-    fn default() -> Self {
-        Self {
-            string: ::core::ptr::null_mut(),
-        }
-    }
-}
 
 pub type tty_code_type = ::core::ffi::c_uint;
 

@@ -9,7 +9,7 @@ use crate::src::shared::abi::{int64_t, ssize_t};
 use crate::src::shared::ctype::{_ISdigit, _ISspace, _ISxdigit};
 use crate::src::shared::event::*;
 use crate::src::shared::json::{
-    json_fields, json_fields_storage, json_members, json_members_storage, json_node, json_node_type,
+    json_fields, json_fields_storage, json_members_storage, json_node, json_node_type, JsonValue,
 };
 use crate::src::shared::tree::RB_NEGINF;
 use std::ffi::CStr;
@@ -76,9 +76,7 @@ pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 
 fn json_set_string(node: &mut json_node, string: CString) {
-    node.c2rust_unnamed.str_0 = ::core::ptr::null_mut();
-    node.string = Some(string);
-    node.c2rust_unnamed.str_0 = node.string.as_ref().unwrap().as_ptr().cast_mut();
+    node.value = JsonValue::String(string);
 }
 
 unsafe fn json_fields_insert(head: &mut json_fields, elm: &mut json_node) -> *mut json_node {
@@ -150,22 +148,15 @@ unsafe fn json_fields_next(head: &json_fields, elm: &json_node) -> *mut json_nod
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
-unsafe fn json_members_first(head: &json_members) -> *mut json_node {
-    if head.storage.is_null() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    (*head.storage)
-        .members
+unsafe fn json_members_first(head: &json_members_storage) -> *mut json_node {
+    head.members
         .first()
         .copied()
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
-unsafe fn json_members_next(head: &json_members, elm: &json_node) -> *mut json_node {
-    if head.storage.is_null() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    let storage = &*head.storage;
+unsafe fn json_members_next(head: &json_members_storage, elm: &json_node) -> *mut json_node {
+    let storage = head;
     storage
         .indices
         .get(&(elm as *const json_node as *mut json_node))
@@ -174,11 +165,8 @@ unsafe fn json_members_next(head: &json_members, elm: &json_node) -> *mut json_n
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
-unsafe fn json_members_push(head: &mut json_members, elm: &mut json_node) {
-    if head.storage.is_null() {
-        return;
-    }
-    let storage = &mut *head.storage;
+unsafe fn json_members_push(head: &mut json_members_storage, elm: &mut json_node) {
+    let storage = head;
     let index = storage.members.len();
     let elm = &raw mut *elm;
     storage.members.push(elm);
@@ -211,70 +199,70 @@ pub unsafe fn json_find(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut json_node {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
         || key.is_null()
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    return json_fields_find(&(*jn).c2rust_unnamed.fields, CStr::from_ptr(key));
+    return json_fields_find((*jn).value.fields(), CStr::from_ptr(key));
 }
 pub unsafe fn json_array_first(mut jn: *mut json_node) -> *mut json_node {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    return json_members_first(&(*jn).c2rust_unnamed.members);
+    return json_members_first((*jn).value.members());
 }
 pub unsafe fn json_array_next(mut member: *mut json_node) -> *mut json_node {
     if member.is_null()
         || (*member).parent.is_null()
-        || (*(*member).parent).type_0 as ::core::ffi::c_uint
+        || (*(*member).parent).type_0() as ::core::ffi::c_uint
             != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    return json_members_next(&(*(*member).parent).c2rust_unnamed.members, &*member);
+    return json_members_next((*(*member).parent).value.members(), &*member);
 }
 pub unsafe fn json_get_string(
     mut jn: *mut json_node,
     mut s: *mut *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
     }
-    *s = (*jn).c2rust_unnamed.str_0;
+    *s = (*jn).value.string_ptr();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_get_number(mut jn: *mut json_node, mut i: *mut int64_t) -> ::core::ffi::c_int {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
     }
-    *i = (*jn).c2rust_unnamed.num;
+    *i = (*jn).value.number();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_get_boolean(
     mut jn: *mut json_node,
     mut b: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_BOOLEAN as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
     }
-    *b = (*jn).c2rust_unnamed.boolean;
+    *b = (*jn).value.boolean();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_get_object(
     mut jn: *mut json_node,
     mut o: *mut *mut json_node,
 ) -> ::core::ffi::c_int {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
@@ -286,7 +274,7 @@ pub unsafe fn json_get_array(
     mut jn: *mut json_node,
     mut a: *mut *mut json_node,
 ) -> ::core::ffi::c_int {
-    if (*jn).type_0 as ::core::ffi::c_uint
+    if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return -(1 as ::core::ffi::c_int);
@@ -312,7 +300,7 @@ pub unsafe fn json_find_string(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    if (*field).type_0 as ::core::ffi::c_uint
+    if (*field).type_0() as ::core::ffi::c_uint
         != NODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
@@ -324,7 +312,7 @@ pub unsafe fn json_find_string(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    *out = (*field).c2rust_unnamed.str_0;
+    *out = (*field).value.string_ptr();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_find_number(
@@ -345,7 +333,7 @@ pub unsafe fn json_find_number(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    if (*field).type_0 as ::core::ffi::c_uint
+    if (*field).type_0() as ::core::ffi::c_uint
         != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
@@ -357,7 +345,7 @@ pub unsafe fn json_find_number(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    *out = (*field).c2rust_unnamed.num;
+    *out = (*field).value.number();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_find_boolean(
@@ -378,7 +366,7 @@ pub unsafe fn json_find_boolean(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    if (*field).type_0 as ::core::ffi::c_uint
+    if (*field).type_0() as ::core::ffi::c_uint
         != NODE_BOOLEAN as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
@@ -390,7 +378,7 @@ pub unsafe fn json_find_boolean(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    *out = (*field).c2rust_unnamed.boolean;
+    *out = (*field).value.boolean();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_find_object(
@@ -411,7 +399,7 @@ pub unsafe fn json_find_object(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    if (*field).type_0 as ::core::ffi::c_uint
+    if (*field).type_0() as ::core::ffi::c_uint
         != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
@@ -444,7 +432,7 @@ pub unsafe fn json_find_array(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    if (*field).type_0 as ::core::ffi::c_uint
+    if (*field).type_0() as ::core::ffi::c_uint
         != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
@@ -658,24 +646,21 @@ unsafe fn json_create_node(
         } else {
             Some(CStr::from_ptr(key).to_owned())
         },
-        string: None,
-        members: None,
         ..json_node::empty()
     });
 
     node = Box::into_raw(owner).cast::<json_node>();
     (*node).parent = parent;
-    (*node).type_0 = type_0;
-    if type_0 as ::core::ffi::c_uint == NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint {
-        (*node).c2rust_unnamed.fields.entries =
-            Box::into_raw(Box::new(json_fields_storage::default()));
-    } else if type_0 as ::core::ffi::c_uint
-        == NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        let owner = node;
-        (*owner).members = Some(Box::new(json_members_storage::default()));
-        (*node).c2rust_unnamed.members.storage = (*owner).members.as_deref_mut().unwrap();
-    }
+    (*node).value = match type_0 {
+        NODE_STRING => JsonValue::String(Default::default()),
+        NODE_NUMBER => JsonValue::Number(0),
+        NODE_BOOLEAN => JsonValue::Boolean(0),
+        NODE_OBJECT => JsonValue::Object(json_fields {
+            entries: Box::into_raw(Box::new(json_fields_storage::default())),
+        }),
+        NODE_ARRAY => JsonValue::Array(Default::default()),
+        _ => fatalx(c"unknown node type".as_ptr()),
+    };
     if !val.is_null() {
         json_assign_value(node, val);
     }
@@ -688,32 +673,29 @@ pub unsafe fn json_destroy_node(mut node: *mut json_node) {
     if node.is_null() {
         return;
     }
-    match (*node).type_0 as ::core::ffi::c_uint {
+    match (*node).type_0() as ::core::ffi::c_uint {
         0 => {}
         3 => {
-            field = json_fields_minmax(&(*node).c2rust_unnamed.fields, RB_NEGINF);
+            field = json_fields_minmax((*node).value.fields(), RB_NEGINF);
             while !field.is_null() && {
-                field1 = json_fields_next(&(*node).c2rust_unnamed.fields, &*field);
+                field1 = json_fields_next((*node).value.fields(), &*field);
                 1 as ::core::ffi::c_int != 0
             } {
-                json_fields_remove(&mut (*node).c2rust_unnamed.fields, &*field);
+                json_fields_remove((*node).value.fields_mut(), &*field);
                 json_destroy_node(field);
                 field = field1;
             }
-            if !(*node).c2rust_unnamed.fields.entries.is_null() {
-                drop(Box::from_raw((*node).c2rust_unnamed.fields.entries));
-                (*node).c2rust_unnamed.fields.entries =
-                    ::core::ptr::null_mut::<json_fields_storage>();
+            if !(*node).value.fields().entries.is_null() {
+                drop(Box::from_raw((*node).value.fields().entries));
+                (*node).value.fields_mut().entries = ::core::ptr::null_mut::<json_fields_storage>();
             }
         }
         4 => {
-            let storage = (*node).c2rust_unnamed.members.storage;
-            if !storage.is_null() {
-                let members = ::core::mem::take(&mut (*storage).members);
-                (*storage).indices.clear();
-                for member in members {
-                    json_destroy_node(member);
-                }
+            let storage = (*node).value.members_mut();
+            let members = ::core::mem::take(&mut storage.members);
+            storage.indices.clear();
+            for member in members {
+                json_destroy_node(member);
             }
         }
         1 | 2 | _ => {}
@@ -722,24 +704,24 @@ pub unsafe fn json_destroy_node(mut node: *mut json_node) {
 }
 unsafe fn json_assign_value(mut node: *mut json_node, mut val: *mut ::core::ffi::c_void) {
     let mut child: *mut json_node = val as *mut json_node;
-    match (*node).type_0 as ::core::ffi::c_uint {
+    match (*node).type_0() as ::core::ffi::c_uint {
         0 => {
             json_set_string(&mut *node, CStr::from_ptr(val.cast()).to_owned());
         }
         1 => {
-            (*node).c2rust_unnamed.num = *(val as *mut int64_t);
+            (*node).value = JsonValue::Number(*(val as *mut int64_t));
         }
         2 => {
-            (*node).c2rust_unnamed.boolean = *(val as *mut ::core::ffi::c_int);
+            (*node).value = JsonValue::Boolean(*(val as *mut ::core::ffi::c_int));
         }
         3 => {
             if !child.is_null() {
-                json_fields_insert(&mut (*node).c2rust_unnamed.fields, &mut *child);
+                json_fields_insert((*node).value.fields_mut(), &mut *child);
             }
         }
         4 => {
             if !child.is_null() {
-                json_members_push(&mut (*node).c2rust_unnamed.members, &mut *child);
+                json_members_push((*node).value.members_mut(), &mut *child);
             }
         }
         _ => {
@@ -1199,23 +1181,23 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
     let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut comma: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*node).type_0 as ::core::ffi::c_uint {
+    match (*node).type_0() as ::core::ffi::c_uint {
         0 => {
             evbuffer_add_printf(
                 buffer,
                 b"\"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-                (*node).c2rust_unnamed.str_0,
+                (*node).value.string_ptr(),
             );
         }
         1 => {
             evbuffer_add_printf(
                 buffer,
                 b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                (*node).c2rust_unnamed.num as ::core::ffi::c_longlong,
+                (*node).value.number() as ::core::ffi::c_longlong,
             );
         }
         2 => {
-            if (*node).c2rust_unnamed.boolean != 0 {
+            if (*node).value.boolean() != 0 {
                 s = b"true\0" as *const u8 as *const ::core::ffi::c_char;
             } else {
                 s = b"false\0" as *const u8 as *const ::core::ffi::c_char;
@@ -1228,7 +1210,7 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
                 b"{\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            field = json_fields_minmax(&(*node).c2rust_unnamed.fields, RB_NEGINF);
+            field = json_fields_minmax((*node).value.fields(), RB_NEGINF);
             while !field.is_null() {
                 if comma != 0 {
                     evbuffer_add(
@@ -1247,7 +1229,7 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
                 );
                 json_string_append(buffer, field);
                 comma = 1 as ::core::ffi::c_int;
-                field = json_fields_next(&(*node).c2rust_unnamed.fields, &*field);
+                field = json_fields_next((*node).value.fields(), &*field);
             }
             evbuffer_add(
                 buffer,
@@ -1261,7 +1243,7 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
                 b"[\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            member = json_members_first(&(*node).c2rust_unnamed.members);
+            member = json_members_first((*node).value.members());
             while !member.is_null() {
                 if comma != 0 {
                     evbuffer_add(
@@ -1273,7 +1255,7 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
                 }
                 json_string_append(buffer, member);
                 comma = 1 as ::core::ffi::c_int;
-                member = json_members_next(&(*node).c2rust_unnamed.members, &*member);
+                member = json_members_next((*node).value.members(), &*member);
             }
             evbuffer_add(
                 buffer,

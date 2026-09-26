@@ -417,7 +417,7 @@ mod tests {
     use crate::src::shared::tty::{
         tty_code, TTYC_AX, TTYC_MS, TTYC_SETAB, TTYC_SETAF, TTYC_SETRGBB, TTYC_SETRGBF,
     };
-    use crate::src::tty_term::{tty_term_ncodes, TTYCODE_FLAG, TTYCODE_NONE, TTYCODE_STRING};
+    use crate::src::tty_term::tty_term_ncodes;
 
     #[test]
     fn feature_presence_checks_capability_names_before_values() {
@@ -425,18 +425,18 @@ mod tests {
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice();
 
-            term.codes[TTYC_MS as usize].type_0 = TTYCODE_STRING;
+            term.codes[TTYC_MS as usize] = tty_code::String(Default::default());
             assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 1);
-            term.codes[TTYC_MS as usize].type_0 = TTYCODE_NONE;
+            term.codes[TTYC_MS as usize] = tty_code::None;
             assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 0);
 
             term.flags = TERM_256COLOURS | TERM_RGBCOLOURS;
-            term.codes[TTYC_AX as usize].type_0 = TTYCODE_FLAG;
+            term.codes[TTYC_AX as usize] = tty_code::Flag(1);
             for code in [TTYC_SETRGBF, TTYC_SETRGBB, TTYC_SETAB, TTYC_SETAF] {
-                term.codes[code as usize].type_0 = TTYCODE_STRING;
+                term.codes[code as usize] = tty_code::String(Default::default());
             }
             assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 1);
-            term.codes[TTYC_SETAF as usize].type_0 = TTYCODE_NONE;
+            term.codes[TTYC_SETAF as usize] = tty_code::None;
             assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 0);
         }
     }

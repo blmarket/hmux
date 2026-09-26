@@ -15,15 +15,28 @@ pub struct menu_item {
     pub key: key_code,
     pub command: *const ::core::ffi::c_char,
 }
+/// A runtime menu row owns its expanded text. Static definitions use `menu_item`.
+#[derive(Default)]
+pub struct MenuRow {
+    pub name: Option<std::ffi::CString>,
+    pub key: key_code,
+    pub command: Option<std::ffi::CString>,
+}
+
+impl MenuRow {
+    pub fn name_ptr(&self) -> *const ::core::ffi::c_char {
+        self.name
+            .as_ref()
+            .map_or(std::ptr::null(), |name| name.as_ptr())
+    }
+}
+
 #[repr(C)]
 pub struct menu {
     pub title: std::ffi::CString,
-    pub items: Vec<menu_item>,
+    pub items: Vec<MenuRow>,
     pub count: u_int,
     pub width: u_int,
-    // menu_item also describes static, borrowed menu definitions. Runtime rows
-    // borrow these strings, which move and drop together with the item vector.
-    pub(crate) strings: Vec<crate::src::menu::MenuRowStrings>,
 }
 
 impl menu {
@@ -33,7 +46,6 @@ impl menu {
             items: Default::default(),
             count: Default::default(),
             width: Default::default(),
-            strings: Default::default(),
         }
     }
 }

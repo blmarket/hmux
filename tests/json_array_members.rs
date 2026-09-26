@@ -14,14 +14,14 @@ fn array_owned_members_preserve_order_and_iteration() {
         assert!(cause.is_none());
         let key = CString::new("items").unwrap();
         let array = json_find(root, key.as_ptr());
-        assert_eq!((*array).type_0, NODE_ARRAY);
+        assert_eq!((*array).type_0(), NODE_ARRAY);
 
         let first = json_array_first(array);
-        assert_eq!((*first).type_0, NODE_OBJECT);
+        assert_eq!((*first).type_0(), NODE_OBJECT);
         let second = json_array_next(first);
-        assert_eq!((*second).type_0, NODE_OBJECT);
+        assert_eq!((*second).type_0(), NODE_OBJECT);
         let last = json_array_next(second);
-        assert_eq!((*last).type_0, NODE_OBJECT);
+        assert_eq!((*last).type_0(), NODE_OBJECT);
         assert!(json_array_next(last).is_null());
 
         let x_key = CString::new("x").unwrap();
