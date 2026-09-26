@@ -236,8 +236,8 @@ pub struct cmd_find_state {
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
     pub group: u_int,
-    /// Box-owned command pointer array, released with the final `cmd_list_free` reference.
-    pub list: *mut Vec<*mut cmd>,
+    /// Owned command pointer array, released with the final `cmd_list_free` reference.
+    pub list: Vec<*mut cmd>,
 }
 
 #[repr(C)]
