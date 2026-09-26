@@ -60,6 +60,5 @@ pub mod time;
 pub mod tree;
 pub mod tty;
 pub mod utf8;
-pub mod variadic;
 pub mod vis;
 pub mod window;
