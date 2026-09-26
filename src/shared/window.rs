@@ -67,7 +67,7 @@ pub struct winlink_entry {
 
 #[derive(Default)]
 #[repr(C)]
-/// Box-owned window record; references remain managed by window_add_ref/remove_ref.
+/// Rc-owned window record; retain/release preserves pre-close notifications.
 pub struct window {
     pub id: u_int,
     pub latest: *mut ::core::ffi::c_void,
@@ -112,7 +112,6 @@ pub struct window {
     pub flags: ::core::ffi::c_int,
     pub alerts_queued: ::core::ffi::c_int,
     pub options: *mut options,
-    pub references: u_int,
     pub winlinks: window_winlinks,
     pub entry: window_entry,
 }

@@ -392,6 +392,8 @@ pub unsafe fn spawn_window(
         (*(*sc).wl).session = s;
         (*w).latest = (*sc).tc as *mut ::core::ffi::c_void;
         winlink_set_window((*sc).wl, w);
+        // The winlink now owns the window; release the construction reference.
+        crate::src::window::window_remove_ref(w, c"spawn_window".as_ptr());
     } else {
         w = ::core::ptr::null_mut::<window>();
     }

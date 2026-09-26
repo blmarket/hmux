@@ -1034,6 +1034,7 @@ pub(crate) unsafe fn window_replace_old_layout(
 pub(crate) unsafe fn window_replace_name(w: *mut window, name: CString) -> CString {
     ::core::mem::replace(&mut (*w).name, name)
 }
+/// Return one owned reference; callers must release it after linking the window.
 pub unsafe fn window_create(
     mut sx: u_int,
     mut sy: u_int,
@@ -1047,7 +1048,7 @@ pub unsafe fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = Box::into_raw(Box::new(window::default()));
+    w = crate::src::shared::rc::new(window::default(), window_destroy);
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
@@ -1070,7 +1071,6 @@ pub unsafe fn window_create(
         (*w).options,
         b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    (*w).references = 0 as u_int;
     (*w).winlinks.storage = None;
     (*w).entry.owner = None;
     let fresh0 = next_window_id;
@@ -1094,9 +1094,8 @@ pub unsafe fn window_create(
 }
 unsafe fn window_destroy(mut w: *mut window) {
     log_debug(
-        b"window @%u destroyed (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window @%u destroyed".as_ptr(),
         (*w).id,
-        (*w).references,
     );
     window_unzoom(w, 0 as ::core::ffi::c_int);
     windows_remove(&raw mut windows, w);
@@ -1115,7 +1114,6 @@ unsafe fn window_destroy(mut w: *mut window) {
         event_del(&raw mut (*w).offset_timer);
     }
     options_free((*w).options);
-    drop(Box::from_raw(w));
 }
 pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut n: ::core::ffi::c_int = 0;
@@ -1140,34 +1138,17 @@ pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn window_add_ref(mut w: *mut window, mut from: *const ::core::ffi::c_char) {
-    (*w).references = (*w).references.wrapping_add(1);
-    log_debug(
-        b"%s: @%u %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_add_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        from,
-        (*w).references,
-    );
+pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) {
+    crate::src::shared::rc::retain(w);
+    log_debug(c"retain window @%u (%s)".as_ptr(), (*w).id, from);
 }
-pub unsafe fn window_remove_ref(mut w: *mut window, mut from: *const ::core::ffi::c_char) {
-    if (*w).references == 1 as u_int {
-        events_fire_window(
-            b"window-closed\0" as *const u8 as *const ::core::ffi::c_char,
-            w,
-        );
+pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char) {
+    // Notify while a strong reference still exists: callbacks may retain w.
+    if crate::src::shared::rc::strong_count(w) == 1 {
+        events_fire_window(c"window-closed".as_ptr(), w);
     }
-    (*w).references = (*w).references.wrapping_sub(1);
-    log_debug(
-        b"%s: @%u %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_remove_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        from,
-        (*w).references,
-    );
-    if (*w).references == 0 as u_int {
-        window_destroy(w);
-    }
+    log_debug(c"release window @%u (%s)".as_ptr(), (*w).id, from);
+    crate::src::shared::rc::release(w);
 }
 pub unsafe fn window_pane_add_ref(mut wp: *mut window_pane, mut from: *const ::core::ffi::c_char) {
     (*wp).references += 1;

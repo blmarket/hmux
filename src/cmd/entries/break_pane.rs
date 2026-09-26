@@ -224,10 +224,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         layout_close_pane(wp);
         (*wp).window = window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel) as *mut window;
         w = (*wp).window as *mut window;
-        window_add_ref(
-            w,
-            b"cmd_break_pane_exec\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        // window_create supplied the temporary reference released after attach.
         options_set_parent((*wp).options, (*w).options);
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         window_pane_list_insert_front(w, wp);
