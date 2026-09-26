@@ -4,6 +4,7 @@ use crate::src::ffi::libc::{
     strlen, strncmp, tcflush, tcgetattr, tcsetattr, time, usleep, write,
 };
 use crate::src::ffi::resolv::__b64_ntop;
+use crate::src::format::bytes::format_cstring;
 use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
@@ -1021,7 +1022,6 @@ unsafe fn tty_force_cursor_colour(mut tty: *mut tty, mut c: ::core::ffi::c_int) 
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
-    let mut s: [::core::ffi::c_char; 13] = [0; 13];
     if c != -(1 as ::core::ffi::c_int) {
         c = tty_map_theme_colour(tty, c);
         c = colour_force_rgb(c);
@@ -1033,15 +1033,9 @@ unsafe fn tty_force_cursor_colour(mut tty: *mut tty, mut c: ::core::ffi::c_int) 
         tty_putcode(tty, TTYC_CR);
     } else {
         colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 13]>() as size_t,
-            b"rgb:%02hhx/%02hhx/%02hhx\0" as *const u8 as *const ::core::ffi::c_char,
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-        );
-        tty_putcode_s(tty, &raw mut s as *mut ::core::ffi::c_char);
+        let colour = format_cstring(format_args!("rgb:{r:02x}/{g:02x}/{b:02x}"))
+            .expect("RGB colour contains no NUL");
+        tty_putcode_s(tty, colour.as_ptr());
     }
     (*tty).ccolour = c;
 }
