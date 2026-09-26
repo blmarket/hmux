@@ -6,7 +6,7 @@ use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_va
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::environ::{
-    environ_clear, environ_find, environ_first, environ_next, environ_set, environ_unset,
+    environ_clear, environ_find, environ_iter, environ_set, environ_unset,
 };
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, __ctype_toupper_loc, memcpy, strchr, strcmp, strcspn, strlcat, strlen,
@@ -1542,7 +1542,6 @@ unsafe fn window_customize_build_environment(
     let mut top: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut global: ::core::ffi::c_int = 0;
     if (*data).hide_default != 0 {
         return;
@@ -1589,8 +1588,8 @@ unsafe fn window_customize_build_environment(
         scope_text.as_ptr(),
     );
     drop(scope_text);
-    envent = environ_first(env);
-    while !envent.is_null() {
+    for entry in environ_iter(&*env) {
+        let envent = entry.as_ptr();
         format_add(
             ft,
             b"environment_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1632,7 +1631,6 @@ unsafe fn window_customize_build_environment(
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             if format_true(expanded.as_ptr()) == 0 {
-                envent = environ_next(envent);
                 continue;
             }
         }
@@ -1664,7 +1662,6 @@ unsafe fn window_customize_build_environment(
                 .map_or(::core::ptr::null(), |text| text.as_ptr()),
             0 as ::core::ffi::c_int,
         );
-        envent = environ_next(envent);
     }
 }
 unsafe fn window_customize_build(

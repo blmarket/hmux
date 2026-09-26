@@ -204,16 +204,12 @@ impl<'a> EnvironView<'a> {
 
     /// Return the first entry in the tree's existing bytewise order.
     pub fn first(self) -> Option<EnvironEntry<'a>> {
-        let entry = unsafe { environ_first(self.as_ptr()) };
-        NonNull::new(entry).map(|raw| EnvironEntry {
-            raw,
-            _owner: PhantomData,
-        })
+        self.entries().next()
     }
 
-    /// Iterate the existing red-black tree in bytewise name order.
-    pub fn entries(self) -> EnvironIter<'a> {
-        EnvironIter { next: self.first() }
+    /// Iterate entries in bytewise name order.
+    pub fn entries(self) -> impl Iterator<Item = EnvironEntry<'a>> + 'a {
+        unsafe { environ_iter(&*self.as_ptr()) }
     }
 }
 
@@ -255,34 +251,18 @@ impl<'a> EnvironEntry<'a> {
         unsafe { (*self.raw.as_ptr()).flags }
     }
 
-    /// Return the next entry in the owner-borrowed tree view.
-    pub fn next(&self) -> Option<Self> {
-        let entry = unsafe { environ_next(self.raw.as_ptr()) };
-        NonNull::new(entry).map(|raw| Self {
-            raw,
-            _owner: PhantomData,
-        })
-    }
-
     /// Borrow the retained C entry pointer for a synchronous C call.
     pub fn as_ptr(&self) -> *mut environ_entry {
         self.raw.as_ptr()
     }
 }
 
-/// Iterator over entries in the C tree's bytewise ordering.
-pub struct EnvironIter<'a> {
-    next: Option<EnvironEntry<'a>>,
-}
-
-impl<'a> Iterator for EnvironIter<'a> {
-    type Item = EnvironEntry<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = self.next.take()?;
-        self.next = current.next();
-        Some(current)
-    }
+/// Iterate entries in bytewise name order.
+pub fn environ_iter(env: &environ) -> impl Iterator<Item = EnvironEntry<'_>> + '_ {
+    env.entries.values().map(|entry| EnvironEntry {
+        raw: NonNull::from(entry.as_ref()),
+        _owner: PhantomData,
+    })
 }
 
 /// Compatibility name for callers that prefer the domain term.
@@ -292,7 +272,6 @@ pub type EnvironmentView<'a> = EnvironView<'a>;
 /// Compatibility name for a borrowed environment entry.
 pub type EnvironmentEntry<'a> = EnvironEntry<'a>;
 use crate::src::shared::abi::*;
-use crate::src::shared::environment::environ_storage;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
@@ -305,26 +284,12 @@ unsafe fn environ_insert(
     value: Option<CString>,
 ) {
     let key = name.as_bytes().to_vec();
-    let observer = env.entries.downgrade();
-    let mut owned = Box::new(environ_entry {
-        name,
-        value,
-        flags,
-        owner: None,
+    // Updating an existing entry must preserve its address.
+    env.entries.entry(key).or_insert_with(|| {
+        Box::new(environ_entry { name, value, flags })
     });
-    // Callers first look up the name and update existing entries in place.
-    let mut storage = env
-        .entries
-        .try_borrow_mut()
-        .expect("environment storage already borrowed");
-    match storage.entries.entry(key) {
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            owned.owner = Some(observer);
-            entry.insert(owned);
-        }
-        std::collections::btree_map::Entry::Occupied(_) => drop(owned),
-    }
 }
+
 pub unsafe fn environ_create() -> *mut environ {
     Box::into_raw(Box::new(environ::default()))
 }
@@ -334,42 +299,12 @@ pub unsafe fn environ_free(mut env: *mut environ) {
     }
     drop(Box::from_raw(env));
 }
-pub unsafe fn environ_first(mut env: *mut environ) -> *mut environ_entry {
-    let storage = (*env)
-        .entries
-        .try_borrow_mut()
-        .expect("environment storage already borrowed");
-    storage
-        .entries
-        .values()
-        .next()
-        .map(|owned| &**owned as *const environ_entry as *mut environ_entry)
-        .unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn environ_next(mut envent: *mut environ_entry) -> *mut environ_entry {
-    if envent.is_null() {
-        return std::ptr::null_mut();
-    }
-    let Some(owner) = (*envent).owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let key = CStr::from_ptr(((*envent).name).as_ptr().cast_mut()).to_bytes();
-    let storage = match owner.try_borrow_mut() {
-        Ok(storage) => storage,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("environment storage already borrowed"),
-    };
-    storage
-        .entries
-        .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
-        .next()
-        .map(|(_, owned)| &**owned as *const environ_entry as *mut environ_entry)
-        .unwrap_or(std::ptr::null_mut())
-}
 pub unsafe fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut environ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    envent = environ_first(srcenv);
-    while !envent.is_null() {
+    if srcenv == dstenv {
+        return;
+    }
+    for entry in environ_iter(&*srcenv) {
+        let envent = entry.as_ptr();
         if (*envent).value.is_none() {
             environ_clear(dstenv, ((*envent).name).as_ptr().cast_mut());
         } else {
@@ -383,23 +318,19 @@ pub unsafe fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut environ) {
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
-        envent = environ_next(envent);
     }
 }
 pub unsafe fn environ_find(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut environ_entry {
-    let storage = (*env)
-        .entries
-        .try_borrow_mut()
-        .expect("environment storage already borrowed");
-    storage
+    (*env)
         .entries
         .get(CStr::from_ptr(name).to_bytes())
         .map(|owned| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
+
 pub unsafe extern "C" fn environ_set(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
@@ -413,11 +344,7 @@ pub unsafe extern "C" fn environ_set(
     // a `%s` argument while updating the same entry.
     let mut value = Some(xvasprintf_cstring(fmt, ap));
     let inserted = {
-        let mut storage = (*env)
-            .entries
-            .try_borrow_mut()
-            .expect("environment storage already borrowed");
-        if let Some(owned) = storage.entries.get_mut(CStr::from_ptr(name).to_bytes()) {
+        if let Some(owned) = (*env).entries.get_mut(CStr::from_ptr(name).to_bytes()) {
             owned.flags = flags;
             owned.value = value.take();
             true
@@ -431,11 +358,7 @@ pub unsafe extern "C" fn environ_set(
 }
 pub unsafe fn environ_clear(mut env: *mut environ, mut name: *const ::core::ffi::c_char) {
     let inserted = {
-        let mut storage = (*env)
-            .entries
-            .try_borrow_mut()
-            .expect("environment storage already borrowed");
-        if let Some(owned) = storage.entries.get_mut(CStr::from_ptr(name).to_bytes()) {
+        if let Some(owned) = (*env).entries.get_mut(CStr::from_ptr(name).to_bytes()) {
             owned.value = None;
             true
         } else {
@@ -467,20 +390,10 @@ pub unsafe fn environ_put(
     );
 }
 pub unsafe fn environ_unset(mut env: *mut environ, mut name: *const ::core::ffi::c_char) {
-    let removed = (*env)
-        .entries
-        .try_borrow_mut()
-        .expect("environment storage already borrowed")
-        .entries
-        .remove(CStr::from_ptr(name).to_bytes());
-    if let Some(mut removed) = removed {
-        removed.owner = None;
-        drop(removed);
-    }
+    (*env).entries.remove(CStr::from_ptr(name).to_bytes());
 }
+
 pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut dst: *mut environ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut envent1: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
@@ -496,11 +409,12 @@ pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut ds
     while !a.is_null() {
         ov = options_array_item_value(a);
         found = 0 as ::core::ffi::c_int;
-        envent = environ_first(src);
-        while !envent.is_null() && {
-            envent1 = environ_next(envent);
-            1 as ::core::ffi::c_int != 0
-        } {
+        // An aliased destination may change values or add a missing pattern.
+        // Refresh each pass so later patterns see those additions.
+        let snapshot = (src == dst).then(|| (*src).clone());
+        let source = snapshot.as_ref().unwrap_or_else(|| &*src);
+        for entry in environ_iter(source) {
+            let envent = entry.as_ptr();
             if fnmatch(
                 (*ov).string_ptr(),
                 ((*envent).name).as_ptr().cast_mut(),
@@ -518,7 +432,6 @@ pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut ds
                 );
                 found = 1 as ::core::ffi::c_int;
             }
-            envent = envent1;
         }
         if found == 0 {
             environ_clear(dst, (*ov).string_ptr());
@@ -527,13 +440,12 @@ pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut ds
     }
 }
 pub unsafe fn environ_push(mut env: *mut environ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let seed = xcalloc(::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t)
         as *mut *mut ::core::ffi::c_char;
     environ = seed;
     let seed_owner = ProcessEnvironmentSeed(seed);
-    envent = environ_first(env);
-    while !envent.is_null() {
+    for entry in environ_iter(&*env) {
+        let envent = entry.as_ptr();
         if !(*envent).value.is_none()
             && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
             && !(*envent).flags & ENVIRON_HIDDEN != 0
@@ -546,7 +458,6 @@ pub unsafe fn environ_push(mut env: *mut environ) {
                 1 as ::core::ffi::c_int,
             );
         }
-        envent = environ_next(envent);
     }
     drop(seed_owner);
 }
@@ -555,12 +466,11 @@ pub unsafe extern "C" fn environ_log(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
     let prefix = xvasprintf_cstring(fmt, ap);
-    envent = environ_first(env);
-    while !envent.is_null() {
+    for entry in environ_iter(&*env) {
+        let envent = entry.as_ptr();
         if !(*envent).value.is_none()
             && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {
@@ -573,7 +483,6 @@ pub unsafe extern "C" fn environ_log(
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
-        envent = environ_next(envent);
     }
 }
 pub unsafe fn environ_for_session(
@@ -655,7 +564,7 @@ mod environ_storage_tests {
     use super::*;
 
     #[test]
-    fn environment_entries_traverse_after_head_move_and_expire_with_storage() {
+    fn environment_entries_iterate_after_head_move() {
         unsafe {
             let mut head = environ::default();
             environ_insert(
@@ -670,9 +579,10 @@ mod environ_storage_tests {
                 0,
                 Some(CString::new("two").unwrap()),
             );
-            let first = environ_first(&mut head);
-            let second = environ_next(first);
-            let storage_observer = (*first).owner.as_ref().unwrap().clone();
+            let mut entries = environ_iter(&head);
+            let first = entries.next().unwrap().as_ptr();
+            let second = entries.next().unwrap().as_ptr();
+            assert!(entries.next().is_none());
             assert_eq!(CStr::from_ptr((*first).name.as_ptr()), c"alpha");
             assert_eq!(CStr::from_ptr((*second).name.as_ptr()), c"beta");
 
@@ -695,16 +605,12 @@ mod environ_storage_tests {
             );
 
             let mut moved = head;
-            assert_eq!(environ_next(first), second);
+            assert_eq!(environ_iter(&moved).nth(1).unwrap().as_ptr(), second);
             environ_unset(&mut moved, c"alpha".as_ptr());
-            assert_eq!(environ_first(&mut moved), second);
-            assert!(environ_next(second).is_null());
+            assert_eq!(environ_iter(&moved).next().unwrap().as_ptr(), second);
+            assert_eq!(environ_iter(&moved).count(), 1);
             environ_unset(&mut moved, c"beta".as_ptr());
             drop(moved);
-            assert!(matches!(
-                storage_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
         }
     }
 }

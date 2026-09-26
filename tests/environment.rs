@@ -80,8 +80,7 @@ fn owner_transfer_reclaims_the_same_c_tree_once() {
 }
 
 #[test]
-fn updates_preserve_entry_addresses_and_removal_preserves_saved_successors() {
-    use hmux2::src::environ::{environ_first, environ_next};
+fn updates_preserve_entry_addresses_and_iteration_supports_removal_by_snapshot() {
     let mut env = EnvironOwner::new();
     env.set(b"middle", 7, b"old").unwrap();
     let middle = env.find_bytes(b"middle").unwrap().unwrap().as_ptr();
@@ -98,19 +97,16 @@ fn updates_preserve_entry_addresses_and_removal_preserves_saved_successors() {
     assert_eq!(cleared.value_bytes(), None);
     assert_eq!(cleared.flags(), ENVIRON_HIDDEN);
 
-    unsafe {
-        let mut current = environ_first(env.as_ptr());
-        let mut removed = 0;
-        while !current.is_null() {
-            let next = environ_next(current);
-            let name = std::ffi::CStr::from_ptr(((*current).name).as_ptr().cast_mut()).to_owned();
-            env.unset_cstr(&name);
-            current = next;
-            removed += 1;
-        }
-        assert_eq!(removed, 129);
-        assert!(environ_first(env.as_ptr()).is_null());
+    let names: Vec<_> = env
+        .borrow()
+        .entries()
+        .map(|entry| entry.name().to_owned())
+        .collect();
+    assert_eq!(names.len(), 129);
+    for name in names {
+        env.unset_cstr(&name);
     }
+    assert!(env.borrow().entries().next().is_none());
     env.set(b"reinserted", 0, b"ok").unwrap();
     assert_eq!(env.borrow().entries().count(), 1);
 }
@@ -189,4 +185,71 @@ fn put_splits_first_equals_and_preserves_c_string_bytes() {
         Some(&b"visible"[..])
     );
     assert!(env.find_bytes(b"later").unwrap().is_none());
+}
+
+#[test]
+fn iteration_allows_nested_reads_and_self_copy() {
+    use hmux2::src::environ::environ_copy;
+    let mut env = EnvironOwner::new();
+    env.set(b"a", 7, b"one").unwrap();
+    env.clear(b"b").unwrap();
+    unsafe { environ_copy(env.as_ptr(), env.as_ptr()) };
+    for entry in env.borrow().entries() {
+        assert_eq!(env.find(entry.name()).unwrap().value(), entry.value());
+        assert_eq!(env.borrow().entries().count(), 2);
+    }
+    assert_eq!(env.find_bytes(b"a").unwrap().unwrap().flags(), 7);
+    assert_eq!(env.find_bytes(b"b").unwrap().unwrap().value(), None);
+}
+
+#[test]
+fn update_supports_distinct_and_aliased_destinations() {
+    use hmux2::src::environ::environ_update;
+    use hmux2::src::options::{options_array_set, options_create, options_empty, options_free};
+    use std::{ffi::CStr, ptr::null_mut};
+    unsafe {
+        let options = options_create(null_mut());
+        let table = &raw const hmux2::src::options_table::options_table;
+        let definition = (*table)
+            .iter()
+            .find(|entry| {
+                !entry.name.is_null() && CStr::from_ptr(entry.name) == c"update-environment"
+            })
+            .unwrap();
+        let array = options_empty(options, definition);
+        for (index, pattern) in [(c"0", c"a*"), (c"1", c"missing")] {
+            assert_eq!(
+                options_array_set(array, index.as_ptr(), pattern.as_ptr(), 0, null_mut()),
+                0
+            );
+        }
+        let mut source = EnvironOwner::new();
+        source.set(b"alpha", ENVIRON_HIDDEN, b"value").unwrap();
+        let mut destination = EnvironOwner::new();
+        destination.set(b"missing", 0, b"old").unwrap();
+        environ_update(options, source.as_ptr(), destination.as_ptr());
+        assert_eq!(
+            destination
+                .find_bytes(b"alpha")
+                .unwrap()
+                .unwrap()
+                .value_bytes(),
+            Some(b"value".as_slice())
+        );
+        assert_eq!(
+            destination.find_bytes(b"missing").unwrap().unwrap().value(),
+            None
+        );
+        environ_update(options, source.as_ptr(), source.as_ptr());
+        assert_eq!(source.find_bytes(b"alpha").unwrap().unwrap().flags(), 0);
+        assert_eq!(
+            source.find_bytes(b"alpha").unwrap().unwrap().value_bytes(),
+            Some(b"value".as_slice())
+        );
+        assert_eq!(
+            source.find_bytes(b"missing").unwrap().unwrap().value(),
+            None
+        );
+        options_free(options);
+    }
 }

@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
-use crate::src::environ::{environ_find, environ_first, environ_next};
+use crate::src::environ::{environ_find, environ_iter};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -154,10 +154,9 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
         cmd_show_environment_print(self_0, item, envent);
         return CMD_RETURN_NORMAL;
     }
-    envent = environ_first(env);
-    while !envent.is_null() {
+    for entry in environ_iter(&*env) {
+        let envent = entry.as_ptr();
         cmd_show_environment_print(self_0, item, envent);
-        envent = environ_next(envent);
     }
     return CMD_RETURN_NORMAL;
 }
@@ -177,7 +176,6 @@ mod tests {
                     .to_owned(),
             ),
             flags: 0,
-            owner: None,
         };
         let escaped = unsafe { cmd_show_environment_escape(&entry) };
         assert_eq!(escaped.as_bytes(), b"\xff\\$\\`\\\"\\\\");

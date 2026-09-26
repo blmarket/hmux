@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv_cstring};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::environ::{environ_find, environ_first, environ_next};
+use crate::src::environ::{environ_find, environ_iter};
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, free, gethostname, getpid, getpwuid,
     getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, strcasecmp, strchr, strcmp,

@@ -1761,7 +1761,6 @@ pub(super) unsafe fn format_loop_environ(
         },
     };
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut buffer = Vec::new();
     let mut i: u_int = 0 as u_int;
     if flags.is_null()
@@ -1786,8 +1785,9 @@ pub(super) unsafe fn format_loop_environ(
     if env.is_null() {
         return c"".to_owned();
     }
-    envent = environ_first(env);
-    while !envent.is_null() {
+    let mut entries = environ_iter(&*env).peekable();
+    while let Some(entry) = entries.next() {
+        let envent = entry.as_ptr();
         format_log1(
             es,
             b"format_loop_environ\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1842,7 +1842,7 @@ pub(super) unsafe fn format_loop_environ(
                     Some(::std::ffi::CStr::from_ptr(NULL_0 as *mut ::core::ffi::c_char).to_owned())
                 }) as ::core::ffi::c_int,
         );
-        if environ_next(envent).is_null() {
+        if entries.peek().is_none() {
             format_add(
                 nft,
                 b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1868,7 +1868,6 @@ pub(super) unsafe fn format_loop_environ(
         format_free(nft);
         buffer.extend_from_slice(expanded.as_bytes());
         i = i.wrapping_add(1);
-        envent = environ_next(envent);
     }
     CString::new(buffer).expect("format loop output contains no NUL")
 }
