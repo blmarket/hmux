@@ -15,76 +15,76 @@ use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_OPENED};
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_36 {
-    pub name: *const ::core::ffi::c_char,
-    pub dark_option: *const ::core::ffi::c_char,
-    pub light_option: *const ::core::ffi::c_char,
+    pub name: &'static ::std::ffi::CStr,
+    pub dark_option: &'static ::std::ffi::CStr,
+    pub light_option: &'static ::std::ffi::CStr,
     pub terminal_colour: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_37 {
-    pub name: *const ::core::ffi::c_char,
+    pub name: &'static ::std::ffi::CStr,
     pub c: ::core::ffi::c_int,
 }
 const colour_theme_table: [C2RustUnnamed_36; 10] = [
     C2RustUnnamed_36 {
-        name: b"themeblack\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-black\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-black\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themeblack",
+        dark_option: c"dark-theme-black",
+        light_option: c"light-theme-black",
         terminal_colour: 0 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themewhite\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-white\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-white\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themewhite",
+        dark_option: c"dark-theme-white",
+        light_option: c"light-theme-white",
         terminal_colour: 7 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themelightgrey\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-light-grey\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-light-grey\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themelightgrey",
+        dark_option: c"dark-theme-light-grey",
+        light_option: c"light-theme-light-grey",
         terminal_colour: 7 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themedarkgrey\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-dark-grey\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-dark-grey\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themedarkgrey",
+        dark_option: c"dark-theme-dark-grey",
+        light_option: c"light-theme-dark-grey",
         terminal_colour: 0 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themegreen\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-green\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-green\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themegreen",
+        dark_option: c"dark-theme-green",
+        light_option: c"light-theme-green",
         terminal_colour: 2 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themeyellow\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-yellow\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-yellow\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themeyellow",
+        dark_option: c"dark-theme-yellow",
+        light_option: c"light-theme-yellow",
         terminal_colour: 3 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themered\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-red\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-red\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themered",
+        dark_option: c"dark-theme-red",
+        light_option: c"light-theme-red",
         terminal_colour: 1 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themeblue\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-blue\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-blue\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themeblue",
+        dark_option: c"dark-theme-blue",
+        light_option: c"light-theme-blue",
         terminal_colour: 4 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"themecyan\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-cyan\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-cyan\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"themecyan",
+        dark_option: c"dark-theme-cyan",
+        light_option: c"light-theme-cyan",
         terminal_colour: 6 as ::core::ffi::c_int,
     },
     C2RustUnnamed_36 {
-        name: b"thememagenta\0" as *const u8 as *const ::core::ffi::c_char,
-        dark_option: b"dark-theme-magenta\0" as *const u8 as *const ::core::ffi::c_char,
-        light_option: b"light-theme-magenta\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"thememagenta",
+        dark_option: c"dark-theme-magenta",
+        light_option: c"light-theme-magenta",
         terminal_colour: 5 as ::core::ffi::c_int,
     },
 ];
@@ -99,9 +99,9 @@ pub unsafe fn colour_theme_option(
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
     if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return colour_theme_table[n as usize].light_option;
+        return colour_theme_table[n as usize].light_option.as_ptr();
     }
-    return colour_theme_table[n as usize].dark_option;
+    return colour_theme_table[n as usize].dark_option.as_ptr();
 }
 pub unsafe fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
     if n as usize
@@ -627,7 +627,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         < (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
     {
-        if strcasecmp(s, colour_theme_table[i as usize].name) == 0 as ::core::ffi::c_int {
+        if strcasecmp(s, colour_theme_table[i as usize].name.as_ptr()) == 0 as ::core::ffi::c_int {
             return (i | COLOUR_FLAG_THEME as u_int) as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
@@ -1269,2315 +1269,2315 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
     let name = name.as_ptr();
     const colours: [C2RustUnnamed_37; 578] = [
         C2RustUnnamed_37 {
-            name: b"AliceBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"AliceBlue",
             c: 0xf0f8ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"AntiqueWhite\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"AntiqueWhite",
             c: 0xfaebd7 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"AntiqueWhite1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"AntiqueWhite1",
             c: 0xffefdb as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"AntiqueWhite2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"AntiqueWhite2",
             c: 0xeedfcc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"AntiqueWhite3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"AntiqueWhite3",
             c: 0xcdc0b0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"AntiqueWhite4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"AntiqueWhite4",
             c: 0x8b8378 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"BlanchedAlmond\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"BlanchedAlmond",
             c: 0xffebcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"BlueViolet\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"BlueViolet",
             c: 0x8a2be2 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"CadetBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"CadetBlue",
             c: 0x5f9ea0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"CadetBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"CadetBlue1",
             c: 0x98f5ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"CadetBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"CadetBlue2",
             c: 0x8ee5ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"CadetBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"CadetBlue3",
             c: 0x7ac5cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"CadetBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"CadetBlue4",
             c: 0x53868b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"CornflowerBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"CornflowerBlue",
             c: 0x6495ed as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkBlue",
             c: 0x8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkCyan\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkCyan",
             c: 0x8b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGoldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGoldenrod",
             c: 0xb8860b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGoldenrod1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGoldenrod1",
             c: 0xffb90f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGoldenrod2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGoldenrod2",
             c: 0xeead0e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGoldenrod3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGoldenrod3",
             c: 0xcd950c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGoldenrod4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGoldenrod4",
             c: 0x8b6508 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGray",
             c: 0xa9a9a9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGreen",
             c: 0x6400 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkGrey",
             c: 0xa9a9a9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkKhaki\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkKhaki",
             c: 0xbdb76b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkMagenta\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkMagenta",
             c: 0x8b008b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOliveGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOliveGreen",
             c: 0x556b2f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOliveGreen1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOliveGreen1",
             c: 0xcaff70 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOliveGreen2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOliveGreen2",
             c: 0xbcee68 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOliveGreen3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOliveGreen3",
             c: 0xa2cd5a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOliveGreen4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOliveGreen4",
             c: 0x6e8b3d as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrange\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrange",
             c: 0xff8c00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrange1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrange1",
             c: 0xff7f00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrange2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrange2",
             c: 0xee7600 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrange3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrange3",
             c: 0xcd6600 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrange4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrange4",
             c: 0x8b4500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrchid\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrchid",
             c: 0x9932cc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrchid1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrchid1",
             c: 0xbf3eff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrchid2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrchid2",
             c: 0xb23aee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrchid3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrchid3",
             c: 0x9a32cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkOrchid4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkOrchid4",
             c: 0x68228b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkRed\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkRed",
             c: 0x8b0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSalmon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSalmon",
             c: 0xe9967a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSeaGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSeaGreen",
             c: 0x8fbc8f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSeaGreen1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSeaGreen1",
             c: 0xc1ffc1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSeaGreen2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSeaGreen2",
             c: 0xb4eeb4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSeaGreen3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSeaGreen3",
             c: 0x9bcd9b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSeaGreen4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSeaGreen4",
             c: 0x698b69 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateBlue",
             c: 0x483d8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateGray",
             c: 0x2f4f4f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateGray1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateGray1",
             c: 0x97ffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateGray2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateGray2",
             c: 0x8deeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateGray3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateGray3",
             c: 0x79cdcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateGray4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateGray4",
             c: 0x528b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkSlateGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkSlateGrey",
             c: 0x2f4f4f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkTurquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkTurquoise",
             c: 0xced1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DarkViolet\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DarkViolet",
             c: 0x9400d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepPink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepPink",
             c: 0xff1493 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepPink1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepPink1",
             c: 0xff1493 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepPink2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepPink2",
             c: 0xee1289 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepPink3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepPink3",
             c: 0xcd1076 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepPink4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepPink4",
             c: 0x8b0a50 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepSkyBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepSkyBlue",
             c: 0xbfff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepSkyBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepSkyBlue1",
             c: 0xbfff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepSkyBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepSkyBlue2",
             c: 0xb2ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepSkyBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepSkyBlue3",
             c: 0x9acd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DeepSkyBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DeepSkyBlue4",
             c: 0x688b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DimGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DimGray",
             c: 0x696969 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DimGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DimGrey",
             c: 0x696969 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DodgerBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DodgerBlue",
             c: 0x1e90ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DodgerBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DodgerBlue1",
             c: 0x1e90ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DodgerBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DodgerBlue2",
             c: 0x1c86ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DodgerBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DodgerBlue3",
             c: 0x1874cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"DodgerBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"DodgerBlue4",
             c: 0x104e8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"FloralWhite\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"FloralWhite",
             c: 0xfffaf0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ForestGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ForestGreen",
             c: 0x228b22 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"GhostWhite\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"GhostWhite",
             c: 0xf8f8ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"GreenYellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"GreenYellow",
             c: 0xadff2f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"HotPink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"HotPink",
             c: 0xff69b4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"HotPink1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"HotPink1",
             c: 0xff6eb4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"HotPink2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"HotPink2",
             c: 0xee6aa7 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"HotPink3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"HotPink3",
             c: 0xcd6090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"HotPink4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"HotPink4",
             c: 0x8b3a62 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"IndianRed\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"IndianRed",
             c: 0xcd5c5c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"IndianRed1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"IndianRed1",
             c: 0xff6a6a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"IndianRed2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"IndianRed2",
             c: 0xee6363 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"IndianRed3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"IndianRed3",
             c: 0xcd5555 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"IndianRed4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"IndianRed4",
             c: 0x8b3a3a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LavenderBlush\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LavenderBlush",
             c: 0xfff0f5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LavenderBlush1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LavenderBlush1",
             c: 0xfff0f5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LavenderBlush2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LavenderBlush2",
             c: 0xeee0e5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LavenderBlush3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LavenderBlush3",
             c: 0xcdc1c5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LavenderBlush4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LavenderBlush4",
             c: 0x8b8386 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LawnGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LawnGreen",
             c: 0x7cfc00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LemonChiffon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LemonChiffon",
             c: 0xfffacd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LemonChiffon1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LemonChiffon1",
             c: 0xfffacd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LemonChiffon2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LemonChiffon2",
             c: 0xeee9bf as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LemonChiffon3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LemonChiffon3",
             c: 0xcdc9a5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LemonChiffon4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LemonChiffon4",
             c: 0x8b8970 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightBlue",
             c: 0xadd8e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightBlue1",
             c: 0xbfefff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightBlue2",
             c: 0xb2dfee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightBlue3",
             c: 0x9ac0cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightBlue4",
             c: 0x68838b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightCoral\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightCoral",
             c: 0xf08080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightCyan\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightCyan",
             c: 0xe0ffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightCyan1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightCyan1",
             c: 0xe0ffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightCyan2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightCyan2",
             c: 0xd1eeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightCyan3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightCyan3",
             c: 0xb4cdcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightCyan4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightCyan4",
             c: 0x7a8b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGoldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGoldenrod",
             c: 0xeedd82 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGoldenrod1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGoldenrod1",
             c: 0xffec8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGoldenrod2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGoldenrod2",
             c: 0xeedc82 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGoldenrod3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGoldenrod3",
             c: 0xcdbe70 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGoldenrod4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGoldenrod4",
             c: 0x8b814c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGoldenrodYellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGoldenrodYellow",
             c: 0xfafad2 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGray",
             c: 0xd3d3d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGreen",
             c: 0x90ee90 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightGrey",
             c: 0xd3d3d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightPink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightPink",
             c: 0xffb6c1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightPink1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightPink1",
             c: 0xffaeb9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightPink2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightPink2",
             c: 0xeea2ad as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightPink3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightPink3",
             c: 0xcd8c95 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightPink4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightPink4",
             c: 0x8b5f65 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSalmon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSalmon",
             c: 0xffa07a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSalmon1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSalmon1",
             c: 0xffa07a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSalmon2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSalmon2",
             c: 0xee9572 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSalmon3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSalmon3",
             c: 0xcd8162 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSalmon4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSalmon4",
             c: 0x8b5742 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSeaGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSeaGreen",
             c: 0x20b2aa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSkyBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSkyBlue",
             c: 0x87cefa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSkyBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSkyBlue1",
             c: 0xb0e2ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSkyBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSkyBlue2",
             c: 0xa4d3ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSkyBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSkyBlue3",
             c: 0x8db6cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSkyBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSkyBlue4",
             c: 0x607b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSlateBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSlateBlue",
             c: 0x8470ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSlateGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSlateGray",
             c: 0x778899 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSlateGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSlateGrey",
             c: 0x778899 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSteelBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSteelBlue",
             c: 0xb0c4de as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSteelBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSteelBlue1",
             c: 0xcae1ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSteelBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSteelBlue2",
             c: 0xbcd2ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSteelBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSteelBlue3",
             c: 0xa2b5cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightSteelBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightSteelBlue4",
             c: 0x6e7b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightYellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightYellow",
             c: 0xffffe0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightYellow1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightYellow1",
             c: 0xffffe0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightYellow2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightYellow2",
             c: 0xeeeed1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightYellow3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightYellow3",
             c: 0xcdcdb4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LightYellow4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LightYellow4",
             c: 0x8b8b7a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"LimeGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"LimeGreen",
             c: 0x32cd32 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumAquamarine\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumAquamarine",
             c: 0x66cdaa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumBlue",
             c: 0xcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumOrchid\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumOrchid",
             c: 0xba55d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumOrchid1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumOrchid1",
             c: 0xe066ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumOrchid2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumOrchid2",
             c: 0xd15fee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumOrchid3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumOrchid3",
             c: 0xb452cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumOrchid4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumOrchid4",
             c: 0x7a378b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumPurple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumPurple",
             c: 0x9370db as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumPurple1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumPurple1",
             c: 0xab82ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumPurple2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumPurple2",
             c: 0x9f79ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumPurple3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumPurple3",
             c: 0x8968cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumPurple4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumPurple4",
             c: 0x5d478b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumSeaGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumSeaGreen",
             c: 0x3cb371 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumSlateBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumSlateBlue",
             c: 0x7b68ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumSpringGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumSpringGreen",
             c: 0xfa9a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumTurquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumTurquoise",
             c: 0x48d1cc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MediumVioletRed\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MediumVioletRed",
             c: 0xc71585 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MidnightBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MidnightBlue",
             c: 0x191970 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MintCream\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MintCream",
             c: 0xf5fffa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MistyRose\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MistyRose",
             c: 0xffe4e1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MistyRose1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MistyRose1",
             c: 0xffe4e1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MistyRose2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MistyRose2",
             c: 0xeed5d2 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MistyRose3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MistyRose3",
             c: 0xcdb7b5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"MistyRose4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"MistyRose4",
             c: 0x8b7d7b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"NavajoWhite\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"NavajoWhite",
             c: 0xffdead as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"NavajoWhite1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"NavajoWhite1",
             c: 0xffdead as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"NavajoWhite2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"NavajoWhite2",
             c: 0xeecfa1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"NavajoWhite3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"NavajoWhite3",
             c: 0xcdb38b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"NavajoWhite4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"NavajoWhite4",
             c: 0x8b795e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"NavyBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"NavyBlue",
             c: 0x80 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OldLace\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OldLace",
             c: 0xfdf5e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OliveDrab\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OliveDrab",
             c: 0x6b8e23 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OliveDrab1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OliveDrab1",
             c: 0xc0ff3e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OliveDrab2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OliveDrab2",
             c: 0xb3ee3a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OliveDrab3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OliveDrab3",
             c: 0x9acd32 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OliveDrab4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OliveDrab4",
             c: 0x698b22 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OrangeRed\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OrangeRed",
             c: 0xff4500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OrangeRed1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OrangeRed1",
             c: 0xff4500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OrangeRed2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OrangeRed2",
             c: 0xee4000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OrangeRed3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OrangeRed3",
             c: 0xcd3700 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"OrangeRed4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"OrangeRed4",
             c: 0x8b2500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleGoldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleGoldenrod",
             c: 0xeee8aa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleGreen",
             c: 0x98fb98 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleGreen1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleGreen1",
             c: 0x9aff9a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleGreen2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleGreen2",
             c: 0x90ee90 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleGreen3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleGreen3",
             c: 0x7ccd7c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleGreen4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleGreen4",
             c: 0x548b54 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleTurquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleTurquoise",
             c: 0xafeeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleTurquoise1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleTurquoise1",
             c: 0xbbffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleTurquoise2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleTurquoise2",
             c: 0xaeeeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleTurquoise3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleTurquoise3",
             c: 0x96cdcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleTurquoise4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleTurquoise4",
             c: 0x668b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleVioletRed\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleVioletRed",
             c: 0xdb7093 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleVioletRed1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleVioletRed1",
             c: 0xff82ab as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleVioletRed2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleVioletRed2",
             c: 0xee799f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleVioletRed3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleVioletRed3",
             c: 0xcd6889 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PaleVioletRed4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PaleVioletRed4",
             c: 0x8b475d as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PapayaWhip\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PapayaWhip",
             c: 0xffefd5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PeachPuff\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PeachPuff",
             c: 0xffdab9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PeachPuff1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PeachPuff1",
             c: 0xffdab9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PeachPuff2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PeachPuff2",
             c: 0xeecbad as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PeachPuff3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PeachPuff3",
             c: 0xcdaf95 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PeachPuff4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PeachPuff4",
             c: 0x8b7765 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"PowderBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"PowderBlue",
             c: 0xb0e0e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RebeccaPurple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RebeccaPurple",
             c: 0x663399 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RosyBrown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RosyBrown",
             c: 0xbc8f8f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RosyBrown1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RosyBrown1",
             c: 0xffc1c1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RosyBrown2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RosyBrown2",
             c: 0xeeb4b4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RosyBrown3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RosyBrown3",
             c: 0xcd9b9b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RosyBrown4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RosyBrown4",
             c: 0x8b6969 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RoyalBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RoyalBlue",
             c: 0x4169e1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RoyalBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RoyalBlue1",
             c: 0x4876ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RoyalBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RoyalBlue2",
             c: 0x436eee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RoyalBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RoyalBlue3",
             c: 0x3a5fcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"RoyalBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"RoyalBlue4",
             c: 0x27408b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SaddleBrown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SaddleBrown",
             c: 0x8b4513 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SandyBrown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SandyBrown",
             c: 0xf4a460 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SeaGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SeaGreen",
             c: 0x2e8b57 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SeaGreen1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SeaGreen1",
             c: 0x54ff9f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SeaGreen2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SeaGreen2",
             c: 0x4eee94 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SeaGreen3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SeaGreen3",
             c: 0x43cd80 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SeaGreen4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SeaGreen4",
             c: 0x2e8b57 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SkyBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SkyBlue",
             c: 0x87ceeb as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SkyBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SkyBlue1",
             c: 0x87ceff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SkyBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SkyBlue2",
             c: 0x7ec0ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SkyBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SkyBlue3",
             c: 0x6ca6cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SkyBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SkyBlue4",
             c: 0x4a708b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateBlue",
             c: 0x6a5acd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateBlue1",
             c: 0x836fff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateBlue2",
             c: 0x7a67ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateBlue3",
             c: 0x6959cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateBlue4",
             c: 0x473c8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateGray",
             c: 0x708090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateGray1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateGray1",
             c: 0xc6e2ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateGray2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateGray2",
             c: 0xb9d3ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateGray3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateGray3",
             c: 0x9fb6cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateGray4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateGray4",
             c: 0x6c7b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SlateGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SlateGrey",
             c: 0x708090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SpringGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SpringGreen",
             c: 0xff7f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SpringGreen1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SpringGreen1",
             c: 0xff7f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SpringGreen2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SpringGreen2",
             c: 0xee76 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SpringGreen3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SpringGreen3",
             c: 0xcd66 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SpringGreen4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SpringGreen4",
             c: 0x8b45 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SteelBlue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SteelBlue",
             c: 0x4682b4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SteelBlue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SteelBlue1",
             c: 0x63b8ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SteelBlue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SteelBlue2",
             c: 0x5cacee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SteelBlue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SteelBlue3",
             c: 0x4f94cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"SteelBlue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"SteelBlue4",
             c: 0x36648b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"VioletRed\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"VioletRed",
             c: 0xd02090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"VioletRed1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"VioletRed1",
             c: 0xff3e96 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"VioletRed2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"VioletRed2",
             c: 0xee3a8c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"VioletRed3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"VioletRed3",
             c: 0xcd3278 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"VioletRed4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"VioletRed4",
             c: 0x8b2252 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"WebGray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WebGray",
             c: 0x808080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"WebGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WebGreen",
             c: 0x8000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"WebGrey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WebGrey",
             c: 0x808080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"WebMaroon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WebMaroon",
             c: 0x800000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"WebPurple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WebPurple",
             c: 0x800080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"WhiteSmoke\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WhiteSmoke",
             c: 0xf5f5f5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"X11Gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"X11Gray",
             c: 0xbebebe as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"X11Green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"X11Green",
             c: 0xff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"X11Grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"X11Grey",
             c: 0xbebebe as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"X11Maroon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"X11Maroon",
             c: 0xb03060 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"X11Purple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"X11Purple",
             c: 0xa020f0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"YellowGreen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"YellowGreen",
             c: 0x9acd32 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"alice blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"alice blue",
             c: 0xf0f8ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"antique white\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"antique white",
             c: 0xfaebd7 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"aqua\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"aqua",
             c: 0xffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"aquamarine\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"aquamarine",
             c: 0x7fffd4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"aquamarine1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"aquamarine1",
             c: 0x7fffd4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"aquamarine2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"aquamarine2",
             c: 0x76eec6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"aquamarine3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"aquamarine3",
             c: 0x66cdaa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"aquamarine4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"aquamarine4",
             c: 0x458b74 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"azure\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"azure",
             c: 0xf0ffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"azure1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"azure1",
             c: 0xf0ffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"azure2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"azure2",
             c: 0xe0eeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"azure3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"azure3",
             c: 0xc1cdcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"azure4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"azure4",
             c: 0x838b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"beige\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"beige",
             c: 0xf5f5dc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"bisque\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"bisque",
             c: 0xffe4c4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"bisque1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"bisque1",
             c: 0xffe4c4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"bisque2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"bisque2",
             c: 0xeed5b7 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"bisque3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"bisque3",
             c: 0xcdb79e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"bisque4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"bisque4",
             c: 0x8b7d6b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"black\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"black",
             c: 0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blanched almond\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blanched almond",
             c: 0xffebcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blue violet\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blue violet",
             c: 0x8a2be2 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blue",
             c: 0xff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blue1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blue1",
             c: 0xff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blue2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blue2",
             c: 0xee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blue3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blue3",
             c: 0xcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"blue4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"blue4",
             c: 0x8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"brown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"brown",
             c: 0xa52a2a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"brown1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"brown1",
             c: 0xff4040 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"brown2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"brown2",
             c: 0xee3b3b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"brown3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"brown3",
             c: 0xcd3333 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"brown4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"brown4",
             c: 0x8b2323 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"burlywood\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"burlywood",
             c: 0xdeb887 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"burlywood1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"burlywood1",
             c: 0xffd39b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"burlywood2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"burlywood2",
             c: 0xeec591 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"burlywood3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"burlywood3",
             c: 0xcdaa7d as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"burlywood4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"burlywood4",
             c: 0x8b7355 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cadet blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cadet blue",
             c: 0x5f9ea0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chartreuse\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chartreuse",
             c: 0x7fff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chartreuse1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chartreuse1",
             c: 0x7fff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chartreuse2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chartreuse2",
             c: 0x76ee00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chartreuse3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chartreuse3",
             c: 0x66cd00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chartreuse4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chartreuse4",
             c: 0x458b00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chocolate\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chocolate",
             c: 0xd2691e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chocolate1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chocolate1",
             c: 0xff7f24 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chocolate2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chocolate2",
             c: 0xee7621 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chocolate3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chocolate3",
             c: 0xcd661d as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"chocolate4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"chocolate4",
             c: 0x8b4513 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"coral\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"coral",
             c: 0xff7f50 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"coral1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"coral1",
             c: 0xff7256 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"coral2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"coral2",
             c: 0xee6a50 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"coral3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"coral3",
             c: 0xcd5b45 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"coral4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"coral4",
             c: 0x8b3e2f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cornflower blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cornflower blue",
             c: 0x6495ed as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cornsilk\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cornsilk",
             c: 0xfff8dc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cornsilk1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cornsilk1",
             c: 0xfff8dc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cornsilk2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cornsilk2",
             c: 0xeee8cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cornsilk3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cornsilk3",
             c: 0xcdc8b1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cornsilk4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cornsilk4",
             c: 0x8b8878 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"crimson\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"crimson",
             c: 0xdc143c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cyan\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cyan",
             c: 0xffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cyan1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cyan1",
             c: 0xffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cyan2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cyan2",
             c: 0xeeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cyan3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cyan3",
             c: 0xcdcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"cyan4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"cyan4",
             c: 0x8b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark blue",
             c: 0x8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark cyan\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark cyan",
             c: 0x8b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark goldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark goldenrod",
             c: 0xb8860b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark gray",
             c: 0xa9a9a9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark green",
             c: 0x6400 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark grey",
             c: 0xa9a9a9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark khaki\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark khaki",
             c: 0xbdb76b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark magenta\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark magenta",
             c: 0x8b008b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark olive green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark olive green",
             c: 0x556b2f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark orange\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark orange",
             c: 0xff8c00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark orchid\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark orchid",
             c: 0x9932cc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark red",
             c: 0x8b0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark salmon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark salmon",
             c: 0xe9967a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark sea green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark sea green",
             c: 0x8fbc8f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark slate blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark slate blue",
             c: 0x483d8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark slate gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark slate gray",
             c: 0x2f4f4f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark slate grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark slate grey",
             c: 0x2f4f4f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark turquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark turquoise",
             c: 0xced1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dark violet\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dark violet",
             c: 0x9400d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"deep pink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"deep pink",
             c: 0xff1493 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"deep sky blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"deep sky blue",
             c: 0xbfff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dim gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dim gray",
             c: 0x696969 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dim grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dim grey",
             c: 0x696969 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"dodger blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"dodger blue",
             c: 0x1e90ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"firebrick\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"firebrick",
             c: 0xb22222 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"firebrick1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"firebrick1",
             c: 0xff3030 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"firebrick2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"firebrick2",
             c: 0xee2c2c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"firebrick3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"firebrick3",
             c: 0xcd2626 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"firebrick4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"firebrick4",
             c: 0x8b1a1a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"floral white\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"floral white",
             c: 0xfffaf0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"forest green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"forest green",
             c: 0x228b22 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"fuchsia\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"fuchsia",
             c: 0xff00ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"gainsboro\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"gainsboro",
             c: 0xdcdcdc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ghost white\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ghost white",
             c: 0xf8f8ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"gold\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"gold",
             c: 0xffd700 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"gold1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"gold1",
             c: 0xffd700 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"gold2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"gold2",
             c: 0xeec900 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"gold3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"gold3",
             c: 0xcdad00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"gold4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"gold4",
             c: 0x8b7500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"goldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"goldenrod",
             c: 0xdaa520 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"goldenrod1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"goldenrod1",
             c: 0xffc125 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"goldenrod2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"goldenrod2",
             c: 0xeeb422 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"goldenrod3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"goldenrod3",
             c: 0xcd9b1d as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"goldenrod4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"goldenrod4",
             c: 0x8b6914 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"green yellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"green yellow",
             c: 0xadff2f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"green",
             c: 0xff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"green1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"green1",
             c: 0xff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"green2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"green2",
             c: 0xee00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"green3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"green3",
             c: 0xcd00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"green4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"green4",
             c: 0x8b00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"honeydew\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"honeydew",
             c: 0xf0fff0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"honeydew1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"honeydew1",
             c: 0xf0fff0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"honeydew2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"honeydew2",
             c: 0xe0eee0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"honeydew3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"honeydew3",
             c: 0xc1cdc1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"honeydew4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"honeydew4",
             c: 0x838b83 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"hot pink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"hot pink",
             c: 0xff69b4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"indian red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"indian red",
             c: 0xcd5c5c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"indigo\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"indigo",
             c: 0x4b0082 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ivory\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ivory",
             c: 0xfffff0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ivory1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ivory1",
             c: 0xfffff0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ivory2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ivory2",
             c: 0xeeeee0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ivory3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ivory3",
             c: 0xcdcdc1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"ivory4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ivory4",
             c: 0x8b8b83 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"khaki\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"khaki",
             c: 0xf0e68c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"khaki1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"khaki1",
             c: 0xfff68f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"khaki2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"khaki2",
             c: 0xeee685 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"khaki3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"khaki3",
             c: 0xcdc673 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"khaki4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"khaki4",
             c: 0x8b864e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"lavender blush\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"lavender blush",
             c: 0xfff0f5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"lavender\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"lavender",
             c: 0xe6e6fa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"lawn green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"lawn green",
             c: 0x7cfc00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"lemon chiffon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"lemon chiffon",
             c: 0xfffacd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light blue",
             c: 0xadd8e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light coral\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light coral",
             c: 0xf08080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light cyan\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light cyan",
             c: 0xe0ffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light goldenrod yellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light goldenrod yellow",
             c: 0xfafad2 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light goldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light goldenrod",
             c: 0xeedd82 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light gray",
             c: 0xd3d3d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light green",
             c: 0x90ee90 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light grey",
             c: 0xd3d3d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light pink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light pink",
             c: 0xffb6c1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light salmon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light salmon",
             c: 0xffa07a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light sea green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light sea green",
             c: 0x20b2aa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light sky blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light sky blue",
             c: 0x87cefa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light slate blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light slate blue",
             c: 0x8470ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light slate gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light slate gray",
             c: 0x778899 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light slate grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light slate grey",
             c: 0x778899 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light steel blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light steel blue",
             c: 0xb0c4de as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"light yellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"light yellow",
             c: 0xffffe0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"lime green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"lime green",
             c: 0x32cd32 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"lime\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"lime",
             c: 0xff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"linen\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"linen",
             c: 0xfaf0e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"magenta\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"magenta",
             c: 0xff00ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"magenta1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"magenta1",
             c: 0xff00ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"magenta2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"magenta2",
             c: 0xee00ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"magenta3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"magenta3",
             c: 0xcd00cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"magenta4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"magenta4",
             c: 0x8b008b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"maroon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"maroon",
             c: 0xb03060 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"maroon1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"maroon1",
             c: 0xff34b3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"maroon2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"maroon2",
             c: 0xee30a7 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"maroon3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"maroon3",
             c: 0xcd2990 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"maroon4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"maroon4",
             c: 0x8b1c62 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium aquamarine\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium aquamarine",
             c: 0x66cdaa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium blue",
             c: 0xcd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium orchid\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium orchid",
             c: 0xba55d3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium purple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium purple",
             c: 0x9370db as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium sea green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium sea green",
             c: 0x3cb371 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium slate blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium slate blue",
             c: 0x7b68ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium spring green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium spring green",
             c: 0xfa9a as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium turquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium turquoise",
             c: 0x48d1cc as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"medium violet red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"medium violet red",
             c: 0xc71585 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"midnight blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"midnight blue",
             c: 0x191970 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"mint cream\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"mint cream",
             c: 0xf5fffa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"misty rose\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"misty rose",
             c: 0xffe4e1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"moccasin\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"moccasin",
             c: 0xffe4b5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"navajo white\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"navajo white",
             c: 0xffdead as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"navy blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"navy blue",
             c: 0x80 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"navy\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"navy",
             c: 0x80 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"old lace\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"old lace",
             c: 0xfdf5e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"olive drab\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"olive drab",
             c: 0x6b8e23 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"olive\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"olive",
             c: 0x808000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orange red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orange red",
             c: 0xff4500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orange\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orange",
             c: 0xffa500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orange1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orange1",
             c: 0xffa500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orange2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orange2",
             c: 0xee9a00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orange3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orange3",
             c: 0xcd8500 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orange4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orange4",
             c: 0x8b5a00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orchid\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orchid",
             c: 0xda70d6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orchid1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orchid1",
             c: 0xff83fa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orchid2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orchid2",
             c: 0xee7ae9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orchid3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orchid3",
             c: 0xcd69c9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"orchid4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"orchid4",
             c: 0x8b4789 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pale goldenrod\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pale goldenrod",
             c: 0xeee8aa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pale green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pale green",
             c: 0x98fb98 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pale turquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pale turquoise",
             c: 0xafeeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pale violet red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pale violet red",
             c: 0xdb7093 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"papaya whip\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"papaya whip",
             c: 0xffefd5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"peach puff\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"peach puff",
             c: 0xffdab9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"peru\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"peru",
             c: 0xcd853f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pink\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pink",
             c: 0xffc0cb as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pink1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pink1",
             c: 0xffb5c5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pink2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pink2",
             c: 0xeea9b8 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pink3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pink3",
             c: 0xcd919e as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"pink4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"pink4",
             c: 0x8b636c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"plum\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"plum",
             c: 0xdda0dd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"plum1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"plum1",
             c: 0xffbbff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"plum2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"plum2",
             c: 0xeeaeee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"plum3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"plum3",
             c: 0xcd96cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"plum4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"plum4",
             c: 0x8b668b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"powder blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"powder blue",
             c: 0xb0e0e6 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"purple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"purple",
             c: 0xa020f0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"purple1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"purple1",
             c: 0x9b30ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"purple2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"purple2",
             c: 0x912cee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"purple3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"purple3",
             c: 0x7d26cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"purple4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"purple4",
             c: 0x551a8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"rebecca purple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"rebecca purple",
             c: 0x663399 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"red",
             c: 0xff0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"red1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"red1",
             c: 0xff0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"red2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"red2",
             c: 0xee0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"red3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"red3",
             c: 0xcd0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"red4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"red4",
             c: 0x8b0000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"rosy brown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"rosy brown",
             c: 0xbc8f8f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"royal blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"royal blue",
             c: 0x4169e1 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"saddle brown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"saddle brown",
             c: 0x8b4513 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"salmon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"salmon",
             c: 0xfa8072 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"salmon1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"salmon1",
             c: 0xff8c69 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"salmon2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"salmon2",
             c: 0xee8262 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"salmon3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"salmon3",
             c: 0xcd7054 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"salmon4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"salmon4",
             c: 0x8b4c39 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sandy brown\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sandy brown",
             c: 0xf4a460 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sea green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sea green",
             c: 0x2e8b57 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"seashell\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"seashell",
             c: 0xfff5ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"seashell1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"seashell1",
             c: 0xfff5ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"seashell2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"seashell2",
             c: 0xeee5de as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"seashell3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"seashell3",
             c: 0xcdc5bf as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"seashell4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"seashell4",
             c: 0x8b8682 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sienna\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sienna",
             c: 0xa0522d as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sienna1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sienna1",
             c: 0xff8247 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sienna2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sienna2",
             c: 0xee7942 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sienna3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sienna3",
             c: 0xcd6839 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sienna4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sienna4",
             c: 0x8b4726 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"silver\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"silver",
             c: 0xc0c0c0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"sky blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"sky blue",
             c: 0x87ceeb as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"slate blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"slate blue",
             c: 0x6a5acd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"slate gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"slate gray",
             c: 0x708090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"slate grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"slate grey",
             c: 0x708090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"snow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"snow",
             c: 0xfffafa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"snow1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"snow1",
             c: 0xfffafa as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"snow2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"snow2",
             c: 0xeee9e9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"snow3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"snow3",
             c: 0xcdc9c9 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"snow4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"snow4",
             c: 0x8b8989 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"spring green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"spring green",
             c: 0xff7f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"steel blue\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"steel blue",
             c: 0x4682b4 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tan\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tan",
             c: 0xd2b48c as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tan1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tan1",
             c: 0xffa54f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tan2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tan2",
             c: 0xee9a49 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tan3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tan3",
             c: 0xcd853f as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tan4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tan4",
             c: 0x8b5a2b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"teal\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"teal",
             c: 0x8080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"thistle\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"thistle",
             c: 0xd8bfd8 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"thistle1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"thistle1",
             c: 0xffe1ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"thistle2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"thistle2",
             c: 0xeed2ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"thistle3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"thistle3",
             c: 0xcdb5cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"thistle4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"thistle4",
             c: 0x8b7b8b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tomato\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tomato",
             c: 0xff6347 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tomato1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tomato1",
             c: 0xff6347 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tomato2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tomato2",
             c: 0xee5c42 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tomato3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tomato3",
             c: 0xcd4f39 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"tomato4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tomato4",
             c: 0x8b3626 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"turquoise\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"turquoise",
             c: 0x40e0d0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"turquoise1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"turquoise1",
             c: 0xf5ff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"turquoise2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"turquoise2",
             c: 0xe5ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"turquoise3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"turquoise3",
             c: 0xc5cd as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"turquoise4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"turquoise4",
             c: 0x868b as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"violet red\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"violet red",
             c: 0xd02090 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"violet\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"violet",
             c: 0xee82ee as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"web gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"web gray",
             c: 0x808080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"web green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"web green",
             c: 0x8000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"web grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"web grey",
             c: 0x808080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"web maroon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"web maroon",
             c: 0x800000 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"web purple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"web purple",
             c: 0x800080 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"wheat\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"wheat",
             c: 0xf5deb3 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"wheat1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"wheat1",
             c: 0xffe7ba as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"wheat2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"wheat2",
             c: 0xeed8ae as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"wheat3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"wheat3",
             c: 0xcdba96 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"wheat4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"wheat4",
             c: 0x8b7e66 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"white smoke\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"white smoke",
             c: 0xf5f5f5 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"white\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"white",
             c: 0xffffff as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"x11 gray\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"x11 gray",
             c: 0xbebebe as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"x11 green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"x11 green",
             c: 0xff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"x11 grey\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"x11 grey",
             c: 0xbebebe as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"x11 maroon\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"x11 maroon",
             c: 0xb03060 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"x11 purple\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"x11 purple",
             c: 0xa020f0 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"yellow green\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"yellow green",
             c: 0x9acd32 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"yellow\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"yellow",
             c: 0xffff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"yellow1\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"yellow1",
             c: 0xffff00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"yellow2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"yellow2",
             c: 0xeeee00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"yellow3\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"yellow3",
             c: 0xcdcd00 as ::core::ffi::c_int,
         },
         C2RustUnnamed_37 {
-            name: b"yellow4\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"yellow4",
             c: 0x8b8b00 as ::core::ffi::c_int,
         },
     ];
@@ -3618,7 +3618,7 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
         < (::core::mem::size_of::<[C2RustUnnamed_37; 578]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_37>() as usize)
     {
-        if strcasecmp(colours[i as usize].name, name) == 0 as ::core::ffi::c_int {
+        if strcasecmp(colours[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
             return colours[i as usize].c | COLOUR_FLAG_RGB;
         }
         i = i.wrapping_add(1);
