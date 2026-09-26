@@ -75,7 +75,7 @@ unsafe fn proc_event_cb(
         buf: ::core::ptr::null_mut::<OwnedIbuf>(),
     };
     if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
-        if imsgbuf_read(&raw mut (*peer).ibuf) != 1 as ::core::ffi::c_int {
+        if !matches!(imsgbuf_read(&raw mut (*peer).ibuf), Ok(1)) {
             proc_dispatch(peer, PeerMessage::Disconnected);
             return;
         }

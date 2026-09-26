@@ -33,7 +33,9 @@ pub unsafe fn imsgbuf_init(
 pub unsafe fn imsgbuf_allow_fdpass(mut imsgbuf: *mut imsgbuf) {
     (*imsgbuf).flags |= IMSG_ALLOW_FDPASS;
 }
-pub unsafe fn imsgbuf_read(mut imsgbuf: *mut imsgbuf) -> ::core::ffi::c_int {
+pub unsafe fn imsgbuf_read(
+    mut imsgbuf: *mut imsgbuf,
+) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     if (*imsgbuf).flags & IMSG_ALLOW_FDPASS != 0 {
         return msgbuf_read((*imsgbuf).fd, (*imsgbuf).w);
     } else {

@@ -1105,12 +1105,13 @@ pub unsafe fn msgbuf_write(
 unsafe fn ibuf_read_process(
     mut msgbuf: *mut msgbuf,
     mut fd: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     let mut sz: ssize_t = 0;
     let scratch = (*msgbuf).rbuf as *mut u8;
     let read_len = (*msgbuf).roff;
     let mut cursor = 0usize;
     let mut failed = false;
+    let mut error = 0 as ::core::ffi::c_int;
     'parse: loop {
         if (*msgbuf).rpmsg.is_null() {
             if read_len.wrapping_sub(cursor) < (*msgbuf).hdrsize {
@@ -1164,6 +1165,7 @@ unsafe fn ibuf_read_process(
         ) == -(1 as ::core::ffi::c_int)
         {
             failed = true;
+            error = *__errno_location();
             break;
         }
         cursor = cursor.wrapping_add(copy_len);
@@ -1179,7 +1181,7 @@ unsafe fn ibuf_read_process(
         if fd != -(1 as ::core::ffi::c_int) {
             close(fd);
         }
-        return -(1 as ::core::ffi::c_int);
+        return Err(error);
     }
     let remaining = read_len.wrapping_sub(cursor);
     if remaining > 0 {
@@ -1191,9 +1193,12 @@ unsafe fn ibuf_read_process(
     if fd != -(1 as ::core::ffi::c_int) {
         close(fd);
     };
-    1 as ::core::ffi::c_int
+    Ok(1 as ::core::ffi::c_int)
 }
-pub unsafe fn ibuf_read(mut fd: ::core::ffi::c_int, mut msgbuf: *mut msgbuf) -> ::core::ffi::c_int {
+pub unsafe fn ibuf_read(
+    mut fd: ::core::ffi::c_int,
+    mut msgbuf: *mut msgbuf,
+) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     let mut iov: libc::iovec = libc::iovec {
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
@@ -1201,7 +1206,7 @@ pub unsafe fn ibuf_read(mut fd: ::core::ffi::c_int, mut msgbuf: *mut msgbuf) -> 
     let mut n: ssize_t = 0;
     if (*msgbuf).rbuf.is_null() {
         *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
+        return Err(EINVAL);
     }
     iov.iov_base = (*msgbuf).rbuf.offset((*msgbuf).roff as isize) as *mut ::core::ffi::c_void;
     iov.iov_len = (IBUF_READ_SIZE as size_t).wrapping_sub((*msgbuf).roff);
@@ -1213,16 +1218,16 @@ pub unsafe fn ibuf_read(mut fd: ::core::ffi::c_int, mut msgbuf: *mut msgbuf) -> 
                     continue;
                 }
                 if *__errno_location() == EAGAIN {
-                    return 1 as ::core::ffi::c_int;
+                    return Ok(1 as ::core::ffi::c_int);
                 }
-                return -(1 as ::core::ffi::c_int);
+                return Err(*__errno_location());
             } else {
                 break 's_45;
             }
         }
     }
     if n == 0 as ssize_t {
-        return 0 as ::core::ffi::c_int;
+        return Ok(0 as ::core::ffi::c_int);
     }
     (*msgbuf).roff = (*msgbuf).roff.wrapping_add(n as size_t);
     return ibuf_read_process(msgbuf, -(1 as ::core::ffi::c_int));
@@ -1230,7 +1235,7 @@ pub unsafe fn ibuf_read(mut fd: ::core::ffi::c_int, mut msgbuf: *mut msgbuf) -> 
 pub unsafe fn msgbuf_read(
     mut fd: ::core::ffi::c_int,
     mut msgbuf: *mut msgbuf,
-) -> ::core::ffi::c_int {
+) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     let mut msg: msghdr = msghdr {
         msg_name: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         msg_namelen: 0,
@@ -1257,7 +1262,7 @@ pub unsafe fn msgbuf_read(
     let mut fdpass: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     if (*msgbuf).rbuf.is_null() {
         *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
+        return Err(EINVAL);
     }
     memset(
         &raw mut msg as *mut ::core::ffi::c_void,
@@ -1285,12 +1290,12 @@ pub unsafe fn msgbuf_read(
                 continue;
             }
             if *__errno_location() == EAGAIN {
-                return 1 as ::core::ffi::c_int;
+                return Ok(1 as ::core::ffi::c_int);
             }
-            return -(1 as ::core::ffi::c_int);
+            return Err(*__errno_location());
         } else {
             if n == 0 as ssize_t {
-                return 0 as ::core::ffi::c_int;
+                return Ok(0 as ::core::ffi::c_int);
             }
             (*msgbuf).roff = (*msgbuf).roff.wrapping_add(n as size_t);
             cmsg = if msg.msg_controllen >= ::core::mem::size_of::<cmsghdr>() as usize {
