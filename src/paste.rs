@@ -478,48 +478,22 @@ pub unsafe fn paste_rename(
     );
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn paste_set(
-    data: *mut ::core::ffi::c_char,
-    size: size_t,
-    name: *const ::core::ffi::c_char,
-    cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let owned = if size == 0 {
-        Box::<[u8]>::default()
-    } else {
-        std::slice::from_raw_parts(data.cast::<u8>(), size).into()
-    };
-    paste_set_inner(owned, name, cause, data.cast())
-}
-
 pub(crate) unsafe fn paste_set_owned(
     data: Box<[u8]>,
     name: *const ::core::ffi::c_char,
     cause: Option<&mut Option<CString>>,
 ) -> ::core::ffi::c_int {
     let cause = cause.map_or_else(::core::ptr::null_mut, |cause| &raw mut *cause);
-    paste_set_inner(data, name, cause, ::core::ptr::null_mut())
-}
-
-unsafe fn paste_set_inner(
-    data: Box<[u8]>,
-    name: *const ::core::ffi::c_char,
-    cause: *mut Option<CString>,
-    // Null for Rust callers; on a name error the C caller still owns this.
-    c_producer: *mut ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut old: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if !cause.is_null() {
         *cause = None;
     }
     if data.is_empty() {
-        free(c_producer);
         return 0 as ::core::ffi::c_int;
     }
     if name.is_null() {
         paste_add_owned(None, data);
-        free(c_producer);
         return 0 as ::core::ffi::c_int;
     }
     if *name as ::core::ffi::c_int == '\0' as i32 {
@@ -540,7 +514,6 @@ unsafe fn paste_set_inner(
     };
     pb = paste_new_owned(newname);
     paste_store_data(&mut *pb, Some(data));
-    free(c_producer);
     (*pb).automatic = 0 as ::core::ffi::c_int;
     let fresh1 = paste_next_order_take();
     (*pb).order = fresh1;
@@ -602,7 +575,7 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::ffi::libc::{malloc, strdup};
+    use crate::src::ffi::libc::malloc;
     use crate::src::options::{
         options_create, options_default, options_free, options_search, options_set_number,
     };
@@ -614,70 +587,6 @@ mod tests {
         assert!(!data.is_null());
         ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), data, bytes.len());
         data.cast()
-    }
-
-    #[test]
-    fn owned_data_preserves_binary_bytes_across_replacement() {
-        unsafe {
-            let mut cause: Option<CString> = None;
-            let name = c"owner-binary-data";
-            let first = b"A\0B\xff";
-            assert_eq!(
-                paste_set(
-                    allocated_bytes(first),
-                    first.len(),
-                    name.as_ptr(),
-                    &raw mut cause
-                ),
-                0
-            );
-            assert!(cause.is_none());
-            let pb = paste_get_name(name.as_ptr());
-            let mut len = 0;
-            let data = paste_buffer_data(pb, &raw mut len);
-            assert_eq!(std::slice::from_raw_parts(data.cast::<u8>(), len), first);
-
-            let second = b"\0\x80new";
-            paste_replace(pb, allocated_bytes(second), second.len());
-            let data = paste_buffer_data(pb, &raw mut len);
-            assert_eq!(std::slice::from_raw_parts(data.cast::<u8>(), len), second);
-            paste_free(pb);
-        }
-    }
-
-    #[test]
-    fn rename_accepts_borrowed_current_name() {
-        unsafe {
-            let mut cause: Option<CString> = None;
-            assert_eq!(
-                paste_set(
-                    strdup(c"payload".as_ptr()),
-                    7,
-                    c"owner-rename-alias".as_ptr(),
-                    &raw mut cause,
-                ),
-                0
-            );
-            assert!(cause.is_none());
-            let pb = paste_get_name(c"owner-rename-alias".as_ptr());
-            assert!(!pb.is_null());
-            assert_eq!(
-                paste_rename(
-                    ((*pb).name).as_ptr().cast_mut(),
-                    c"owner-renamed".as_ptr(),
-                    &raw mut cause
-                ),
-                0
-            );
-            assert!(cause.is_none());
-            assert!(paste_get_name(c"owner-rename-alias".as_ptr()).is_null());
-            assert_eq!(paste_get_name(c"owner-renamed".as_ptr()), pb);
-            assert_eq!(
-                CStr::from_ptr(((*pb).name).as_ptr().cast_mut()),
-                c"owner-renamed"
-            );
-            paste_free(pb);
-        }
     }
 
     #[test]
