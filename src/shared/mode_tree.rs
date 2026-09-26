@@ -19,7 +19,6 @@ pub struct mode_tree_help_info {
 
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
-    pub references: u_int,
     pub zoomed: ::core::ffi::c_int,
     pub wp: *mut window_pane,
     pub menu: *const menu_item,
@@ -61,7 +60,6 @@ impl Default for mode_tree_data {
     fn default() -> Self {
         Self {
             dead: 0,
-            references: 0,
             zoomed: 0,
             wp: std::ptr::null_mut(),
             menu: std::ptr::null(),

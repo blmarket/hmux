@@ -221,9 +221,7 @@ unsafe fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
     }
 }
 unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
-    let mtd = Box::into_raw(Box::new(mode_tree_data::default()));
-    (*mtd).references = 1;
-    mtd
+    crate::src::shared::rc::new(mode_tree_data::default(), |_| {})
 }
 
 #[inline]
@@ -648,10 +646,7 @@ pub unsafe fn mode_tree_build(mut mtd: *mut mode_tree_data) {
 }
 
 unsafe fn mode_tree_remove_ref(mut mtd: *mut mode_tree_data) {
-    (*mtd).references = (*mtd).references.wrapping_sub(1);
-    if (*mtd).references == 0 as u_int {
-        drop(Box::from_raw(mtd));
-    }
+    crate::src::shared::rc::release(mtd);
 }
 pub unsafe fn mode_tree_free(mut mtd: *mut mode_tree_data) {
     let mut wp: *mut window_pane = (*mtd).wp;
@@ -1438,7 +1433,7 @@ pub unsafe fn mode_tree_set_prompt(
         inputcb,
         freecb,
     }));
-    (*mtd).references = (*mtd).references.wrapping_add(1);
+    crate::src::shared::rc::retain(mtd);
     (*mtd).prompt_top = (options_get_number(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1459,7 +1454,7 @@ pub unsafe fn mode_tree_set_prompt(
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
-        (*mtd).references = (*mtd).references.wrapping_add(1);
+        crate::src::shared::rc::retain(mtd);
         let item = cmdq_get_callback_owned(
             b"mode_tree_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(move |item| unsafe {
@@ -1686,7 +1681,7 @@ unsafe fn mode_tree_display_menu(
     menu = menu_create(title.as_ptr());
     menu_add_items(menu, items, c);
     drop(title);
-    (*mtd).references = (*mtd).references.wrapping_add(1);
+    crate::src::shared::rc::retain(mtd);
     if x >= (*menu)
         .width
         .wrapping_add(4 as u_int)
