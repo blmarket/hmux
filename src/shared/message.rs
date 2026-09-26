@@ -2,6 +2,8 @@
 
 use super::abi::{pid_t, size_t, uint32_t};
 use std::collections::VecDeque;
+use std::os::fd::OwnedFd;
+use std::ptr::NonNull;
 pub type msgtype = ::core::ffi::c_uint;
 
 pub const MSG_WRITE_DONE: msgtype = 308;
@@ -126,14 +128,8 @@ pub struct msgbuf {
     pub rbufs: ibufqueue,
     pub rbuf: *mut ::core::ffi::c_char,
     pub rpmsg: *mut ibuf,
-    pub readhdr: Option<
-        unsafe extern "C" fn(
-            *mut ibuf,
-            *mut ::core::ffi::c_void,
-            *mut ::core::ffi::c_int,
-        ) -> *mut ibuf,
-    >,
-    pub rarg: *mut ::core::ffi::c_void,
+    pub readhdr:
+        Option<Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<NonNull<ibuf>>, Option<OwnedFd>)>>,
     pub roff: size_t,
     pub hdrsize: size_t,
 }

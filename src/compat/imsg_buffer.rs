@@ -120,13 +120,6 @@ unsafe fn raw_boxed_bytes(buf: *mut u8, len: size_t) -> Box<[u8]> {
     Box::from_raw(slice_from_raw_parts_mut(buf, len))
 }
 
-pub(crate) type MsgbufHeaderCallback = Box<
-    dyn FnMut(
-        &[u8],
-        Option<OwnedFd>,
-    ) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>),
->;
-
 /// A temporary ibuf-compatible view over a borrowed header span.
 pub(crate) struct IbufView<'a> {
     bytes: &'a [u8],
@@ -897,7 +890,6 @@ pub unsafe extern "C" fn msgbuf_new() -> *mut msgbuf {
         rbuf: ::core::ptr::null_mut(),
         rpmsg: ::core::ptr::null_mut(),
         readhdr: None,
-        rarg: ::core::ptr::null_mut(),
         roff: 0,
         hdrsize: 0,
     }) else {
@@ -917,6 +909,32 @@ pub unsafe extern "C" fn msgbuf_new_reader(
         ) -> *mut ibuf,
     >,
     mut arg: *mut ::core::ffi::c_void,
+) -> *mut msgbuf {
+    let reader = readhdr.map(|readhdr| {
+        Box::new(move |header: &[u8], fd: Option<OwnedFd>| {
+            let mut view = IbufView::new(header);
+            let mut raw_fd = fd.map_or(-1, IntoRawFd::into_raw_fd);
+            let message = readhdr(view.as_ibuf_ptr(), arg, &raw mut raw_fd);
+            let remaining_fd = (raw_fd >= 0).then(|| OwnedFd::from_raw_fd(raw_fd));
+            (std::ptr::NonNull::new(message), remaining_fd)
+        })
+            as Box<
+                dyn FnMut(
+                    &[u8],
+                    Option<OwnedFd>,
+                ) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>),
+            >
+    });
+    msgbuf_new_reader_with(hdrsz, reader)
+}
+
+unsafe fn msgbuf_new_reader_with(
+    hdrsz: size_t,
+    readhdr: Option<
+        Box<
+            dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>),
+        >,
+    >,
 ) -> *mut msgbuf {
     if hdrsz == 0 as size_t || hdrsz > (IBUF_READ_SIZE / 2 as ::core::ffi::c_int) as size_t {
         *__errno_location() = EINVAL;
@@ -938,76 +956,21 @@ pub unsafe extern "C" fn msgbuf_new_reader(
     (*msgbuf).rbuf = buf;
     (*msgbuf).hdrsize = hdrsz;
     (*msgbuf).readhdr = readhdr;
-    (*msgbuf).rarg = arg;
     return msgbuf;
-}
-
-unsafe extern "C" fn msgbuf_reader_trampoline(
-    buf: *mut ibuf,
-    arg: *mut ::core::ffi::c_void,
-    fd: *mut ::core::ffi::c_int,
-) -> *mut ibuf {
-    if buf.is_null() || arg.is_null() {
-        *__errno_location() = EINVAL;
-        return ::core::ptr::null_mut();
-    }
-    let header: &[u8] = if (*buf).size == 0 {
-        &[]
-    } else {
-        std::slice::from_raw_parts((*buf).buf.cast_const(), (*buf).size)
-    };
-    let input_fd = if !fd.is_null() && *fd >= 0 {
-        let owned = OwnedFd::from_raw_fd(*fd);
-        *fd = -1;
-        Some(owned)
-    } else {
-        None
-    };
-    let callback = &mut *(arg as *mut MsgbufHeaderCallback);
-    let (message, remaining_fd) = callback(header, input_fd);
-    if !fd.is_null() {
-        *fd = remaining_fd.map_or(-1, IntoRawFd::into_raw_fd);
-    } else {
-        drop(remaining_fd);
-    }
-    message.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr)
 }
 
 pub(crate) unsafe fn msgbuf_new_reader_owned(
     hdrsz: size_t,
-    callback: impl FnMut(
-            &[u8],
-            Option<OwnedFd>,
-        ) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>)
+    callback: impl FnMut(&[u8], Option<OwnedFd>) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>)
         + 'static,
 ) -> *mut msgbuf {
-    let callback: MsgbufHeaderCallback = Box::new(callback);
-    let arg = Box::into_raw(Box::new(callback)) as *mut ::core::ffi::c_void;
-    let msgbuf = msgbuf_new_reader(hdrsz, Some(msgbuf_reader_trampoline), arg);
-    if msgbuf.is_null() {
-        drop(Box::from_raw(arg as *mut MsgbufHeaderCallback));
-    }
-    msgbuf
+    msgbuf_new_reader_with(hdrsz, Some(Box::new(callback)))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn msgbuf_free(mut msgbuf: *mut msgbuf) {
     if msgbuf.is_null() {
         return;
-    }
-    let owned_reader: unsafe extern "C" fn(
-        *mut ibuf,
-        *mut ::core::ffi::c_void,
-        *mut ::core::ffi::c_int,
-    ) -> *mut ibuf = msgbuf_reader_trampoline;
-    if (*msgbuf).readhdr.is_some_and(|callback| {
-        std::ptr::fn_addr_eq(callback, owned_reader)
-    }) && !(*msgbuf).rarg.is_null()
-    {
-        drop(Box::from_raw(
-            (*msgbuf).rarg as *mut MsgbufHeaderCallback,
-        ));
-        (*msgbuf).rarg = ::core::ptr::null_mut();
     }
     msgbuf_clear(msgbuf);
     if !(*msgbuf).rbuf.is_null() {
@@ -1209,12 +1172,19 @@ unsafe extern "C" fn ibuf_read_process(
                 break;
             }
             let header = std::slice::from_raw_parts(scratch.add(cursor), (*msgbuf).hdrsize);
-            let mut view = IbufView::new(header);
-            (*msgbuf).rpmsg = (*msgbuf).readhdr.expect("non-null function pointer")(
-                view.as_ibuf_ptr(),
-                (*msgbuf).rarg,
-                &raw mut fd,
-            );
+            let input_fd = if fd >= 0 {
+                Some(OwnedFd::from_raw_fd(fd))
+            } else {
+                None
+            };
+            fd = -1;
+            let (message, remaining_fd) =
+                (*msgbuf)
+                    .readhdr
+                    .as_mut()
+                    .expect("non-null header callback")(header, input_fd);
+            fd = remaining_fd.map_or(-1, IntoRawFd::into_raw_fd);
+            (*msgbuf).rpmsg = message.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr);
             if (*msgbuf).rpmsg.is_null() {
                 failed = true;
                 break;
