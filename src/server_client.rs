@@ -8,6 +8,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
+use crate::src::compat::imsg::msg_command;
 use crate::src::control::{
     control_all_done, control_discard, control_discard_all, control_pane_offset, control_ready,
     control_reset_offsets, control_start, control_stop, control_write,
@@ -62,7 +63,6 @@ use crate::src::server_fn::{
 use crate::src::session::{session_find_by_id, session_theme_changed, session_update_activity};
 use crate::src::shared::command::unpack_argv;
 use crate::src::shared::events::event_payload;
-use crate::src::compat::imsg::msg_command;
 use crate::src::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
@@ -774,6 +774,9 @@ mod client_message_owner_tests {
         }
     }
 }
+use crate::src::compat::imsg::imsg;
+use crate::src::compat::imsg::IMSG_HEADER_SIZE;
+use crate::src::compat::imsg::*;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
     CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
@@ -803,9 +806,6 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_event, key_table};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{SIZE_MAX, UINT_MAX};
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::IMSG_HEADER_SIZE;
-use crate::src::compat::imsg::*;
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
     MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
@@ -946,7 +946,7 @@ pub unsafe fn server_client_ranges_is_empty(mut r: *mut visible_ranges) -> ::cor
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < (*r).used {
-        if (*(*r).ranges.offset(i as isize)).nx != 0 as u_int {
+        if (&(*r).storage)[i as usize].nx != 0 as u_int {
             return 0 as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
@@ -970,21 +970,21 @@ pub unsafe fn server_client_overlay_range(
     let mut onx: u_int = 0;
     if py < y || py > y.wrapping_add(sy).wrapping_sub(1 as u_int) {
         server_client_ensure_ranges(r, 1 as u_int);
-        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).px = px;
-        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = nx;
+        (&mut (*r).storage)[0].px = px;
+        (&mut (*r).storage)[0].nx = nx;
         (*r).used = 1 as u_int;
         return;
     }
     server_client_ensure_ranges(r, 2 as u_int);
     if px < x {
-        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).px = px;
-        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = x.wrapping_sub(px);
-        if (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx > nx {
-            (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = nx;
+        (&mut (*r).storage)[0].px = px;
+        (&mut (*r).storage)[0].nx = x.wrapping_sub(px);
+        if (&mut (*r).storage)[0].nx > nx {
+            (&mut (*r).storage)[0].nx = nx;
         }
     } else {
-        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).px = 0 as u_int;
-        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = 0 as u_int;
+        (&mut (*r).storage)[0].px = 0 as u_int;
+        (&mut (*r).storage)[0].nx = 0 as u_int;
     }
     ox = x.wrapping_add(sx);
     if px > ox {
@@ -992,11 +992,11 @@ pub unsafe fn server_client_overlay_range(
     }
     onx = px.wrapping_add(nx);
     if onx > ox {
-        (*(*r).ranges.offset(1 as ::core::ffi::c_int as isize)).px = ox;
-        (*(*r).ranges.offset(1 as ::core::ffi::c_int as isize)).nx = onx.wrapping_sub(ox);
+        (&mut (*r).storage)[1].px = ox;
+        (&mut (*r).storage)[1].nx = onx.wrapping_sub(ox);
     } else {
-        (*(*r).ranges.offset(1 as ::core::ffi::c_int as isize)).px = 0 as u_int;
-        (*(*r).ranges.offset(1 as ::core::ffi::c_int as isize)).nx = 0 as u_int;
+        (&mut (*r).storage)[1].px = 0 as u_int;
+        (&mut (*r).storage)[1].nx = 0 as u_int;
     }
     (*r).used = 2 as u_int;
 }

@@ -68,7 +68,7 @@ impl Default for mode_tree_data {
             sort_crit: sort_criteria {
                 order: 0,
                 reversed: 0,
-                order_seq: std::ptr::null_mut(),
+                order_seq: &[],
             },
             view_name: None,
             buildcb: None,

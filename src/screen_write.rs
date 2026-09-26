@@ -1694,7 +1694,7 @@ unsafe fn screen_write_redraw_line(
     );
     i = 0 as u_int;
     while i < (*r).used {
-        ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+        ri = &raw mut (&mut (*r).storage)[i as usize];
         if !((*ri).nx == 0 as u_int) {
             cx = (*ri).px.wrapping_sub(xoff as u_int);
             if !(cx >= sx) {
@@ -3018,7 +3018,7 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
         );
         i = 0 as u_int;
         while i < (*r).used {
-            ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+            ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3037,7 +3037,7 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
         );
         i = 0 as u_int;
         while i < (*r).used {
-            ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+            ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3160,7 +3160,7 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
         );
         i = 0 as u_int;
         while i < (*r).used {
-            ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+            ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3178,7 +3178,7 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
     );
     i = 0 as u_int;
     while i < (*r).used {
-        ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+        ri = &raw mut (&mut (*r).storage)[i as usize];
         if !((*ri).nx == 0 as u_int) {
             screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
         }
@@ -3291,7 +3291,7 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
         );
         i = 0 as u_int;
         while i < (*r).used {
-            ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+            ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3672,7 +3672,7 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
         written = 0 as ::core::ffi::c_int;
         i = 0 as u_int;
         while i < (*r).used {
-            ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+            ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 r_start = (*ri).px as ::core::ffi::c_int;
                 r_end = (*ri).px.wrapping_add((*ri).nx) as ::core::ffi::c_int;
@@ -4384,7 +4384,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     i = 0 as u_int;
     vis = 0 as u_int;
     while i < (*r).used {
-        vis = vis.wrapping_add((*(*r).ranges.offset(i as isize)).nx);
+        vis = vis.wrapping_add((&(*r).storage)[i as usize].nx);
         i = i.wrapping_add(1);
     }
     if vis >= width {
@@ -4402,7 +4402,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     }
     i = 0 as u_int;
     while i < (*r).used {
-        ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+        ri = &raw mut (&mut (*r).storage)[i as usize];
         if !((*ri).nx == 0 as u_int) {
             n = 0 as u_int;
             while n < (*ri).nx {
@@ -4605,7 +4605,7 @@ unsafe fn screen_write_combine(
     i = 0 as u_int;
     vis = 0 as u_int;
     while i < (*r).used {
-        vis = vis.wrapping_add((*(*r).ranges.offset(i as isize)).nx);
+        vis = vis.wrapping_add((&(*r).storage)[i as usize].nx);
         i = i.wrapping_add(1);
     }
     if vis < n {

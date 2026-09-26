@@ -26,7 +26,7 @@ pub const LIST_CLIENTS_TEMPLATE: [::core::ffi::c_char; 225] = unsafe {
         *b"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}\0",
     )
 };
-pub static mut cmd_list_clients_entry: cmd_entry =  {
+pub static mut cmd_list_clients_entry: cmd_entry = {
     cmd_entry {
         name: b"list-clients\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsc\0" as *const u8 as *const ::core::ffi::c_char,
@@ -64,7 +64,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
-        order_seq: ::core::ptr::null_mut::<sort_order>(),
+        order_seq: &[],
     };
     if args_has(args, 't' as i32 as u_char) != 0 {
         s = (*target).s;

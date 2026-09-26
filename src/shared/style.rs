@@ -59,47 +59,31 @@ pub struct style_line_entry {
     pub ranges: style_ranges,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct style_ranges {
-    /// Box-owned Vec storage; null means empty or uninitialized.
-    pub ranges: *mut Vec<Box<style_range>>,
-    /// Retains the translated C structure size while the intrusive links are gone.
-    pub _reserved: usize,
+    /// Owns the ranges; boxes keep their addresses stable as the vector grows.
+    pub ranges: Vec<Box<style_range>>,
 }
 
 impl style_ranges {
-    /// Access the owned ranges. The caller must preserve this value's storage invariant.
-    pub unsafe fn as_slice(&self) -> &[Box<style_range>] {
-        if self.ranges.is_null() {
-            &[]
-        } else {
-            (&*self.ranges).as_slice()
-        }
+    pub fn as_slice(&self) -> &[Box<style_range>] {
+        self.ranges.as_slice()
     }
 
-    /// Append a stable-address range, allocating the collection lazily when needed.
-    pub unsafe fn push(&mut self, range: Box<style_range>) {
-        if self.ranges.is_null() {
-            self.ranges = Box::into_raw(Box::new(Vec::new()));
-        }
-        (*self.ranges).push(range);
+    /// Append a stable-address range.
+    pub fn push(&mut self, range: Box<style_range>) {
+        self.ranges.push(range);
     }
 
     /// Drop all range boxes while keeping the Vec allocation available for reuse.
-    pub unsafe fn clear(&mut self) {
-        if !self.ranges.is_null() {
-            (*self.ranges).clear();
-        }
+    pub fn clear(&mut self) {
+        self.ranges.clear();
     }
 
-    /// Release the owned Vec and its ranges. Safe to call repeatedly after initialization.
-    pub unsafe fn release_storage(&mut self) {
-        if !self.ranges.is_null() {
-            drop(Box::from_raw(self.ranges));
-            self.ranges = ::core::ptr::null_mut();
-        }
-        self._reserved = 0;
+    /// Release the ranges and their collection allocation, leaving an empty owner.
+    pub fn release_storage(&mut self) {
+        self.ranges = Vec::new();
     }
 }
 
@@ -121,7 +105,7 @@ mod tests {
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]
-    fn style_layout_matches_translated_c_baseline() {
+    fn style_layout_matches_owned_range_storage() {
         assert_eq!(size_of::<style>(), 120);
         assert_eq!(align_of::<style>(), 4);
         assert_eq!(offset_of!(style, gc), 0);
@@ -131,13 +115,12 @@ mod tests {
         assert_eq!(offset_of!(style, default_type), 112);
         assert_eq!(offset_of!(style, link), 116);
 
-        assert_eq!(size_of::<style_line_entry>(), 32);
+        assert_eq!(size_of::<style_line_entry>(), 40);
         assert_eq!(align_of::<style_line_entry>(), 8);
         assert_eq!(offset_of!(style_line_entry, ranges), 16);
-        assert_eq!(size_of::<style_ranges>(), 16);
+        assert_eq!(size_of::<style_ranges>(), 24);
         assert_eq!(align_of::<style_ranges>(), 8);
         assert_eq!(offset_of!(style_ranges, ranges), 0);
-        assert_eq!(offset_of!(style_ranges, _reserved), 8);
         assert_eq!(size_of::<style_range>(), 48);
         assert_eq!(align_of::<style_range>(), 8);
         assert_eq!(offset_of!(style_range, _reserved), 32);

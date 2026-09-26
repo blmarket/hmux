@@ -157,7 +157,12 @@ pub(crate) unsafe fn default_window_name_cstring(w: &window) -> CString {
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         parse_window_name_cstring(cmd)
     } else {
-        parse_window_name_cstring(CStr::from_ptr((*w.active).shell))
+        parse_window_name_cstring(CStr::from_ptr(
+            (*w.active)
+                .shell
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr()),
+        ))
     }
 }
 unsafe fn format_window_name(w: *mut window) -> CString {

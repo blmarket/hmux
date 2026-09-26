@@ -1231,7 +1231,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             );
             let mut label_bytes = b" ".to_vec();
             mode_tree_append_printf_string(&mut label_bytes, Some((*mti).name.as_c_str()));
-            if !(*mtd).sort_crit.order_seq.is_null() {
+            if !(&(*mtd).sort_crit.order_seq).is_empty() {
                 label_bytes.extend_from_slice(b" (sort: ");
                 let order = sort_order_to_string((*mtd).sort_crit.order);
                 let order = if order.is_null() {
@@ -2430,7 +2430,7 @@ mod mode_tree_tests {
             let mtd = mode_tree_alloc_data();
             let mut key = b'x' as key_code;
             let key_ptr = &raw const key;
-            (*mtd).keycb = Some(Box::new(move |_, _|  { *key_ptr }));
+            (*mtd).keycb = Some(Box::new(move |_, _| *key_ptr));
             let item = mode_tree_add(
                 mtd,
                 ::core::ptr::null_mut(),
@@ -2512,7 +2512,7 @@ mod mode_tree_tests {
             let mtd = mode_tree_alloc_data();
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             let state = Box::into_raw(Box::new(NestedBuildState { mtd, empty: false }));
-            (*mtd).buildcb = Some(Box::new(move |_, _, _|  {
+            (*mtd).buildcb = Some(Box::new(move |_, _, _| {
                 nested_build(&mut *state);
                 None
             }));

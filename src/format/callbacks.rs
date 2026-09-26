@@ -426,14 +426,14 @@ unsafe fn format_cb_start_path(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    if (*wp).cwd.is_null() {
+    if (*wp).cwd.is_none() {
         return Some(c"".to_owned());
     }
-    return Some(CStr::from_ptr((*wp).cwd).to_owned());
+    return (*wp).cwd.clone();
 }
 unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
-    if wp.is_null() || (*wp).shell.is_null() {
+    if wp.is_null() || (*wp).shell.is_none() {
         return None;
     }
     if let Some(cmd) =
@@ -446,8 +446,8 @@ unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString>
     let source = argv
         .as_ref()
         .filter(|text| !text.as_bytes().is_empty())
-        .map_or((*wp).shell as *const _, |text| text.as_ptr());
-    let value = parse_window_name_cstring(CStr::from_ptr(source));
+        .map_or((*wp).shell.as_deref().unwrap(), |text| text.as_c_str());
+    let value = parse_window_name_cstring(source);
     Some(value)
 }
 unsafe fn format_cb_current_path(mut ft: *mut format_tree) -> Option<CString> {
@@ -2148,10 +2148,10 @@ unsafe fn format_cb_pane_right(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_search_string(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        if (*(*ft).wp).searchstr.is_null() {
+        if (*(*ft).wp).searchstr.is_none() {
             return Some(c"".to_owned());
         }
-        return Some(CStr::from_ptr((*(*ft).wp).searchstr).to_owned());
+        return (*(*ft).wp).searchstr.clone();
     }
     return None;
 }

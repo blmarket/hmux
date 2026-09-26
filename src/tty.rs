@@ -114,7 +114,7 @@ pub const IEXTEN: ::core::ffi::c_int = 0o100000 as ::core::ffi::c_int;
 pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 static mut tty_log_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-static mut tty_default_style_ctx: tty_style_ctx =  {
+static mut tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
         defaults: &raw const grid_default_cell,
         palette: ::core::ptr::null::<colour_palette>() as *mut colour_palette,
@@ -1579,7 +1579,7 @@ unsafe fn tty_clear_line(
     r = tty_check_overlay_range(tty, px, py, nx);
     i = 0 as u_int;
     while i < (*r).used {
-        rr = (*r).ranges.offset(i as isize) as *mut visible_range;
+        rr = &raw mut (&mut (*r).storage)[i as usize];
         if (*rr).nx != 0 as u_int {
             tty_cursor(tty, (*rr).px, py);
             tty_repeat_space(tty, (*rr).nx);
@@ -1628,7 +1628,7 @@ unsafe fn tty_clear_pane_line(
         r = tty_check_overlay_range(tty, x, ry, rx);
         i = 0 as u_int;
         while i < (*r).used {
-            ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+            ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 tty_clear_line(tty, &raw const (*ctx).defaults, ry, (*ri).px, (*ri).nx, bg);
             }
@@ -1858,7 +1858,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, mut ctx: *const tty_ctx, mut py: u_in
         );
         j = 0 as u_int;
         while j < (*r).used {
-            rr = (*r).ranges.offset(j as isize) as *mut visible_range;
+            rr = &raw mut (&mut (*r).storage)[j as usize];
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
@@ -1890,7 +1890,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, mut ctx: *const tty_ctx, mut py: u_in
         r = tty_check_overlay_range(tty, x, ry, rx);
         j = 0 as u_int;
         while j < (*r).used {
-            rr = (*r).ranges.offset(j as isize) as *mut visible_range;
+            rr = &raw mut (&mut (*r).storage)[j as usize];
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
@@ -1930,7 +1930,7 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         r = tty_check_overlay_range(tty, x, ry, rx);
         j = 0 as u_int;
         while j < (*r).used {
-            rr = (*r).ranges.offset(j as isize) as *mut visible_range;
+            rr = &raw mut (&mut (*r).storage)[j as usize];
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
@@ -2019,8 +2019,8 @@ pub unsafe fn tty_check_overlay_range(
     let mut c: *mut client = (*tty).client;
     if (*c).overlay_check.is_none() {
         server_client_ensure_ranges(&raw mut (*tty).r, 1 as u_int);
-        (*(*tty).r.ranges.offset(0 as ::core::ffi::c_int as isize)).px = px;
-        (*(*tty).r.ranges.offset(0 as ::core::ffi::c_int as isize)).nx = nx;
+        (&mut (*tty).r.storage)[0].px = px;
+        (&mut (*tty).r.storage)[0].nx = nx;
         (*tty).r.used = 1 as u_int;
         return &raw mut (*tty).r;
     }
@@ -2461,7 +2461,7 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         r = tty_check_overlay_range(tty, px, py, (*gcp).data.width as u_int);
         i = 0 as u_int;
         while i < (*r).used {
-            vis = vis.wrapping_add((*(*r).ranges.offset(i as isize)).nx);
+            vis = vis.wrapping_add((&(*r).storage)[i as usize].nx);
             i = i.wrapping_add(1);
         }
         if vis < (*gcp).data.width as u_int {
@@ -2540,7 +2540,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     r = tty_check_overlay_range(tty, px, py, n as u_int);
     i = 0 as u_int;
     while i < (*r).used {
-        ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+        ri = &raw mut (&mut (*r).storage)[i as usize];
         if (*ri).nx != 0 as u_int {
             cx = (*ri)
                 .px

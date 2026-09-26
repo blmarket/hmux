@@ -2358,8 +2358,8 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         sb_auto_hover: 0,
         sb_auto_timer: event::default(),
         argv: Vec::new(),
-        shell: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        cwd: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        shell: None,
+        cwd: None,
         pid: 0,
         tty: [0; 32],
         status: 0,
@@ -2422,10 +2422,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         last_theme: THEME_UNKNOWN,
         border_status_line: style_line_entry {
             expanded: None,
-            ranges: style_ranges {
-                ranges: ::core::ptr::null_mut(),
-                _reserved: 0,
-            },
+            ranges: style_ranges::default(),
         },
         pipe_fd: 0,
         pipe_pid: 0,
@@ -2435,7 +2432,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         base: screen::empty(),
         status_screen: screen::empty(),
         modes: window_pane_modes::default(),
-        searchstr: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        searchstr: None,
         searchregex: 0,
         prompt: ::core::ptr::null_mut::<prompt>(),
         prompt_data: ::core::ptr::null_mut::<window_pane_prompt>(),
@@ -2503,9 +2500,6 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         },
         r: visible_ranges::default(),
         tree_entry: window_pane_tree_entry { owner: None },
-        searchstr_owner: None,
-        shell_owner: None,
-        cwd_owner: None,
     };
     wp.id = id;
     return window_pane_tree_find(&*std::ptr::addr_of!(all_window_panes), &wp);
@@ -2850,34 +2844,22 @@ mod window_mode_collection_tests {
     }
 }
 
-/// `pane.searchstr` is a borrowed view, invalidated on replacement or clear.
+/// Replace the pane-owned searchstr string.
 pub(crate) fn window_pane_set_searchstr(wp: &mut window_pane, searchstr: Option<CString>) {
-    wp.searchstr_owner = searchstr;
-    wp.searchstr = wp
-        .searchstr_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+    wp.searchstr = searchstr;
 }
 
-/// `pane.shell` is a borrowed view, invalidated on replacement or clear.
+/// Replace the pane-owned shell string.
 pub(crate) fn window_pane_set_shell(wp: &mut window_pane, shell: Option<CString>) {
-    wp.shell_owner = shell;
-    wp.shell = wp
-        .shell_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+    wp.shell = shell;
 }
 
-/// `pane.cwd` is a borrowed view, invalidated on replacement or clear.
+/// Replace the pane-owned cwd string.
 pub(crate) fn window_pane_set_cwd(wp: &mut window_pane, cwd: Option<CString>) {
-    wp.cwd_owner = cwd;
-    wp.cwd = wp
-        .cwd_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+    wp.cwd = cwd;
 }
 
-/// A prior `pane.r.ranges` element pointer is invalid after this function
+/// A prior `pane.r.storage` element pointer is invalid after this function
 /// grows the vector. All callers consume the view before asking for new ranges.
 pub(crate) fn window_pane_ensure_visible_ranges(wp: &mut window_pane, n: u_int) {
     wp.r.ensure(n);
@@ -4637,7 +4619,7 @@ mod name_tests {
                 c"window-renamed",
                 events_callback(move |_, payload| {
                     let payload = payload as *mut event_payload;
-                    let (window, reenter) =  {
+                    let (window, reenter) = {
                         let old =
                             CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
                                 .to_bytes()
@@ -4653,7 +4635,9 @@ mod name_tests {
                         (state.window, reenter)
                     };
                     if reenter {
-                         { window_set_name(window, c"inner".as_ptr(), 0) };
+                        {
+                            window_set_name(window, c"inner".as_ptr(), 0)
+                        };
                     }
                 }),
             );

@@ -357,35 +357,17 @@ unsafe fn sort_key_binding_cmp(
     }
     return sort_ordering(result, sort_crit.reversed);
 }
-pub unsafe fn sort_next_order(mut sort_crit: *mut sort_criteria) {
-    let mut i: u_int = 0;
-    if (*sort_crit).order_seq.is_null() {
+pub unsafe fn sort_next_order(sort_crit: *mut sort_criteria) {
+    let criteria = &mut *sort_crit;
+    let sequence = criteria.order_seq;
+    if sequence.is_empty() {
         return;
     }
-    i = 0 as u_int;
-    while *(*sort_crit).order_seq.offset(i as isize) as ::core::ffi::c_uint
-        != SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if (*sort_crit).order as ::core::ffi::c_uint
-            == *(*sort_crit).order_seq.offset(i as isize) as ::core::ffi::c_uint
-        {
-            break;
-        }
-        i = i.wrapping_add(1);
-    }
-    if *(*sort_crit).order_seq.offset(i as isize) as ::core::ffi::c_uint
-        == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        i = 0 as u_int;
-    } else {
-        i = i.wrapping_add(1);
-        if *(*sort_crit).order_seq.offset(i as isize) as ::core::ffi::c_uint
-            == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            i = 0 as u_int;
-        }
-    }
-    (*sort_crit).order = *(*sort_crit).order_seq.offset(i as isize);
+    let next = sequence
+        .iter()
+        .position(|&order| order == criteria.order)
+        .map_or(0, |index| (index + 1) % sequence.len());
+    criteria.order = sequence[next];
 }
 pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> sort_order {
     if !order.is_null() {
@@ -603,4 +585,34 @@ pub unsafe fn sort_get_key_bindings_table(
         sort_key_binding_cmp(*a, *b, criteria)
     });
     bindings
+}
+
+#[cfg(test)]
+mod sequence_tests {
+    use super::*;
+
+    #[test]
+    fn sort_sequence_cycles_and_recovers_unknown_order() {
+        let mut criteria = sort_criteria {
+            order: SORT_NAME,
+            reversed: 0,
+            order_seq: &[SORT_NAME, SORT_SIZE],
+        };
+        unsafe {
+            sort_next_order(&mut criteria);
+            assert_eq!(criteria.order, SORT_SIZE);
+            sort_next_order(&mut criteria);
+            assert_eq!(criteria.order, SORT_NAME);
+            criteria.order = SORT_ACTIVITY;
+            sort_next_order(&mut criteria);
+            assert_eq!(criteria.order, SORT_NAME);
+            criteria.order_seq = &[];
+            sort_next_order(&mut criteria);
+            assert_eq!(criteria.order, SORT_NAME);
+            criteria.order_seq = &[SORT_SIZE];
+            sort_next_order(&mut criteria);
+            sort_next_order(&mut criteria);
+            assert_eq!(criteria.order, SORT_SIZE);
+        }
+    }
 }

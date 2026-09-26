@@ -20,7 +20,7 @@ pub const LIST_BUFFERS_TEMPLATE: [::core::ffi::c_char; 57] = unsafe {
         *b"#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"\0",
     )
 };
-pub static mut cmd_list_buffers_entry: cmd_entry =  {
+pub static mut cmd_list_buffers_entry: cmd_entry = {
     cmd_entry {
         name: b"list-buffers\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsb\0" as *const u8 as *const ::core::ffi::c_char,
@@ -54,7 +54,7 @@ unsafe fn cmd_list_buffers_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
-        order_seq: ::core::ptr::null_mut::<sort_order>(),
+        order_seq: &[],
     };
     template = args_get(args, 'F' as i32 as u_char);
     if template.is_null() {

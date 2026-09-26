@@ -175,7 +175,7 @@ static mut window_buffer_menu_items: [menu_item; 12] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_buffer_mode: window_mode =  {
+pub static mut window_buffer_mode: window_mode = {
     window_mode {
         name: c"buffer-mode",
         default_format: WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr(),
@@ -210,8 +210,7 @@ pub static mut window_buffer_mode: window_mode =  {
         get_screen: None,
     }
 };
-static mut window_buffer_order_seq: [sort_order; 4] =
-    [SORT_CREATION, SORT_NAME, SORT_SIZE, SORT_END];
+static window_buffer_order_seq: [sort_order; 3] = [SORT_CREATION, SORT_NAME, SORT_SIZE];
 fn window_buffer_add_item(
     items: &mut Vec<Box<window_buffer_itemdata>>,
     name: &CStr,
@@ -563,11 +562,11 @@ unsafe fn window_buffer_get_key(
 }
 fn window_buffer_sort(sort_crit: &mut sort_criteria) {
     unsafe {
-        sort_crit.order_seq = &raw mut window_buffer_order_seq as *mut sort_order;
+        sort_crit.order_seq = &window_buffer_order_seq;
         if sort_crit.order as ::core::ffi::c_uint
             == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            sort_crit.order = *sort_crit.order_seq;
+            sort_crit.order = sort_crit.order_seq[0];
         }
     }
 }

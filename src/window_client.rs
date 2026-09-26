@@ -1,4 +1,5 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::compat::imsg::*;
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
@@ -30,7 +31,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
-use crate::src::compat::imsg::*;
 use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
@@ -193,7 +193,7 @@ static mut window_client_menu_items: [menu_item; 9] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_client_mode: window_mode =  {
+pub static mut window_client_mode: window_mode = {
     window_mode {
         name: c"client-mode",
         default_format: WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr(),
@@ -228,8 +228,8 @@ pub static mut window_client_mode: window_mode =  {
         get_screen: None,
     }
 };
-static mut window_client_order_seq: [sort_order; 5] =
-    [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY, SORT_END];
+static window_client_order_seq: [sort_order; 4] =
+    [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY];
 unsafe fn window_client_add_item(data: *mut window_client_modedata, c: *mut client) {
     let item = Box::new(window_client_itemdata::new(
         c,
@@ -643,11 +643,11 @@ unsafe fn window_client_get_key(
 }
 fn window_client_sort(sort_crit: &mut sort_criteria) {
     unsafe {
-        sort_crit.order_seq = &raw mut window_client_order_seq as *mut sort_order;
+        sort_crit.order_seq = &window_client_order_seq;
         if sort_crit.order as ::core::ffi::c_uint
             == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            sort_crit.order = *sort_crit.order_seq;
+            sort_crit.order = sort_crit.order_seq[0];
         }
     }
 }

@@ -1185,8 +1185,7 @@ pub unsafe fn style_ranges_init(mut srs: *mut style_ranges) {
     if srs.is_null() {
         return;
     }
-    (*srs).ranges = Box::into_raw(Box::new(Vec::new()));
-    (*srs)._reserved = 0;
+    (*srs).release_storage();
 }
 pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
     if !srs.is_null() {
@@ -1231,11 +1230,22 @@ mod style_ranges_tests {
     }
 
     #[test]
+    fn cloned_ranges_own_independent_boxes() {
+        let mut original = style_ranges::default();
+        original.push(range(2, 4));
+        let cloned = original.clone();
+        assert!(!std::ptr::eq(
+            original.as_slice()[0].as_ref(),
+            cloned.as_slice()[0].as_ref(),
+        ));
+        drop(original);
+        assert_eq!(cloned.as_slice()[0].start, 2);
+        assert_eq!(cloned.as_slice()[0].end, 4);
+    }
+
+    #[test]
     fn style_ranges_own_stable_boxes_and_support_clear_and_release() {
-        let mut ranges = style_ranges {
-            ranges: ::core::ptr::null_mut(),
-            _reserved: 0,
-        };
+        let mut ranges = style_ranges::default();
         unsafe {
             style_ranges_init(&mut ranges);
             let first = range(2, 4);
@@ -1254,7 +1264,8 @@ mod style_ranges_tests {
             assert_eq!(style_ranges_get_range(&mut ranges, 32), after_clear_ptr);
 
             style_ranges_free(&mut ranges);
-            assert!(ranges.ranges.is_null());
+            assert!(ranges.ranges.is_empty());
+            assert_eq!(ranges.ranges.capacity(), 0);
             assert!(style_ranges_get_range(&mut ranges, 32).is_null());
 
             style_ranges_init(&mut ranges);

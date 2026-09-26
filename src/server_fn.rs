@@ -39,6 +39,8 @@ use crate::src::window::{
     winlink_find_by_window, winlink_remove, winlink_stack_remove,
 };
 
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{
@@ -48,8 +50,6 @@ use crate::src::shared::client::{
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::grid::*;
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_FLOATOVERZOOM, PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY,
@@ -615,7 +615,7 @@ pub unsafe fn server_destroy_session(mut s: *mut session) {
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_NAME,
         reversed: 0,
-        order_seq: ::core::ptr::null_mut::<sort_order>(),
+        order_seq: &[],
     };
     let mut detach_on_destroy: ::core::ffi::c_int = 0;
     detach_on_destroy = options_get_number(

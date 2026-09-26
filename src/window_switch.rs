@@ -106,7 +106,7 @@ pub const WINDOW_SWITCH_DEFAULT_FORMAT: [::core::ffi::c_char; 350] = unsafe {
         *b"#{?window_format,#{window_name} #[dim]#{session_name}:#{window_index}#{window_flags}#[default] #[dim]#{pane_current_command}#[default] #[dim]#{?#{!=:#{pane_title},#{host_short}},#{pane_title},}#[default],#{session_name} #[dim]#{session_windows} windows#[default] #{?session_attached,attached,#[dim]detached#[default]} #[dim]#{window_name}#[default]}\0",
     )
 };
-pub static mut window_switch_mode: window_mode =  {
+pub static mut window_switch_mode: window_mode = {
     window_mode {
         name: c"switch-mode",
         default_format: WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr(),
@@ -227,7 +227,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
-        order_seq: ::core::ptr::null_mut::<sort_order>(),
+        order_seq: &[],
     };
     sort_crit.order = SORT_NAME;
     sort_crit.reversed = 0 as ::core::ffi::c_int;

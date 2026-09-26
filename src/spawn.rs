@@ -190,7 +190,10 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut cwd: *const ::core::ffi::c_char = (*wp).cwd;
+    let mut cwd: *const ::core::ffi::c_char = (*wp)
+        .cwd
+        .as_ref()
+        .map_or(::core::ptr::null(), |value| value.as_ptr());
     ep = event_payload_create();
     cmd_find_from_winlink_pane(&raw mut fs, (*sc).wl, wp, 0 as ::core::ffi::c_int);
     event_payload_set_target(ep, &raw mut fs);
@@ -222,12 +225,15 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
             cmd.as_ptr(),
         );
-    } else if !(*wp).shell.is_null() {
+    } else if (*wp).shell.is_some() {
         event_payload_set_string(
             ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).shell,
+            (*wp)
+                .shell
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr()),
         );
     }
     if !cwd.is_null() {
@@ -686,12 +692,18 @@ pub unsafe fn spawn_pane(
         b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp).shell,
+        (*new_wp)
+            .shell
+            .as_ref()
+            .map_or(::core::ptr::null(), |value| value.as_ptr()),
     );
     log_debug(
         b"%s: shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
         b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp).shell,
+        (*new_wp)
+            .shell
+            .as_ref()
+            .map_or(::core::ptr::null(), |value| value.as_ptr()),
     );
     if !(*new_wp).argv.is_empty() {
         let command = cmd_stringify_argv_cstring(&(*new_wp).argv);
@@ -706,7 +718,10 @@ pub unsafe fn spawn_pane(
     log_debug(
         b"%s: cwd=%s\0" as *const u8 as *const ::core::ffi::c_char,
         b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp).cwd,
+        (*new_wp)
+            .cwd
+            .as_ref()
+            .map_or(::core::ptr::null(), |value| value.as_ptr()),
     );
     cmd_log_argv(&(*new_wp).argv, c"spawn_pane");
     environ_log(
@@ -737,8 +752,17 @@ pub unsafe fn spawn_pane(
         )
         .is_null()
         {
-            if chdir((*new_wp).cwd) == 0 as ::core::ffi::c_int {
-                actual_cwd = (*new_wp).cwd;
+            if chdir(
+                (*new_wp)
+                    .cwd
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            ) == 0 as ::core::ffi::c_int
+            {
+                actual_cwd = (*new_wp)
+                    .cwd
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr());
             } else if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
                 actual_cwd = home;
             } else if chdir(b"/\0" as *const u8 as *const ::core::ffi::c_char)
@@ -851,17 +875,29 @@ pub unsafe fn spawn_pane(
                 );
                 _exit(1 as ::core::ffi::c_int);
             }
-            cp = strrchr((*new_wp).shell, '/' as i32);
+            cp = strrchr(
+                (*new_wp)
+                    .shell
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                '/' as i32,
+            );
             let shell_name = if !cp.is_null() && *cp.add(1) != 0 {
                 cp.add(1)
             } else {
-                (*new_wp).shell
+                (*new_wp)
+                    .shell
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr())
             };
             if (*new_wp).argv.len() == 1 {
                 tmp = (&(*new_wp).argv)[0].as_ptr();
                 let argv0 = CStr::from_ptr(shell_name).to_owned();
                 execl(
-                    (*new_wp).shell,
+                    (*new_wp)
+                        .shell
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
                     argv0.as_ptr(),
                     b"-c\0" as *const u8 as *const ::core::ffi::c_char,
                     tmp,
@@ -873,7 +909,10 @@ pub unsafe fn spawn_pane(
             login_name.extend_from_slice(CStr::from_ptr(shell_name).to_bytes());
             let argv0 = CString::new(login_name).expect("shell name contains no NUL");
             execl(
-                (*new_wp).shell,
+                (*new_wp)
+                    .shell
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
                 argv0.as_ptr(),
                 NULL as *mut ::core::ffi::c_char,
             );

@@ -1718,7 +1718,7 @@ unsafe fn redraw_draw_span(
     r = tty_check_overlay_range(tty, (*span).x, y, (*span).width);
     i = 0 as u_int;
     while i < (*r).used {
-        rr = (*r).ranges.offset(i as isize) as *mut visible_range;
+        rr = &raw mut (&mut (*r).storage)[i as usize];
         if !((*rr).nx == 0 as u_int) {
             x = (*rr).px;
             n = (*rr).nx;
@@ -2579,7 +2579,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
             r = tty_check_overlay_range(tty, 0 as u_int, y.wrapping_add(i), (*tty).sx);
             j = 0 as u_int;
             while j < (*r).used {
-                rr = (*r).ranges.offset(j as isize) as *mut visible_range;
+                rr = &raw mut (&mut (*r).storage)[j as usize];
                 if !((*rr).nx == 0 as u_int) {
                     tty_draw_line(
                         tty,

@@ -204,7 +204,7 @@ static mut window_tree_menu_items: [menu_item; 13] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_tree_mode: window_mode =  {
+pub static mut window_tree_mode: window_mode = {
     window_mode {
         name: c"tree-mode",
         default_format: WINDOW_TREE_DEFAULT_FORMAT.as_ptr(),
@@ -239,8 +239,7 @@ pub static mut window_tree_mode: window_mode =  {
         get_screen: None,
     }
 };
-static mut window_tree_order_seq: [sort_order; 5] =
-    [SORT_INDEX, SORT_NAME, SORT_ACTIVITY, SORT_Z, SORT_END];
+static window_tree_order_seq: [sort_order; 4] = [SORT_INDEX, SORT_NAME, SORT_ACTIVITY, SORT_Z];
 static mut window_tree_pane_info_lines: [*const ::core::ffi::c_char; 8] = [
     b"#[fg=themelightgrey]Pane          #[#{E:tree-mode-border-style},acs]x#[default] #{pane_index} #[fg=themelightgrey](#{pane_id})#[default]\0"
         as *const u8 as *const ::core::ffi::c_char,
@@ -1690,11 +1689,11 @@ unsafe fn window_tree_swap(
 }
 fn window_tree_sort(sort_crit: &mut sort_criteria) {
     unsafe {
-        sort_crit.order_seq = &raw mut window_tree_order_seq as *mut sort_order;
+        sort_crit.order_seq = &window_tree_order_seq;
         if sort_crit.order as ::core::ffi::c_uint
             == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            sort_crit.order = *sort_crit.order_seq;
+            sort_crit.order = sort_crit.order_seq[0];
         }
     }
 }

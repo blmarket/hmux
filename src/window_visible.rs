@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::memcpy;
 use crate::src::server_client::server_client_ensure_ranges;
 use crate::src::shared::abi::*;
 use crate::src::shared::display::{visible_range, visible_ranges};
@@ -22,7 +21,7 @@ pub unsafe fn window_position_is_visible(
     }
     i = 0 as u_int;
     while i < (*r).used {
-        ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+        ri = &raw mut (&mut (*r).storage)[i as usize];
         if (*ri).nx != 0 as u_int && px >= (*ri).px && px < (*ri).px.wrapping_add((*ri).nx) {
             return 1 as ::core::ffi::c_int;
         }
@@ -31,7 +30,7 @@ pub unsafe fn window_position_is_visible(
     return 0 as ::core::ffi::c_int;
 }
 
-/// Grow the owned range storage and refresh its synchronous pointer view.
+/// Grow the owned range storage.
 /// Growing the vector invalidates prior element pointers.
 unsafe fn window_visible_ensure_ranges(wp: &mut window_pane, r: *mut visible_ranges, n: u_int) {
     if r != &raw mut wp.r {
@@ -52,7 +51,6 @@ pub unsafe fn window_visible_ranges(
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     static mut sr: visible_ranges = visible_ranges {
-        ranges: ::core::ptr::null_mut(),
         used: 0 as u_int,
         storage: Vec::new(),
     };
@@ -67,7 +65,6 @@ pub unsafe fn window_visible_ranges(
     let mut ex: ::core::ffi::c_int = 0;
     let mut no_border: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
-    let mut s: u_int = 0;
     if !(py < 0 as ::core::ffi::c_int || width == 0 as u_int) {
         if px < 0 as ::core::ffi::c_int {
             if -px as u_int >= width {
@@ -88,8 +85,8 @@ pub unsafe fn window_visible_ranges(
                         return r;
                     }
                     sr.ensure(1);
-                    (*sr.ranges.offset(0 as ::core::ffi::c_int as isize)).px = px as u_int;
-                    (*sr.ranges.offset(0 as ::core::ffi::c_int as isize)).nx = width;
+                    sr.storage[0].px = px as u_int;
+                    sr.storage[0].nx = width;
                     sr.used = 1 as u_int;
                     return &raw mut sr;
                 }
@@ -105,8 +102,8 @@ pub unsafe fn window_visible_ranges(
                             1 as u_int,
                         );
                         r = &raw mut (*base_wp).r;
-                        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).px = px as u_int;
-                        (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = width;
+                        (&mut (*r).storage)[0].px = px as u_int;
+                        (&mut (*r).storage)[0].nx = width;
                         (*r).used = 1 as u_int;
                     }
                     found_self = 0 as ::core::ffi::c_int;
@@ -150,7 +147,7 @@ pub unsafe fn window_visible_ranges(
                                     }
                                     i = 0 as u_int;
                                     while i < (*r).used {
-                                        ri = (*r).ranges.offset(i as isize) as *mut visible_range;
+                                        ri = &raw mut (&mut (*r).storage)[i as usize];
                                         if !((*ri).nx == 0 as u_int) {
                                             if no_border != 0 {
                                                 lb = (*wp).xoff;
@@ -211,35 +208,17 @@ pub unsafe fn window_visible_ranges(
                                                             r,
                                                             (*r).used.wrapping_add(1 as u_int),
                                                         );
-                                                        s = (*r).used;
-                                                        while s > i {
-                                                            memcpy(
-                                                                (*r).ranges.offset(s as isize)
-                                                                    as *mut visible_range
-                                                                    as *mut ::core::ffi::c_void,
-                                                                (*r).ranges.offset(
-                                                                    s.wrapping_sub(1 as u_int)
-                                                                        as isize,
-                                                                )
-                                                                    as *mut visible_range
-                                                                    as *const ::core::ffi::c_void,
-                                                                ::core::mem::size_of::<visible_range>(
-                                                                )
-                                                                    as size_t,
-                                                            );
-                                                            s = s.wrapping_sub(1);
-                                                        }
-                                                        ri = (*r).ranges.offset(i as isize)
-                                                            as *mut visible_range;
-                                                        (*(*r).ranges.offset(
-                                                            i.wrapping_add(1 as u_int) as isize,
-                                                        ))
-                                                        .px =
-                                                            (rb + 1 as ::core::ffi::c_int) as u_int;
-                                                        (*(*r).ranges.offset(
-                                                            i.wrapping_add(1 as u_int) as isize,
-                                                        ))
-                                                        .nx = (ex - rb) as u_int;
+                                                        let used = (*r).used as usize;
+                                                        let ranges = &mut (*r).storage;
+                                                        ranges.copy_within(
+                                                            i as usize..used,
+                                                            i as usize + 1,
+                                                        );
+                                                        ranges[i as usize + 1].px =
+                                                            (rb + 1) as u_int;
+                                                        ranges[i as usize + 1].nx =
+                                                            (ex - rb) as u_int;
+                                                        ri = &raw mut ranges[i as usize];
                                                         (*ri).nx = (lb - sx) as u_int;
                                                         (*r).used = (*r).used.wrapping_add(1);
                                                     } else if lb <= sx && rb > ex {

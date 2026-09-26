@@ -27,7 +27,7 @@ pub const LIST_WINDOWS_WITH_SESSION_TEMPLATE: [::core::ffi::c_char; 127] = unsaf
         *b"#{session_name}:#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] \0",
     )
 };
-pub static mut cmd_list_windows_entry: cmd_entry =  {
+pub static mut cmd_list_windows_entry: cmd_entry = {
     cmd_entry {
         name: b"list-windows\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -68,7 +68,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
-        order_seq: ::core::ptr::null_mut::<sort_order>(),
+        order_seq: &[],
     };
     template = args_get(args, 'F' as i32 as u_char);
     filter = args_get(args, 'f' as i32 as u_char);

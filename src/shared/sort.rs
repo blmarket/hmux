@@ -16,7 +16,7 @@ pub const SORT_ACTIVITY: sort_order = 0;
 pub struct sort_criteria {
     pub order: sort_order,
     pub reversed: ::core::ffi::c_int,
-    pub order_seq: *mut sort_order,
+    pub order_seq: &'static [sort_order],
 }
 
 #[cfg(test)]

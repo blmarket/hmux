@@ -42,7 +42,7 @@ pub const LIST_KEYS_TEMPLATE: [::core::ffi::c_char; 250] = unsafe {
         *b"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}\0",
     )
 };
-pub static mut cmd_list_keys_entry: cmd_entry =  {
+pub static mut cmd_list_keys_entry: cmd_entry = {
     cmd_entry {
         name: b"list-keys\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsk\0" as *const u8 as *const ::core::ffi::c_char,
@@ -214,7 +214,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
-        order_seq: ::core::ptr::null_mut::<sort_order>(),
+        order_seq: &[],
     };
     keystr = args_string(args, 0 as u_int);
     if !keystr.is_null() {

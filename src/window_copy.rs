@@ -299,7 +299,7 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 
 pub const REG_NOTBOL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static mut window_copy_mode: window_mode =  {
+pub static mut window_copy_mode: window_mode = {
     window_mode {
         name: c"copy-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -341,7 +341,7 @@ pub static mut window_copy_mode: window_mode =  {
         ),
     }
 };
-pub static mut window_view_mode: window_mode =  {
+pub static mut window_view_mode: window_mode = {
     window_mode {
         name: c"view-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -553,10 +553,10 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
     (*data).cursordrag = CURSORDRAG_NONE;
     (*data).lineflag = LINE_SEL_NONE;
     (*data).selflag = SEL_CHAR;
-    if !(*wp).searchstr.is_null() {
+    if (*wp).searchstr.is_some() {
         (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
         (*data).searchregex = (*wp).searchregex;
-        (*data).searchstr = Some(CStr::from_ptr((*wp).searchstr).to_owned());
+        (*data).searchstr = (*wp).searchstr.clone();
     } else {
         (*data).searchtype = WINDOW_COPY_OFF as ::core::ffi::c_int;
         (*data).searchregex = 0 as ::core::ffi::c_int;
@@ -3695,7 +3695,7 @@ unsafe fn window_copy_cmd_line_numbers_toggle(
     );
     return WINDOW_COPY_CMD_NOTHING;
 }
-static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] =  {
+static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
     [
         C2RustUnnamed_46 {
             command: b"append-selection\0" as *const u8 as *const ::core::ffi::c_char,
@@ -6201,12 +6201,17 @@ unsafe fn window_copy_search(
     if (*data).timeout != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if (*data).searchall != 0 || (*wp).searchstr.is_null() || (*wp).searchregex != regex {
+    if (*data).searchall != 0 || (*wp).searchstr.is_none() || (*wp).searchregex != regex {
         visible_only = 0 as ::core::ffi::c_int;
         (*data).searchall = 0 as ::core::ffi::c_int;
     } else {
-        visible_only =
-            (strcmp((*wp).searchstr, str) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+        visible_only = (strcmp(
+            (*wp)
+                .searchstr
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            str,
+        ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     }
     if visible_only == 0 as ::core::ffi::c_int && !(*data).searchmark.is_null() {
         window_copy_clear_marks(wme);

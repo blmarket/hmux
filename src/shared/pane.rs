@@ -167,8 +167,8 @@ pub struct window_pane {
     pub sb_auto_hover: ::core::ffi::c_int,
     pub sb_auto_timer: event,
     pub argv: Vec<std::ffi::CString>,
-    pub shell: *mut ::core::ffi::c_char,
-    pub cwd: *mut ::core::ffi::c_char,
+    pub shell: Option<CString>,
+    pub cwd: Option<CString>,
     pub pid: pid_t,
     pub tty: [::core::ffi::c_char; 32],
     pub status: ::core::ffi::c_int,
@@ -205,7 +205,7 @@ pub struct window_pane {
     pub status_screen: screen,
     /// Pane-owned non-intrusive mode stack, drained before pane free.
     pub modes: window_pane_modes,
-    pub searchstr: *mut ::core::ffi::c_char,
+    pub searchstr: Option<CString>,
     pub searchregex: ::core::ffi::c_int,
     pub prompt: *mut prompt,
     /// Box-owned prompt data while `prompt` is active; the free callback clears it.
@@ -220,11 +220,6 @@ pub struct window_pane {
     pub scrollbar_style: style,
     pub r: visible_ranges,
     pub tree_entry: window_pane_tree_entry,
-    /// Owners for the borrowed C string views above. These live in the pane's
-    /// `RefBox` allocation so the public pane pointer is the owned object.
-    pub searchstr_owner: Option<CString>,
-    pub shell_owner: Option<CString>,
-    pub cwd_owner: Option<CString>,
 }
 
 impl window_pane {

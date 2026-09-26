@@ -245,7 +245,7 @@ pub const INT64_MAX: ::core::ffi::c_long = 9223372036854775807 as ::core::ffi::c
 static mut sort_crit: sort_criteria = sort_criteria {
     order: SORT_ACTIVITY,
     reversed: 0,
-    order_seq: ::core::ptr::null::<sort_order>() as *mut sort_order,
+    order_seq: &[],
 };
 static mut format_upper: [*const ::core::ffi::c_char; 26] = [
     ::core::ptr::null::<::core::ffi::c_char>(),

@@ -22,9 +22,6 @@ pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
 
 use super::abi::u_int;
 pub struct visible_ranges {
-    /// Borrowed compatibility view into `storage`. Replaced whenever storage
-    /// grows and cleared before storage is dropped.
-    pub ranges: *mut visible_range,
     pub used: u_int,
     /// Owned range storage. Its length tracks the number of initialized slots.
     pub(crate) storage: Vec<visible_range>,
@@ -32,7 +29,6 @@ pub struct visible_ranges {
 impl Default for visible_ranges {
     fn default() -> Self {
         Self {
-            ranges: ::core::ptr::null_mut(),
             used: 0,
             storage: Vec::new(),
         }
@@ -44,12 +40,10 @@ impl visible_ranges {
         if self.storage.len() < n as usize {
             self.storage.resize(n as usize, visible_range::default());
         }
-        self.ranges = self.storage.as_mut_ptr();
     }
 
     pub fn clear(&mut self) {
         self.storage = Vec::new();
-        self.ranges = ::core::ptr::null_mut();
         self.used = 0;
     }
 }
@@ -71,18 +65,15 @@ mod tests {
         let mut ranges = visible_ranges::default();
         ranges.ensure(2);
         assert_eq!(ranges.storage.len(), 2);
-        assert_eq!(ranges.ranges, ranges.storage.as_mut_ptr());
-        unsafe {
-            (*ranges.ranges.add(0)).px = 4;
-            (*ranges.ranges.add(0)).nx = 7;
-        }
+        ranges.storage[0].px = 4;
+        ranges.storage[0].nx = 7;
+        ranges.ensure(128);
         assert_eq!(ranges.storage[0].px, 4);
         assert_eq!(ranges.storage[0].nx, 7);
 
         ranges.used = 1;
         ranges.clear();
         assert!(ranges.storage.is_empty());
-        assert!(ranges.ranges.is_null());
         assert_eq!(ranges.used, 0);
     }
 
