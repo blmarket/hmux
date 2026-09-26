@@ -178,26 +178,7 @@ impl<'a> ibuf<'a> {
     }
 
     pub(crate) fn replace_owned(&mut self, bytes: Vec<u8>) {
-        if let IbufStorage::Owned(mut old) =
-            ::core::mem::replace(&mut self.storage, IbufStorage::Owned(bytes))
-        {
-            old.fill(0);
-        }
-    }
-}
-
-impl Drop for ibuf<'_> {
-    fn drop(&mut self) {
-        unsafe {
-            let saved_errno = *crate::src::ffi::libc::__errno_location();
-            drop(self.fd.take());
-            let storage = ::core::mem::replace(&mut self.storage, IbufStorage::Borrowed(&[]));
-            if let IbufStorage::Owned(mut bytes) = storage {
-                bytes.fill(0);
-                drop(bytes);
-            }
-            *crate::src::ffi::libc::__errno_location() = saved_errno;
-        }
+        self.storage = IbufStorage::Owned(bytes);
     }
 }
 
