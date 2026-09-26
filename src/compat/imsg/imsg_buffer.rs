@@ -50,6 +50,14 @@ impl ibufqueue_bufs {
         true
     }
 
+    fn push_back_owned(&mut self, buf: Box<OwnedIbuf>) -> bool {
+        if !buf.is_owned() {
+            return false;
+        }
+        self.entries.push_back(buf);
+        true
+    }
+
     fn pop_front_raw(&mut self) -> Option<*mut OwnedIbuf> {
         self.entries.pop_front().map(Box::into_raw)
     }
@@ -195,7 +203,7 @@ impl<'a> IbufView<'a> {
         Some(bytes)
     }
 }
-pub unsafe fn ibuf_open(mut len: size_t) -> *mut OwnedIbuf {
+pub unsafe fn ibuf_open(mut len: size_t) -> Option<Box<OwnedIbuf>> {
     let Ok(mut buf) = Box::try_new(ibuf {
         storage: IbufStorage::Owned(Vec::new().into_boxed_slice()),
         max: len,
@@ -204,7 +212,7 @@ pub unsafe fn ibuf_open(mut len: size_t) -> *mut OwnedIbuf {
         fd: -(1 as ::core::ffi::c_int),
     }) else {
         *__errno_location() = ENOMEM;
-        return ::core::ptr::null_mut::<OwnedIbuf>();
+        return None;
     };
     if len > 0 as size_t {
         match try_zeroed_boxed_slice(len) {
@@ -213,16 +221,16 @@ pub unsafe fn ibuf_open(mut len: size_t) -> *mut OwnedIbuf {
             }
             Err(_) => {
                 *__errno_location() = ENOMEM;
-                return ::core::ptr::null_mut::<OwnedIbuf>();
+                return None;
             }
         }
     }
-    return Box::into_raw(buf);
+    Some(buf)
 }
-pub unsafe fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut OwnedIbuf {
+pub unsafe fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> Option<Box<OwnedIbuf>> {
     if max == 0 as size_t || max < len {
         *__errno_location() = EINVAL;
-        return ::core::ptr::null_mut::<OwnedIbuf>();
+        return None;
     }
     let Ok(mut buf) = Box::try_new(ibuf {
         storage: IbufStorage::Owned(Vec::new().into_boxed_slice()),
@@ -232,7 +240,7 @@ pub unsafe fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut OwnedIbuf {
         fd: -(1 as ::core::ffi::c_int),
     }) else {
         *__errno_location() = ENOMEM;
-        return ::core::ptr::null_mut::<OwnedIbuf>();
+        return None;
     };
     if len > 0 as size_t {
         match try_zeroed_boxed_slice(len) {
@@ -241,11 +249,11 @@ pub unsafe fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut OwnedIbuf {
             }
             Err(_) => {
                 *__errno_location() = ENOMEM;
-                return ::core::ptr::null_mut::<OwnedIbuf>();
+                return None;
             }
         }
     }
-    return Box::into_raw(buf);
+    Some(buf)
 }
 /// Reserve writable space at the end of an owned ibuf.
 ///
@@ -393,8 +401,10 @@ pub unsafe fn ibuf_left(mut buf: *const OwnedIbuf) -> size_t {
     }
     return (*buf).max.wrapping_sub((*buf).wpos);
 }
-pub unsafe fn ibuf_close(mut msgbuf: *mut msgbuf, mut buf: *mut OwnedIbuf) {
-    ibufq_push(&raw mut (*msgbuf).bufs, buf);
+pub unsafe fn ibuf_close(mut msgbuf: *mut msgbuf, buf: Box<OwnedIbuf>) {
+    if !(*msgbuf).bufs.bufs.push_back_owned(buf) {
+        abort();
+    }
 }
 /// Read bytes from an ibuf through the raw compatibility API.
 ///
@@ -417,7 +427,7 @@ pub unsafe fn ibuf_get(
     (*buf).rpos = (*buf).rpos.wrapping_add(len);
     return 0 as ::core::ffi::c_int;
 }
-/// Release an ibuf allocated by `ibuf_open` or `ibuf_dynamic`.
+/// Release a live owned ibuf allocation received through the raw-pointer API.
 ///
 /// # Safety
 /// `buf` must be null or a live owned ibuf pointer that has not been freed or

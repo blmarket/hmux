@@ -126,17 +126,16 @@ pub unsafe fn imsg_compose(
     mut data: *const ::core::ffi::c_void,
     mut datalen: size_t,
 ) -> ::core::ffi::c_int {
-    let mut wbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
-    wbuf = imsg_create(imsgbuf, type_0, id, pid, datalen);
-    if !wbuf.is_null() {
-        if !(ibuf_add(wbuf, data, datalen) == -(1 as ::core::ffi::c_int)) {
-            ibuf_fd_set(wbuf, fd);
-            imsg_close(imsgbuf, wbuf);
-            return 1 as ::core::ffi::c_int;
-        }
+    let Some(mut wbuf) = imsg_create(imsgbuf, type_0, id, pid, datalen) else {
+        return -(1 as ::core::ffi::c_int);
+    };
+    let wbuf_ptr = &mut *wbuf as *mut OwnedIbuf;
+    if ibuf_add(wbuf_ptr, data, datalen) == -(1 as ::core::ffi::c_int) {
+        return -(1 as ::core::ffi::c_int);
     }
-    ibuf_free(wbuf);
-    return -(1 as ::core::ffi::c_int);
+    ibuf_fd_set(wbuf_ptr, fd);
+    imsg_close(imsgbuf, wbuf);
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn imsg_create(
     mut imsgbuf: *mut imsgbuf,
@@ -144,8 +143,7 @@ pub unsafe fn imsg_create(
     mut id: uint32_t,
     mut pid: pid_t,
     mut datalen: size_t,
-) -> *mut OwnedIbuf {
-    let mut wbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
+) -> Option<Box<OwnedIbuf>> {
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
         len: 0,
@@ -156,7 +154,7 @@ pub unsafe fn imsg_create(
         .wrapping_add(IMSG_HEADER_SIZE as ::core::ffi::c_ulong) as size_t as size_t;
     if datalen > (*imsgbuf).maxsize as size_t {
         *__errno_location() = ERANGE;
-        return ::core::ptr::null_mut::<OwnedIbuf>();
+        return None;
     }
     hdr.len = 0 as uint32_t;
     hdr.type_0 = type_0;
@@ -165,27 +163,25 @@ pub unsafe fn imsg_create(
     if hdr.pid == 0 as uint32_t {
         hdr.pid = (*imsgbuf).pid as uint32_t;
     }
-    wbuf = ibuf_dynamic(datalen, (*imsgbuf).maxsize as size_t);
-    if !wbuf.is_null() {
-        if !(ibuf_add(
-            wbuf,
-            &raw mut hdr as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<imsg_hdr>() as size_t,
-        ) == -(1 as ::core::ffi::c_int))
-        {
-            return wbuf;
-        }
+    let mut wbuf = ibuf_dynamic(datalen, (*imsgbuf).maxsize as size_t)?;
+    if ibuf_add(
+        &mut *wbuf as *mut OwnedIbuf,
+        &raw mut hdr as *const ::core::ffi::c_void,
+        ::core::mem::size_of::<imsg_hdr>() as size_t,
+    ) == -(1 as ::core::ffi::c_int)
+    {
+        return None;
     }
-    ibuf_free(wbuf);
-    return ::core::ptr::null_mut::<OwnedIbuf>();
+    Some(wbuf)
 }
-pub unsafe fn imsg_close(mut imsgbuf: *mut imsgbuf, mut msg: *mut OwnedIbuf) {
+pub unsafe fn imsg_close(mut imsgbuf: *mut imsgbuf, mut msg: Box<OwnedIbuf>) {
     let mut len: uint32_t = 0;
-    len = ibuf_size(msg) as uint32_t;
-    if ibuf_fd_avail(msg) != 0 {
+    let msg_ptr = &mut *msg as *mut OwnedIbuf;
+    len = ibuf_size(msg_ptr) as uint32_t;
+    if ibuf_fd_avail(msg_ptr) != 0 {
         len = (len as ::core::ffi::c_uint | IMSG_FD_MARK) as uint32_t;
     }
-    ibuf_set_h32(msg, 4 as size_t, len as uint64_t);
+    ibuf_set_h32(msg_ptr, 4 as size_t, len as uint64_t);
     ibuf_close((*imsgbuf).w, msg);
 }
 unsafe fn imsg_parse_hdr(
@@ -200,7 +196,6 @@ unsafe fn imsg_parse_hdr(
         peerid: 0,
         pid: 0,
     };
-    let mut b: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut len: uint32_t = 0;
     let header_view = unsafe { view.as_ibuf_ptr() };
     if ibuf_get(
@@ -216,16 +211,12 @@ unsafe fn imsg_parse_hdr(
         *__errno_location() = ERANGE;
         return (None, fd);
     }
-    b = ibuf_open(len as size_t);
-    if b.is_null() {
-        return (None, fd);
-    }
-    if hdr.len & IMSG_FD_MARK as uint32_t != 0 {
-        let raw_fd = fd.take().map(IntoRawFd::into_raw_fd).unwrap_or(-1);
-        ibuf_fd_set(b, raw_fd);
-    }
-    let Some(b) = OwnedIbuf::from_raw_owned(b) else {
+    let Some(mut b) = ibuf_open(len as size_t) else {
         return (None, fd);
     };
+    if hdr.len & IMSG_FD_MARK as uint32_t != 0 {
+        let raw_fd = fd.take().map(IntoRawFd::into_raw_fd).unwrap_or(-1);
+        ibuf_fd_set(&mut *b as *mut OwnedIbuf, raw_fd);
+    }
     (Some(b), fd)
 }
