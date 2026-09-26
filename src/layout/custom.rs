@@ -17,7 +17,6 @@ use crate::src::window::{
     window_pane_stack_remove, window_pane_z_first, window_pane_z_insert_front, window_pane_z_next,
     window_pane_z_remove, window_pane_zindex, window_resize, window_set_active_pane,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 macro_rules! layout_format_cause {
@@ -50,35 +49,6 @@ use crate::src::shared::pane::{PANE_MAXIMUM, PANE_MINIMUM};
 use crate::src::shared::window::window;
 use crate::src::shared::window::WINDOW_MAXIMUM;
 
-/// A temporary NUL-terminated serializer buffer.
-///
-/// The buffer is only used inside this module. Its final bytes become the
-/// private owned layout dump or are copied for the exported C result.
-struct LayoutString {
-    bytes: Vec<u8>,
-}
-
-impl LayoutString {
-    fn new() -> Self {
-        Self { bytes: vec![0] }
-    }
-
-    fn as_c_ptr(&self) -> *const ::core::ffi::c_char {
-        self.bytes.as_ptr() as *const ::core::ffi::c_char
-    }
-
-    fn append(&mut self, value: &[u8]) {
-        self.bytes.pop();
-        self.bytes.extend_from_slice(value);
-        self.bytes.push(0);
-    }
-
-    fn remove_last_byte(&mut self) {
-        assert!(self.bytes.len() >= 2, "layout serializer underflow");
-        self.bytes.truncate(self.bytes.len() - 2);
-        self.bytes.push(0);
-    }
-}
 #[repr(C)]
 pub struct layout_parse_ctx {
     pub version: int64_t,
@@ -97,33 +67,6 @@ pub struct layout_parse_cell_ctx {
     pub zindex: ::core::ffi::c_int,
 }
 
-unsafe extern "C" fn layout_string_write(
-    ls: &mut LayoutString,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    unsafe {
-        let value = xvasprintf_cstring(fmt, args.clone());
-        ls.append(value.as_bytes());
-    }
-}
-
-#[cfg(test)]
-mod layout_string_tests {
-    use super::{layout_string_write, LayoutString};
-
-    #[test]
-    fn serialized_layout_closes_after_removing_trailing_comma() {
-        let mut layout = LayoutString::new();
-        unsafe {
-            layout_string_write(&mut layout, c"{\"t\":\"%c\",\"c\":[".as_ptr(), b'h' as i32);
-            layout_string_write(&mut layout, c"%ux%u,".as_ptr(), 80_u32, 24_u32);
-            layout.remove_last_byte();
-            layout_string_write(&mut layout, c"]}".as_ptr());
-        }
-        assert_eq!(layout.bytes, b"{\"t\":\"h\",\"c\":[80x24]}\0");
-    }
-}
 unsafe fn layout_parse_init_ctx(mut pctx: *mut layout_parse_ctx, mut cause: *mut Option<CString>) {
     (*pctx).version = -(1 as ::core::ffi::c_int) as int64_t;
     (*pctx).num_active = 0 as ::core::ffi::c_int;
@@ -171,17 +114,12 @@ unsafe fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut layout_cell 
     lc = layout_cells_last(&*lc);
     return layout_find_bottomright(lc);
 }
-unsafe fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> u_short {
-    let mut csum: u_short = 0;
-    csum = 0 as u_short;
-    while *layout as ::core::ffi::c_int != '\0' as i32 {
-        csum = ((csum as ::core::ffi::c_int >> 1 as ::core::ffi::c_int)
-            + ((csum as ::core::ffi::c_int & 1 as ::core::ffi::c_int) << 15 as ::core::ffi::c_int))
-            as u_short;
-        csum = (csum as ::core::ffi::c_int + *layout as ::core::ffi::c_int) as u_short;
-        layout = layout.offset(1);
-    }
-    return csum;
+fn layout_checksum(layout: &[u8]) -> u_short {
+    layout.iter().fold(0u16, |checksum, &byte| {
+        checksum
+            .rotate_right(1)
+            .wrapping_add(byte as ::core::ffi::c_char as u16)
+    })
 }
 pub(crate) unsafe fn layout_dump_owned(
     lcroot: *mut layout_cell,
@@ -190,26 +128,24 @@ pub(crate) unsafe fn layout_dump_owned(
     if lcroot.is_null() {
         return None;
     }
-    let mut layout_string = LayoutString::new();
-    if layout_append(lcroot, &mut layout_string, flags) != 0 {
+    let mut body = Vec::new();
+    if layout_append(lcroot, &mut body, flags) != 0 {
         return None;
     }
-    // Preserve the C formatter's first-NUL view of the serialized body.
-    let body = CStr::from_ptr(layout_string.as_c_ptr()).to_bytes();
     let mut output = Vec::new();
     if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
         output.extend_from_slice(
-            format!("{:04x},", layout_checksum(layout_string.as_c_ptr())).as_bytes(),
+            format!("{:04x},", layout_checksum(&body)).as_bytes(),
         );
-        output.extend_from_slice(body);
+        output.extend_from_slice(&body);
     } else {
         output.extend_from_slice(b"{\"V\":2,\"L\":");
-        output.extend_from_slice(body);
+        output.extend_from_slice(&body);
         output.push(b'}');
     }
     Some(CString::new(output).expect("layout serializer produced an interior NUL"))
 }
-unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut LayoutString) -> ::core::ffi::c_int {
+unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
@@ -235,109 +171,94 @@ unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut LayoutString) -> :
     } else {
         return -(1 as ::core::ffi::c_int);
     }
-    layout_string_write(
-        ls,
-        b"{\"t\":\"%c\",\"w\":%u,\"h\":%u,\"x\":%d,\"y\":%d\0" as *const u8
-            as *const ::core::ffi::c_char,
-        c as ::core::ffi::c_int,
-        (*lc).g.sx,
-        (*lc).g.sy,
-        (*lc).g.xoff,
-        (*lc).g.yoff,
+    ls.extend_from_slice(
+        format!(
+            "{{\"t\":\"{}\",\"w\":{},\"h\":{},\"x\":{},\"y\":{}",
+            c as u8 as char,
+            (*lc).g.sx,
+            (*lc).g.sy,
+            (*lc).g.xoff,
+            (*lc).g.yoff
+        )
+        .as_bytes(),
     );
     if type_0 as ::core::ffi::c_uint
         != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        layout_string_write(ls, b",\"c\":[\0" as *const u8 as *const ::core::ffi::c_char);
+        ls.extend_from_slice(b",\"c\":[");
         n = 0 as u_int;
         lcchild = layout_cells_first(&*lc);
         while !lcchild.is_null() {
             if layout_append_v2(lcchild, ls) != 0 as ::core::ffi::c_int {
                 return -(1 as ::core::ffi::c_int);
             }
-            layout_string_write(ls, b",\0" as *const u8 as *const ::core::ffi::c_char);
+            ls.extend_from_slice(b",");
             n = n.wrapping_add(1);
             lcchild = layout_cell_next(lcchild);
         }
         if n == 0 as u_int {
             return -(1 as ::core::ffi::c_int);
         }
-        ls.remove_last_byte();
-        layout_string_write(ls, b"]\0" as *const u8 as *const ::core::ffi::c_char);
+        ls.pop().expect("layout serializer underflow");
+        ls.extend_from_slice(b"]");
     } else {
         wp = (*lc).wp;
         if wp.is_null() {
             return -(1 as ::core::ffi::c_int);
         }
         if wp == (*(*wp).window).active {
-            layout_string_write(
-                ls,
-                b",\"a\":true\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            ls.extend_from_slice(b",\"a\":true");
         } else if window_pane_last_index(wp, &raw mut i) == 0 as ::core::ffi::c_int {
-            layout_string_write(
-                ls,
-                b",\"l\":%u\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-            );
+            ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());
         }
         if window_pane_index(wp, &raw mut i) != 0 as ::core::ffi::c_int {
             return -(1 as ::core::ffi::c_int);
         }
-        layout_string_write(
-            ls,
-            b",\"i\":%u\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
-        );
+        ls.extend_from_slice(format!(",\"i\":{}", i).as_bytes());
         if (*lc).flags & LAYOUT_CELL_FLOATING != 0
             && window_pane_zindex(wp, &raw mut i) == 0 as ::core::ffi::c_int
         {
-            layout_string_write(
-                ls,
-                b",\"z\":%u\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-            );
+            ls.extend_from_slice(format!(",\"z\":{}", i).as_bytes());
         }
-        layout_string_write(
-            ls,
-            b",\"I\":\"%%%u\"\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-        );
+        ls.extend_from_slice(format!(",\"I\":\"%{}\"", (*wp).id).as_bytes());
     }
-    layout_string_write(ls, b"}\0" as *const u8 as *const ::core::ffi::c_char);
+    ls.extend_from_slice(b"}");
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut LayoutString) -> ::core::ffi::c_int {
+unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut brackets: *const ::core::ffi::c_char =
-        b"[]\0" as *const u8 as *const ::core::ffi::c_char;
+    let mut brackets = b"[]";
     if lc.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
     if !(*lc).wp.is_null() {
-        layout_string_write(
-            ls,
-            b"%ux%u,%d,%d,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*lc).g.sx,
-            (*lc).g.sy,
-            (*lc).g.xoff,
-            (*lc).g.yoff,
-            (*(*lc).wp).id,
+        ls.extend_from_slice(
+            format!(
+                "{}x{},{},{},{}",
+                (*lc).g.sx,
+                (*lc).g.sy,
+                (*lc).g.xoff,
+                (*lc).g.yoff,
+                (*(*lc).wp).id
+            )
+            .as_bytes(),
         );
     } else {
-        layout_string_write(
-            ls,
-            b"%ux%u,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*lc).g.sx,
-            (*lc).g.sy,
-            (*lc).g.xoff,
-            (*lc).g.yoff,
+        ls.extend_from_slice(
+            format!(
+                "{}x{},{},{}",
+                (*lc).g.sx,
+                (*lc).g.sy,
+                (*lc).g.xoff,
+                (*lc).g.yoff
+            )
+            .as_bytes(),
         );
     }
     let mut current_block_16: u64;
     match (*lc).type_0 as ::core::ffi::c_uint {
         0 => {
-            brackets = b"{}\0" as *const u8 as *const ::core::ffi::c_char;
+            brackets = b"{}";
             current_block_16 = 14129903220312603109;
         }
         1 => {
@@ -349,25 +270,17 @@ unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut LayoutString) -> :
     }
     match current_block_16 {
         14129903220312603109 => {
-            layout_string_write(
-                ls,
-                b"%c\0" as *const u8 as *const ::core::ffi::c_char,
-                *brackets.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-            );
+            ls.extend_from_slice(&brackets[0..1]);
             lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 if layout_append_v1(lcchild, ls) != 0 as ::core::ffi::c_int {
                     return -(1 as ::core::ffi::c_int);
                 }
-                layout_string_write(ls, b",\0" as *const u8 as *const ::core::ffi::c_char);
+                ls.extend_from_slice(b",");
                 lcchild = layout_cell_next(lcchild);
             }
-            ls.remove_last_byte();
-            layout_string_write(
-                ls,
-                b"%c\0" as *const u8 as *const ::core::ffi::c_char,
-                *brackets.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-            );
+            ls.pop().expect("layout serializer underflow");
+            ls.extend_from_slice(&brackets[1..2]);
         }
         _ => {}
     }
@@ -454,7 +367,7 @@ unsafe fn layout_custom_free_compat(mut lcroot: *mut layout_cell) {
 }
 unsafe fn layout_append(
     mut lcroot: *mut layout_cell,
-    ls: &mut LayoutString,
+    ls: &mut Vec<u8>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut lccompat: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -1284,7 +1197,7 @@ unsafe fn layout_construct(
             return -(1 as ::core::ffi::c_int);
         }
         input = input.offset(n as isize);
-        if csum as ::core::ffi::c_int != layout_checksum(input) as ::core::ffi::c_int {
+        if csum as ::core::ffi::c_int != layout_checksum(CStr::from_ptr(input).to_bytes()) as ::core::ffi::c_int {
             layout_set_static_cause(
                 (*pctx).cause.as_mut(),
                 b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char,
