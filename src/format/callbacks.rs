@@ -2995,878 +2995,885 @@ pub(super) enum FormatValue {
     String(CString),
     Time(time_t),
 }
+
+macro_rules! format_callback {
+    ($callback:ident) => {
+        |context: &mut FormatContext| unsafe { $callback(context.tree().as_ptr()) }
+    };
+}
+
 pub(super) enum FormatCallback {
-    String(unsafe fn(*mut format_tree) -> Option<CString>),
-    Time(unsafe fn(*mut format_tree) -> Option<time_t>),
+    String(fn(&mut FormatContext) -> Option<CString>),
+    Time(fn(&mut FormatContext) -> Option<time_t>),
 }
 pub(super) struct FormatTableEntry {
     pub key: &'static CStr,
     callback: FormatCallback,
 }
 impl FormatTableEntry {
-    pub unsafe fn get(&self, ft: *mut format_tree) -> Option<FormatValue> {
+    pub fn get(&self, context: &mut FormatContext) -> Option<FormatValue> {
         match self.callback {
-            FormatCallback::String(cb) => cb(ft).map(FormatValue::String),
-            FormatCallback::Time(cb) => cb(ft).map(FormatValue::Time),
+            FormatCallback::String(cb) => cb(context).map(FormatValue::String),
+            FormatCallback::Time(cb) => cb(context).map(FormatValue::Time),
         }
     }
 }
 pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
     FormatTableEntry {
         key: c"active_window_index",
-        callback: FormatCallback::String(format_cb_active_window_index),
+        callback: FormatCallback::String(format_callback!(format_cb_active_window_index)),
     },
     FormatTableEntry {
         key: c"alternate_on",
-        callback: FormatCallback::String(format_cb_alternate_on),
+        callback: FormatCallback::String(format_callback!(format_cb_alternate_on)),
     },
     FormatTableEntry {
         key: c"alternate_saved_x",
-        callback: FormatCallback::String(format_cb_alternate_saved_x),
+        callback: FormatCallback::String(format_callback!(format_cb_alternate_saved_x)),
     },
     FormatTableEntry {
         key: c"alternate_saved_y",
-        callback: FormatCallback::String(format_cb_alternate_saved_y),
+        callback: FormatCallback::String(format_callback!(format_cb_alternate_saved_y)),
     },
     FormatTableEntry {
         key: c"bracket_paste_flag",
-        callback: FormatCallback::String(format_cb_bracket_paste_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_bracket_paste_flag)),
     },
     FormatTableEntry {
         key: c"buffer_created",
-        callback: FormatCallback::Time(format_cb_buffer_created),
+        callback: FormatCallback::Time(format_callback!(format_cb_buffer_created)),
     },
     FormatTableEntry {
         key: c"buffer_full",
-        callback: FormatCallback::String(format_cb_buffer_full),
+        callback: FormatCallback::String(format_callback!(format_cb_buffer_full)),
     },
     FormatTableEntry {
         key: c"buffer_mode_format",
-        callback: FormatCallback::String(format_cb_buffer_mode_format),
+        callback: FormatCallback::String(format_callback!(format_cb_buffer_mode_format)),
     },
     FormatTableEntry {
         key: c"buffer_name",
-        callback: FormatCallback::String(format_cb_buffer_name),
+        callback: FormatCallback::String(format_callback!(format_cb_buffer_name)),
     },
     FormatTableEntry {
         key: c"buffer_sample",
-        callback: FormatCallback::String(format_cb_buffer_sample),
+        callback: FormatCallback::String(format_callback!(format_cb_buffer_sample)),
     },
     FormatTableEntry {
         key: c"buffer_size",
-        callback: FormatCallback::String(format_cb_buffer_size),
+        callback: FormatCallback::String(format_callback!(format_cb_buffer_size)),
     },
     FormatTableEntry {
         key: c"client_activity",
-        callback: FormatCallback::Time(format_cb_client_activity),
+        callback: FormatCallback::Time(format_callback!(format_cb_client_activity)),
     },
     FormatTableEntry {
         key: c"client_cell_height",
-        callback: FormatCallback::String(format_cb_client_cell_height),
+        callback: FormatCallback::String(format_callback!(format_cb_client_cell_height)),
     },
     FormatTableEntry {
         key: c"client_cell_width",
-        callback: FormatCallback::String(format_cb_client_cell_width),
+        callback: FormatCallback::String(format_callback!(format_cb_client_cell_width)),
     },
     FormatTableEntry {
         key: c"client_colours",
-        callback: FormatCallback::String(format_cb_client_colours),
+        callback: FormatCallback::String(format_callback!(format_cb_client_colours)),
     },
     FormatTableEntry {
         key: c"client_control_mode",
-        callback: FormatCallback::String(format_cb_client_control_mode),
+        callback: FormatCallback::String(format_callback!(format_cb_client_control_mode)),
     },
     FormatTableEntry {
         key: c"client_created",
-        callback: FormatCallback::Time(format_cb_client_created),
+        callback: FormatCallback::Time(format_callback!(format_cb_client_created)),
     },
     FormatTableEntry {
         key: c"client_discarded",
-        callback: FormatCallback::String(format_cb_client_discarded),
+        callback: FormatCallback::String(format_callback!(format_cb_client_discarded)),
     },
     FormatTableEntry {
         key: c"client_flags",
-        callback: FormatCallback::String(format_cb_client_flags),
+        callback: FormatCallback::String(format_callback!(format_cb_client_flags)),
     },
     FormatTableEntry {
         key: c"client_height",
-        callback: FormatCallback::String(format_cb_client_height),
+        callback: FormatCallback::String(format_callback!(format_cb_client_height)),
     },
     FormatTableEntry {
         key: c"client_key_table",
-        callback: FormatCallback::String(format_cb_client_key_table),
+        callback: FormatCallback::String(format_callback!(format_cb_client_key_table)),
     },
     FormatTableEntry {
         key: c"client_last_session",
-        callback: FormatCallback::String(format_cb_client_last_session),
+        callback: FormatCallback::String(format_callback!(format_cb_client_last_session)),
     },
     FormatTableEntry {
         key: c"client_mode_format",
-        callback: FormatCallback::String(format_cb_client_mode_format),
+        callback: FormatCallback::String(format_callback!(format_cb_client_mode_format)),
     },
     FormatTableEntry {
         key: c"client_name",
-        callback: FormatCallback::String(format_cb_client_name),
+        callback: FormatCallback::String(format_callback!(format_cb_client_name)),
     },
     FormatTableEntry {
         key: c"client_pid",
-        callback: FormatCallback::String(format_cb_client_pid),
+        callback: FormatCallback::String(format_callback!(format_cb_client_pid)),
     },
     FormatTableEntry {
         key: c"client_prefix",
-        callback: FormatCallback::String(format_cb_client_prefix),
+        callback: FormatCallback::String(format_callback!(format_cb_client_prefix)),
     },
     FormatTableEntry {
         key: c"client_readonly",
-        callback: FormatCallback::String(format_cb_client_readonly),
+        callback: FormatCallback::String(format_callback!(format_cb_client_readonly)),
     },
     FormatTableEntry {
         key: c"client_session",
-        callback: FormatCallback::String(format_cb_client_session),
+        callback: FormatCallback::String(format_callback!(format_cb_client_session)),
     },
     FormatTableEntry {
         key: c"client_termfeatures",
-        callback: FormatCallback::String(format_cb_client_termfeatures),
+        callback: FormatCallback::String(format_callback!(format_cb_client_termfeatures)),
     },
     FormatTableEntry {
         key: c"client_termname",
-        callback: FormatCallback::String(format_cb_client_termname),
+        callback: FormatCallback::String(format_callback!(format_cb_client_termname)),
     },
     FormatTableEntry {
         key: c"client_termtype",
-        callback: FormatCallback::String(format_cb_client_termtype),
+        callback: FormatCallback::String(format_callback!(format_cb_client_termtype)),
     },
     FormatTableEntry {
         key: c"client_theme",
-        callback: FormatCallback::String(format_cb_client_theme),
+        callback: FormatCallback::String(format_callback!(format_cb_client_theme)),
     },
     FormatTableEntry {
         key: c"client_tty",
-        callback: FormatCallback::String(format_cb_client_tty),
+        callback: FormatCallback::String(format_callback!(format_cb_client_tty)),
     },
     FormatTableEntry {
         key: c"client_uid",
-        callback: FormatCallback::String(format_cb_client_uid),
+        callback: FormatCallback::String(format_callback!(format_cb_client_uid)),
     },
     FormatTableEntry {
         key: c"client_user",
-        callback: FormatCallback::String(format_cb_client_user),
+        callback: FormatCallback::String(format_callback!(format_cb_client_user)),
     },
     FormatTableEntry {
         key: c"client_utf8",
-        callback: FormatCallback::String(format_cb_client_utf8),
+        callback: FormatCallback::String(format_callback!(format_cb_client_utf8)),
     },
     FormatTableEntry {
         key: c"client_width",
-        callback: FormatCallback::String(format_cb_client_width),
+        callback: FormatCallback::String(format_callback!(format_cb_client_width)),
     },
     FormatTableEntry {
         key: c"client_written",
-        callback: FormatCallback::String(format_cb_client_written),
+        callback: FormatCallback::String(format_callback!(format_cb_client_written)),
     },
     FormatTableEntry {
         key: c"config_files",
-        callback: FormatCallback::String(format_cb_config_files),
+        callback: FormatCallback::String(format_callback!(format_cb_config_files)),
     },
     FormatTableEntry {
         key: c"cursor_blinking",
-        callback: FormatCallback::String(format_cb_cursor_blinking),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_blinking)),
     },
     FormatTableEntry {
         key: c"cursor_character",
-        callback: FormatCallback::String(format_cb_cursor_character),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_character)),
     },
     FormatTableEntry {
         key: c"cursor_colour",
-        callback: FormatCallback::String(format_cb_cursor_colour),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_colour)),
     },
     FormatTableEntry {
         key: c"cursor_flag",
-        callback: FormatCallback::String(format_cb_cursor_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_flag)),
     },
     FormatTableEntry {
         key: c"cursor_shape",
-        callback: FormatCallback::String(format_cb_cursor_shape),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_shape)),
     },
     FormatTableEntry {
         key: c"cursor_very_visible",
-        callback: FormatCallback::String(format_cb_cursor_very_visible),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_very_visible)),
     },
     FormatTableEntry {
         key: c"cursor_x",
-        callback: FormatCallback::String(format_cb_cursor_x),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_x)),
     },
     FormatTableEntry {
         key: c"cursor_y",
-        callback: FormatCallback::String(format_cb_cursor_y),
+        callback: FormatCallback::String(format_callback!(format_cb_cursor_y)),
     },
     FormatTableEntry {
         key: c"history_added",
-        callback: FormatCallback::String(format_cb_history_added),
+        callback: FormatCallback::String(format_callback!(format_cb_history_added)),
     },
     FormatTableEntry {
         key: c"history_all_bytes",
-        callback: FormatCallback::String(format_cb_history_all_bytes),
+        callback: FormatCallback::String(format_callback!(format_cb_history_all_bytes)),
     },
     FormatTableEntry {
         key: c"history_bytes",
-        callback: FormatCallback::String(format_cb_history_bytes),
+        callback: FormatCallback::String(format_callback!(format_cb_history_bytes)),
     },
     FormatTableEntry {
         key: c"history_collected",
-        callback: FormatCallback::String(format_cb_history_collected),
+        callback: FormatCallback::String(format_callback!(format_cb_history_collected)),
     },
     FormatTableEntry {
         key: c"history_generation",
-        callback: FormatCallback::String(format_cb_history_generation),
+        callback: FormatCallback::String(format_callback!(format_cb_history_generation)),
     },
     FormatTableEntry {
         key: c"history_limit",
-        callback: FormatCallback::String(format_cb_history_limit),
+        callback: FormatCallback::String(format_callback!(format_cb_history_limit)),
     },
     FormatTableEntry {
         key: c"history_size",
-        callback: FormatCallback::String(format_cb_history_size),
+        callback: FormatCallback::String(format_callback!(format_cb_history_size)),
     },
     FormatTableEntry {
         key: c"host",
-        callback: FormatCallback::String(format_cb_host),
+        callback: FormatCallback::String(format_callback!(format_cb_host)),
     },
     FormatTableEntry {
         key: c"host_short",
-        callback: FormatCallback::String(format_cb_host_short),
+        callback: FormatCallback::String(format_callback!(format_cb_host_short)),
     },
     FormatTableEntry {
         key: c"insert_flag",
-        callback: FormatCallback::String(format_cb_insert_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_insert_flag)),
     },
     FormatTableEntry {
         key: c"keypad_cursor_flag",
-        callback: FormatCallback::String(format_cb_keypad_cursor_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_keypad_cursor_flag)),
     },
     FormatTableEntry {
         key: c"keypad_flag",
-        callback: FormatCallback::String(format_cb_keypad_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_keypad_flag)),
     },
     FormatTableEntry {
         key: c"last_window_index",
-        callback: FormatCallback::String(format_cb_last_window_index),
+        callback: FormatCallback::String(format_callback!(format_cb_last_window_index)),
     },
     FormatTableEntry {
         key: c"mouse_all_flag",
-        callback: FormatCallback::String(format_cb_mouse_all_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_all_flag)),
     },
     FormatTableEntry {
         key: c"mouse_any_flag",
-        callback: FormatCallback::String(format_cb_mouse_any_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_any_flag)),
     },
     FormatTableEntry {
         key: c"mouse_button_flag",
-        callback: FormatCallback::String(format_cb_mouse_button_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_button_flag)),
     },
     FormatTableEntry {
         key: c"mouse_hyperlink",
-        callback: FormatCallback::String(format_cb_mouse_hyperlink),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_hyperlink)),
     },
     FormatTableEntry {
         key: c"mouse_line",
-        callback: FormatCallback::String(format_cb_mouse_line),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_line)),
     },
     FormatTableEntry {
         key: c"mouse_pane",
-        callback: FormatCallback::String(format_cb_mouse_pane),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_pane)),
     },
     FormatTableEntry {
         key: c"mouse_sgr_flag",
-        callback: FormatCallback::String(format_cb_mouse_sgr_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_sgr_flag)),
     },
     FormatTableEntry {
         key: c"mouse_standard_flag",
-        callback: FormatCallback::String(format_cb_mouse_standard_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_standard_flag)),
     },
     FormatTableEntry {
         key: c"mouse_status_line",
-        callback: FormatCallback::String(format_cb_mouse_status_line),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_status_line)),
     },
     FormatTableEntry {
         key: c"mouse_status_range",
-        callback: FormatCallback::String(format_cb_mouse_status_range),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_status_range)),
     },
     FormatTableEntry {
         key: c"mouse_utf8_flag",
-        callback: FormatCallback::String(format_cb_mouse_utf8_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_utf8_flag)),
     },
     FormatTableEntry {
         key: c"mouse_word",
-        callback: FormatCallback::String(format_cb_mouse_word),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_word)),
     },
     FormatTableEntry {
         key: c"mouse_x",
-        callback: FormatCallback::String(format_cb_mouse_x),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_x)),
     },
     FormatTableEntry {
         key: c"mouse_y",
-        callback: FormatCallback::String(format_cb_mouse_y),
+        callback: FormatCallback::String(format_callback!(format_cb_mouse_y)),
     },
     FormatTableEntry {
         key: c"next_session_id",
-        callback: FormatCallback::String(format_cb_next_session_id),
+        callback: FormatCallback::String(format_callback!(format_cb_next_session_id)),
     },
     FormatTableEntry {
         key: c"origin_flag",
-        callback: FormatCallback::String(format_cb_origin_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_origin_flag)),
     },
     FormatTableEntry {
         key: c"pane_active",
-        callback: FormatCallback::String(format_cb_pane_active),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_active)),
     },
     FormatTableEntry {
         key: c"pane_at_bottom",
-        callback: FormatCallback::String(format_cb_pane_at_bottom),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_at_bottom)),
     },
     FormatTableEntry {
         key: c"pane_at_left",
-        callback: FormatCallback::String(format_cb_pane_at_left),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_at_left)),
     },
     FormatTableEntry {
         key: c"pane_at_right",
-        callback: FormatCallback::String(format_cb_pane_at_right),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_at_right)),
     },
     FormatTableEntry {
         key: c"pane_at_top",
-        callback: FormatCallback::String(format_cb_pane_at_top),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_at_top)),
     },
     FormatTableEntry {
         key: c"pane_bg",
-        callback: FormatCallback::String(format_cb_pane_bg),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_bg)),
     },
     FormatTableEntry {
         key: c"pane_bottom",
-        callback: FormatCallback::String(format_cb_pane_bottom),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_bottom)),
     },
     FormatTableEntry {
         key: c"pane_command_duration",
-        callback: FormatCallback::String(format_cb_pane_command_duration),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_command_duration)),
     },
     FormatTableEntry {
         key: c"pane_command_end_time",
-        callback: FormatCallback::Time(format_cb_pane_command_end_time),
+        callback: FormatCallback::Time(format_callback!(format_cb_pane_command_end_time)),
     },
     FormatTableEntry {
         key: c"pane_command_running",
-        callback: FormatCallback::String(format_cb_pane_command_running),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_command_running)),
     },
     FormatTableEntry {
         key: c"pane_command_start_time",
-        callback: FormatCallback::Time(format_cb_pane_command_start_time),
+        callback: FormatCallback::Time(format_callback!(format_cb_pane_command_start_time)),
     },
     FormatTableEntry {
         key: c"pane_command_status",
-        callback: FormatCallback::String(format_cb_pane_command_status),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_command_status)),
     },
     FormatTableEntry {
         key: c"pane_current_command",
-        callback: FormatCallback::String(format_cb_current_command),
+        callback: FormatCallback::String(format_callback!(format_cb_current_command)),
     },
     FormatTableEntry {
         key: c"pane_current_path",
-        callback: FormatCallback::String(format_cb_current_path),
+        callback: FormatCallback::String(format_callback!(format_cb_current_path)),
     },
     FormatTableEntry {
         key: c"pane_dead",
-        callback: FormatCallback::String(format_cb_pane_dead),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_dead)),
     },
     FormatTableEntry {
         key: c"pane_dead_signal",
-        callback: FormatCallback::String(format_cb_pane_dead_signal),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_dead_signal)),
     },
     FormatTableEntry {
         key: c"pane_dead_status",
-        callback: FormatCallback::String(format_cb_pane_dead_status),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_dead_status)),
     },
     FormatTableEntry {
         key: c"pane_dead_time",
-        callback: FormatCallback::Time(format_cb_pane_dead_time),
+        callback: FormatCallback::Time(format_callback!(format_cb_pane_dead_time)),
     },
     FormatTableEntry {
         key: c"pane_fg",
-        callback: FormatCallback::String(format_cb_pane_fg),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_fg)),
     },
     FormatTableEntry {
         key: c"pane_flags",
-        callback: FormatCallback::String(format_cb_pane_flags),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_flags)),
     },
     FormatTableEntry {
         key: c"pane_floating_flag",
-        callback: FormatCallback::String(format_cb_pane_floating_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_floating_flag)),
     },
     FormatTableEntry {
         key: c"pane_format",
-        callback: FormatCallback::String(format_cb_pane_format),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_format)),
     },
     FormatTableEntry {
         key: c"pane_height",
-        callback: FormatCallback::String(format_cb_pane_height),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_height)),
     },
     FormatTableEntry {
         key: c"pane_id",
-        callback: FormatCallback::String(format_cb_pane_id),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_id)),
     },
     FormatTableEntry {
         key: c"pane_in_mode",
-        callback: FormatCallback::String(format_cb_pane_in_mode),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_in_mode)),
     },
     FormatTableEntry {
         key: c"pane_index",
-        callback: FormatCallback::String(format_cb_pane_index),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_index)),
     },
     FormatTableEntry {
         key: c"pane_input_off",
-        callback: FormatCallback::String(format_cb_pane_input_off),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_input_off)),
     },
     FormatTableEntry {
         key: c"pane_key_mode",
-        callback: FormatCallback::String(format_cb_pane_key_mode),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_key_mode)),
     },
     FormatTableEntry {
         key: c"pane_last",
-        callback: FormatCallback::String(format_cb_pane_last),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_last)),
     },
     FormatTableEntry {
         key: c"pane_last_output_time",
-        callback: FormatCallback::Time(format_cb_pane_last_output_time),
+        callback: FormatCallback::Time(format_callback!(format_cb_pane_last_output_time)),
     },
     FormatTableEntry {
         key: c"pane_last_prompt_time",
-        callback: FormatCallback::Time(format_cb_pane_last_prompt_time),
+        callback: FormatCallback::Time(format_callback!(format_cb_pane_last_prompt_time)),
     },
     FormatTableEntry {
         key: c"pane_left",
-        callback: FormatCallback::String(format_cb_pane_left),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_left)),
     },
     FormatTableEntry {
         key: c"pane_marked",
-        callback: FormatCallback::String(format_cb_pane_marked),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_marked)),
     },
     FormatTableEntry {
         key: c"pane_marked_set",
-        callback: FormatCallback::String(format_cb_pane_marked_set),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_marked_set)),
     },
     FormatTableEntry {
         key: c"pane_modal_flag",
-        callback: FormatCallback::String(format_cb_pane_modal_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_modal_flag)),
     },
     FormatTableEntry {
         key: c"pane_mode",
-        callback: FormatCallback::String(format_cb_pane_mode),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_mode)),
     },
     FormatTableEntry {
         key: c"pane_output_generation",
-        callback: FormatCallback::String(format_cb_pane_output_generation),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_output_generation)),
     },
     FormatTableEntry {
         key: c"pane_path",
-        callback: FormatCallback::String(format_cb_pane_path),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_path)),
     },
     FormatTableEntry {
         key: c"pane_pb_progress",
-        callback: FormatCallback::String(format_cb_pane_pb_progress),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_pb_progress)),
     },
     FormatTableEntry {
         key: c"pane_pb_state",
-        callback: FormatCallback::String(format_cb_pane_pb_state),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_pb_state)),
     },
     FormatTableEntry {
         key: c"pane_pid",
-        callback: FormatCallback::String(format_cb_pane_pid),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_pid)),
     },
     FormatTableEntry {
         key: c"pane_pipe",
-        callback: FormatCallback::String(format_cb_pane_pipe),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_pipe)),
     },
     FormatTableEntry {
         key: c"pane_pipe_pid",
-        callback: FormatCallback::String(format_cb_pane_pipe_pid),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_pipe_pid)),
     },
     FormatTableEntry {
         key: c"pane_private_modes",
-        callback: FormatCallback::String(format_cb_pane_private_modes),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_private_modes)),
     },
     FormatTableEntry {
         key: c"pane_right",
-        callback: FormatCallback::String(format_cb_pane_right),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_right)),
     },
     FormatTableEntry {
         key: c"pane_search_string",
-        callback: FormatCallback::String(format_cb_pane_search_string),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_search_string)),
     },
     FormatTableEntry {
         key: c"pane_start_command",
-        callback: FormatCallback::String(format_cb_start_command),
+        callback: FormatCallback::String(format_callback!(format_cb_start_command)),
     },
     FormatTableEntry {
         key: c"pane_start_command_list",
-        callback: FormatCallback::String(format_cb_start_command_list),
+        callback: FormatCallback::String(format_callback!(format_cb_start_command_list)),
     },
     FormatTableEntry {
         key: c"pane_start_path",
-        callback: FormatCallback::String(format_cb_start_path),
+        callback: FormatCallback::String(format_callback!(format_cb_start_path)),
     },
     FormatTableEntry {
         key: c"pane_synchronized",
-        callback: FormatCallback::String(format_cb_pane_synchronized),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_synchronized)),
     },
     FormatTableEntry {
         key: c"pane_tabs",
-        callback: FormatCallback::String(format_cb_pane_tabs),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_tabs)),
     },
     FormatTableEntry {
         key: c"pane_title",
-        callback: FormatCallback::String(format_cb_pane_title),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_title)),
     },
     FormatTableEntry {
         key: c"pane_top",
-        callback: FormatCallback::String(format_cb_pane_top),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_top)),
     },
     FormatTableEntry {
         key: c"pane_tty",
-        callback: FormatCallback::String(format_cb_pane_tty),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_tty)),
     },
     FormatTableEntry {
         key: c"pane_unseen_changes",
-        callback: FormatCallback::String(format_cb_pane_unseen_changes),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_unseen_changes)),
     },
     FormatTableEntry {
         key: c"pane_unzoomed_height",
-        callback: FormatCallback::String(format_cb_pane_unzoomed_height),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_unzoomed_height)),
     },
     FormatTableEntry {
         key: c"pane_unzoomed_width",
-        callback: FormatCallback::String(format_cb_pane_unzoomed_width),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_unzoomed_width)),
     },
     FormatTableEntry {
         key: c"pane_width",
-        callback: FormatCallback::String(format_cb_pane_width),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_width)),
     },
     FormatTableEntry {
         key: c"pane_x",
-        callback: FormatCallback::String(format_cb_pane_x),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_x)),
     },
     FormatTableEntry {
         key: c"pane_y",
-        callback: FormatCallback::String(format_cb_pane_y),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_y)),
     },
     FormatTableEntry {
         key: c"pane_z",
-        callback: FormatCallback::String(format_cb_pane_z),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_z)),
     },
     FormatTableEntry {
         key: c"pane_zoomed_flag",
-        callback: FormatCallback::String(format_cb_pane_zoomed_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_pane_zoomed_flag)),
     },
     FormatTableEntry {
         key: c"pid",
-        callback: FormatCallback::String(format_cb_pid),
+        callback: FormatCallback::String(format_callback!(format_cb_pid)),
     },
     FormatTableEntry {
         key: c"scroll_region_lower",
-        callback: FormatCallback::String(format_cb_scroll_region_lower),
+        callback: FormatCallback::String(format_callback!(format_cb_scroll_region_lower)),
     },
     FormatTableEntry {
         key: c"scroll_region_upper",
-        callback: FormatCallback::String(format_cb_scroll_region_upper),
+        callback: FormatCallback::String(format_callback!(format_cb_scroll_region_upper)),
     },
     FormatTableEntry {
         key: c"server_sessions",
-        callback: FormatCallback::String(format_cb_server_sessions),
+        callback: FormatCallback::String(format_callback!(format_cb_server_sessions)),
     },
     FormatTableEntry {
         key: c"session_active",
-        callback: FormatCallback::String(format_cb_session_active),
+        callback: FormatCallback::String(format_callback!(format_cb_session_active)),
     },
     FormatTableEntry {
         key: c"session_activity",
-        callback: FormatCallback::Time(format_cb_session_activity),
+        callback: FormatCallback::Time(format_callback!(format_cb_session_activity)),
     },
     FormatTableEntry {
         key: c"session_activity_flag",
-        callback: FormatCallback::String(format_cb_session_activity_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_session_activity_flag)),
     },
     FormatTableEntry {
         key: c"session_alert",
-        callback: FormatCallback::String(format_cb_session_alert),
+        callback: FormatCallback::String(format_callback!(format_cb_session_alert)),
     },
     FormatTableEntry {
         key: c"session_alerts",
-        callback: FormatCallback::String(format_cb_session_alerts),
+        callback: FormatCallback::String(format_callback!(format_cb_session_alerts)),
     },
     FormatTableEntry {
         key: c"session_attached",
-        callback: FormatCallback::String(format_cb_session_attached),
+        callback: FormatCallback::String(format_callback!(format_cb_session_attached)),
     },
     FormatTableEntry {
         key: c"session_attached_list",
-        callback: FormatCallback::String(format_cb_session_attached_list),
+        callback: FormatCallback::String(format_callback!(format_cb_session_attached_list)),
     },
     FormatTableEntry {
         key: c"session_bell_flag",
-        callback: FormatCallback::String(format_cb_session_bell_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_session_bell_flag)),
     },
     FormatTableEntry {
         key: c"session_created",
-        callback: FormatCallback::Time(format_cb_session_created),
+        callback: FormatCallback::Time(format_callback!(format_cb_session_created)),
     },
     FormatTableEntry {
         key: c"session_format",
-        callback: FormatCallback::String(format_cb_session_format),
+        callback: FormatCallback::String(format_callback!(format_cb_session_format)),
     },
     FormatTableEntry {
         key: c"session_group",
-        callback: FormatCallback::String(format_cb_session_group),
+        callback: FormatCallback::String(format_callback!(format_cb_session_group)),
     },
     FormatTableEntry {
         key: c"session_group_attached",
-        callback: FormatCallback::String(format_cb_session_group_attached),
+        callback: FormatCallback::String(format_callback!(format_cb_session_group_attached)),
     },
     FormatTableEntry {
         key: c"session_group_attached_list",
-        callback: FormatCallback::String(format_cb_session_group_attached_list),
+        callback: FormatCallback::String(format_callback!(format_cb_session_group_attached_list)),
     },
     FormatTableEntry {
         key: c"session_group_list",
-        callback: FormatCallback::String(format_cb_session_group_list),
+        callback: FormatCallback::String(format_callback!(format_cb_session_group_list)),
     },
     FormatTableEntry {
         key: c"session_group_many_attached",
-        callback: FormatCallback::String(format_cb_session_group_many_attached),
+        callback: FormatCallback::String(format_callback!(format_cb_session_group_many_attached)),
     },
     FormatTableEntry {
         key: c"session_group_size",
-        callback: FormatCallback::String(format_cb_session_group_size),
+        callback: FormatCallback::String(format_callback!(format_cb_session_group_size)),
     },
     FormatTableEntry {
         key: c"session_grouped",
-        callback: FormatCallback::String(format_cb_session_grouped),
+        callback: FormatCallback::String(format_callback!(format_cb_session_grouped)),
     },
     FormatTableEntry {
         key: c"session_id",
-        callback: FormatCallback::String(format_cb_session_id),
+        callback: FormatCallback::String(format_callback!(format_cb_session_id)),
     },
     FormatTableEntry {
         key: c"session_last_attached",
-        callback: FormatCallback::Time(format_cb_session_last_attached),
+        callback: FormatCallback::Time(format_callback!(format_cb_session_last_attached)),
     },
     FormatTableEntry {
         key: c"session_many_attached",
-        callback: FormatCallback::String(format_cb_session_many_attached),
+        callback: FormatCallback::String(format_callback!(format_cb_session_many_attached)),
     },
     FormatTableEntry {
         key: c"session_marked",
-        callback: FormatCallback::String(format_cb_session_marked),
+        callback: FormatCallback::String(format_callback!(format_cb_session_marked)),
     },
     FormatTableEntry {
         key: c"session_name",
-        callback: FormatCallback::String(format_cb_session_name),
+        callback: FormatCallback::String(format_callback!(format_cb_session_name)),
     },
     FormatTableEntry {
         key: c"session_path",
-        callback: FormatCallback::String(format_cb_session_path),
+        callback: FormatCallback::String(format_callback!(format_cb_session_path)),
     },
     FormatTableEntry {
         key: c"session_silence_flag",
-        callback: FormatCallback::String(format_cb_session_silence_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_session_silence_flag)),
     },
     FormatTableEntry {
         key: c"session_stack",
-        callback: FormatCallback::String(format_cb_session_stack),
+        callback: FormatCallback::String(format_callback!(format_cb_session_stack)),
     },
     FormatTableEntry {
         key: c"session_windows",
-        callback: FormatCallback::String(format_cb_session_windows),
+        callback: FormatCallback::String(format_callback!(format_cb_session_windows)),
     },
     FormatTableEntry {
         key: c"sixel_support",
-        callback: FormatCallback::String(format_cb_sixel_support),
+        callback: FormatCallback::String(format_callback!(format_cb_sixel_support)),
     },
     FormatTableEntry {
         key: c"socket_path",
-        callback: FormatCallback::String(format_cb_socket_path),
+        callback: FormatCallback::String(format_callback!(format_cb_socket_path)),
     },
     FormatTableEntry {
         key: c"start_time",
-        callback: FormatCallback::Time(format_cb_start_time),
+        callback: FormatCallback::Time(format_callback!(format_cb_start_time)),
     },
     FormatTableEntry {
         key: c"synchronized_output_flag",
-        callback: FormatCallback::String(format_cb_synchronized_output_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_synchronized_output_flag)),
     },
     FormatTableEntry {
         key: c"tree_mode_format",
-        callback: FormatCallback::String(format_cb_tree_mode_format),
+        callback: FormatCallback::String(format_callback!(format_cb_tree_mode_format)),
     },
     FormatTableEntry {
         key: c"uid",
-        callback: FormatCallback::String(format_cb_uid),
+        callback: FormatCallback::String(format_callback!(format_cb_uid)),
     },
     FormatTableEntry {
         key: c"user",
-        callback: FormatCallback::String(format_cb_user),
+        callback: FormatCallback::String(format_callback!(format_cb_user)),
     },
     FormatTableEntry {
         key: c"version",
-        callback: FormatCallback::String(format_cb_version),
+        callback: FormatCallback::String(format_callback!(format_cb_version)),
     },
     FormatTableEntry {
         key: c"window_active",
-        callback: FormatCallback::String(format_cb_window_active),
+        callback: FormatCallback::String(format_callback!(format_cb_window_active)),
     },
     FormatTableEntry {
         key: c"window_active_clients",
-        callback: FormatCallback::String(format_cb_window_active_clients),
+        callback: FormatCallback::String(format_callback!(format_cb_window_active_clients)),
     },
     FormatTableEntry {
         key: c"window_active_clients_list",
-        callback: FormatCallback::String(format_cb_window_active_clients_list),
+        callback: FormatCallback::String(format_callback!(format_cb_window_active_clients_list)),
     },
     FormatTableEntry {
         key: c"window_active_sessions",
-        callback: FormatCallback::String(format_cb_window_active_sessions),
+        callback: FormatCallback::String(format_callback!(format_cb_window_active_sessions)),
     },
     FormatTableEntry {
         key: c"window_active_sessions_list",
-        callback: FormatCallback::String(format_cb_window_active_sessions_list),
+        callback: FormatCallback::String(format_callback!(format_cb_window_active_sessions_list)),
     },
     FormatTableEntry {
         key: c"window_activity",
-        callback: FormatCallback::Time(format_cb_window_activity),
+        callback: FormatCallback::Time(format_callback!(format_cb_window_activity)),
     },
     FormatTableEntry {
         key: c"window_activity_flag",
-        callback: FormatCallback::String(format_cb_window_activity_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_activity_flag)),
     },
     FormatTableEntry {
         key: c"window_bell_flag",
-        callback: FormatCallback::String(format_cb_window_bell_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_bell_flag)),
     },
     FormatTableEntry {
         key: c"window_bigger",
-        callback: FormatCallback::String(format_cb_window_bigger),
+        callback: FormatCallback::String(format_callback!(format_cb_window_bigger)),
     },
     FormatTableEntry {
         key: c"window_cell_height",
-        callback: FormatCallback::String(format_cb_window_cell_height),
+        callback: FormatCallback::String(format_callback!(format_cb_window_cell_height)),
     },
     FormatTableEntry {
         key: c"window_cell_width",
-        callback: FormatCallback::String(format_cb_window_cell_width),
+        callback: FormatCallback::String(format_callback!(format_cb_window_cell_width)),
     },
     FormatTableEntry {
         key: c"window_end_flag",
-        callback: FormatCallback::String(format_cb_window_end_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_end_flag)),
     },
     FormatTableEntry {
         key: c"window_flags",
-        callback: FormatCallback::String(format_cb_window_flags),
+        callback: FormatCallback::String(format_callback!(format_cb_window_flags)),
     },
     FormatTableEntry {
         key: c"window_format",
-        callback: FormatCallback::String(format_cb_window_format),
+        callback: FormatCallback::String(format_callback!(format_cb_window_format)),
     },
     FormatTableEntry {
         key: c"window_height",
-        callback: FormatCallback::String(format_cb_window_height),
+        callback: FormatCallback::String(format_callback!(format_cb_window_height)),
     },
     FormatTableEntry {
         key: c"window_id",
-        callback: FormatCallback::String(format_cb_window_id),
+        callback: FormatCallback::String(format_callback!(format_cb_window_id)),
     },
     FormatTableEntry {
         key: c"window_index",
-        callback: FormatCallback::String(format_cb_window_index),
+        callback: FormatCallback::String(format_callback!(format_cb_window_index)),
     },
     FormatTableEntry {
         key: c"window_last_flag",
-        callback: FormatCallback::String(format_cb_window_last_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_last_flag)),
     },
     FormatTableEntry {
         key: c"window_layout",
-        callback: FormatCallback::String(format_cb_window_layout),
+        callback: FormatCallback::String(format_callback!(format_cb_window_layout)),
     },
     FormatTableEntry {
         key: c"window_linked",
-        callback: FormatCallback::String(format_cb_window_linked),
+        callback: FormatCallback::String(format_callback!(format_cb_window_linked)),
     },
     FormatTableEntry {
         key: c"window_linked_sessions",
-        callback: FormatCallback::String(format_cb_window_linked_sessions),
+        callback: FormatCallback::String(format_callback!(format_cb_window_linked_sessions)),
     },
     FormatTableEntry {
         key: c"window_linked_sessions_list",
-        callback: FormatCallback::String(format_cb_window_linked_sessions_list),
+        callback: FormatCallback::String(format_callback!(format_cb_window_linked_sessions_list)),
     },
     FormatTableEntry {
         key: c"window_manual_height",
-        callback: FormatCallback::String(format_cb_window_manual_height),
+        callback: FormatCallback::String(format_callback!(format_cb_window_manual_height)),
     },
     FormatTableEntry {
         key: c"window_manual_width",
-        callback: FormatCallback::String(format_cb_window_manual_width),
+        callback: FormatCallback::String(format_callback!(format_cb_window_manual_width)),
     },
     FormatTableEntry {
         key: c"window_marked_flag",
-        callback: FormatCallback::String(format_cb_window_marked_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_marked_flag)),
     },
     FormatTableEntry {
         key: c"window_modal_pane",
-        callback: FormatCallback::String(format_cb_window_modal_pane),
+        callback: FormatCallback::String(format_callback!(format_cb_window_modal_pane)),
     },
     FormatTableEntry {
         key: c"window_name",
-        callback: FormatCallback::String(format_cb_window_name),
+        callback: FormatCallback::String(format_callback!(format_cb_window_name)),
     },
     FormatTableEntry {
         key: c"window_offset_x",
-        callback: FormatCallback::String(format_cb_window_offset_x),
+        callback: FormatCallback::String(format_callback!(format_cb_window_offset_x)),
     },
     FormatTableEntry {
         key: c"window_offset_y",
-        callback: FormatCallback::String(format_cb_window_offset_y),
+        callback: FormatCallback::String(format_callback!(format_cb_window_offset_y)),
     },
     FormatTableEntry {
         key: c"window_panes",
-        callback: FormatCallback::String(format_cb_window_panes),
+        callback: FormatCallback::String(format_callback!(format_cb_window_panes)),
     },
     FormatTableEntry {
         key: c"window_raw_flags",
-        callback: FormatCallback::String(format_cb_window_raw_flags),
+        callback: FormatCallback::String(format_callback!(format_cb_window_raw_flags)),
     },
     FormatTableEntry {
         key: c"window_silence_flag",
-        callback: FormatCallback::String(format_cb_window_silence_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_silence_flag)),
     },
     FormatTableEntry {
         key: c"window_stack_index",
-        callback: FormatCallback::String(format_cb_window_stack_index),
+        callback: FormatCallback::String(format_callback!(format_cb_window_stack_index)),
     },
     FormatTableEntry {
         key: c"window_start_flag",
-        callback: FormatCallback::String(format_cb_window_start_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_start_flag)),
     },
     FormatTableEntry {
         key: c"window_visible_layout",
-        callback: FormatCallback::String(format_cb_window_visible_layout),
+        callback: FormatCallback::String(format_callback!(format_cb_window_visible_layout)),
     },
     FormatTableEntry {
         key: c"window_width",
-        callback: FormatCallback::String(format_cb_window_width),
+        callback: FormatCallback::String(format_callback!(format_cb_window_width)),
     },
     FormatTableEntry {
         key: c"window_zoomed_flag",
-        callback: FormatCallback::String(format_cb_window_zoomed_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_window_zoomed_flag)),
     },
     FormatTableEntry {
         key: c"wrap_flag",
-        callback: FormatCallback::String(format_cb_wrap_flag),
+        callback: FormatCallback::String(format_callback!(format_cb_wrap_flag)),
     },
 ];
 pub(super) fn format_table_get(key: &CStr) -> Option<&'static FormatTableEntry> {
@@ -3897,7 +3904,10 @@ mod owned_callback_tests {
                 c"session_created",
                 c"pane_dead_time",
             ] {
-                assert!(format_table_get(key).unwrap().get(ft).is_none());
+                let mut context = FormatContext::from_tree(
+                    std::ptr::NonNull::new(ft).expect("format tree is non-null"),
+                );
+                assert!(format_table_get(key).unwrap().get(&mut context).is_none());
             }
             format_free(ft);
         }

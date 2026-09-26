@@ -256,8 +256,12 @@ pub unsafe extern "C" fn format_log_debug(
 pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)) {
     let mut fe: *mut format_entry;
     let mut s: [::core::ffi::c_char; 64] = [0; 64];
+    let mut context =
+        FormatContext::from_tree(std::ptr::NonNull::new(ft).expect("format tree is non-null"));
     for entry in &FORMAT_TABLE {
-        let Some(value) = entry.get(ft) else { continue };
+        let Some(value) = entry.get(&mut context) else {
+            continue;
+        };
         let value = match value {
             FormatValue::String(value) => value,
             FormatValue::Time(value) => {
