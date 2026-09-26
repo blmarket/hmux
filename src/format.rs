@@ -167,6 +167,7 @@ use crate::src::shared::window::{
  * dependency boundary for generated shared types, FFI declarations, and the
  * small logging/state helpers used by more than one group.
  */
+pub mod bytes;
 mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
