@@ -139,6 +139,10 @@ fn set_option_reports_match_errors_through_cmdq_error() {
         &[
             ("status-", b"ambiguous option: status-"),
             ("status[]", b"invalid option: status[]"),
+            ("status-format[]", b"invalid option: status-format[]"),
+            ("status[0", b"invalid option: status[0"),
+            ("status[0]tail", b"invalid option: status[0]tail"),
+            ("@user[]", b"invalid option: @user[]"),
             (
                 "status-format[4294967296]",
                 b"invalid option: status-format[4294967296]",
@@ -155,10 +159,14 @@ fn show_options_reports_match_errors_through_cmdq_error() {
         "show-options",
         &[
             ("status-", b"ambiguous option: status-"),
-            ("status[]", b"invalid option: status[]"),
+            ("status[]", b"ambiguous option: status[]"),
+            ("status-format[]", b"ambiguous option: status-format[]"),
+            ("status[0", b"ambiguous option: status[0"),
+            ("status[0]tail", b"ambiguous option: status[0]tail"),
+            ("@user[]", b"ambiguous option: @user[]"),
             (
                 "status-format[4294967296]",
-                b"invalid option: status-format[4294967296]",
+                b"ambiguous option: status-format[4294967296]",
             ),
             ("not-an-option", b"invalid option: not-an-option"),
         ],

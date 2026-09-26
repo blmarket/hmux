@@ -1165,8 +1165,9 @@ unsafe fn layout_resize_pane_shrink(
     if lcadd.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if size > -needed as u_int {
-        size = -needed as u_int;
+    // The magnitude of i32::MIN fits in the unsigned layout size.
+    if size > needed.unsigned_abs() {
+        size = needed.unsigned_abs();
     }
     layout_resize_adjust(w, lcadd, type_0, size as ::core::ffi::c_int);
     layout_resize_adjust(

@@ -251,7 +251,8 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 if flag as ::core::ffi::c_int == 'L' as i32
                     || flag as ::core::ffi::c_int == 'U' as i32
                 {
-                    adjust = -adjust;
+                    // Preserve tmux's signed adjustment at the i32 boundary.
+                    adjust = adjust.wrapping_neg();
                 }
                 layout_resize_pane(wp, type_0, adjust, 1 as ::core::ffi::c_int);
             }

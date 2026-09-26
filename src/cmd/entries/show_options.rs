@@ -174,7 +174,11 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             .as_ref()
             .map_or(::core::ptr::null(), |key| key.as_ptr());
     }
-    ambiguous = matches!(matched, Err(OptionMatchFailure::Ambiguous)) as ::core::ffi::c_int;
+    // The tmux oracle reports malformed option syntax as ambiguous too.
+    ambiguous = matches!(
+        matched,
+        Err(OptionMatchFailure::Parse | OptionMatchFailure::Ambiguous)
+    ) as ::core::ffi::c_int;
     if name.is_null() {
         if args_has(args, 'q' as i32 as u_char) != 0 {
             current_block = 9776955515550960483;

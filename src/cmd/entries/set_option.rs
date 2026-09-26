@@ -17,6 +17,7 @@ use crate::src::options::{
     options_match_owned, options_push_changes, options_remove_or_default, options_scope_from_name,
     options_set_string, OptionMatchFailure,
 };
+use crate::src::session::sessions;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -374,7 +375,14 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             .as_ref()
             .map_or(::core::ptr::null(), |key| key.as_ptr());
     }
-    ambiguous = matches!(matched, Err(OptionMatchFailure::Ambiguous)) as ::core::ffi::c_int;
+    // tmux leaves its ambiguity output unset on a parse failure. Match the
+    // pinned oracle's diagnostic: invalid on an empty server, ambiguous when
+    // sessions exist, without reading uninitialized memory.
+    ambiguous = match matched {
+        Err(OptionMatchFailure::Ambiguous) => true,
+        Err(OptionMatchFailure::Parse) => sessions.storage.is_some(),
+        _ => false,
+    } as ::core::ffi::c_int;
     if name.is_null() {
         if args_has(args, 'q' as i32 as u_char) != 0 {
             current_block = 710513931074292511;
