@@ -36,9 +36,8 @@ pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut fo
     let Some(mut callback) = (*fe).owned_cb.take() else {
         return;
     };
-    let mut context =
-        FormatContext::from_tree(std::ptr::NonNull::new(ft).expect("format tree is non-null"));
-    let value = callback(&mut context).unwrap_or_default();
+    let value = callback(std::ptr::NonNull::new(ft).expect("format tree is non-null"))
+        .unwrap_or_default();
     let current = format_entry_tree_find_key(&mut (*ft).tree, key.as_c_str());
     if current == fe
         && !current.is_null()
@@ -343,7 +342,7 @@ pub unsafe extern "C" fn format_add_tv(
 pub unsafe fn format_add_owned_cb(
     ft: *mut format_tree,
     key: &CStr,
-    cb: impl FnMut(&mut FormatContext) -> Option<CString> + 'static,
+    cb: impl FnMut(std::ptr::NonNull<format_tree>) -> Option<CString> + 'static,
 ) {
     let new = format_entry_new(key);
     let existing = format_entry_tree_insert(&raw mut (*ft).tree, new);
@@ -363,7 +362,7 @@ mod tests {
     use super::*;
     use std::ffi::{CStr, CString};
 
-    fn cached_test_value(_context: &mut FormatContext) -> Option<CString> {
+    fn cached_test_value(_ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
         Some(CString::new(b"cached\xff".to_vec()).unwrap())
     }
 
@@ -371,12 +370,12 @@ mod tests {
     fn owned_callbacks_cache_absence_and_allow_reentrant_replacement() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static CALLS: AtomicUsize = AtomicUsize::new(0);
-        fn replace_during_callback(context: &mut FormatContext) -> Option<CString> {
+        fn replace_during_callback(ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
             CALLS.fetch_add(1, Ordering::Relaxed);
-            context.add(c"owned", c"temporary");
+            unsafe { format_add(ft.as_ptr(), c"owned".as_ptr(), c"temporary".as_ptr()) };
             Some(CString::new(b"owned\xff".to_vec()).unwrap())
         }
-        fn absent(_context: &mut FormatContext) -> Option<CString> {
+        fn absent(_ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
             CALLS.fetch_add(1, Ordering::Relaxed);
             None
         }

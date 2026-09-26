@@ -101,7 +101,7 @@ use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
     format_entry, format_entry_tree, format_entry_tree_storage, format_job,
-    format_job_tree, format_tree, format_type, FormatContext,
+    format_job_tree, format_tree, format_type,
 };
 use crate::src::shared::format::{
     FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,
@@ -175,21 +175,6 @@ pub use tree::{
     format_add, format_add_tv, format_create, format_each, format_free,
     format_get_pane, format_log_debug, format_merge,
 };
-
-impl FormatContext {
-    /// Add a plain string value while this callback's format tree is live.
-    pub fn add(&mut self, key: &CStr, value: &CStr) {
-        unsafe {
-            format_add(
-                self.tree().as_ptr(),
-                key.as_ptr(),
-                c"%s".as_ptr(),
-                value.as_ptr(),
-            );
-        }
-    }
-}
-
 mod jobs;
 use jobs::*;
 pub use jobs::{format_lost_client, format_tidy_jobs};

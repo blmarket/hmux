@@ -131,27 +131,6 @@ pub struct format_tree {
     pub tree: format_entry_tree,
 }
 
-/// Scoped access to a format tree while a lazy value callback is running.
-/// The context owns no tree data and is valid only for that callback call.
-pub struct FormatContext {
-    tree: std::ptr::NonNull<format_tree>,
-}
-
-impl FormatContext {
-    pub(crate) fn from_tree(tree: std::ptr::NonNull<format_tree>) -> Self {
-        Self { tree }
-    }
-
-    pub fn pane(&self) -> Option<std::ptr::NonNull<window_pane>> {
-        // The callback dispatcher guarantees that this handle refers to a live tree.
-        unsafe { std::ptr::NonNull::new(self.tree.as_ref().wp) }
-    }
-
-    pub(crate) fn tree(&self) -> std::ptr::NonNull<format_tree> {
-        self.tree
-    }
-}
-
 // Jobs live in stable Rust allocations because process callbacks retain their addresses.
 // Keys own the original command bytes, ordered exactly like tag followed by strcmp.
 #[derive(Default)]
@@ -176,7 +155,9 @@ pub struct format_entry {
     pub key: std::ffi::CString,
     pub value: Option<std::ffi::CString>,
     pub time: time_t,
-    pub(crate) owned_cb: Option<Box<dyn FnMut(&mut FormatContext) -> Option<std::ffi::CString>>>,
+    pub(crate) owned_cb: Option<
+        Box<dyn FnMut(std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString>>,
+    >,
 }
 
 impl format_entry {
