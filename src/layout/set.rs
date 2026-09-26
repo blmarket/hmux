@@ -54,10 +54,7 @@ static mut layout_sets: [C2RustUnnamed_35; 7] = unsafe {
         },
     ]
 };
-#[no_mangle]
-pub unsafe extern "C" fn layout_set_lookup(
-    mut name: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     let mut matched: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     i = 0 as u_int;
@@ -85,8 +82,7 @@ pub unsafe extern "C" fn layout_set_lookup(
     }
     return matched;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_set_select(mut w: *mut window, mut layout: u_int) -> u_int {
+pub unsafe fn layout_set_select(mut w: *mut window, mut layout: u_int) -> u_int {
     if layout as usize
         > (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
@@ -104,8 +100,7 @@ pub unsafe extern "C" fn layout_set_select(mut w: *mut window, mut layout: u_int
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_set_next(mut w: *mut window) -> u_int {
+pub unsafe fn layout_set_next(mut w: *mut window) -> u_int {
     let mut layout: u_int = 0;
     if (*w).lastlayout == -(1 as ::core::ffi::c_int) {
         layout = 0 as u_int;
@@ -127,8 +122,7 @@ pub unsafe extern "C" fn layout_set_next(mut w: *mut window) -> u_int {
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_set_previous(mut w: *mut window) -> u_int {
+pub unsafe fn layout_set_previous(mut w: *mut window) -> u_int {
     let mut layout: u_int = 0;
     if (*w).lastlayout == -(1 as ::core::ffi::c_int) {
         layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
@@ -152,7 +146,7 @@ pub unsafe extern "C" fn layout_set_previous(mut w: *mut window) -> u_int {
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
 }
-unsafe extern "C" fn layout_set_first_tiled(mut w: *mut window) -> *mut window_pane {
+unsafe fn layout_set_first_tiled(mut w: *mut window) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     wp = window_pane_first(w);
     while !wp.is_null() {
@@ -165,7 +159,7 @@ unsafe extern "C" fn layout_set_first_tiled(mut w: *mut window) -> *mut window_p
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
-unsafe extern "C" fn layout_set_link_floating(mut w: *mut window, mut lcroot: *mut layout_cell) {
+unsafe fn layout_set_link_floating(mut w: *mut window, mut lcroot: *mut layout_cell) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     wp = window_pane_first(w);
@@ -177,7 +171,7 @@ unsafe extern "C" fn layout_set_link_floating(mut w: *mut window, mut lcroot: *m
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
+unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();

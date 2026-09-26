@@ -10,8 +10,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
-
-#[no_mangle]
 pub static mut cmd_show_prompt_history_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"show-prompt-history\0" as *const u8 as *const ::core::ffi::c_char,
@@ -39,7 +37,6 @@ pub static mut cmd_show_prompt_history_entry: cmd_entry = unsafe {
         ),
     }
 };
-#[no_mangle]
 pub static mut cmd_clear_prompt_history_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"clear-prompt-history\0" as *const u8 as *const ::core::ffi::c_char,

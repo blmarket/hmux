@@ -38,8 +38,7 @@ pub const UTF8PROC_CATEGORY_LT: utf8proc_category_t = 3;
 pub const UTF8PROC_CATEGORY_LL: utf8proc_category_t = 2;
 pub const UTF8PROC_CATEGORY_LU: utf8proc_category_t = 1;
 pub const UTF8PROC_CATEGORY_CN: utf8proc_category_t = 0;
-#[no_mangle]
-pub unsafe extern "C" fn utf8proc_wcwidth(mut wc: wchar_t) -> ::core::ffi::c_int {
+pub unsafe fn utf8proc_wcwidth(mut wc: wchar_t) -> ::core::ffi::c_int {
     let mut cat: ::core::ffi::c_int = 0;
     cat = utf8proc_category(wc as utf8proc_int32_t) as ::core::ffi::c_int;
     if cat == UTF8PROC_CATEGORY_CO as ::core::ffi::c_int {
@@ -47,8 +46,7 @@ pub unsafe extern "C" fn utf8proc_wcwidth(mut wc: wchar_t) -> ::core::ffi::c_int
     }
     return utf8proc_charwidth(wc as utf8proc_int32_t);
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8proc_mbtowc(
+pub unsafe fn utf8proc_mbtowc(
     mut pwc: *mut wchar_t,
     mut s: *const ::core::ffi::c_char,
     mut n: size_t,
@@ -67,8 +65,7 @@ pub unsafe extern "C" fn utf8proc_mbtowc(
     }
     return slen as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8proc_wctomb(
+pub unsafe fn utf8proc_wctomb(
     mut s: *mut ::core::ffi::c_char,
     mut wc: wchar_t,
 ) -> ::core::ffi::c_int {

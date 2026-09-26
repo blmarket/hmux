@@ -286,7 +286,7 @@ mod args_tree_tests {
     }
 }
 
-unsafe extern "C" fn args_find(args: *mut args, flag: u_char) -> *mut args_entry {
+unsafe fn args_find(args: *mut args, flag: u_char) -> *mut args_entry {
     args_tree_find(&raw mut (*args).tree, flag)
 }
 
@@ -356,7 +356,7 @@ unsafe fn args_copy_value(from: &args_value) -> args_value {
         0 | _ => args_value::empty(),
     }
 }
-unsafe extern "C" fn args_type_to_string(mut type_0: args_type) -> *const ::core::ffi::c_char {
+unsafe fn args_type_to_string(mut type_0: args_type) -> *const ::core::ffi::c_char {
     match type_0 as ::core::ffi::c_uint {
         0 => return b"NONE\0" as *const u8 as *const ::core::ffi::c_char,
         1 => return b"STRING\0" as *const u8 as *const ::core::ffi::c_char,
@@ -373,8 +373,7 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
         _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_create() -> *mut args {
+pub unsafe fn args_create() -> *mut args {
     let owner = Box::new(args {
         tree: args_tree {
             entries: refbox::RefBox::default(),
@@ -746,8 +745,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
     }
     return new_args;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_free(mut args: *mut args) {
+pub unsafe fn args_free(mut args: *mut args) {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut entry1: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
@@ -956,8 +954,7 @@ pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
 pub fn args_escape(s: &CStr) -> CString {
     unsafe { args_escape_cstring(s) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::core::ffi::c_int {
+pub unsafe fn args_has(mut args: *mut args, mut flag: u_char) -> ::core::ffi::c_int {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     entry = args_find(args, flag);
     if entry.is_null() {
@@ -1032,11 +1029,7 @@ pub unsafe fn args_set_owned_commands(
 ) {
     args_set_value(args, flag, Some(args_value::commands(cmdlist)), flags);
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_get(
-    mut args: *mut args,
-    mut flag: u_char,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn args_get(mut args: *mut args, mut flag: u_char) -> *const ::core::ffi::c_char {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     entry = args_find(args, flag);
     if entry.is_null() {
@@ -1048,45 +1041,33 @@ pub unsafe extern "C" fn args_get(
     }
     return value.unwrap().string_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_first(
-    mut args: *mut args,
-    mut entry: *mut *mut args_entry,
-) -> u_char {
+pub unsafe fn args_first(mut args: *mut args, mut entry: *mut *mut args_entry) -> u_char {
     *entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     if (*entry).is_null() {
         return 0 as u_char;
     }
     return (**entry).flag;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_next(mut entry: *mut *mut args_entry) -> u_char {
+pub unsafe fn args_next(mut entry: *mut *mut args_entry) -> u_char {
     *entry = args_tree_next_from_entry(*entry);
     if (*entry).is_null() {
         return 0 as u_char;
     }
     return (**entry).flag;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_count(mut args: *mut args) -> u_int {
+pub unsafe fn args_count(mut args: *mut args) -> u_int {
     return (*args).count;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_values(mut args: *mut args) -> *mut args_value {
+pub unsafe fn args_values(mut args: *mut args) -> *mut args_value {
     return ((*args).values).as_mut_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_value(mut args: *mut args, mut idx: u_int) -> *mut args_value {
+pub unsafe fn args_value(mut args: *mut args, mut idx: u_int) -> *mut args_value {
     if idx >= (*args).count {
         return ::core::ptr::null_mut::<args_value>();
     }
     return (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_string(
-    mut args: *mut args,
-    mut idx: u_int,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn args_string(mut args: *mut args, mut idx: u_int) -> *const ::core::ffi::c_char {
     if idx >= (*args).count {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
@@ -1106,8 +1087,7 @@ pub unsafe extern "C" fn args_string(
         _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_make_commands_now(
+pub unsafe fn args_make_commands_now(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut idx: u_int,
@@ -1136,9 +1116,7 @@ pub unsafe extern "C" fn args_make_commands_now(
     args_make_commands_free(state);
     return cmdlist;
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn args_make_commands_prepare(
+pub unsafe fn args_make_commands_prepare(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut idx: u_int,
@@ -1257,8 +1235,7 @@ pub unsafe fn args_make_commands(
         _ => fatalx(b"invalid parse return state\0" as *const u8 as *const ::core::ffi::c_char),
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_state) {
+pub unsafe fn args_make_commands_free(mut state: *mut args_command_state) {
     if !(*state).cmdlist.is_null() {
         cmd_list_free((*state).cmdlist);
     }
@@ -1301,11 +1278,7 @@ pub(crate) unsafe fn args_make_commands_get_command_cstring(
     };
     CString::new(prefix).expect("command prefix has no NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_first_value(
-    mut args: *mut args,
-    mut flag: u_char,
-) -> *mut args_value {
+pub unsafe fn args_first_value(mut args: *mut args, mut flag: u_char) -> *mut args_value {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     entry = args_find(args, flag);
     if entry.is_null() {
@@ -1313,8 +1286,7 @@ pub unsafe extern "C" fn args_first_value(
     }
     return args_value_at(entry, 0);
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_next_value(mut value: *mut args_value) -> *mut args_value {
+pub unsafe fn args_next_value(mut value: *mut args_value) -> *mut args_value {
     let Some(value) = value.as_ref() else {
         return ::core::ptr::null_mut();
     };

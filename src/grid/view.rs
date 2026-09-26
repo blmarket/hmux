@@ -5,9 +5,7 @@ use crate::src::grid::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_get_cell(
+pub unsafe fn grid_view_get_cell(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,
@@ -15,8 +13,7 @@ pub unsafe extern "C" fn grid_view_get_cell(
 ) {
     grid_get_cell(gd, px, (*gd).hsize.wrapping_add(py), gc);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_set_cell(
+pub unsafe fn grid_view_set_cell(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,
@@ -24,8 +21,7 @@ pub unsafe extern "C" fn grid_view_set_cell(
 ) {
     grid_set_cell(gd, px, (*gd).hsize.wrapping_add(py), gc);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_set_padding(
+pub unsafe fn grid_view_set_padding(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,
@@ -33,8 +29,7 @@ pub unsafe extern "C" fn grid_view_set_padding(
 ) {
     grid_set_padding(gd, px, (*gd).hsize.wrapping_add(py), bg);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_set_cells(
+pub unsafe fn grid_view_set_cells(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,
@@ -44,8 +39,7 @@ pub unsafe extern "C" fn grid_view_set_cells(
 ) {
     grid_set_cells(gd, px, (*gd).hsize.wrapping_add(py), gc, s, slen);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_clear_history(mut gd: *mut grid, mut bg: u_int) {
+pub unsafe fn grid_view_clear_history(mut gd: *mut grid, mut bg: u_int) {
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut yy: u_int = 0;
     let mut last: u_int = 0;
@@ -80,8 +74,7 @@ pub unsafe extern "C" fn grid_view_clear_history(mut gd: *mut grid, mut bg: u_in
     }
     (*gd).hscrolled = 0 as u_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_clear(
+pub unsafe fn grid_view_clear(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,
@@ -93,8 +86,7 @@ pub unsafe extern "C" fn grid_view_clear(
     py = (*gd).hsize.wrapping_add(py);
     grid_clear(gd, px, py, nx, ny, bg);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_scroll_region_up(
+pub unsafe fn grid_view_scroll_region_up(
     mut gd: *mut grid,
     mut rupper: u_int,
     mut rlower: u_int,
@@ -121,8 +113,7 @@ pub unsafe extern "C" fn grid_view_scroll_region_up(
         );
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_scroll_region_down(
+pub unsafe fn grid_view_scroll_region_down(
     mut gd: *mut grid,
     mut rupper: u_int,
     mut rlower: u_int,
@@ -138,8 +129,7 @@ pub unsafe extern "C" fn grid_view_scroll_region_down(
         bg,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_insert_lines(
+pub unsafe fn grid_view_insert_lines(
     mut gd: *mut grid,
     mut py: u_int,
     mut ny: u_int,
@@ -156,8 +146,7 @@ pub unsafe extern "C" fn grid_view_insert_lines(
         bg,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_insert_lines_region(
+pub unsafe fn grid_view_insert_lines_region(
     mut gd: *mut grid,
     mut rlower: u_int,
     mut py: u_int,
@@ -187,8 +176,7 @@ pub unsafe extern "C" fn grid_view_insert_lines_region(
         bg,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_delete_lines(
+pub unsafe fn grid_view_delete_lines(
     mut gd: *mut grid,
     mut py: u_int,
     mut ny: u_int,
@@ -206,8 +194,7 @@ pub unsafe extern "C" fn grid_view_delete_lines(
     );
     grid_clear(gd, 0 as u_int, sy.wrapping_sub(ny), (*gd).sx, ny, bg);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_delete_lines_region(
+pub unsafe fn grid_view_delete_lines_region(
     mut gd: *mut grid,
     mut rlower: u_int,
     mut py: u_int,
@@ -231,8 +218,7 @@ pub unsafe extern "C" fn grid_view_delete_lines_region(
         bg,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_insert_cells(
+pub unsafe fn grid_view_insert_cells(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,
@@ -256,8 +242,7 @@ pub unsafe extern "C" fn grid_view_insert_cells(
         );
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_delete_cells(
+pub unsafe fn grid_view_delete_cells(
     mut gd: *mut grid,
     mut px: u_int,
     mut py: u_int,

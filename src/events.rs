@@ -65,11 +65,7 @@ pub unsafe fn events_remove_sink(mut es: *mut events_sink) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_fire(
-    mut name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
-) {
+pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: *mut event_payload) {
     let mut es: *mut events_sink = ::core::ptr::null_mut::<events_sink>();
     let mut generation: u_int = events_generation;
     event_payload_set_string(
@@ -107,11 +103,7 @@ pub unsafe extern "C" fn events_fire(
     }
     event_payload_free(ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_fire_client(
-    mut name: *const ::core::ffi::c_char,
-    mut c: *mut client,
-) {
+pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, mut c: *mut client) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -166,11 +158,7 @@ pub unsafe extern "C" fn events_fire_client(
     }
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_fire_session(
-    mut name: *const ::core::ffi::c_char,
-    mut s: *mut session,
-) {
+pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, mut s: *mut session) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -193,11 +181,7 @@ pub unsafe extern "C" fn events_fire_session(
     );
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_fire_window(
-    mut name: *const ::core::ffi::c_char,
-    mut w: *mut window,
-) {
+pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, mut w: *mut window) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -218,11 +202,7 @@ pub unsafe extern "C" fn events_fire_window(
     );
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_fire_pane(
-    mut name: *const ::core::ffi::c_char,
-    mut wp: *mut window_pane,
-) {
+pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, mut wp: *mut window_pane) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -244,11 +224,7 @@ pub unsafe extern "C" fn events_fire_pane(
     );
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_fire_winlink(
-    mut name: *const ::core::ffi::c_char,
-    mut wl: *mut winlink,
-) {
+pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: *mut winlink) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,

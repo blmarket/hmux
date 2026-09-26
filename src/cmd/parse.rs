@@ -126,10 +126,7 @@ pub fn cmd_parse_error_uppercase_first(error: &mut Option<CString>) {
     }
     *cause = CString::from_vec_with_nul(bytes).expect("cause remains NUL terminated");
 }
-unsafe extern "C" fn cmd_parse_print_commands(
-    mut pi: *mut cmd_parse_input,
-    mut cmdlist: *mut cmd_list,
-) {
+unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, mut cmdlist: *mut cmd_list) {
     if (*pi).item.is_null() || !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
@@ -159,7 +156,7 @@ unsafe fn cmd_parse_new_argument() -> *mut cmd_parse_argument {
         cmdlist: ::core::ptr::null_mut(),
     }))
 }
-unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
+unsafe fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
     match (*arg).type_0 as ::core::ffi::c_uint {
         0 => {}
         1 => {
@@ -172,7 +169,7 @@ unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
     }
     drop(Box::from_raw(arg));
 }
-unsafe extern "C" fn cmd_parse_free_arguments(mut args: *mut cmd_parse_arguments) {
+unsafe fn cmd_parse_free_arguments(mut args: *mut cmd_parse_arguments) {
     while let Some(arg) = (*args).items.pop_front() {
         cmd_parse_free_argument(Box::into_raw(arg));
     }
@@ -185,14 +182,14 @@ unsafe fn cmd_parse_new_command(line: u_int) -> *mut cmd_parse_command {
         },
     }))
 }
-unsafe extern "C" fn cmd_parse_free_command(mut cmd: *mut cmd_parse_command) {
+unsafe fn cmd_parse_free_command(mut cmd: *mut cmd_parse_command) {
     cmd_parse_free_arguments(&raw mut (*cmd).arguments);
     drop(Box::from_raw(cmd));
 }
-unsafe extern "C" fn cmd_parse_new_commands() -> *mut cmd_parse_commands {
+unsafe fn cmd_parse_new_commands() -> *mut cmd_parse_commands {
     Box::into_raw(Box::new(cmd_parse_commands { items: Vec::new() }))
 }
-unsafe extern "C" fn cmd_parse_free_commands(mut cmds: *mut cmd_parse_commands) {
+unsafe fn cmd_parse_free_commands(mut cmds: *mut cmd_parse_commands) {
     while let Some(cmd) = (*cmds).items.pop() {
         cmd_parse_free_command(Box::into_raw(cmd));
     }
@@ -390,7 +387,7 @@ unsafe fn cmd_parse_do_buffer(
     };
     cmd_parse_run_parser()
 }
-unsafe extern "C" fn cmd_parse_log_commands(
+unsafe fn cmd_parse_log_commands(
     mut cmds: *mut cmd_parse_commands,
     mut prefix: *const ::core::ffi::c_char,
 ) {
@@ -446,7 +443,7 @@ unsafe extern "C" fn cmd_parse_log_commands(
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn cmd_parse_expand_alias(
+unsafe fn cmd_parse_expand_alias(
     mut cmd: *mut cmd_parse_command,
     mut pi: *mut cmd_parse_input,
     mut pr: *mut cmd_parse_result,
@@ -518,7 +515,7 @@ unsafe extern "C" fn cmd_parse_expand_alias(
     cmd_parse_free_commands(cmds);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn cmd_parse_build_command(
+unsafe fn cmd_parse_build_command(
     mut cmd: *mut cmd_parse_command,
     mut pi: *mut cmd_parse_input,
     mut pr: *mut cmd_parse_result,
@@ -604,7 +601,7 @@ unsafe extern "C" fn cmd_parse_build_command(
         _ => {}
     }
 }
-unsafe extern "C" fn cmd_parse_build_commands(
+unsafe fn cmd_parse_build_commands(
     mut cmds: *mut cmd_parse_commands,
     mut pi: *mut cmd_parse_input,
     mut pr: *mut cmd_parse_result,
@@ -916,7 +913,7 @@ unsafe extern "C" fn yyerror(mut fmt: *const ::core::ffi::c_char, mut args: ...)
         error.as_c_str(),
     ));
 }
-unsafe extern "C" fn yylex_is_var(
+unsafe fn yylex_is_var(
     mut ch: ::core::ffi::c_char,
     mut first: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -974,7 +971,7 @@ impl LexerBuffer {
         CString::new(self.bytes).expect("lexer token contains no interior NUL")
     }
 }
-unsafe extern "C" fn yylex_getc1() -> ::core::ffi::c_int {
+unsafe fn yylex_getc1() -> ::core::ffi::c_int {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut ch: ::core::ffi::c_int = 0;
     if !(*ps).f.is_null() {
@@ -988,7 +985,7 @@ unsafe extern "C" fn yylex_getc1() -> ::core::ffi::c_int {
     }
     return ch;
 }
-unsafe extern "C" fn yylex_ungetc(mut ch: ::core::ffi::c_int) {
+unsafe fn yylex_ungetc(mut ch: ::core::ffi::c_int) {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     if !(*ps).f.is_null() {
         ungetc(ch, (*ps).f);
@@ -996,7 +993,7 @@ unsafe extern "C" fn yylex_ungetc(mut ch: ::core::ffi::c_int) {
         (*ps).off = (*ps).off.wrapping_sub(1);
     }
 }
-unsafe extern "C" fn yylex_getc() -> ::core::ffi::c_int {
+unsafe fn yylex_getc() -> ::core::ffi::c_int {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut ch: ::core::ffi::c_int = 0;
     if (*ps).escapes != 0 as u_int {

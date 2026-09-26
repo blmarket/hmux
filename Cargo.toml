@@ -15,7 +15,7 @@ autobins = false
 [lib]
 name = "hmux2"
 path = "src/lib.rs"
-crate-type = ["staticlib", "rlib"]
+crate-type = ["rlib"]
 [[bin]]
 path = "src/main.rs"
 name = "hmux2"

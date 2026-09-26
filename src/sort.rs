@@ -357,8 +357,7 @@ unsafe fn sort_key_binding_cmp(
     }
     return sort_ordering(result, sort_crit.reversed);
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_next_order(mut sort_crit: *mut sort_criteria) {
+pub unsafe fn sort_next_order(mut sort_crit: *mut sort_criteria) {
     let mut i: u_int = 0;
     if (*sort_crit).order_seq.is_null() {
         return;
@@ -388,10 +387,7 @@ pub unsafe extern "C" fn sort_next_order(mut sort_crit: *mut sort_criteria) {
     }
     (*sort_crit).order = *(*sort_crit).order_seq.offset(i as isize);
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_order_from_string(
-    mut order: *const ::core::ffi::c_char,
-) -> sort_order {
+pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> sort_order {
     if !order.is_null() {
         if strcasecmp(
             order,
@@ -446,8 +442,7 @@ pub unsafe extern "C" fn sort_order_from_string(
     }
     return SORT_END;
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi::c_char {
+pub unsafe fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi::c_char {
     if order as ::core::ffi::c_uint == SORT_ACTIVITY as ::core::ffi::c_int as ::core::ffi::c_uint {
         return b"activity\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -474,8 +469,7 @@ pub unsafe extern "C" fn sort_order_to_string(mut order: sort_order) -> *const :
     }
     return ::core::ptr::null::<::core::ffi::c_char>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_would_window_tree_swap(
+pub unsafe fn sort_would_window_tree_swap(
     mut sort_crit: *mut sort_criteria,
     mut wla: *mut winlink,
     mut wlb: *mut winlink,

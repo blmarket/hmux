@@ -141,9 +141,7 @@ fn options_array_index(key: &CStr) -> OptionsArrayKey {
     }
 }
 
-unsafe extern "C" fn options_map_name(
-    mut name: *const ::core::ffi::c_char,
-) -> *const ::core::ffi::c_char {
+unsafe fn options_map_name(mut name: *const ::core::ffi::c_char) -> *const ::core::ffi::c_char {
     let mut map: *const options_name_map = ::core::ptr::null::<options_name_map>();
     map = &raw const options_other_names as *const options_name_map;
     while !(*map).from.to_bytes().is_empty() {
@@ -154,7 +152,7 @@ unsafe extern "C" fn options_map_name(
     }
     return name;
 }
-unsafe extern "C" fn options_parent_table_entry(
+unsafe fn options_parent_table_entry(
     mut oo: *mut options,
     mut s: *const ::core::ffi::c_char,
 ) -> *const options_table_entry {
@@ -174,7 +172,7 @@ unsafe extern "C" fn options_parent_table_entry(
     }
     return (*o).tableentry;
 }
-unsafe extern "C" fn options_value_free(_o: *mut options_entry, ov: *mut options_value) {
+unsafe fn options_value_free(_o: *mut options_entry, ov: *mut options_value) {
     *ov = options_value::Empty;
 }
 unsafe fn options_value_to_cstring(
@@ -231,8 +229,7 @@ unsafe fn options_value_to_cstring(
     }
     c"".to_owned()
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_create(mut parent: *mut options) -> *mut options {
+pub unsafe fn options_create(mut parent: *mut options) -> *mut options {
     let mut oo = Box::new(options {
         tree: ::core::ptr::null_mut(),
         parent,
@@ -240,8 +237,7 @@ pub unsafe extern "C" fn options_create(mut parent: *mut options) -> *mut option
     oo.tree = Box::into_raw(Box::new(options_storage::default()));
     Box::into_raw(oo)
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_free(mut oo: *mut options) {
+pub unsafe fn options_free(mut oo: *mut options) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut tmp: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     o = options_first(oo);
@@ -255,16 +251,13 @@ pub unsafe extern "C" fn options_free(mut oo: *mut options) {
     drop(Box::from_raw((*oo).tree));
     drop(Box::from_raw(oo));
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_parent(mut oo: *mut options) -> *mut options {
+pub unsafe fn options_get_parent(mut oo: *mut options) -> *mut options {
     return (*oo).parent;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_set_parent(mut oo: *mut options, mut parent: *mut options) {
+pub unsafe fn options_set_parent(mut oo: *mut options, mut parent: *mut options) {
     (*oo).parent = parent;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_first(mut oo: *mut options) -> *mut options_entry {
+pub unsafe fn options_first(mut oo: *mut options) -> *mut options_entry {
     (*(*oo).tree)
         .entries
         .values()
@@ -272,8 +265,7 @@ pub unsafe extern "C" fn options_first(mut oo: *mut options) -> *mut options_ent
         .copied()
         .unwrap_or(std::ptr::null_mut())
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_next(mut o: *mut options_entry) -> *mut options_entry {
+pub unsafe fn options_next(mut o: *mut options_entry) -> *mut options_entry {
     let key = (*o).name.as_bytes();
     (*(*(*o).owner).tree)
         .entries
@@ -282,8 +274,7 @@ pub unsafe extern "C" fn options_next(mut o: *mut options_entry) -> *mut options
         .map(|(_, entry)| *entry)
         .unwrap_or(std::ptr::null_mut())
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_only(
+pub unsafe fn options_get_only(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
@@ -294,8 +285,7 @@ pub unsafe extern "C" fn options_get_only(
         .copied()
         .unwrap_or(std::ptr::null_mut())
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get(
+pub unsafe fn options_get(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
@@ -310,8 +300,7 @@ pub unsafe extern "C" fn options_get(
     }
     return o;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_empty(
+pub unsafe fn options_empty(
     mut oo: *mut options,
     mut oe: *const options_table_entry,
 ) -> *mut options_entry {
@@ -323,8 +312,7 @@ pub unsafe extern "C" fn options_empty(
     }
     return o;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_default(
+pub unsafe fn options_default(
     mut oo: *mut options,
     mut oe: *const options_table_entry,
 ) -> *mut options_entry {
@@ -402,7 +390,7 @@ pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CSt
         }
     }
 }
-unsafe extern "C" fn options_add(
+unsafe fn options_add(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
@@ -430,7 +418,7 @@ unsafe extern "C" fn options_add(
         .insert((*o).name.as_bytes().to_vec(), o);
     return o;
 }
-unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
+unsafe fn options_remove(mut o: *mut options_entry) {
     let mut oo: *mut options = (*o).owner;
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         options_array_clear(o);
@@ -444,47 +432,35 @@ unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
     (*(*oo).tree).entries.remove((*o).name.as_bytes());
     drop(Box::from_raw(o));
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
+pub unsafe fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
     return (*o).name.as_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_owner(mut o: *mut options_entry) -> *mut options {
+pub unsafe fn options_owner(mut o: *mut options_entry) -> *mut options {
     return (*o).owner;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_monitor_data(
-    mut o: *mut options_entry,
-) -> *mut ::core::ffi::c_void {
+pub unsafe fn options_get_monitor_data(mut o: *mut options_entry) -> *mut ::core::ffi::c_void {
     return (*o).monitor_data;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_set_monitor_data(
+pub unsafe fn options_set_monitor_data(
     mut o: *mut options_entry,
     mut data: *mut ::core::ffi::c_void,
 ) {
     (*o).monitor_data = data;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_hook_fired(mut o: *mut options_entry) {
+pub unsafe fn options_hook_fired(mut o: *mut options_entry) {
     (*o).fire_count = (*o).fire_count.wrapping_add(1);
     (*o).fire_time = current_time;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_fire_count(mut o: *mut options_entry) -> u_int {
+pub unsafe fn options_get_fire_count(mut o: *mut options_entry) -> u_int {
     return (*o).fire_count;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_fire_time(mut o: *mut options_entry) -> time_t {
+pub unsafe fn options_get_fire_time(mut o: *mut options_entry) -> time_t {
     return (*o).fire_time;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_table_entry(
-    mut o: *mut options_entry,
-) -> *const options_table_entry {
+pub unsafe fn options_table_entry(mut o: *mut options_entry) -> *const options_table_entry {
     return (*o).tableentry;
 }
-unsafe extern "C" fn options_array_item(
+unsafe fn options_array_item(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
@@ -494,7 +470,7 @@ unsafe extern "C" fn options_array_item(
         .copied()
         .unwrap_or(::core::ptr::null_mut())
 }
-unsafe extern "C" fn options_array_new(
+unsafe fn options_array_new(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
@@ -509,15 +485,14 @@ unsafe extern "C" fn options_array_new(
         .insert(options_array_index(CStr::from_ptr(key)), a);
     return a;
 }
-unsafe extern "C" fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
+unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(o, &raw mut (*a).value);
     (*(*o).value.array_storage())
         .entries
         .remove(&options_array_index((*a).key.as_c_str()));
     drop(Box::from_raw(a));
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_clear(mut o: *mut options_entry) {
+pub unsafe fn options_array_clear(mut o: *mut options_entry) {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut a1: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
@@ -532,8 +507,7 @@ pub unsafe extern "C" fn options_array_clear(mut o: *mut options_entry) {
         a = a1;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_get(
+pub unsafe fn options_array_get(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_value {
@@ -550,7 +524,6 @@ pub unsafe extern "C" fn options_array_get(
     }
     return &raw mut (*a).value;
 }
-#[no_mangle]
 pub unsafe extern "C" fn options_array_getv(
     mut o: *mut options_entry,
     mut fmt: *const ::core::ffi::c_char,
@@ -752,8 +725,7 @@ pub unsafe fn options_array_assign(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_first(mut o: *mut options_entry) -> *mut options_array_item {
+pub unsafe fn options_array_first(mut o: *mut options_entry) -> *mut options_array_item {
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_array_item>();
     }
@@ -762,10 +734,7 @@ pub unsafe extern "C" fn options_array_first(mut o: *mut options_entry) -> *mut 
         .first_key_value()
         .map_or(::core::ptr::null_mut(), |(_, &item)| item)
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_next(
-    mut a: *mut options_array_item,
-) -> *mut options_array_item {
+pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options_array_item {
     let key = options_array_index((*a).key.as_c_str());
     (*(*(*a).owner).value.array_storage())
         .entries
@@ -773,25 +742,17 @@ pub unsafe extern "C" fn options_array_next(
         .next()
         .map_or(::core::ptr::null_mut(), |(_, &item)| item)
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_item_key(
-    mut a: *mut options_array_item,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn options_array_item_key(mut a: *mut options_array_item) -> *const ::core::ffi::c_char {
     return (*a).key.as_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_item_value(
-    mut a: *mut options_array_item,
-) -> *mut options_value {
+pub unsafe fn options_array_item_value(mut a: *mut options_array_item) -> *mut options_value {
     return &raw mut (*a).value;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_is_array(mut o: *mut options_entry) -> ::core::ffi::c_int {
+pub unsafe fn options_is_array(mut o: *mut options_entry) -> ::core::ffi::c_int {
     return (!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0)
         as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int {
+pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int {
     return ((*o).tableentry.is_null()
         || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint)
@@ -860,10 +821,7 @@ pub fn options_parse_owned(input: &CStr) -> Option<OwnedOptionName> {
         array_key,
     })
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_search(
-    mut name: *const ::core::ffi::c_char,
-) -> *const options_table_entry {
+pub unsafe fn options_search(mut name: *const ::core::ffi::c_char) -> *const options_table_entry {
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     oe = &raw const options_table as *const options_table_entry;
     while !(*oe).name.is_null() {
@@ -921,8 +879,7 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_string(
+pub unsafe fn options_get_string(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -945,8 +902,7 @@ pub unsafe extern "C" fn options_get_string(
     }
     return (*o).value.string_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_number(
+pub unsafe fn options_get_number(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
@@ -977,8 +933,7 @@ pub unsafe extern "C" fn options_get_number(
     }
     return (*o).value.number();
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_get_command(
+pub unsafe fn options_get_command(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut cmd_list {
@@ -1001,7 +956,6 @@ pub unsafe extern "C" fn options_get_command(
     }
     return (*o).value.cmdlist();
 }
-#[no_mangle]
 pub unsafe extern "C" fn options_set_string(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
@@ -1066,8 +1020,7 @@ pub unsafe extern "C" fn options_set_string(
     (*o).cached = 0 as ::core::ffi::c_int;
     return o;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_set_number(
+pub unsafe fn options_set_number(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut value: ::core::ffi::c_longlong,
@@ -1106,8 +1059,7 @@ pub unsafe extern "C" fn options_set_number(
     (*o).value = options_value::Number(value);
     return o;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_set_command(
+pub unsafe fn options_set_command(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut value: *mut cmd_list,
@@ -1331,8 +1283,7 @@ pub unsafe fn options_scope_from_flags(
         return 0x2 as ::core::ffi::c_int;
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_string_to_style(
+pub unsafe fn options_string_to_style(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut ft: *mut format_tree,
@@ -1689,8 +1640,7 @@ pub unsafe fn options_from_string(
     }
     return -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();

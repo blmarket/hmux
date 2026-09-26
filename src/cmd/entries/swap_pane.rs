@@ -23,8 +23,6 @@ use crate::src::window::{
     window_pane_next, window_pane_previous, window_pane_stack_remove, window_pane_swap_order,
     window_pane_z_swap_order, window_pop_zoom, window_push_zoom, window_set_active_pane,
 };
-
-#[no_mangle]
 pub static mut cmd_swap_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"swap-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -50,13 +48,13 @@ pub static mut cmd_swap_pane_entry: cmd_entry = unsafe {
         exec: Some(cmd_swap_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe extern "C" fn cmd_swap_pane_next_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
+unsafe fn cmd_swap_pane_next_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
     while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
         wp = window_pane_next(wp);
     }
     return wp;
 }
-unsafe extern "C" fn cmd_swap_pane_prev_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
+unsafe fn cmd_swap_pane_prev_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
     while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
         wp = window_pane_previous(wp);
     }

@@ -164,7 +164,7 @@ unsafe fn event_payload_tree_next(elm: *mut event_payload_item) -> *mut event_pa
         .unwrap_or(::core::ptr::null_mut::<event_payload_item>())
 }
 
-unsafe extern "C" fn event_payload_find(
+unsafe fn event_payload_find(
     ep: *mut event_payload,
     name: *const ::core::ffi::c_char,
 ) -> *mut event_payload_item {
@@ -173,7 +173,7 @@ unsafe extern "C" fn event_payload_find(
     }
     event_payload_tree_find(&raw mut (*ep).items, CStr::from_ptr(name))
 }
-unsafe extern "C" fn event_payload_free_target(mut ep: *mut event_payload) {
+unsafe fn event_payload_free_target(mut ep: *mut event_payload) {
     let mut target: *mut cmd_find_state = &raw mut (*ep).target;
     if !(*target).s.is_null() {
         session_remove_ref(
@@ -195,7 +195,7 @@ unsafe extern "C" fn event_payload_free_target(mut ep: *mut event_payload) {
     }
     cmd_find_clear_state(target, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) {
+unsafe fn event_payload_free_value(mut epi: *mut event_payload_item) {
     match (*epi).type_0 as ::core::ffi::c_uint {
         0 => {}
         4 => {
@@ -240,7 +240,7 @@ unsafe fn event_payload_new_item() -> *mut event_payload_item {
     }))
     .cast()
 }
-unsafe extern "C" fn event_payload_set_item(
+unsafe fn event_payload_set_item(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut new: *mut event_payload_item,
@@ -257,8 +257,7 @@ unsafe extern "C" fn event_payload_set_item(
         event_payload_tree_insert(&raw mut (*ep).items, new);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_create() -> *mut event_payload {
+pub unsafe fn event_payload_create() -> *mut event_payload {
     let ep = Box::into_raw(Box::new(event_payload {
         items: event_payload_tree::default(),
         target: cmd_find_state::default(),
@@ -266,8 +265,7 @@ pub unsafe extern "C" fn event_payload_create() -> *mut event_payload {
     cmd_find_clear_state(&raw mut (*ep).target, 0 as ::core::ffi::c_int);
     return ep;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_free(mut ep: *mut event_payload) {
+pub unsafe fn event_payload_free(mut ep: *mut event_payload) {
     if !ep.is_null() {
         let items: Vec<*mut event_payload_item> = (*ep)
             .items
@@ -286,11 +284,7 @@ pub unsafe extern "C" fn event_payload_free(mut ep: *mut event_payload) {
         drop(Box::from_raw(ep));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_target(
-    mut ep: *mut event_payload,
-    mut fs: *mut cmd_find_state,
-) {
+pub unsafe fn event_payload_set_target(mut ep: *mut event_payload, mut fs: *mut cmd_find_state) {
     let mut target: *mut cmd_find_state = &raw mut (*ep).target;
     event_payload_free_target(ep);
     if !(*fs).s.is_null() {
@@ -333,8 +327,7 @@ pub unsafe extern "C" fn event_payload_set_target(
         (*target).wp = (*fs).wp;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_target(
+pub unsafe fn event_payload_get_target(
     mut ep: *mut event_payload,
     mut fs: *mut cmd_find_state,
 ) -> ::core::ffi::c_int {
@@ -402,7 +395,6 @@ pub unsafe extern "C" fn event_payload_get_target(
     cmd_find_clear_state(fs, flags);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
 pub unsafe extern "C" fn event_payload_set_string(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
@@ -419,8 +411,7 @@ pub unsafe extern "C" fn event_payload_set_string(
     owner.c2rust_unnamed.string = owner.string.as_ref().unwrap().as_ptr().cast_mut();
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_time(
+pub unsafe fn event_payload_set_time(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: time_t,
@@ -431,8 +422,7 @@ pub unsafe extern "C" fn event_payload_set_time(
     (*epi).c2rust_unnamed.time = value;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_int(
+pub unsafe fn event_payload_set_int(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: ::core::ffi::c_int,
@@ -443,8 +433,7 @@ pub unsafe extern "C" fn event_payload_set_int(
     (*epi).c2rust_unnamed.number = value;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_uint(
+pub unsafe fn event_payload_set_uint(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: u_int,
@@ -455,8 +444,7 @@ pub unsafe extern "C" fn event_payload_set_uint(
     (*epi).c2rust_unnamed.unsigned_number = value;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_client(
+pub unsafe fn event_payload_set_client(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut c: *mut client,
@@ -468,8 +456,7 @@ pub unsafe extern "C" fn event_payload_set_client(
     (*epi).c2rust_unnamed.client = c;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_session(
+pub unsafe fn event_payload_set_session(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut s: *mut session,
@@ -484,8 +471,7 @@ pub unsafe extern "C" fn event_payload_set_session(
     (*epi).c2rust_unnamed.session = s;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_window(
+pub unsafe fn event_payload_set_window(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut w: *mut window,
@@ -500,8 +486,7 @@ pub unsafe extern "C" fn event_payload_set_window(
     (*epi).c2rust_unnamed.window = w;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_pane(
+pub unsafe fn event_payload_set_pane(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut wp: *mut window_pane,
@@ -527,8 +512,7 @@ pub unsafe fn event_payload_set_pointer(
     (*epi).c2rust_unnamed.pointer = std::mem::ManuallyDrop::new(pointer);
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_string(
+pub unsafe fn event_payload_get_string(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -542,10 +526,7 @@ pub unsafe extern "C" fn event_payload_get_string(
     }
     return (*epi).c2rust_unnamed.string;
 }
-unsafe extern "C" fn event_payload_add_item(
-    mut epi: *mut event_payload_item,
-    mut evb: *mut evbuffer,
-) {
+unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut evbuffer) {
     match (*epi).type_0 as ::core::ffi::c_uint {
         0 => {
             evbuffer_add_printf(
@@ -650,9 +631,7 @@ pub(crate) unsafe fn event_payload_print_owned(
     let epi = event_payload_find(ep, name);
     (!epi.is_null()).then(|| event_payload_item_print_owned(epi))
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_add_formats(
+pub unsafe fn event_payload_add_formats(
     mut ep: *mut event_payload,
     mut ft: *mut format_tree,
     mut prefix: *const ::core::ffi::c_char,
@@ -705,33 +684,22 @@ pub unsafe extern "C" fn event_payload_add_formats(
         epi = event_payload_tree_next(epi);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_first(
-    mut ep: *mut event_payload,
-) -> *mut event_payload_item {
+pub unsafe fn event_payload_first(mut ep: *mut event_payload) -> *mut event_payload_item {
     return event_payload_tree_minmax(&raw mut (*ep).items, -1);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_next(
-    mut epi: *mut event_payload_item,
-) -> *mut event_payload_item {
+pub unsafe fn event_payload_next(mut epi: *mut event_payload_item) -> *mut event_payload_item {
     return event_payload_tree_next(epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_item_name(
+pub unsafe fn event_payload_item_name(
     mut epi: *mut event_payload_item,
 ) -> *const ::core::ffi::c_char {
     return ((*epi).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_item_type(
-    mut epi: *mut event_payload_item,
-) -> event_payload_type {
+pub unsafe fn event_payload_item_type(mut epi: *mut event_payload_item) -> event_payload_type {
     return (*epi).type_0;
 }
-#[no_mangle]
 pub unsafe extern "C" fn event_payload_log(
     mut ep: *mut event_payload,
     mut fmt: *const ::core::ffi::c_char,
@@ -771,8 +739,7 @@ pub unsafe extern "C" fn event_payload_log(
     );
     evbuffer_free(evb);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_time(
+pub unsafe fn event_payload_get_time(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> time_t {
@@ -786,8 +753,7 @@ pub unsafe extern "C" fn event_payload_get_time(
     }
     return (*epi).c2rust_unnamed.time;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_int(
+pub unsafe fn event_payload_get_int(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: *mut ::core::ffi::c_int,
@@ -803,8 +769,7 @@ pub unsafe extern "C" fn event_payload_get_int(
     *value = (*epi).c2rust_unnamed.number;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_uint(
+pub unsafe fn event_payload_get_uint(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: *mut u_int,
@@ -820,8 +785,7 @@ pub unsafe extern "C" fn event_payload_get_uint(
     *value = (*epi).c2rust_unnamed.unsigned_number;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_client(
+pub unsafe fn event_payload_get_client(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut client {
@@ -835,8 +799,7 @@ pub unsafe extern "C" fn event_payload_get_client(
     }
     return (*epi).c2rust_unnamed.client;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_session(
+pub unsafe fn event_payload_get_session(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut session {
@@ -850,8 +813,7 @@ pub unsafe extern "C" fn event_payload_get_session(
     }
     return (*epi).c2rust_unnamed.session;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_window(
+pub unsafe fn event_payload_get_window(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut window {
@@ -865,8 +827,7 @@ pub unsafe extern "C" fn event_payload_get_window(
     }
     return (*epi).c2rust_unnamed.window;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_pane(
+pub unsafe fn event_payload_get_pane(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut window_pane {
@@ -880,8 +841,7 @@ pub unsafe extern "C" fn event_payload_get_pane(
     }
     return (*epi).c2rust_unnamed.pane;
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_get_pointer(
+pub unsafe fn event_payload_get_pointer(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_void {

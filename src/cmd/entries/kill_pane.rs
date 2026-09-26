@@ -19,8 +19,6 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 use crate::src::window::{window_pane_first, window_pane_next, window_remove_pane};
-
-#[no_mangle]
 pub static mut cmd_kill_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"kill-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -71,7 +69,7 @@ unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     server_kill_pane(wp);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_kill_pane_all(
+unsafe fn cmd_kill_pane_all(
     mut item: *mut cmdq_item,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
@@ -99,7 +97,7 @@ unsafe extern "C" fn cmd_kill_pane_all(
     server_redraw_window((*wl).window);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_kill_pane_filter(
+unsafe fn cmd_kill_pane_filter(
     mut item: *mut cmdq_item,
     mut s: *mut session,
     mut wl: *mut winlink,

@@ -453,8 +453,7 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_build_events() {
+pub unsafe fn control_build_events() {
     static mut events: [C2RustUnnamed_35; 14] = unsafe {
         [
             C2RustUnnamed_35 {

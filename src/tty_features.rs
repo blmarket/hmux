@@ -390,8 +390,7 @@ static mut tty_features: [*const tty_feature; 22] = unsafe {
         &raw const tty_feature_utf8,
     ]
 };
-#[no_mangle]
-pub unsafe extern "C" fn tty_parse_client_features(
+pub unsafe fn tty_parse_client_features(
     mut c: *mut client,
     mut s: *const ::core::ffi::c_char,
     mut sep: *const ::core::ffi::c_char,
@@ -403,8 +402,7 @@ pub unsafe extern "C" fn tty_parse_client_features(
         &raw mut (*c).term_nofeatures,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_parse_features(
+pub unsafe fn tty_parse_features(
     mut s: *const ::core::ffi::c_char,
     mut sep: *const ::core::ffi::c_char,
     mut enabled: *mut ::core::ffi::c_int,
@@ -477,10 +475,7 @@ pub unsafe extern "C" fn tty_parse_features(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_get_features(
-    mut feat: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn tty_get_features(mut feat: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     static mut s: [::core::ffi::c_char; 512] = [0; 512];
     let mut i: u_int = 0;
@@ -511,8 +506,7 @@ pub unsafe extern "C" fn tty_get_features(
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_feature_present(
+pub unsafe fn tty_feature_present(
     mut term: *mut tty_term,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -565,8 +559,7 @@ pub unsafe extern "C" fn tty_feature_present(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int {
+pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int {
     let mut c: *mut client = (*(*term).tty).client;
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut capability: *const *const ::core::ffi::c_char =
@@ -650,8 +643,7 @@ mod tests {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_default_features(
+pub unsafe fn tty_default_features(
     mut c: *mut client,
     mut name: *const ::core::ffi::c_char,
     mut version: u_int,

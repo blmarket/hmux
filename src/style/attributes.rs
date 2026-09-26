@@ -124,8 +124,7 @@ pub fn attributes_format(attr: i32) -> CString {
 /// # Safety
 /// The returned pointer must only be read before the next call to this shim on
 /// the same thread, and must not be freed by the caller.
-#[no_mangle]
-pub unsafe extern "C" fn attributes_tostring(attr: i32) -> *const libc::c_char {
+pub unsafe fn attributes_tostring(attr: i32) -> *const libc::c_char {
     thread_local! {
         static BUFFER: std::cell::RefCell<CString> = std::cell::RefCell::new(CString::default());
     }
@@ -139,7 +138,6 @@ pub unsafe extern "C" fn attributes_tostring(attr: i32) -> *const libc::c_char {
 /// C ABI only.
 /// # Safety
 /// Input must point to a readable NUL-terminated string for this call.
-#[no_mangle]
-pub unsafe extern "C" fn attributes_fromstring(input: *const libc::c_char) -> i32 {
+pub unsafe fn attributes_fromstring(input: *const libc::c_char) -> i32 {
     attributes_parse_cstr(CStr::from_ptr(input)).unwrap_or(-1)
 }

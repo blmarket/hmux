@@ -108,7 +108,7 @@ pub struct hooks_monitor {
 }
 
 static mut hooks_events: HooksEvents = HooksEvents { events: Vec::new() };
-unsafe extern "C" fn hooks_insert_one(
+unsafe fn hooks_insert_one(
     mut item: *mut cmdq_item,
     mut hd: *mut hooks_data,
     mut cmdlist: *mut cmd_list,
@@ -156,7 +156,7 @@ unsafe fn hooks_parse(hd: &hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd
     );
     return pr;
 }
-unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
+unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -272,7 +272,7 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
     }
     cmdq_free_state(state);
 }
-unsafe extern "C" fn hooks_insert_event(
+unsafe fn hooks_insert_event(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
@@ -369,8 +369,7 @@ unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
     let event_name = CStr::from_ptr(name);
     let events = &raw const hooks_events;
     if (*events).contains(event_name) {
@@ -384,17 +383,11 @@ pub unsafe extern "C" fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
     let events = &raw mut hooks_events;
     (*events).insert(event_name.to_owned(), sink);
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_is_event(
-    mut name: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+pub unsafe fn hooks_is_event(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let events = &raw const hooks_events;
     return (*events).contains(CStr::from_ptr(name)) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_valid_event_name(
-    mut name: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+pub unsafe fn hooks_valid_event_name(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     if *name as ::core::ffi::c_int == '@' as i32 {
         return 1 as ::core::ffi::c_int;
@@ -402,8 +395,7 @@ pub unsafe extern "C" fn hooks_valid_event_name(
     oe = options_search(name);
     return (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_build_events() {
+pub unsafe fn hooks_build_events() {
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     oe = &raw const options_table as *const options_table_entry;
     while !(*oe).name.is_null() {
@@ -413,8 +405,7 @@ pub unsafe extern "C" fn hooks_build_events() {
         oe = oe.offset(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_run(mut item: *mut cmdq_item, mut name: *const ::core::ffi::c_char) {
+pub unsafe fn hooks_run(mut item: *mut cmdq_item, mut name: *const ::core::ffi::c_char) {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut hd: hooks_data = hooks_data {
         name: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -454,18 +445,13 @@ pub unsafe extern "C" fn hooks_run(mut item: *mut cmdq_item, mut name: *const ::
     hooks_insert(item, &raw mut hd);
     format_free(hd.formats);
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_free(mut data: *mut ::core::ffi::c_void) {
+pub unsafe fn hooks_monitor_free(mut data: *mut ::core::ffi::c_void) {
     let mut hm: *mut hooks_monitor = data as *mut hooks_monitor;
     events_remove_sink((*hm).sink);
     monitor_destroy((*hm).set);
     drop(Box::from_raw(hm));
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_remove(
-    mut oo: *mut options,
-    mut name: *const ::core::ffi::c_char,
-) {
+pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core::ffi::c_char) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
     o = options_get_only(oo, name);
@@ -602,8 +588,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     }
     events_fire(change.name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_add(
+pub unsafe fn hooks_monitor_add(
     _item: *mut cmdq_item,
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
@@ -678,8 +663,7 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<C
     bytes.extend_from_slice((*hm).format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_get(
+pub unsafe fn hooks_monitor_get(
     mut o: *mut options_entry,
     mut type_0: *mut monitor_type,
     mut id: *mut ::core::ffi::c_int,
@@ -694,16 +678,14 @@ pub unsafe extern "C" fn hooks_monitor_get(
     *format = (*hm).format.as_ptr();
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
+pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
     let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
     if hm.is_null() {
         return 0 as u_int;
     }
     return monitor_get_fire_count((*hm).set, options_name(o));
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
+pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
     let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
     if hm.is_null() {
         return 0 as time_t;

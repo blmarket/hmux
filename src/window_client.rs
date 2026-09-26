@@ -193,7 +193,6 @@ static mut window_client_menu_items: [menu_item; 9] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-#[no_mangle]
 pub static mut window_client_mode: window_mode = unsafe {
     window_mode {
         name: c"client-mode",
@@ -349,7 +348,7 @@ unsafe fn window_client_build(
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn window_client_draw_info(
+unsafe fn window_client_draw_info(
     _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,

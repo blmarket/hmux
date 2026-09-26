@@ -21,7 +21,7 @@ pub struct C2RustUnnamed_1 {
     pub key: key_code,
 }
 #[inline]
-unsafe extern "C" fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -5759,8 +5759,7 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
 ///
 /// # Safety
 /// `string` must point to a readable NUL-terminated string for this call.
-#[no_mangle]
-pub unsafe extern "C" fn key_string_lookup_string(string: *const ::core::ffi::c_char) -> key_code {
+pub unsafe fn key_string_lookup_string(string: *const ::core::ffi::c_char) -> key_code {
     key_string_lookup_string_impl(CStr::from_ptr(string))
 }
 
@@ -5914,8 +5913,7 @@ fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
 /// # Safety
 /// The returned pointer must only be read before the next call to this shim on
 /// the same thread, and must not be freed by the caller.
-#[no_mangle]
-pub unsafe extern "C" fn key_string_lookup_key(
+pub unsafe fn key_string_lookup_key(
     key: key_code,
     with_flags: ::core::ffi::c_int,
 ) -> *const ::core::ffi::c_char {

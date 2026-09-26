@@ -14,8 +14,7 @@ pub const LLONG_MIN: ::core::ffi::c_longlong = -__LONG_LONG_MAX__ - 1 as ::core:
 pub const INVALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const TOOSMALL: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const TOOLARGE: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-#[no_mangle]
-pub unsafe extern "C" fn strtonum(
+pub unsafe fn strtonum(
     mut numstr: *const ::core::ffi::c_char,
     mut minval: ::core::ffi::c_longlong,
     mut maxval: ::core::ffi::c_longlong,

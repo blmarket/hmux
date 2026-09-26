@@ -69,9 +69,7 @@ impl menu {
         index
     }
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn menu_add_items(
+pub unsafe fn menu_add_items(
     mut menu: *mut menu,
     mut items: *const menu_item,
     mut qitem: *mut cmdq_item,
@@ -85,8 +83,7 @@ pub unsafe extern "C" fn menu_add_items(
         loop_0 = loop_0.offset(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_add_item(
+pub unsafe fn menu_add_item(
     mut menu: *mut menu,
     mut item: *const menu_item,
     mut qitem: *mut cmdq_item,
@@ -211,8 +208,7 @@ pub unsafe extern "C" fn menu_add_item(
         (*menu).width = width;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_create(mut title: *const ::core::ffi::c_char) -> *mut menu {
+pub unsafe fn menu_create(mut title: *const ::core::ffi::c_char) -> *mut menu {
     let title = CStr::from_ptr(title).to_owned();
     let width = format_width(title.as_ptr());
     let owner = Box::new(menu {
@@ -224,14 +220,13 @@ pub unsafe extern "C" fn menu_create(mut title: *const ::core::ffi::c_char) -> *
     });
     Box::into_raw(owner) as *mut menu
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_free(mut menu: *mut menu) {
+pub unsafe fn menu_free(mut menu: *mut menu) {
     if menu.is_null() {
         return;
     }
     drop(Box::from_raw(menu as *mut menu));
 }
-unsafe extern "C" fn menu_reapply_styles(mut md: *mut menu_data) {
+unsafe fn menu_reapply_styles(mut md: *mut menu_data) {
     let mut o: *mut options = (*(*md).w).options;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sytmp: style = style {
@@ -347,8 +342,7 @@ unsafe extern "C" fn menu_reapply_styles(mut md: *mut menu_data) {
     }
     format_free(ft);
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_update(mut md: *mut menu_data) {
+pub unsafe fn menu_update(mut md: *mut menu_data) {
     let mut s: *mut screen = &raw mut (*md).s;
     let mut menu: *mut menu = (*md).menu;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -384,7 +378,7 @@ pub unsafe extern "C" fn menu_update(mut md: *mut menu_data) {
     );
     screen_write_stop(&raw mut ctx);
 }
-unsafe extern "C" fn menu_free_data(mut md: *mut menu_data) {
+unsafe fn menu_free_data(mut md: *mut menu_data) {
     if !md.is_null() {
         if let Some(callback) = (*md).cb.take() {
             callback(MenuSelection::Cancelled);
@@ -394,8 +388,7 @@ unsafe extern "C" fn menu_free_data(mut md: *mut menu_data) {
         drop(Box::from_raw(md));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_close(mut w: *mut window) {
+pub unsafe fn menu_close(mut w: *mut window) {
     if !(*w).menu.is_null() {
         menu_free_data((*w).menu);
         (*w).menu = ::core::ptr::null_mut::<menu_data>();
@@ -404,17 +397,11 @@ pub unsafe extern "C" fn menu_close(mut w: *mut window) {
         server_redraw_window(w);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_destroy(mut w: *mut window) {
+pub unsafe fn menu_destroy(mut w: *mut window) {
     menu_free_data((*w).menu);
     (*w).menu = ::core::ptr::null_mut::<menu_data>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_get_cursor(
-    mut md: *mut menu_data,
-    mut cx: *mut u_int,
-    mut cy: *mut u_int,
-) {
+pub unsafe fn menu_get_cursor(mut md: *mut menu_data, mut cx: *mut u_int, mut cy: *mut u_int) {
     *cx = (*md).px.wrapping_add(2 as u_int);
     if (*md).choice == -(1 as ::core::ffi::c_int) {
         *cy = (*md).py;
@@ -425,28 +412,22 @@ pub unsafe extern "C" fn menu_get_cursor(
             .wrapping_add((*md).choice as u_int);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_screen(mut md: *mut menu_data) -> *mut screen {
+pub unsafe fn menu_screen(mut md: *mut menu_data) -> *mut screen {
     return &raw mut (*md).s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_width(mut md: *mut menu_data) -> u_int {
+pub unsafe fn menu_width(mut md: *mut menu_data) -> u_int {
     return (*(*md).menu).width.wrapping_add(4 as u_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_height(mut md: *mut menu_data) -> u_int {
+pub unsafe fn menu_height(mut md: *mut menu_data) -> u_int {
     return (*(*md).menu).count.wrapping_add(2 as u_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_x(mut md: *mut menu_data) -> u_int {
+pub unsafe fn menu_x(mut md: *mut menu_data) -> u_int {
     return (*md).px;
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_y(mut md: *mut menu_data) -> u_int {
+pub unsafe fn menu_y(mut md: *mut menu_data) -> u_int {
     return (*md).py;
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_key(
+pub unsafe fn menu_key(
     mut c: *mut client,
     mut md: *mut menu_data,
     mut event: *mut key_event,
@@ -2154,8 +2135,7 @@ pub unsafe extern "C" fn menu_key(
     cmdq_free_state(state);
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_resize(mut md: *mut menu_data, mut w: *mut window) {
+pub unsafe fn menu_resize(mut md: *mut menu_data, mut w: *mut window) {
     let mut nx: u_int = 0;
     let mut ny: u_int = 0;
     let mut sx: u_int = 0;

@@ -23,7 +23,6 @@ pub const SHOW_MESSAGES_TEMPLATE: [::core::ffi::c_char; 37] = unsafe {
         *b"#{t/p:message_time}: #{message_text}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_show_messages_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"show-messages\0" as *const u8 as *const ::core::ffi::c_char,
@@ -49,7 +48,7 @@ pub static mut cmd_show_messages_entry: cmd_entry = unsafe {
         exec: Some(cmd_show_messages_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe extern "C" fn cmd_show_messages_terminals(
+unsafe fn cmd_show_messages_terminals(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut blank: ::core::ffi::c_int,

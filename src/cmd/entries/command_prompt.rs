@@ -86,7 +86,6 @@ fn cmd_command_prompt_rows(
         })
         .collect()
 }
-#[no_mangle]
 pub static mut cmd_command_prompt_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"command-prompt\0" as *const u8 as *const ::core::ffi::c_char,

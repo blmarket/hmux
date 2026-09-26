@@ -12,8 +12,7 @@ pub const S_META1: ::core::ffi::c_int = 3;
 pub const S_CTRL: ::core::ffi::c_int = 4;
 pub const S_OCTAL2: ::core::ffi::c_int = 5;
 pub const S_OCTAL3: ::core::ffi::c_int = 6;
-#[no_mangle]
-pub unsafe extern "C" fn unvis(
+pub unsafe fn unvis(
     mut cp: *mut ::core::ffi::c_char,
     mut c: ::core::ffi::c_char,
     mut astate: *mut ::core::ffi::c_int,
@@ -178,8 +177,7 @@ pub unsafe extern "C" fn unvis(
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn strunvis(
+pub unsafe fn strunvis(
     mut dst: *mut ::core::ffi::c_char,
     mut src: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -218,8 +216,7 @@ pub unsafe extern "C" fn strunvis(
     *dst = '\0' as i32 as ::core::ffi::c_char;
     return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn strnunvis(
+pub unsafe fn strnunvis(
     mut dst: *mut ::core::ffi::c_char,
     mut src: *const ::core::ffi::c_char,
     mut sz: size_t,

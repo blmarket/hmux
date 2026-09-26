@@ -45,12 +45,8 @@ use crate::src::window::{
     winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
-
-#[no_mangle]
 pub static mut sessions: sessions = sessions { storage: None };
-#[no_mangle]
 pub static mut next_session_id: u_int = 0;
-#[no_mangle]
 pub static mut session_groups: session_groups = session_groups { storage: None };
 
 /// `session.cwd` borrows this value until replacement or early destruction.
@@ -72,11 +68,7 @@ pub(crate) unsafe fn session_set_cwd_from_c_owned(
 pub(crate) fn session_replace_name(s: &mut session, name: CString) -> CString {
     std::mem::replace(&mut s.name, name)
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_cmp(
-    mut s1: *mut session,
-    mut s2: *mut session,
-) -> ::core::ffi::c_int {
+pub unsafe fn session_cmp(mut s1: *mut session, mut s2: *mut session) -> ::core::ffi::c_int {
     return strcmp(
         ((*s1).name).as_ptr().cast_mut(),
         ((*s2).name).as_ptr().cast_mut(),
@@ -205,9 +197,7 @@ pub unsafe fn sessions_prev(elm: &session) -> *mut session {
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn session_group_cmp(
+pub unsafe fn session_group_cmp(
     mut s1: *mut session_group,
     mut s2: *mut session_group,
 ) -> ::core::ffi::c_int {
@@ -352,9 +342,7 @@ pub unsafe fn session_groups_prev(elm: &session_group) -> *mut session_group {
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
+pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
     s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s_loop.is_null() {
@@ -365,8 +353,7 @@ pub unsafe extern "C" fn session_alive(mut s: *mut session) -> ::core::ffi::c_in
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session {
+pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session {
     let mut s: session = session {
         id: 0,
         name: Default::default(),
@@ -407,8 +394,7 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
     s.name = ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned();
     return sessions_find(&*std::ptr::addr_of!(sessions), &s);
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut session {
+pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut session {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut id: u_int = 0;
     if *s as ::core::ffi::c_int != '$' as i32 {
@@ -425,8 +411,7 @@ pub unsafe extern "C" fn session_find_by_id_str(mut s: *const ::core::ffi::c_cha
     }
     return session_find_by_id(id);
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_find_by_id(mut id: u_int) -> *mut session {
+pub unsafe fn session_find_by_id(mut id: u_int) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
@@ -437,8 +422,7 @@ pub unsafe extern "C" fn session_find_by_id(mut id: u_int) -> *mut session {
     }
     return ::core::ptr::null_mut::<session>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_create(
+pub unsafe fn session_create(
     mut prefix: *const ::core::ffi::c_char,
     mut name: *const ::core::ffi::c_char,
     mut cwd: *const ::core::ffi::c_char,
@@ -509,11 +493,7 @@ pub unsafe extern "C" fn session_create(
     session_update_activity(s, &raw mut (*s).creation_time);
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_add_ref(
-    mut s: *mut session,
-    mut from: *const ::core::ffi::c_char,
-) {
+pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi::c_char) {
     (*s).references += 1;
     log_debug(
         b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
@@ -523,11 +503,7 @@ pub unsafe extern "C" fn session_add_ref(
         (*s).references,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_remove_ref(
-    mut s: *mut session,
-    mut from: *const ::core::ffi::c_char,
-) {
+pub unsafe fn session_remove_ref(mut s: *mut session, mut from: *const ::core::ffi::c_char) {
     (*s).references -= 1;
     log_debug(
         b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
@@ -563,8 +539,7 @@ unsafe fn session_free(
         drop(Box::from_raw(s));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_destroy(
+pub unsafe fn session_destroy(
     mut s: *mut session,
     mut notify: ::core::ffi::c_int,
     mut from: *const ::core::ffi::c_char,
@@ -628,8 +603,7 @@ unsafe fn session_lock_timer(
     server_lock_session(s);
     recalculate_sizes();
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_update_activity(mut s: *mut session, mut from: *mut timeval) {
+pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeval) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -674,8 +648,7 @@ pub unsafe extern "C" fn session_update_activity(mut s: *mut session, mut from: 
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_next_session(
+pub unsafe fn session_next_session(
     mut s: *mut session,
     mut sort_crit: *mut sort_criteria,
 ) -> *mut session {
@@ -704,8 +677,7 @@ pub unsafe extern "C" fn session_next_session(
     }
     return l[i as usize];
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_previous_session(
+pub unsafe fn session_previous_session(
     mut s: *mut session,
     mut sort_crit: *mut sort_criteria,
 ) -> *mut session {
@@ -754,11 +726,7 @@ pub unsafe fn session_attach(
     session_group_synchronize_from(s);
     Ok(wl)
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_detach(
-    mut s: *mut session,
-    mut wl: *mut winlink,
-) -> ::core::ffi::c_int {
+pub unsafe fn session_detach(mut s: *mut session, mut wl: *mut winlink) -> ::core::ffi::c_int {
     if winlinks_minmax(&(*s).windows, RB_NEGINF) == wl
         && winlinks_minmax(&(*s).windows, RB_INF) == wl
     {
@@ -780,11 +748,7 @@ pub unsafe extern "C" fn session_detach(
     session_group_synchronize_from(s);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_has(
-    mut s: *mut session,
-    mut w: *mut window,
-) -> ::core::ffi::c_int {
+pub unsafe fn session_has(mut s: *mut session, mut w: *mut window) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = window_winlinks_first(w);
     while !wl.is_null() {
@@ -795,11 +759,7 @@ pub unsafe extern "C" fn session_has(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_is_linked(
-    mut s: *mut session,
-    mut w: *mut window,
-) -> ::core::ffi::c_int {
+pub unsafe fn session_is_linked(mut s: *mut session, mut w: *mut window) -> ::core::ffi::c_int {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if !sg.is_null() {
@@ -807,7 +767,7 @@ pub unsafe extern "C" fn session_is_linked(
     }
     return ((*w).references != 1 as u_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn session_next_alert(mut wl: *mut winlink) -> *mut winlink {
+unsafe fn session_next_alert(mut wl: *mut winlink) -> *mut winlink {
     while !wl.is_null() {
         if (*wl).flags & WINLINK_ALERTFLAGS != 0 {
             break;
@@ -816,8 +776,7 @@ unsafe extern "C" fn session_next_alert(mut wl: *mut winlink) -> *mut winlink {
     }
     return wl;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_next(
+pub unsafe fn session_next(
     mut s: *mut session,
     mut alert: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -840,7 +799,7 @@ pub unsafe extern "C" fn session_next(
     }
     return session_set_current(s, wl);
 }
-unsafe extern "C" fn session_previous_alert(mut wl: *mut winlink) -> *mut winlink {
+unsafe fn session_previous_alert(mut wl: *mut winlink) -> *mut winlink {
     while !wl.is_null() {
         if (*wl).flags & WINLINK_ALERTFLAGS != 0 {
             break;
@@ -849,8 +808,7 @@ unsafe extern "C" fn session_previous_alert(mut wl: *mut winlink) -> *mut winlin
     }
     return wl;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_previous(
+pub unsafe fn session_previous(
     mut s: *mut session,
     mut alert: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -873,8 +831,7 @@ pub unsafe extern "C" fn session_previous(
     }
     return session_set_current(s, wl);
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_select(
+pub unsafe fn session_select(
     mut s: *mut session,
     mut idx: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -882,8 +839,7 @@ pub unsafe extern "C" fn session_select(
     wl = winlink_find_by_index(&raw mut (*s).windows, idx);
     return session_set_current(s, wl);
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_last(mut s: *mut session) -> ::core::ffi::c_int {
+pub unsafe fn session_last(mut s: *mut session) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
     if wl.is_null() {
@@ -894,7 +850,7 @@ pub unsafe extern "C" fn session_last(mut s: *mut session) -> ::core::ffi::c_int
     }
     return session_set_current(s, wl);
 }
-unsafe extern "C" fn session_fire_window_changed(
+unsafe fn session_fire_window_changed(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut old: *mut winlink,
@@ -954,11 +910,7 @@ unsafe extern "C" fn session_fire_window_changed(
         ep,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_set_current(
-    mut s: *mut session,
-    mut wl: *mut winlink,
-) -> ::core::ffi::c_int {
+pub unsafe fn session_set_current(mut s: *mut session, mut wl: *mut winlink) -> ::core::ffi::c_int {
     let mut old: *mut winlink = (*s).curw;
     if wl.is_null() {
         return -(1 as ::core::ffi::c_int);
@@ -985,8 +937,7 @@ pub unsafe extern "C" fn session_set_current(
     session_fire_window_changed(s, wl, old);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_contains(mut target: *mut session) -> *mut session_group {
+pub unsafe fn session_group_contains(mut target: *mut session) -> *mut session_group {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups), RB_NEGINF);
     while !sg.is_null() {
@@ -997,10 +948,7 @@ pub unsafe extern "C" fn session_group_contains(mut target: *mut session) -> *mu
     }
     return ::core::ptr::null_mut::<session_group>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_find(
-    mut name: *const ::core::ffi::c_char,
-) -> *mut session_group {
+pub unsafe fn session_group_find(mut name: *const ::core::ffi::c_char) -> *mut session_group {
     let mut sg: session_group = session_group {
         name: Default::default(),
         entry: session_group_entry { owner: None },
@@ -1009,10 +957,7 @@ pub unsafe extern "C" fn session_group_find(
     sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
     return session_groups_find(&*std::ptr::addr_of!(session_groups), &sg);
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_new(
-    mut name: *const ::core::ffi::c_char,
-) -> *mut session_group {
+pub unsafe fn session_group_new(mut name: *const ::core::ffi::c_char) -> *mut session_group {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_find(name);
     if !sg.is_null() {
@@ -1023,7 +968,7 @@ pub unsafe extern "C" fn session_group_new(
     assert!(session_groups_insert(&raw mut session_groups, owner).is_null());
     return sg;
 }
-unsafe extern "C" fn session_group_fire(
+unsafe fn session_group_fire(
     mut name: *const ::core::ffi::c_char,
     mut sg: *mut session_group,
     mut s: *mut session,
@@ -1061,8 +1006,7 @@ unsafe extern "C" fn session_group_fire(
     );
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_add(mut sg: *mut session_group, mut s: *mut session) {
+pub unsafe fn session_group_add(mut sg: *mut session_group, mut s: *mut session) {
     if session_group_contains(s).is_null() {
         (*sg).members.push(s);
         session_group_fire(
@@ -1072,7 +1016,7 @@ pub unsafe extern "C" fn session_group_add(mut sg: *mut session_group, mut s: *m
         );
     }
 }
-unsafe extern "C" fn session_group_remove(mut s: *mut session) {
+unsafe fn session_group_remove(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
@@ -1100,19 +1044,16 @@ pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<*mut session>
     }
     (*sg).members.clone()
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_count(mut sg: *mut session_group) -> u_int {
+pub unsafe fn session_group_count(mut sg: *mut session_group) -> u_int {
     return u_int::try_from((*sg).members.len()).expect("session group has too many members");
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_attached_count(mut sg: *mut session_group) -> u_int {
+pub unsafe fn session_group_attached_count(mut sg: *mut session_group) -> u_int {
     (*sg)
         .members
         .iter()
         .fold(0, |count, member| count.wrapping_add((**member).attached))
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_synchronize_to(mut s: *mut session) {
+pub unsafe fn session_group_synchronize_to(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
@@ -1128,8 +1069,7 @@ pub unsafe extern "C" fn session_group_synchronize_to(mut s: *mut session) {
         session_group_synchronize1(target, s);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_group_synchronize_from(mut target: *mut session) {
+pub unsafe fn session_group_synchronize_from(mut target: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(target);
     if sg.is_null() {
@@ -1141,7 +1081,7 @@ pub unsafe extern "C" fn session_group_synchronize_from(mut target: *mut session
         }
     }
 }
-unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s: *mut session) {
+unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut session) {
     let mut ww: *mut winlinks = ::core::ptr::null_mut::<winlinks>();
     let mut old_windows: winlinks;
     let mut old_lastw: winlink_stack;
@@ -1205,8 +1145,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
         winlink_remove(&raw mut old_windows, wl);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
+pub unsafe fn session_renumber_windows(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl1: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl_new: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -1270,8 +1209,7 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
         wl = wl1;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_theme_changed(mut s: *mut session) {
+pub unsafe fn session_theme_changed(mut s: *mut session) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !s.is_null() {
@@ -1286,8 +1224,7 @@ pub unsafe extern "C" fn session_theme_changed(mut s: *mut session) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_update_history(mut s: *mut session) {
+pub unsafe fn session_update_history(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();

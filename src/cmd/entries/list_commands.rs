@@ -25,7 +25,6 @@ pub const LIST_COMMANDS_TEMPLATE: [::core::ffi::c_char; 91] = unsafe {
         *b"#{command_list_name}#{?command_list_alias, (#{command_list_alias}),} #{command_list_usage}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_list_commands_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"list-commands\0" as *const u8 as *const ::core::ffi::c_char,
@@ -51,7 +50,7 @@ pub static mut cmd_list_commands_entry: cmd_entry = unsafe {
         exec: Some(cmd_list_commands as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe extern "C" fn cmd_list_single_command(
+unsafe fn cmd_list_single_command(
     mut entry: *const cmd_entry,
     mut ft: *mut format_tree,
     mut template: *const ::core::ffi::c_char,

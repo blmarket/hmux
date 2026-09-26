@@ -11,8 +11,6 @@ use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::key::*;
-
-#[no_mangle]
 pub static mut cmd_unbind_key_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"unbind-key\0" as *const u8 as *const ::core::ffi::c_char,

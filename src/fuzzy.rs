@@ -29,7 +29,7 @@ pub struct fuzzy_term {
     pub len: size_t,
 }
 #[inline]
-unsafe extern "C" fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -45,7 +45,7 @@ pub const FUZZY_BONUS_CONSECUTIVE: ::core::ffi::c_int = 6 as ::core::ffi::c_int;
 pub const FUZZY_PENALTY_LEADING: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const FUZZY_PENALTY_LEADING_MAX: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
 pub const FUZZY_PENALTY_GAP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-unsafe extern "C" fn fuzzy_is_boundary(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+unsafe fn fuzzy_is_boundary(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     static mut boundary: *const ::core::ffi::c_char =
         b" -_/.:\0" as *const u8 as *const ::core::ffi::c_char;
     if (*ud).size as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
@@ -56,7 +56,7 @@ unsafe extern "C" fn fuzzy_is_boundary(mut ud: *const utf8_data) -> ::core::ffi:
         (*ud).data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int,
     ) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_char_equal(
+unsafe fn fuzzy_char_equal(
     mut a: *const utf8_data,
     mut b: *const utf8_data,
     mut fold: ::core::ffi::c_int,
@@ -122,7 +122,7 @@ unsafe extern "C" fn fuzzy_char_equal(
             (*a).size as size_t,
         ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_align(mut align: style_align) -> style_align {
+unsafe fn fuzzy_align(mut align: style_align) -> style_align {
     if align as ::core::ffi::c_uint
         == STYLE_ALIGN_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -144,7 +144,7 @@ unsafe fn fuzzy_add(
     });
     widths[a as usize] = widths[a as usize].wrapping_add(ud.width as u_int);
 }
-unsafe extern "C" fn fuzzy_decode_one(
+unsafe fn fuzzy_decode_one(
     mut cp: *const ::core::ffi::c_char,
     mut end: *const ::core::ffi::c_char,
     mut ud: *mut utf8_data,
@@ -297,7 +297,7 @@ unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
     }
     return cs;
 }
-unsafe extern "C" fn fuzzy_column(
+unsafe fn fuzzy_column(
     mut fc: *const fuzzy_char,
     mut start: *const u_int,
     mut src: *const u_int,
@@ -314,7 +314,7 @@ unsafe extern "C" fn fuzzy_column(
         .wrapping_add((*fc).offset.wrapping_sub(*src.offset(a as isize)));
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_decode(
+unsafe fn fuzzy_decode(
     mut tok: *const ::core::ffi::c_char,
     mut len: size_t,
     mut out: *mut utf8_data,
@@ -329,7 +329,7 @@ unsafe extern "C" fn fuzzy_decode(
     }
     return n;
 }
-unsafe extern "C" fn fuzzy_score_positions(
+unsafe fn fuzzy_score_positions(
     mut pos: *const u_int,
     mut npos: u_int,
     mut cs: *const fuzzy_char,
@@ -384,7 +384,7 @@ unsafe extern "C" fn fuzzy_score_positions(
         as ::core::ffi::c_int as ::core::ffi::c_int;
     return score;
 }
-unsafe extern "C" fn fuzzy_match_fuzzy(
+unsafe fn fuzzy_match_fuzzy(
     mut tok: *const utf8_data,
     mut toklen: u_int,
     mut cs: *mut fuzzy_char,
@@ -460,7 +460,7 @@ unsafe extern "C" fn fuzzy_match_fuzzy(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_score_exact(
+unsafe fn fuzzy_score_exact(
     mut start: u_int,
     mut toklen: u_int,
     mut ncs: u_int,
@@ -497,7 +497,7 @@ unsafe extern "C" fn fuzzy_score_exact(
     }
     return score;
 }
-unsafe extern "C" fn fuzzy_match_exact(
+unsafe fn fuzzy_match_exact(
     mut tok: *const utf8_data,
     mut toklen: u_int,
     mut cs: *mut fuzzy_char,
@@ -576,7 +576,7 @@ unsafe extern "C" fn fuzzy_match_exact(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_parse_term(
+unsafe fn fuzzy_parse_term(
     mut start: *const ::core::ffi::c_char,
     mut end: *const ::core::ffi::c_char,
     mut term: *mut fuzzy_term,
@@ -622,7 +622,7 @@ unsafe extern "C" fn fuzzy_parse_term(
     (*term).len = end.offset_from(start) as ::core::ffi::c_long as size_t;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_match_term(
+unsafe fn fuzzy_match_term(
     mut term: *const fuzzy_term,
     mut tok: *mut utf8_data,
     mut cs: *mut fuzzy_char,
@@ -675,7 +675,7 @@ unsafe extern "C" fn fuzzy_match_term(
     *score += value;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn fuzzy_match_group(
+unsafe fn fuzzy_match_group(
     mut start: *const ::core::ffi::c_char,
     mut end: *const ::core::ffi::c_char,
     mut tok: *mut utf8_data,

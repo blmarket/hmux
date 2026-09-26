@@ -42,7 +42,6 @@ pub const LIST_KEYS_TEMPLATE: [::core::ffi::c_char; 250] = unsafe {
         *b"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_list_keys_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"list-keys\0" as *const u8 as *const ::core::ffi::c_char,

@@ -163,7 +163,7 @@ unsafe fn popup_free(mut pd: *mut popup_data) {
     popup_free_resources(pd);
     drop(Box::from_raw(pd));
 }
-unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
+unsafe fn popup_reapply_styles(mut pd: *mut popup_data) {
     let mut c: *mut client = (*pd).c;
     let mut s: *mut session = (*c).session;
     let mut o: *mut options = ::core::ptr::null_mut::<options>();
@@ -512,11 +512,7 @@ unsafe fn popup_resize(c: *mut client, pd: *mut popup_data) {
         }
     }
 }
-unsafe extern "C" fn popup_handle_drag(
-    mut c: *mut client,
-    mut pd: *mut popup_data,
-    mut m: *mut mouse_event,
-) {
+unsafe fn popup_handle_drag(mut c: *mut client, mut pd: *mut popup_data, mut m: *mut mouse_event) {
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     if (*m).b & MOUSE_MASK_DRAG as u_int == 0 {
@@ -771,15 +767,13 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, mut pd: *mut popup_da
         server_client_clear_overlay((*pd).c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn popup_present(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn popup_present(mut c: *mut client) -> ::core::ffi::c_int {
     return (*c)
         .overlay_data
         .as_ref()
         .is_some_and(|data| data.is::<popup_data>()) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn popup_modify(
+pub unsafe fn popup_modify(
     mut c: *mut client,
     mut title: *const ::core::ffi::c_char,
     mut style: *const ::core::ffi::c_char,

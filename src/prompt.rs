@@ -80,9 +80,7 @@ pub struct prompt_layout {
     pub input_width: u_int,
 }
 
-unsafe extern "C" fn prompt_flags_to_string(
-    mut flags: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+unsafe fn prompt_flags_to_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut tmp: [::core::ffi::c_char; 256] = [0; 256];
     *(&raw mut tmp as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     if flags & PROMPT_SINGLE != 0 {
@@ -182,8 +180,7 @@ unsafe extern "C" fn prompt_flags_to_string(
     }
     return &raw mut tmp as *mut ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut s: *mut session) {
+pub unsafe fn prompt_set_options(mut pd: *mut prompt_create_data, mut s: *mut session) {
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -266,9 +263,7 @@ pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn prompt_create(mut pd: *mut prompt_create_data) -> *mut prompt {
+pub unsafe fn prompt_create(mut pd: *mut prompt_create_data) -> *mut prompt {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut input: *const ::core::ffi::c_char = (*pd).input;
     let mut allocation = Box::new(prompt::default());
@@ -337,8 +332,7 @@ pub unsafe extern "C" fn prompt_create(mut pd: *mut prompt_create_data) -> *mut 
     format_free(ft);
     return Box::into_raw(allocation);
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
+pub unsafe fn prompt_free(mut pr: *mut prompt) {
     if pr.is_null() {
         return;
     }
@@ -362,7 +356,7 @@ fn prompt_last(pr: &prompt) -> &CStr {
         .expect("incremental prompt has saved input")
         .as_c_str()
 }
-unsafe extern "C" fn prompt_fire_callback(
+unsafe fn prompt_fire_callback(
     mut pr: *mut prompt,
     mut s: *const ::core::ffi::c_char,
     mut type_0: prompt_key_result,
@@ -390,8 +384,7 @@ unsafe extern "C" fn prompt_fire_callback(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_incremental_start(mut pr: *mut prompt) {
+pub unsafe fn prompt_incremental_start(mut pr: *mut prompt) {
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
         let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
         let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
@@ -406,8 +399,7 @@ pub unsafe extern "C" fn prompt_incremental_start(mut pr: *mut prompt) {
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_update(
+pub unsafe fn prompt_update(
     mut pr: *mut prompt,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
@@ -451,11 +443,10 @@ pub unsafe extern "C" fn prompt_update(
     prompt_clear_complete(pr);
     format_free(ft);
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_closed(mut pr: *mut prompt) -> ::core::ffi::c_int {
+pub unsafe fn prompt_closed(mut pr: *mut prompt) -> ::core::ffi::c_int {
     return (*pr).closed;
 }
-unsafe extern "C" fn prompt_redraw_character(
+unsafe fn prompt_redraw_character(
     mut ctx: *mut screen_write_ctx,
     mut offset: u_int,
     mut pwidth: u_int,
@@ -496,7 +487,7 @@ unsafe extern "C" fn prompt_redraw_character(
     screen_write_cell(ctx, gc);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn prompt_redraw_quote(
+unsafe fn prompt_redraw_quote(
     mut pr: *const prompt,
     mut pcursor: u_int,
     mut input_x: u_int,
@@ -521,7 +512,7 @@ unsafe extern "C" fn prompt_redraw_quote(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn prompt_draw_complete(
+unsafe fn prompt_draw_complete(
     mut pr: *mut prompt,
     mut ctx: *mut screen_write_ctx,
     mut ax: u_int,
@@ -584,7 +575,7 @@ unsafe extern "C" fn prompt_draw_complete(
         width = width.wrapping_add(cell.width as u_int);
     }
 }
-unsafe extern "C" fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
+unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if cmd_find_valid_state(&raw mut (*pr).state) != 0 {
         ft = format_create_from_state(
@@ -645,7 +636,7 @@ unsafe fn prompt_expand1(mut pr: *mut prompt, mut ft: *mut format_tree) -> CStri
     );
     format_expand_time_cstring(ft, (*pr).message_format.as_ptr())
 }
-unsafe extern "C" fn prompt_effective_style(
+unsafe fn prompt_effective_style(
     mut pr: *mut prompt,
     mut sy: *mut style,
     mut ft: *mut format_tree,
@@ -776,7 +767,7 @@ unsafe fn prompt_layout(
     (*pl).cursor_x = (*pl).cursor_x.wrapping_add((*pl).content_x);
     expanded
 }
-unsafe extern "C" fn prompt_mouse_complete(
+unsafe fn prompt_mouse_complete(
     mut pr: *mut prompt,
     mut x: u_int,
     mut cx: u_int,
@@ -837,8 +828,7 @@ unsafe extern "C" fn prompt_mouse_complete(
     }
     return PROMPT_KEY_HANDLED;
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
+pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
     let mut ctx: *mut screen_write_ctx = (*pd).ctx;
     let mut s: *mut screen = (*ctx).s;
     let mut ax: u_int = (*pd).area_x;
@@ -1004,8 +994,7 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_mouse(
+pub unsafe fn prompt_mouse(
     mut pr: *mut prompt,
     mut x: u_int,
     mut ax: u_int,
@@ -1108,7 +1097,7 @@ pub unsafe extern "C" fn prompt_mouse(
     }
     return PROMPT_KEY_HANDLED;
 }
-unsafe extern "C" fn prompt_in_list(
+unsafe fn prompt_in_list(
     mut ws: *const ::core::ffi::c_char,
     mut ud: *const utf8_data,
 ) -> ::core::ffi::c_int {
@@ -1122,7 +1111,7 @@ unsafe extern "C" fn prompt_in_list(
         *(&raw const (*ud).data as *const u_char) as ::core::ffi::c_int,
     ) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn prompt_space(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+unsafe fn prompt_space(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     if (*ud).size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
         || (*ud).width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
     {
@@ -1131,7 +1120,7 @@ unsafe extern "C" fn prompt_space(mut ud: *const utf8_data) -> ::core::ffi::c_in
     return (*(&raw const (*ud).data as *const u_char) as ::core::ffi::c_int == ' ' as i32)
         as ::core::ffi::c_int;
 }
-unsafe extern "C" fn prompt_keypad_key(mut key: key_code) -> key_code {
+unsafe fn prompt_keypad_key(mut key: key_code) -> key_code {
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS != 0 {
         return key;
     }
@@ -1156,7 +1145,7 @@ unsafe extern "C" fn prompt_keypad_key(mut key: key_code) -> key_code {
     }
     return key;
 }
-unsafe extern "C" fn prompt_translate_key(
+unsafe fn prompt_translate_key(
     mut pr: *mut prompt,
     mut key: key_code,
     mut new_key: *mut key_code,
@@ -1300,7 +1289,7 @@ fn prompt_save_copied(pr: &mut prompt, idx: size_t) {
     pr.copied = Some(copied.into_boxed_slice());
 }
 
-unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
+unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: size_t = 0;
@@ -1375,7 +1364,7 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn prompt_replace_complete(
+unsafe fn prompt_replace_complete(
     mut pr: *mut prompt,
     mut s: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -1469,7 +1458,7 @@ unsafe extern "C" fn prompt_replace_complete(
     (*pr).index = first_index + replacement_bytes.len();
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn prompt_forward_word(
+unsafe fn prompt_forward_word(
     mut pr: *mut prompt,
     mut size: size_t,
     mut vi: ::core::ffi::c_int,
@@ -1518,7 +1507,7 @@ unsafe extern "C" fn prompt_forward_word(
     }
     (*pr).index = idx;
 }
-unsafe extern "C" fn prompt_end_word(
+unsafe fn prompt_end_word(
     mut pr: *mut prompt,
     mut size: size_t,
     mut separators: *const ::core::ffi::c_char,
@@ -1559,10 +1548,7 @@ unsafe extern "C" fn prompt_end_word(
     }
     (*pr).index = idx.wrapping_sub(1 as size_t);
 }
-unsafe extern "C" fn prompt_backward_word(
-    mut pr: *mut prompt,
-    mut separators: *const ::core::ffi::c_char,
-) {
+unsafe fn prompt_backward_word(mut pr: *mut prompt, mut separators: *const ::core::ffi::c_char) {
     let mut idx: size_t = (*pr).index;
     let mut word_is_separators: ::core::ffi::c_int = 0;
     while idx != 0 as size_t {
@@ -1591,7 +1577,7 @@ unsafe extern "C" fn prompt_backward_word(
     }
     (*pr).index = idx;
 }
-unsafe extern "C" fn prompt_done(
+unsafe fn prompt_done(
     mut pr: *mut prompt,
     mut s: *const ::core::ffi::c_char,
     mut redraw: *mut ::core::ffi::c_int,
@@ -1611,10 +1597,7 @@ unsafe fn prompt_done_with_history(
     }
     prompt_done(pr, s.as_ptr(), redraw)
 }
-unsafe extern "C" fn prompt_check_move(
-    mut pr: *mut prompt,
-    mut key: key_code,
-) -> prompt_key_result {
+unsafe fn prompt_check_move(mut pr: *mut prompt, mut key: key_code) -> prompt_key_result {
     if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
         return PROMPT_KEY_NOT_HANDLED;
     }
@@ -1639,8 +1622,7 @@ unsafe extern "C" fn prompt_check_move(
     }
     return PROMPT_KEY_MOVE;
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_key(
+pub unsafe fn prompt_key(
     mut pr: *mut prompt,
     mut key: key_code,
     mut redraw: *mut ::core::ffi::c_int,
@@ -10879,7 +10861,7 @@ fn prompt_complete_prefix(list: &[CString]) -> CString {
     }
     CString::new(&first[..prefix_len]).expect("completion names contain no NUL")
 }
-unsafe extern "C" fn prompt_clear_complete(mut pr: *mut prompt) {
+unsafe fn prompt_clear_complete(mut pr: *mut prompt) {
     (*pr).completion.names = Vec::new();
     (*pr).completion.display = None;
 }
@@ -10933,8 +10915,7 @@ unsafe fn prompt_complete(mut pr: *mut prompt, word: &CStr, mut offset: u_int) -
     prompt_store_complete(pr, list);
     None
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_type(mut type_0: *const ::core::ffi::c_char) -> prompt_type {
+pub unsafe fn prompt_type(mut type_0: *const ::core::ffi::c_char) -> prompt_type {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < PROMPT_NTYPES as u_int {
@@ -10945,8 +10926,7 @@ pub unsafe extern "C" fn prompt_type(mut type_0: *const ::core::ffi::c_char) -> 
     }
     return PROMPT_TYPE_INVALID;
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_type_string(mut type_0: prompt_type) -> *const ::core::ffi::c_char {
+pub unsafe fn prompt_type_string(mut type_0: prompt_type) -> *const ::core::ffi::c_char {
     match type_0 as ::core::ffi::c_uint {
         0 => return b"command\0" as *const u8 as *const ::core::ffi::c_char,
         1 => return b"search\0" as *const u8 as *const ::core::ffi::c_char,

@@ -42,10 +42,7 @@ pub const RIGHT: C2RustUnnamed_39 = 2;
 pub const CENTRE: C2RustUnnamed_39 = 1;
 pub const LEFT: C2RustUnnamed_39 = 0;
 pub type C2RustUnnamed_39 = ::core::ffi::c_uint;
-unsafe extern "C" fn format_is_type(
-    mut fr: *mut format_range,
-    mut sy: *mut style,
-) -> ::core::ffi::c_int {
+unsafe fn format_is_type(mut fr: *mut format_range, mut sy: *mut style) -> ::core::ffi::c_int {
     if (*fr).type_0 as ::core::ffi::c_uint != (*sy).range_type as ::core::ffi::c_uint {
         return 0 as ::core::ffi::c_int;
     }
@@ -64,7 +61,7 @@ unsafe extern "C" fn format_is_type(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn format_update_ranges(
+unsafe fn format_update_ranges(
     mut frs: *mut format_ranges,
     mut s: *mut screen,
     mut offset: u_int,
@@ -95,7 +92,7 @@ unsafe extern "C" fn format_update_ranges(
         true
     });
 }
-unsafe extern "C" fn format_draw_put(
+unsafe fn format_draw_put(
     mut octx: *mut screen_write_ctx,
     mut ocx: u_int,
     mut ocy: u_int,
@@ -114,7 +111,7 @@ unsafe extern "C" fn format_draw_put(
     screen_write_fast_copy(octx, s, start, 0 as u_int, width, 1 as u_int);
     format_update_ranges(frs, s, offset, start, width);
 }
-unsafe extern "C" fn format_draw_put_list(
+unsafe fn format_draw_put_list(
     mut octx: *mut screen_write_ctx,
     mut ocx: u_int,
     mut ocy: u_int,
@@ -182,7 +179,7 @@ unsafe extern "C" fn format_draw_put_list(
     }
     format_draw_put(octx, ocx, ocy, list, frs, offset, start, width);
 }
-unsafe extern "C" fn format_draw_none(
+unsafe fn format_draw_none(
     mut octx: *mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -263,7 +260,7 @@ unsafe extern "C" fn format_draw_none(
         width_abs_centre,
     );
 }
-unsafe extern "C" fn format_draw_left(
+unsafe fn format_draw_left(
     mut octx: *mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -418,7 +415,7 @@ unsafe extern "C" fn format_draw_left(
         width_abs_centre,
     );
 }
-unsafe extern "C" fn format_draw_centre(
+unsafe fn format_draw_centre(
     mut octx: *mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -568,7 +565,7 @@ unsafe extern "C" fn format_draw_centre(
         width_abs_centre,
     );
 }
-unsafe extern "C" fn format_draw_right(
+unsafe fn format_draw_right(
     mut octx: *mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -722,7 +719,7 @@ unsafe extern "C" fn format_draw_right(
         width_abs_centre,
     );
 }
-unsafe extern "C" fn format_draw_absolute_centre(
+unsafe fn format_draw_absolute_centre(
     mut octx: *mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -852,7 +849,7 @@ unsafe extern "C" fn format_draw_absolute_centre(
         width_after,
     );
 }
-unsafe extern "C" fn format_leading_hashes(
+unsafe fn format_leading_hashes(
     mut cp: *const ::core::ffi::c_char,
     mut n: *mut u_int,
     mut width: *mut u_int,
@@ -881,7 +878,7 @@ unsafe extern "C" fn format_leading_hashes(
         .offset(*n as isize)
         .offset(-(1 as ::core::ffi::c_int as isize));
 }
-unsafe extern "C" fn format_draw_many(
+unsafe fn format_draw_many(
     mut ctx: *mut screen_write_ctx,
     mut sy: *mut style,
     mut ch: ::core::ffi::c_char,
@@ -895,8 +892,7 @@ unsafe extern "C" fn format_draw_many(
         i = i.wrapping_add(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_draw(
+pub unsafe fn format_draw(
     mut octx: *mut screen_write_ctx,
     mut base: *const grid_cell,
     mut available: u_int,
@@ -1695,8 +1691,7 @@ pub unsafe extern "C" fn format_draw(
         0 as ::core::ffi::c_int,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
+pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;

@@ -26,7 +26,6 @@ pub const LIST_CLIENTS_TEMPLATE: [::core::ffi::c_char; 225] = unsafe {
         *b"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_list_clients_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"list-clients\0" as *const u8 as *const ::core::ffi::c_char,

@@ -11,9 +11,7 @@ use crate::src::window::{
     window_pane_is_visible, window_pane_scrollbar_reserve, window_pane_z_last,
     window_pane_z_previous,
 };
-
-#[no_mangle]
-pub unsafe extern "C" fn window_position_is_visible(
+pub unsafe fn window_position_is_visible(
     mut r: *mut visible_ranges,
     mut px: u_int,
 ) -> ::core::ffi::c_int {
@@ -42,9 +40,7 @@ unsafe fn window_visible_ensure_ranges(wp: &mut window_pane, r: *mut visible_ran
     }
     window_pane_ensure_visible_ranges(wp, n);
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn window_visible_ranges(
+pub unsafe fn window_visible_ranges(
     mut base_wp: *mut window_pane,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,

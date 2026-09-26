@@ -32,8 +32,6 @@ use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offse
 use crate::src::tty_keys::tty_keys_colours;
 use crate::src::window::window_pane_find_by_id;
 use std::ffi::{CStr, CString};
-
-#[no_mangle]
 pub static mut cmd_refresh_client_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"refresh-client\0" as *const u8 as *const ::core::ffi::c_char,
@@ -64,7 +62,7 @@ pub static mut cmd_refresh_client_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_refresh_client_update_subscription(
+unsafe fn cmd_refresh_client_update_subscription(
     mut tc: *mut client,
     mut value: *const ::core::ffi::c_char,
 ) {
@@ -80,7 +78,7 @@ unsafe extern "C" fn cmd_refresh_client_update_subscription(
         parsed.format.as_ptr(),
     );
 }
-unsafe extern "C" fn cmd_refresh_client_control_client_size(
+unsafe fn cmd_refresh_client_control_client_size(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
@@ -195,10 +193,7 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     (matched == 1).then_some((pane, suffix))
 }
 
-unsafe extern "C" fn cmd_refresh_client_update_offset(
-    tc: *mut client,
-    value: *const ::core::ffi::c_char,
-) {
+unsafe fn cmd_refresh_client_update_offset(tc: *mut client, value: *const ::core::ffi::c_char) {
     let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
@@ -215,7 +210,7 @@ unsafe extern "C" fn cmd_refresh_client_update_offset(
     }
 }
 
-unsafe extern "C" fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
+unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
     let Some((pane, report)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };

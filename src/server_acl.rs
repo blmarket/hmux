@@ -31,8 +31,6 @@ fn server_acl_key(id: id_t, flags: ::core::ffi::c_int) -> (bool, id_t) {
 fn server_acl_entry_key(entry: &server_acl_entry) -> (bool, id_t) {
     server_acl_key(entry.id, entry.flags)
 }
-
-#[no_mangle]
 pub static mut server_acl_entries: server_acl_entries = server_acl_entries {
     entries: std::collections::BTreeMap::new(),
 };
@@ -100,7 +98,7 @@ fn server_acl_entries_clear(head: &mut server_acl_entries) {
     head.entries.clear();
 }
 
-unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_entry {
+unsafe fn server_acl_check(mut c: *mut client) -> *mut server_acl_entry {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut uid: uid_t = 0;
     let mut gid: gid_t = 0;
@@ -122,7 +120,7 @@ unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_ent
         SERVER_ACL_IS_GROUP,
     );
 }
-unsafe extern "C" fn server_acl_update() {
+unsafe fn server_acl_update() {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
@@ -142,24 +140,18 @@ unsafe extern "C" fn server_acl_update() {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_init() {
+pub unsafe fn server_acl_init() {
     server_acl_entries_clear(&mut *(&raw mut server_acl_entries));
     if getuid() != 0 as __uid_t {
         server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
     }
     server_acl_allow(getuid() as id_t, 0 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_find(
-    mut id: id_t,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+pub unsafe fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return (server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags)
         != NULL as *mut server_acl_entry) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
+pub unsafe fn server_acl_display(mut item: *mut cmdq_item) {
     let mut loop_0: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let mut gr: *mut group = ::core::ptr::null_mut::<group>();
@@ -214,8 +206,7 @@ pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
         loop_0 = server_acl_entries_next(&*(&raw mut server_acl_entries), &*loop_0);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub unsafe fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
@@ -228,8 +219,7 @@ pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub unsafe fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if !entry.is_null() {
@@ -237,8 +227,7 @@ pub unsafe extern "C" fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c
         server_acl_update();
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub unsafe fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
@@ -247,8 +236,7 @@ pub unsafe extern "C" fn server_acl_allow_write(mut id: id_t, mut flags: ::core:
     (*entry).flags &= !SERVER_ACL_READONLY;
     server_acl_update();
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub unsafe fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
@@ -257,8 +245,7 @@ pub unsafe extern "C" fn server_acl_deny_write(mut id: id_t, mut flags: ::core::
     (*entry).flags |= SERVER_ACL_READONLY;
     server_acl_update();
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_acl_join(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn server_acl_join(mut c: *mut client) -> ::core::ffi::c_int {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_check(c);
     if entry.is_null() {

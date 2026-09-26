@@ -26,7 +26,6 @@ pub const LIST_SESSIONS_TEMPLATE: [::core::ffi::c_char; 175] = unsafe {
         *b"#{session_name}: #{session_windows} windows (created #{t:session_created})#{?session_grouped, (group ,}#{session_group}#{?session_grouped,),}#{?session_attached, (attached),}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_list_sessions_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"list-sessions\0" as *const u8 as *const ::core::ffi::c_char,

@@ -35,7 +35,7 @@ use crate::src::window::{
     window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_index,
 };
 
-unsafe extern "C" fn window_set_fill_cell(
+unsafe fn window_set_fill_cell(
     mut w: *mut window,
     mut inside: ::core::ffi::c_int,
     mut gc: *mut grid_cell,
@@ -128,12 +128,11 @@ unsafe extern "C" fn window_set_fill_cell(
     }
     screen_free(&raw mut s);
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_set_fill_cells(mut w: *mut window) {
+pub unsafe fn window_set_fill_cells(mut w: *mut window) {
     window_set_fill_cell(w, 1 as ::core::ffi::c_int, &raw mut (*w).inside_cell);
     window_set_fill_cell(w, 0 as ::core::ffi::c_int, &raw mut (*w).outside_cell);
 }
-unsafe extern "C" fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
+unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
     utf8_copy(&raw mut (*gc).data, &raw const (*fill).data);
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | (*fill).attr as ::core::ffi::c_int) as u_short;
     (*gc).flags =
@@ -148,8 +147,7 @@ unsafe extern "C" fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *co
         (*gc).us = (*fill).us;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_get_fill_cell(
+pub unsafe fn window_get_fill_cell(
     mut w: *mut window,
     mut inside: ::core::ffi::c_int,
     mut gc: *mut grid_cell,
@@ -160,8 +158,7 @@ pub unsafe extern "C" fn window_get_fill_cell(
         window_copy_fill_cell(gc, &raw mut (*w).outside_cell);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_get_border_cell(
+pub unsafe fn window_get_border_cell(
     mut wp: *mut window_pane,
     mut pane_lines: pane_lines,
     mut cell_type: ::core::ffi::c_int,
@@ -220,8 +217,7 @@ pub unsafe extern "C" fn window_get_border_cell(
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_get_border_cell(
+pub unsafe fn window_pane_get_border_cell(
     mut wp: *mut window_pane,
     mut cell_type: ::core::ffi::c_int,
     mut gc: *mut grid_cell,
@@ -229,8 +225,7 @@ pub unsafe extern "C" fn window_pane_get_border_cell(
     let mut pane_lines: pane_lines = window_pane_get_pane_lines(wp);
     window_get_border_cell(wp, pane_lines, cell_type, gc);
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_get_border_style(
+pub unsafe fn window_pane_get_border_style(
     mut wp: *mut window_pane,
     mut c: *mut client,
     mut gc: *mut grid_cell,
@@ -261,8 +256,7 @@ pub unsafe extern "C" fn window_pane_get_border_style(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_make_pane_status(
+pub unsafe fn window_make_pane_status(
     mut wp: *mut window_pane,
     mut c: *mut client,
     mut width: u_int,

@@ -56,8 +56,6 @@ pub struct tty_term_code_entry {
     pub name: &'static ::std::ffi::CStr,
 }
 pub const OK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-
-#[no_mangle]
 pub static mut tty_terms: tty_terms = tty_terms {
     lh_first: ::core::ptr::null::<tty_term>() as *mut tty_term,
 };
@@ -999,8 +997,7 @@ static mut tty_term_codes: [tty_term_code_entry; 234] = [
         name: c"XT",
     },
 ];
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_ncodes() -> u_int {
+pub unsafe fn tty_term_ncodes() -> u_int {
     return (::core::mem::size_of::<[tty_term_code_entry; 234]>() as usize)
         .wrapping_div(::core::mem::size_of::<tty_term_code_entry>() as usize) as u_int;
 }
@@ -1031,7 +1028,7 @@ fn tty_term_strip(s: &CStr) -> CString {
     }
     CString::new(stripped).expect("terminal capability C string contains no NUL")
 }
-unsafe extern "C" fn tty_term_override_next(
+unsafe fn tty_term_override_next(
     mut s: *const ::core::ffi::c_char,
     mut offset: *mut size_t,
 ) -> *mut ::core::ffi::c_char {
@@ -1082,8 +1079,7 @@ unsafe fn tty_term_override_value(source: &CStr) -> CString {
     decoded.truncate(strlen(decoded.as_ptr().cast()) + 1);
     CString::from_vec_with_nul(decoded).expect("strunvis terminates its output")
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_apply(
+pub unsafe fn tty_term_apply(
     mut term: *mut tty_term,
     mut capabilities: *const ::core::ffi::c_char,
     mut quiet: ::core::ffi::c_int,
@@ -1193,8 +1189,7 @@ pub unsafe extern "C" fn tty_term_apply(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_apply_overrides(mut term: *mut tty_term) {
+pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
@@ -1283,7 +1278,7 @@ pub unsafe extern "C" fn tty_term_apply_overrides(mut term: *mut tty_term) {
     }
     tty_term_validate(term);
 }
-unsafe extern "C" fn tty_term_validate(mut term: *mut tty_term) {
+unsafe fn tty_term_validate(mut term: *mut tty_term) {
     let mut code: *mut tty_code =
         (*term).codes.offset(TTYC_MS as ::core::ffi::c_int as isize) as *mut tty_code;
     if (*code).type_0 as ::core::ffi::c_uint
@@ -1544,8 +1539,7 @@ pub unsafe fn tty_term_create(
     tty_term_free(term);
     Err(error.expect("unsupported terminal has an error message"))
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
+pub unsafe fn tty_term_free(mut term: *mut tty_term) {
     let mut i: u_int = 0;
     log_debug(
         b"removing term %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1670,17 +1664,12 @@ impl Drop for CurrentTerminalOwner {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_has(
-    mut term: *mut tty_term,
-    mut code: tty_code_code,
-) -> ::core::ffi::c_int {
+pub unsafe fn tty_term_has(mut term: *mut tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
     return ((*(*term).codes.offset(code as isize)).type_0 as ::core::ffi::c_uint
         != TTYCODE_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_has_name(
+pub unsafe fn tty_term_has_name(
     mut term: *mut tty_term,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -1694,8 +1683,7 @@ pub unsafe extern "C" fn tty_term_has_name(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_string(
+pub unsafe fn tty_term_string(
     mut term: *mut tty_term,
     mut code: tty_code_code,
 ) -> *const ::core::ffi::c_char {
@@ -1712,8 +1700,7 @@ pub unsafe extern "C" fn tty_term_string(
     }
     return (*(*term).codes.offset(code as isize)).value.string;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_string_i(
+pub unsafe fn tty_term_string_i(
     mut term: *mut tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -1730,8 +1717,7 @@ pub unsafe extern "C" fn tty_term_string_i(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_string_ii(
+pub unsafe fn tty_term_string_ii(
     mut term: *mut tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -1749,8 +1735,7 @@ pub unsafe extern "C" fn tty_term_string_ii(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_string_iii(
+pub unsafe fn tty_term_string_iii(
     mut term: *mut tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -1769,8 +1754,7 @@ pub unsafe extern "C" fn tty_term_string_iii(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_string_s(
+pub unsafe fn tty_term_string_s(
     mut term: *mut tty_term,
     mut code: tty_code_code,
     mut a: *const ::core::ffi::c_char,
@@ -1787,8 +1771,7 @@ pub unsafe extern "C" fn tty_term_string_s(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_string_ss(
+pub unsafe fn tty_term_string_ss(
     mut term: *mut tty_term,
     mut code: tty_code_code,
     mut a: *const ::core::ffi::c_char,
@@ -1806,8 +1789,7 @@ pub unsafe extern "C" fn tty_term_string_ss(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_number(
+pub unsafe fn tty_term_number(
     mut term: *mut tty_term,
     mut code: tty_code_code,
 ) -> ::core::ffi::c_int {
@@ -1824,8 +1806,7 @@ pub unsafe extern "C" fn tty_term_number(
     }
     return (*(*term).codes.offset(code as isize)).value.number;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_flag(
+pub unsafe fn tty_term_flag(
     mut term: *mut tty_term,
     mut code: tty_code_code,
 ) -> ::core::ffi::c_int {
@@ -1842,8 +1823,7 @@ pub unsafe extern "C" fn tty_term_flag(
     }
     return (*(*term).codes.offset(code as isize)).value.flag;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_describe(
+pub unsafe fn tty_term_describe(
     mut term: *mut tty_term,
     mut code: tty_code_code,
 ) -> *const ::core::ffi::c_char {

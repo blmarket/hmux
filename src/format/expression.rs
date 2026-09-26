@@ -6,7 +6,7 @@
 use super::*;
 use std::ffi::{CStr, CString};
 
-pub(super) unsafe extern "C" fn format_strftime(
+pub(super) unsafe fn format_strftime(
     mut s: *mut ::core::ffi::c_char,
     mut max: size_t,
     mut fmt: *const ::core::ffi::c_char,
@@ -415,7 +415,7 @@ pub(super) unsafe fn format_find(
     Some(found)
 }
 
-pub(super) unsafe extern "C" fn format_check_time(
+pub(super) unsafe fn format_check_time(
     mut es: *mut format_expand_state,
     mut check: *mut u_int,
 ) -> ::core::ffi::c_int {
@@ -511,7 +511,7 @@ unsafe fn format_strip_cstring(es: *mut format_expand_state, s: &CStr) -> CStrin
     }
     CString::new(out).expect("stripped C string contains no NUL")
 }
-pub(super) unsafe extern "C" fn format_skip1(
+pub(super) unsafe fn format_skip1(
     mut es: *mut format_expand_state,
     mut s: *const ::core::ffi::c_char,
     mut end: *const ::core::ffi::c_char,
@@ -553,8 +553,7 @@ pub(super) unsafe extern "C" fn format_skip1(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_skip(
+pub unsafe fn format_skip(
     mut s: *const ::core::ffi::c_char,
     mut end: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -594,8 +593,7 @@ unsafe fn format_choose_loop(
     let active = CStr::from_ptr(cp.add(1)).to_owned();
     (all, Some(active))
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_true(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+pub unsafe fn format_true(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     if !s.is_null()
         && *s as ::core::ffi::c_int != '\0' as i32
         && (*s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '0' as i32
@@ -605,7 +603,7 @@ pub unsafe extern "C" fn format_true(mut s: *const ::core::ffi::c_char) -> ::cor
     }
     return 0 as ::core::ffi::c_int;
 }
-pub(super) unsafe extern "C" fn format_is_end(mut c: ::core::ffi::c_char) -> ::core::ffi::c_int {
+pub(super) unsafe fn format_is_end(mut c: ::core::ffi::c_char) -> ::core::ffi::c_int {
     return (c as ::core::ffi::c_int == ';' as i32 || c as ::core::ffi::c_int == ':' as i32)
         as ::core::ffi::c_int;
 }
@@ -1114,7 +1112,7 @@ pub(super) unsafe fn format_window_name(
     }
     return Some(c"0".to_owned());
 }
-pub(super) unsafe extern "C" fn format_add_window_neighbour(
+pub(super) unsafe fn format_add_window_neighbour(
     mut nft: *mut format_tree,
     mut wl: *mut winlink,
     mut s: *mut session,
@@ -2245,7 +2243,7 @@ pub(super) unsafe fn format_cycle_callback(
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
 }
-pub(super) unsafe extern "C" fn format_cycle_start_timer(mut c: *mut client) {
+pub(super) unsafe fn format_cycle_start_timer(mut c: *mut client) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,

@@ -45,7 +45,6 @@ pub const SHOW_HOOKS_MONITOR_TEMPLATE: [::core::ffi::c_char; 61] = unsafe {
         *b"#{option_name}:#{hook_monitor_target}:#{hook_monitor_format}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_show_options_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"show-options\0" as *const u8 as *const ::core::ffi::c_char,
@@ -72,7 +71,6 @@ pub static mut cmd_show_options_entry: cmd_entry = unsafe {
         exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_show_window_options_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"show-window-options\0" as *const u8 as *const ::core::ffi::c_char,
@@ -99,7 +97,6 @@ pub static mut cmd_show_window_options_entry: cmd_entry = unsafe {
         exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_show_hooks_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"show-hooks\0" as *const u8 as *const ::core::ffi::c_char,
@@ -262,7 +259,7 @@ unsafe fn cmd_show_options_value(
     options_to_cstring(o, array_key, 0)
 }
 
-unsafe extern "C" fn cmd_show_options_print(
+unsafe fn cmd_show_options_print(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut o: *mut options_entry,
@@ -420,7 +417,7 @@ unsafe extern "C" fn cmd_show_options_print(
     );
     drop(value);
 }
-unsafe extern "C" fn cmd_show_hooks_print_monitor(
+unsafe fn cmd_show_hooks_print_monitor(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut o: *mut options_entry,
@@ -557,7 +554,7 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     );
     drop(target);
 }
-unsafe extern "C" fn cmd_show_options_all(
+unsafe fn cmd_show_options_all(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut scope: ::core::ffi::c_int,

@@ -13,8 +13,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::key::*;
-
-#[no_mangle]
 pub static mut cmd_bind_key_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"bind-key\0" as *const u8 as *const ::core::ffi::c_char,

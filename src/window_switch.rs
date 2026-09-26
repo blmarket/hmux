@@ -87,7 +87,7 @@ pub type window_switch_type = ::core::ffi::c_uint;
 pub const WINDOW_SWITCH_TYPE_WINDOW: window_switch_type = 1;
 pub const WINDOW_SWITCH_TYPE_SESSION: window_switch_type = 0;
 #[inline]
-unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -106,7 +106,6 @@ pub const WINDOW_SWITCH_DEFAULT_FORMAT: [::core::ffi::c_char; 350] = unsafe {
         *b"#{?window_format,#{window_name} #[dim]#{session_name}:#{window_index}#{window_flags}#[default] #[dim]#{pane_current_command}#[default] #[dim]#{?#{!=:#{pane_title},#{host_short}},#{pane_title},}#[default],#{session_name} #[dim]#{session_windows} windows#[default] #{?session_attached,attached,#[dim]detached#[default]} #[dim]#{window_name}#[default]}\0",
     )
 };
-#[no_mangle]
 pub static mut window_switch_mode: window_mode = unsafe {
     window_mode {
         name: c"switch-mode",
@@ -142,7 +141,7 @@ pub static mut window_switch_mode: window_mode = unsafe {
         get_screen: None,
     }
 };
-unsafe extern "C" fn window_switch_add_item(
+unsafe fn window_switch_add_item(
     mut data: *mut window_switch_modedata,
 ) -> *mut window_switch_itemdata {
     let mut item = Box::new(window_switch_itemdata {
@@ -158,7 +157,7 @@ unsafe extern "C" fn window_switch_add_item(
     (*data).item_list.push(item);
     ptr
 }
-unsafe extern "C" fn window_switch_add_session(
+unsafe fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
     mut s: *mut session,
     mut order: *mut u_int,
@@ -188,7 +187,7 @@ unsafe extern "C" fn window_switch_add_session(
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
 }
-unsafe extern "C" fn window_switch_add_window(
+unsafe fn window_switch_add_window(
     mut data: *mut window_switch_modedata,
     mut wl: *mut winlink,
     mut order: *mut u_int,
@@ -218,7 +217,7 @@ unsafe extern "C" fn window_switch_add_window(
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
 }
-unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) {
+unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
     let mut f: *const ::core::ffi::c_char = (*data).filter.as_ptr();
@@ -277,17 +276,14 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
     });
     (*data).matches = m;
 }
-unsafe extern "C" fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
+unsafe fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
     let mut sy: u_int = (*(*data).screen.grid).sy;
     if sy <= 1 as u_int {
         return 0 as u_int;
     }
     return sy.wrapping_sub(1 as u_int);
 }
-unsafe extern "C" fn window_switch_set_current(
-    mut data: *mut window_switch_modedata,
-    mut current: u_int,
-) {
+unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut current: u_int) {
     let mut visible: u_int = window_switch_visible(data);
     if (*data).matches.is_empty() {
         (*data).current = 0 as u_int;
@@ -307,7 +303,7 @@ unsafe extern "C" fn window_switch_set_current(
             .wrapping_add(1 as u_int);
     }
 }
-unsafe extern "C" fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
+unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     let mut oo: *mut options = (*wp).options;
@@ -564,7 +560,7 @@ unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, m
     window_switch_set_current(data, (*data).current);
     window_switch_draw_screen(wme);
 }
-unsafe extern "C" fn window_switch_run_command(
+unsafe fn window_switch_run_command(
     mut data: *mut window_switch_modedata,
     mut c: *mut client,
 ) -> ::core::ffi::c_int {

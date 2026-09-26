@@ -124,22 +124,19 @@ mod layout_string_tests {
         assert_eq!(layout.bytes, b"{\"t\":\"h\",\"c\":[80x24]}\0");
     }
 }
-unsafe extern "C" fn layout_parse_init_ctx(
-    mut pctx: *mut layout_parse_ctx,
-    mut cause: *mut Option<CString>,
-) {
+unsafe fn layout_parse_init_ctx(mut pctx: *mut layout_parse_ctx, mut cause: *mut Option<CString>) {
     (*pctx).version = -(1 as ::core::ffi::c_int) as int64_t;
     (*pctx).num_active = 0 as ::core::ffi::c_int;
     (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
     (*pctx).cause = cause;
     (*pctx).cctxs.clear();
 }
-unsafe extern "C" fn layout_parse_free_ctx(mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_parse_free_ctx(mut pctx: *mut layout_parse_ctx) {
     layout_free_cell((*pctx).root, 0 as ::core::ffi::c_int);
     (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
     (*pctx).cctxs.clear();
 }
-unsafe extern "C" fn layout_parse_add_cctx(
+unsafe fn layout_parse_add_cctx(
     mut pctx: *mut layout_parse_ctx,
     mut lc: *mut layout_cell,
     mut active: ::core::ffi::c_int,
@@ -155,7 +152,7 @@ unsafe extern "C" fn layout_parse_add_cctx(
         zindex,
     });
 }
-unsafe extern "C" fn layout_parse_remove_cctx(
+unsafe fn layout_parse_remove_cctx(
     mut pctx: *mut layout_parse_ctx,
     mut lc: *mut layout_cell,
 ) -> ::core::ffi::c_int {
@@ -165,7 +162,7 @@ unsafe extern "C" fn layout_parse_remove_cctx(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut layout_cell {
+unsafe fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut layout_cell {
     if (*lc).type_0 as ::core::ffi::c_uint
         == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -174,7 +171,7 @@ unsafe extern "C" fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut l
     lc = layout_cells_last(&*lc);
     return layout_find_bottomright(lc);
 }
-unsafe extern "C" fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> u_short {
+unsafe fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> u_short {
     let mut csum: u_short = 0;
     csum = 0 as u_short;
     while *layout as ::core::ffi::c_int != '\0' as i32 {
@@ -213,10 +210,7 @@ pub(crate) unsafe fn layout_dump_owned(
     }
     Some(CString::new(output).expect("layout serializer produced an interior NUL"))
 }
-unsafe extern "C" fn layout_append_v2(
-    mut lc: *mut layout_cell,
-    ls: &mut LayoutString,
-) -> ::core::ffi::c_int {
+unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut LayoutString) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
@@ -314,10 +308,7 @@ unsafe extern "C" fn layout_append_v2(
     layout_string_write(ls, b"}\0" as *const u8 as *const ::core::ffi::c_char);
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_append_v1(
-    mut lc: *mut layout_cell,
-    ls: &mut LayoutString,
-) -> ::core::ffi::c_int {
+unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut LayoutString) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut brackets: *const ::core::ffi::c_char =
         b"[]\0" as *const u8 as *const ::core::ffi::c_char;
@@ -383,7 +374,7 @@ unsafe extern "C" fn layout_append_v1(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_custom_copy_layout(mut lc: *mut layout_cell) -> *mut layout_cell {
+unsafe fn layout_custom_copy_layout(mut lc: *mut layout_cell) -> *mut layout_cell {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcnewchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lconly: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -430,7 +421,7 @@ unsafe extern "C" fn layout_custom_copy_layout(mut lc: *mut layout_cell) -> *mut
     }
     return lcnew;
 }
-unsafe extern "C" fn layout_custom_create_compat(mut lcroot: *mut layout_cell) -> *mut layout_cell {
+unsafe fn layout_custom_create_compat(mut lcroot: *mut layout_cell) -> *mut layout_cell {
     let mut lccompat: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     lccompat = layout_custom_copy_layout(lcroot);
     if !lccompat.is_null() && layout_cell_is_tiled(lccompat) != 0 {
@@ -439,7 +430,7 @@ unsafe extern "C" fn layout_custom_create_compat(mut lcroot: *mut layout_cell) -
     }
     return lccompat;
 }
-unsafe extern "C" fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
+unsafe fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
@@ -455,14 +446,14 @@ unsafe extern "C" fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
         _ => {}
     };
 }
-unsafe extern "C" fn layout_custom_free_compat(mut lcroot: *mut layout_cell) {
+unsafe fn layout_custom_free_compat(mut lcroot: *mut layout_cell) {
     if lcroot.is_null() {
         return;
     }
     layout_custom_unlink_panes(lcroot);
     layout_free_cell(lcroot, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn layout_append(
+unsafe fn layout_append(
     mut lcroot: *mut layout_cell,
     ls: &mut LayoutString,
     mut flags: ::core::ffi::c_int,
@@ -481,7 +472,7 @@ unsafe extern "C" fn layout_append(
     }
     return result;
 }
-unsafe extern "C" fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
+unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut n: u_int = 0 as u_int;
     match (*lc).type_0 as ::core::ffi::c_uint {
@@ -694,7 +685,7 @@ pub unsafe fn layout_parse(
     layout_parse_free_ctx(&raw mut pctx);
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
     wp = window_pane_first(w);
@@ -703,10 +694,7 @@ unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut l
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn layout_assign_fallback_tiled(
-    mut wp: *mut *mut window_pane,
-    mut lc: *mut layout_cell,
-) {
+unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if lc.is_null() {
         return;
@@ -734,7 +722,7 @@ unsafe extern "C" fn layout_assign_fallback_tiled(
         _ => {}
     };
 }
-unsafe extern "C" fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell) {
+unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell) {
     let mut wp: *mut window_pane = window_pane_first(w);
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     layout_assign_fallback_tiled(&raw mut wp, lcroot);
@@ -753,14 +741,14 @@ unsafe extern "C" fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     if !(*pctx).cctxs.is_empty() {
         layout_assign_from_ctx(w, pctx);
     } else {
         layout_assign_fallback(w, (*w).layout_root);
     };
 }
-unsafe extern "C" fn layout_construct_cell(
+unsafe fn layout_construct_cell(
     mut lcparent: *mut layout_cell,
     mut layout: *mut *const ::core::ffi::c_char,
 ) -> *mut layout_cell {
@@ -849,7 +837,7 @@ unsafe extern "C" fn layout_construct_cell(
     (*lc).g.yoff = yoff;
     return lc;
 }
-unsafe extern "C" fn layout_construct_v1(
+unsafe fn layout_construct_v1(
     mut lcparent: *mut layout_cell,
     mut layout: *mut *const ::core::ffi::c_char,
     mut depth: u_int,
@@ -921,7 +909,7 @@ unsafe extern "C" fn layout_construct_v1(
     *layout = (*layout).offset(1);
     return lc;
 }
-unsafe extern "C" fn layout_parse_json(
+unsafe fn layout_parse_json(
     mut jnroot: *mut json_node,
     mut pctx: *mut layout_parse_ctx,
 ) -> ::core::ffi::c_int {
@@ -964,7 +952,7 @@ unsafe extern "C" fn layout_parse_json(
     (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn layout_parse_json_layout(
+unsafe fn layout_parse_json_layout(
     mut node: *mut json_node,
     mut lcparent: *mut layout_cell,
     mut pctx: *mut layout_parse_ctx,
@@ -1283,7 +1271,7 @@ unsafe extern "C" fn layout_parse_json_layout(
     layout_free_cell(lc, 0 as ::core::ffi::c_int);
     return ::core::ptr::null_mut::<layout_cell>();
 }
-unsafe extern "C" fn layout_construct(
+unsafe fn layout_construct(
     mut input: *const ::core::ffi::c_char,
     mut pctx: *mut layout_parse_ctx,
 ) -> ::core::ffi::c_int {
@@ -1375,7 +1363,7 @@ unsafe extern "C" fn layout_construct(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpnext: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     wp = window_pane_z_first(w);
@@ -1413,9 +1401,7 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
         }
     }
 }
-unsafe extern "C" fn layout_parse_ctx_check_indexes(
-    mut pctx: *mut layout_parse_ctx,
-) -> ::core::ffi::c_int {
+unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::core::ffi::c_int {
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
     if (*pctx)
         .cctxs

@@ -19,8 +19,6 @@ use crate::src::shared::session::session;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
-
-#[no_mangle]
 pub static mut cmd_kill_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"kill-window\0" as *const u8 as *const ::core::ffi::c_char,
@@ -46,7 +44,6 @@ pub static mut cmd_kill_window_entry: cmd_entry = unsafe {
         exec: Some(cmd_kill_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_unlink_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"unlink-window\0" as *const u8 as *const ::core::ffi::c_char,
@@ -104,7 +101,7 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     server_kill_window((*wl).window, 1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_kill_window_all(
+unsafe fn cmd_kill_window_all(
     mut item: *mut cmdq_item,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
@@ -153,7 +150,7 @@ unsafe extern "C" fn cmd_kill_window_all(
     server_renumber_all();
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_kill_window_filter(
+unsafe fn cmd_kill_window_filter(
     mut item: *mut cmdq_item,
     mut s: *mut session,
     mut wl: *mut winlink,

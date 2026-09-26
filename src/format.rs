@@ -304,7 +304,7 @@ static mut format_lower: [*const ::core::ffi::c_char; 26] = [
     ::core::ptr::null::<::core::ffi::c_char>(),
 ];
 #[inline]
-unsafe extern "C" fn format_logging(mut ft: *mut format_tree) -> ::core::ffi::c_int {
+unsafe fn format_logging(mut ft: *mut format_tree) -> ::core::ffi::c_int {
     return (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
         as ::core::ffi::c_int;
 }
@@ -338,7 +338,7 @@ unsafe extern "C" fn format_log1(
         );
     }
 }
-unsafe extern "C" fn format_copy_state(
+unsafe fn format_copy_state(
     mut to: *mut format_expand_state,
     mut from: *mut format_expand_state,
     mut flags: ::core::ffi::c_int,
@@ -354,8 +354,7 @@ unsafe extern "C" fn format_copy_state(
     (*to).flags = (*from).flags | flags;
     (*to).start_time = (*from).start_time;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_create_defaults(
+pub unsafe fn format_create_defaults(
     mut item: *mut cmdq_item,
     mut c: *mut client,
     mut s: *mut session,
@@ -381,21 +380,18 @@ pub unsafe extern "C" fn format_create_defaults(
     format_defaults(ft, c, s, wl, wp);
     return ft;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_create_from_state(
+pub unsafe fn format_create_from_state(
     mut item: *mut cmdq_item,
     mut c: *mut client,
     mut fs: *mut cmd_find_state,
 ) -> *mut format_tree {
     return format_create_defaults(item, c, (*fs).s, (*fs).wl, (*fs).wp);
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_create_from_target(mut item: *mut cmdq_item) -> *mut format_tree {
+pub unsafe fn format_create_from_target(mut item: *mut cmdq_item) -> *mut format_tree {
     let mut tc: *mut client = cmdq_get_target_client(item);
     return format_create_from_state(item, tc, cmdq_get_target(item));
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_defaults(
+pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
     mut c: *mut client,
     mut s: *mut session,
@@ -494,27 +490,25 @@ pub unsafe extern "C" fn format_defaults(
         format_defaults_paste_buffer(ft, pb);
     }
 }
-unsafe extern "C" fn format_defaults_session(mut ft: *mut format_tree, mut s: *mut session) {
+unsafe fn format_defaults_session(mut ft: *mut format_tree, mut s: *mut session) {
     (*ft).s = s;
 }
-unsafe extern "C" fn format_defaults_client(mut ft: *mut format_tree, mut c: *mut client) {
+unsafe fn format_defaults_client(mut ft: *mut format_tree, mut c: *mut client) {
     if (*ft).s.is_null() {
         (*ft).s = (*c).session;
     }
     (*ft).c = c;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_defaults_window(mut ft: *mut format_tree, mut w: *mut window) {
+pub unsafe fn format_defaults_window(mut ft: *mut format_tree, mut w: *mut window) {
     (*ft).w = w;
 }
-unsafe extern "C" fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: *mut winlink) {
+unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: *mut winlink) {
     if (*ft).w.is_null() {
         format_defaults_window(ft, (*wl).window);
     }
     (*ft).wl = wl;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_defaults_pane(mut ft: *mut format_tree, mut wp: *mut window_pane) {
+pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, mut wp: *mut window_pane) {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if (*ft).w.is_null() {
         format_defaults_window(ft, (*wp).window as *mut window);
@@ -525,11 +519,7 @@ pub unsafe extern "C" fn format_defaults_pane(mut ft: *mut format_tree, mut wp: 
         (*(*wme).mode).formats.expect("non-null function pointer")(wme, ft);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_defaults_paste_buffer(
-    mut ft: *mut format_tree,
-    mut pb: *mut paste_buffer,
-) {
+pub unsafe fn format_defaults_paste_buffer(mut ft: *mut format_tree, mut pb: *mut paste_buffer) {
     (*ft).pb = pb;
 }
 fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {

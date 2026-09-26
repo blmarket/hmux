@@ -160,11 +160,7 @@ unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
     };
     CString::new(full_path).expect("C string path fragments contain no NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_cmp(
-    mut cf1: *mut client_file,
-    mut cf2: *mut client_file,
-) -> ::core::ffi::c_int {
+pub unsafe fn file_cmp(mut cf1: *mut client_file, mut cf2: *mut client_file) -> ::core::ffi::c_int {
     if (*cf1).stream < (*cf2).stream {
         return -(1 as ::core::ffi::c_int);
     }
@@ -220,8 +216,7 @@ unsafe fn file_create_with_client(
     }
     return cf;
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_free(mut cf: *mut client_file) {
+pub unsafe fn file_free(mut cf: *mut client_file) {
     (*cf).references -= 1;
     if (*cf).references != 0 as ::core::ffi::c_int {
         return;
@@ -272,8 +267,7 @@ unsafe fn file_fire_done_cb(
     drop(callback);
     file_free(cf);
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_fire_done(mut cf: *mut client_file) {
+pub unsafe fn file_fire_done(mut cf: *mut client_file) {
     // The file stays in its stream index until this event runs. A read-done
     // message and client teardown can both request completion before then.
     // Only the first event may consume the callback data and free the owner.
@@ -289,8 +283,7 @@ pub unsafe extern "C" fn file_fire_done(mut cf: *mut client_file) {
         ::core::ptr::null::<timeval>(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_fire_read(mut cf: *mut client_file) {
+pub unsafe fn file_fire_read(mut cf: *mut client_file) {
     let c = (*cf).c;
     let wait_client = (*cf).wait_client;
     let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
@@ -307,8 +300,7 @@ pub unsafe extern "C" fn file_fire_read(mut cf: *mut client_file) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_can_print(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn file_can_print(mut c: *mut client) -> ::core::ffi::c_int {
     if c.is_null()
         || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
         || (*c).flags & CLIENT_DEAD as uint64_t != 0
@@ -318,7 +310,6 @@ pub unsafe extern "C" fn file_can_print(mut c: *mut client) -> ::core::ffi::c_in
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
 pub unsafe extern "C" fn file_print(
     mut c: *mut client,
     mut fmt: *const ::core::ffi::c_char,
@@ -328,8 +319,7 @@ pub unsafe extern "C" fn file_print(
     ap = args.clone();
     file_vprint(c, fmt, ap);
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_vprint(
+pub unsafe fn file_vprint(
     mut c: *mut client,
     mut fmt: *const ::core::ffi::c_char,
     mut ap: ::core::ffi::VaList,
@@ -380,8 +370,7 @@ pub unsafe extern "C" fn file_vprint(
         file_push(cf);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_print_buffer(
+pub unsafe fn file_print_buffer(
     mut c: *mut client,
     mut data: *mut ::core::ffi::c_void,
     mut size: size_t,
@@ -432,7 +421,6 @@ pub unsafe extern "C" fn file_print_buffer(
         file_push(cf);
     };
 }
-#[no_mangle]
 pub unsafe extern "C" fn file_error(
     mut c: *mut client,
     mut fmt: *const ::core::ffi::c_char,
@@ -780,8 +768,7 @@ unsafe fn file_read_impl(
     file_fire_done(cf);
     return ::core::ptr::null_mut::<client_file>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_cancel(mut cf: *mut client_file) {
+pub unsafe fn file_cancel(mut cf: *mut client_file) {
     let mut msg: msg_read_cancel = msg_read_cancel { stream: 0 };
     log_debug(
         b"read cancel file %d\0" as *const u8 as *const ::core::ffi::c_char,
@@ -811,8 +798,7 @@ unsafe fn file_push_cb(
     }
     file_free(cf);
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
+pub unsafe fn file_push(mut cf: *mut client_file) {
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_write_data>();
     let mut sent: size_t = 0;
@@ -889,8 +875,7 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_int {
+pub unsafe fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_int {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -911,7 +896,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
     }
     return (waiting != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn file_write_finished(mut cf: *mut client_file) {
+unsafe fn file_write_finished(mut cf: *mut client_file) {
     let mut msg: msg_write_done = msg_write_done {
         stream: 0,
         error: 0,
@@ -1104,8 +1089,7 @@ pub unsafe fn file_write_open(
         ::core::mem::size_of::<msg_write_ready>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg: *mut imsg) {
+pub unsafe fn file_write_data(mut files: *mut client_files, mut imsg: *mut imsg) {
     let mut msg: *mut msg_write_data = (*imsg).data as *mut msg_write_data;
     let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
     let mut find: client_file = client_file {
@@ -1147,8 +1131,7 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg: *mut imsg) {
+pub unsafe fn file_write_close(mut files: *mut client_files, mut imsg: *mut imsg) {
     let mut msg: *mut msg_write_close = (*imsg).data as *mut msg_write_close;
     let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
     let mut find: client_file = client_file {
@@ -1370,8 +1353,7 @@ pub unsafe fn file_read_open(
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg: *mut imsg) {
+pub unsafe fn file_read_cancel(mut files: *mut client_files, mut imsg: *mut imsg) {
     let mut msg: *mut msg_read_cancel = (*imsg).data as *mut msg_read_cancel;
     let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
     let mut find: client_file = client_file {
@@ -1409,8 +1391,7 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         cf as *mut ::core::ffi::c_void,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write_ready(
+pub unsafe fn file_write_ready(
     mut files: *mut client_files,
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {
@@ -1449,8 +1430,7 @@ pub unsafe extern "C" fn file_write_ready(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write_done(
+pub unsafe fn file_write_done(
     mut files: *mut client_files,
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {
@@ -1492,8 +1472,7 @@ pub unsafe extern "C" fn file_write_done(
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_read_data(
+pub unsafe fn file_read_data(
     mut files: *mut client_files,
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {
@@ -1542,8 +1521,7 @@ pub unsafe extern "C" fn file_read_data(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_read_done(
+pub unsafe fn file_read_done(
     mut files: *mut client_files,
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {

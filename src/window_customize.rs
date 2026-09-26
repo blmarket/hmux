@@ -223,7 +223,7 @@ pub const WINDOW_CUSTOMIZE_EDIT_KEY_COMMAND: window_customize_edit_type = 1;
 pub const WINDOW_CUSTOMIZE_EDIT_OPTION: window_customize_edit_type = 0;
 
 #[inline]
-unsafe extern "C" fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -231,7 +231,7 @@ unsafe extern "C" fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int 
     };
 }
 #[inline]
-unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -309,7 +309,6 @@ static mut window_customize_menu_items: [menu_item; 12] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-#[no_mangle]
 pub static mut window_customize_mode: window_mode = unsafe {
     window_mode {
         name: c"options-mode",
@@ -388,7 +387,7 @@ fn window_customize_top_tag(group: u_int) -> uint64_t {
 fn window_customize_key_tag(ptr: *const ::core::ffi::c_void, field: u_int) -> uint64_t {
     ptr as uint64_t | field as uint64_t
 }
-unsafe extern "C" fn window_customize_get_tree(
+unsafe fn window_customize_get_tree(
     mut scope: window_customize_scope,
     mut fs: *mut cmd_find_state,
 ) -> *mut options {
@@ -405,7 +404,7 @@ unsafe extern "C" fn window_customize_get_tree(
     }
     return ::core::ptr::null_mut::<options>();
 }
-unsafe extern "C" fn window_customize_get_environment(
+unsafe fn window_customize_get_environment(
     mut scope: window_customize_scope,
     mut fs: *mut cmd_find_state,
 ) -> *mut environ {
@@ -415,7 +414,7 @@ unsafe extern "C" fn window_customize_get_environment(
         _ => return ::core::ptr::null_mut::<environ>(),
     };
 }
-unsafe extern "C" fn window_customize_check_item(
+unsafe fn window_customize_check_item(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut fsp: *mut cmd_find_state,
@@ -445,7 +444,7 @@ unsafe extern "C" fn window_customize_check_item(
     }
     return ((*item).oo == window_customize_get_tree((*item).scope, fsp)) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_get_key(
+unsafe fn window_customize_get_key(
     mut item: *mut window_customize_itemdata,
     mut ktp: *mut *mut key_table,
     mut bdp: *mut *mut key_binding,
@@ -494,7 +493,7 @@ unsafe fn window_customize_scope_text(
         _ => CString::new(Vec::new()).expect("empty scope text"),
     }
 }
-unsafe extern "C" fn window_customize_write_hook_fire(
+unsafe fn window_customize_write_hook_fire(
     mut ctx: *mut screen_write_ctx,
     mut cx: u_int,
     mut sx: u_int,
@@ -540,7 +539,7 @@ unsafe extern "C" fn window_customize_write_hook_fire(
         fire_count,
     );
 }
-unsafe extern "C" fn window_customize_add_item(
+unsafe fn window_customize_add_item(
     mut data: *mut window_customize_modedata,
 ) -> *mut window_customize_itemdata {
     let mut owner = Box::new(window_customize_itemdata::new());
@@ -616,10 +615,10 @@ unsafe extern "C" fn window_customize_write_value(
     );
     return retval;
 }
-unsafe extern "C" fn window_customize_free_item(mut item: *mut window_customize_itemdata) {
+unsafe fn window_customize_free_item(mut item: *mut window_customize_itemdata) {
     drop(Box::from_raw(item as *mut window_customize_itemdata));
 }
-unsafe extern "C" fn window_customize_copy_item(
+unsafe fn window_customize_copy_item(
     mut item: *mut window_customize_itemdata,
 ) -> *mut window_customize_itemdata {
     let mut new_item: *mut window_customize_itemdata =
@@ -638,11 +637,11 @@ unsafe extern "C" fn window_customize_copy_item(
     window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
     return new_item;
 }
-unsafe extern "C" fn window_customize_finish_edit(mut ed: *mut window_customize_editdata) {
+unsafe fn window_customize_finish_edit(mut ed: *mut window_customize_editdata) {
     window_customize_free_item((*ed).item);
     drop(Box::from_raw(ed));
 }
-unsafe extern "C" fn window_customize_draw_waiting(mut data: *mut window_customize_modedata) {
+unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata) {
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -818,7 +817,7 @@ unsafe fn window_customize_set_option_value(
     );
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_option_editable(
+unsafe fn window_customize_option_editable(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
 ) -> ::core::ffi::c_int {
@@ -875,7 +874,7 @@ unsafe fn window_customize_set_command_value(
     (*bd).cmdlist = pr.cmdlist;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_set_note_value(
+unsafe fn window_customize_set_note_value(
     mut item: *mut window_customize_itemdata,
     mut s: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -890,7 +889,7 @@ unsafe extern "C" fn window_customize_set_note_value(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_set_environment_value(
+unsafe fn window_customize_set_environment_value(
     mut item: *mut window_customize_itemdata,
     mut s: *const ::core::ffi::c_char,
 ) {
@@ -916,7 +915,7 @@ unsafe extern "C" fn window_customize_set_environment_value(
         s,
     );
 }
-unsafe extern "C" fn window_customize_option_is_changed(
+unsafe fn window_customize_option_is_changed(
     mut o: *mut options_entry,
     mut array_key: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -966,7 +965,7 @@ unsafe extern "C" fn window_customize_option_is_changed(
     drop(default_value);
     return changed;
 }
-unsafe extern "C" fn window_customize_key_is_changed(
+unsafe fn window_customize_key_is_changed(
     mut kt: *mut key_table,
     mut bd: *mut key_binding,
 ) -> ::core::ffi::c_int {
@@ -1009,7 +1008,7 @@ unsafe extern "C" fn window_customize_key_is_changed(
     let default_cmd = cmd_list_print_cstring(&*(*default_bd).cmdlist, 0);
     return (cmd.as_bytes() != default_cmd.as_bytes()) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_build_array(
+unsafe fn window_customize_build_array(
     mut data: *mut window_customize_modedata,
     mut top: *mut mode_tree_item,
     mut scope: window_customize_scope,
@@ -1080,7 +1079,7 @@ unsafe extern "C" fn window_customize_build_array(
     }
     return count;
 }
-unsafe extern "C" fn window_customize_build_option(
+unsafe fn window_customize_build_option(
     mut data: *mut window_customize_modedata,
     mut top: *mut mode_tree_item,
     mut scope: window_customize_scope,
@@ -1273,7 +1272,7 @@ unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CS
         o = options_next(o);
     }
 }
-unsafe extern "C" fn window_customize_build_options(
+unsafe fn window_customize_build_options(
     mut data: *mut window_customize_modedata,
     mut title: *const ::core::ffi::c_char,
     group: u_int,
@@ -1371,7 +1370,7 @@ fn window_customize_key_detail(value: &[u8]) -> CString {
     CString::new(text).expect("key detail contains no NUL")
 }
 
-unsafe extern "C" fn window_customize_build_keys(
+unsafe fn window_customize_build_keys(
     mut data: *mut window_customize_modedata,
     mut kt: *mut key_table,
     mut ft: *mut format_tree,
@@ -1530,7 +1529,7 @@ unsafe extern "C" fn window_customize_build_keys(
         mode_tree_remove((*data).data, top);
     }
 }
-unsafe extern "C" fn window_customize_build_environment(
+unsafe fn window_customize_build_environment(
     mut data: *mut window_customize_modedata,
     mut title: *const ::core::ffi::c_char,
     group: u_int,
@@ -1829,7 +1828,7 @@ unsafe fn window_customize_build(
     }
     format_free(ft);
 }
-unsafe extern "C" fn window_customize_draw_key(
+unsafe fn window_customize_draw_key(
     _data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
@@ -1954,7 +1953,7 @@ unsafe extern "C" fn window_customize_draw_key(
         }
     }
 }
-unsafe extern "C" fn window_customize_draw_option(
+unsafe fn window_customize_draw_option(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
@@ -2704,7 +2703,7 @@ unsafe extern "C" fn window_customize_draw_option(
     drop(default_value);
     format_free(ft);
 }
-unsafe extern "C" fn window_customize_draw_environment(
+unsafe fn window_customize_draw_environment(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
@@ -3001,7 +3000,7 @@ unsafe fn window_customize_init(
     mode_tree_draw((*data).data);
     return s;
 }
-unsafe extern "C" fn window_customize_destroy(mut data: *mut window_customize_modedata) {
+unsafe fn window_customize_destroy(mut data: *mut window_customize_modedata) {
     (*data).references -= 1;
     if (*data).references != 0 as ::core::ffi::c_int {
         return;
@@ -3203,7 +3202,7 @@ unsafe fn window_customize_set_environment_callback(
     (*(*data).wp).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_customize_set_environment(
+unsafe fn window_customize_set_environment(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
@@ -3383,7 +3382,7 @@ unsafe fn window_customize_add_option_callback(
     (*(*data).wp).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_customize_add_option(
+unsafe fn window_customize_add_option(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut scope: window_customize_scope,
@@ -3480,7 +3479,7 @@ unsafe fn window_customize_add_environment_callback(
     (*(*data).wp).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_customize_add_environment(
+unsafe fn window_customize_add_environment(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut scope: window_customize_scope,
@@ -3592,7 +3591,7 @@ unsafe fn window_customize_edit_close_cb(
     drop(value);
     window_customize_finish_edit(ed);
 }
-unsafe extern "C" fn window_customize_start_edit(
+unsafe fn window_customize_start_edit(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut c: *mut client,
@@ -3718,7 +3717,7 @@ unsafe extern "C" fn window_customize_start_edit(
         (*data).edit = ed as *mut window_customize_editdata;
     };
 }
-unsafe extern "C" fn window_customize_set_option(
+unsafe fn window_customize_set_option(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
@@ -3966,7 +3965,7 @@ unsafe fn window_customize_set_array_key_callback(
         return PROMPT_CLOSE;
     };
 }
-unsafe extern "C" fn window_customize_set_array_key(
+unsafe fn window_customize_set_array_key(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
@@ -4022,7 +4021,7 @@ unsafe extern "C" fn window_customize_set_array_key(
         window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
-unsafe extern "C" fn window_customize_unset_environment(
+unsafe fn window_customize_unset_environment(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
 ) {
@@ -4051,7 +4050,7 @@ unsafe extern "C" fn window_customize_unset_environment(
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
 }
-unsafe extern "C" fn window_customize_unset_option(
+unsafe fn window_customize_unset_option(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
 ) {
@@ -4083,7 +4082,7 @@ unsafe extern "C" fn window_customize_unset_option(
         ::core::ptr::null_mut::<Option<CString>>(),
     );
 }
-unsafe extern "C" fn window_customize_reset_option(
+unsafe fn window_customize_reset_option(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
 ) {
@@ -4197,7 +4196,7 @@ fn window_customize_key_prompt(key_string: &CStr) -> CString {
     CString::new(prompt).expect("formatted key contains no NUL")
 }
 
-unsafe extern "C" fn window_customize_set_key(
+unsafe fn window_customize_set_key(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
@@ -4370,7 +4369,7 @@ unsafe fn window_customize_add_key_callback(
         }
     };
 }
-unsafe extern "C" fn window_customize_add_key(
+unsafe fn window_customize_add_key(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut table: *const ::core::ffi::c_char,
@@ -4398,7 +4397,7 @@ unsafe extern "C" fn window_customize_add_key(
         window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
-unsafe extern "C" fn window_customize_unset_key(
+unsafe fn window_customize_unset_key(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
 ) {
@@ -4412,7 +4411,7 @@ unsafe extern "C" fn window_customize_unset_key(
     }
     key_bindings_remove(((*kt).name).as_ptr().cast_mut(), (*bd).key);
 }
-unsafe extern "C" fn window_customize_reset_key(
+unsafe fn window_customize_reset_key(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
 ) {
@@ -4631,7 +4630,7 @@ unsafe fn window_customize_change_tagged_callback(
     (*(*data).wp).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_customize_add_current(
+unsafe fn window_customize_add_current(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
 ) -> ::core::ffi::c_int {

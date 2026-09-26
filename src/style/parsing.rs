@@ -118,15 +118,14 @@ unsafe fn style_hyperlinks(create: bool) -> *mut hyperlinks {
             .map_or(std::ptr::null_mut(), HyperlinksRef::as_ptr)
     })
 }
-unsafe extern "C" fn style_set_range_string(mut sy: *mut style, mut s: *const ::core::ffi::c_char) {
+unsafe fn style_set_range_string(mut sy: *mut style, mut s: *const ::core::ffi::c_char) {
     strlcpy(
         &raw mut (*sy).range_string as *mut ::core::ffi::c_char,
         s,
         ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_parse(
+pub unsafe fn style_parse(
     mut sy: *mut style,
     mut base: *const grid_cell,
     mut in_0: *const ::core::ffi::c_char,
@@ -741,8 +740,7 @@ pub unsafe extern "C" fn style_parse(
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
+pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     let mut gc: *mut grid_cell = &raw mut (*sy).gc;
     let mut off: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut comma: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
@@ -1015,8 +1013,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_link(mut sy: *mut style) -> *const ::core::ffi::c_char {
+pub unsafe fn style_link(mut sy: *mut style) -> *const ::core::ffi::c_char {
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let style_hyperlinks = style_hyperlinks(false);
     if (*sy).link == 0 as u_int || style_hyperlinks.is_null() {
@@ -1034,8 +1031,7 @@ pub unsafe extern "C" fn style_link(mut sy: *mut style) -> *const ::core::ffi::c
     }
     return uri;
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_add(
+pub unsafe fn style_add(
     mut gc: *mut grid_cell,
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
@@ -1072,8 +1068,7 @@ pub unsafe extern "C" fn style_add(
     }
     return sy;
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_apply(
+pub unsafe fn style_apply(
     mut gc: *mut grid_cell,
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
@@ -1086,8 +1081,7 @@ pub unsafe extern "C" fn style_apply(
     );
     style_add(gc, oo, name, ft);
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_parse_colour(
+pub unsafe fn style_parse_colour(
     mut sy: *mut style,
     mut base: *const grid_cell,
     mut s: *const ::core::ffi::c_char,
@@ -1109,8 +1103,7 @@ pub unsafe extern "C" fn style_parse_colour(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_set(mut sy: *mut style, mut gc: *const grid_cell) {
+pub unsafe fn style_set(mut sy: *mut style, mut gc: *const grid_cell) {
     memcpy(
         sy as *mut ::core::ffi::c_void,
         &raw mut style_default as *const ::core::ffi::c_void,
@@ -1122,16 +1115,14 @@ pub unsafe extern "C" fn style_set(mut sy: *mut style, mut gc: *const grid_cell)
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_copy(mut dst: *mut style, mut src: *mut style) {
+pub unsafe fn style_copy(mut dst: *mut style, mut src: *mut style) {
     memcpy(
         dst as *mut ::core::ffi::c_void,
         src as *const ::core::ffi::c_void,
         ::core::mem::size_of::<style>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
+pub unsafe fn style_set_scrollbar_style_from_option(
     mut sb_style: *mut style,
     mut oo: *mut options,
 ) {
@@ -1190,31 +1181,24 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
         PANE_SCROLLBARS_CHARACTER as u_char,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_ranges_init(mut srs: *mut style_ranges) {
+pub unsafe fn style_ranges_init(mut srs: *mut style_ranges) {
     if srs.is_null() {
         return;
     }
     (*srs).ranges = Box::into_raw(Box::new(Vec::new()));
     (*srs)._reserved = 0;
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_ranges_clear(mut srs: *mut style_ranges) {
+pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
     if !srs.is_null() {
         (*srs).clear();
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_ranges_free(mut srs: *mut style_ranges) {
+pub unsafe fn style_ranges_free(mut srs: *mut style_ranges) {
     if !srs.is_null() {
         (*srs).release_storage();
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn style_ranges_get_range(
-    mut srs: *mut style_ranges,
-    mut x: u_int,
-) -> *mut style_range {
+pub unsafe fn style_ranges_get_range(mut srs: *mut style_ranges, mut x: u_int) -> *mut style_range {
     if srs.is_null() {
         return ::core::ptr::null_mut::<style_range>();
     }

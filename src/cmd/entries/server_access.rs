@@ -19,8 +19,6 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
-
-#[no_mangle]
 pub static mut cmd_server_access_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"server-access\0" as *const u8 as *const ::core::ffi::c_char,
@@ -47,7 +45,7 @@ pub static mut cmd_server_access_entry: cmd_entry = unsafe {
         exec: Some(cmd_server_access_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe extern "C" fn cmd_server_access_deny(
+unsafe fn cmd_server_access_deny(
     mut item: *mut cmdq_item,
     mut id: id_t,
     mut flags: ::core::ffi::c_int,

@@ -34,8 +34,6 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_first, window_pane_next};
 use std::ffi::{CStr, CString};
-
-#[no_mangle]
 pub static mut cmd_set_option_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"set-option\0" as *const u8 as *const ::core::ffi::c_char,
@@ -62,7 +60,6 @@ pub static mut cmd_set_option_entry: cmd_entry = unsafe {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_set_window_option_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"set-window-option\0" as *const u8 as *const ::core::ffi::c_char,
@@ -89,7 +86,6 @@ pub static mut cmd_set_window_option_entry: cmd_entry = unsafe {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"set-hook\0" as *const u8 as *const ::core::ffi::c_char,
@@ -128,10 +124,7 @@ fn cmd_set_option_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe extern "C" fn cmd_set_hook_event_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
@@ -205,7 +198,7 @@ unsafe extern "C" fn cmd_set_hook_event_exec(
     events_fire(argument.as_ptr(), ep);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_set_hook_monitor_exec(
+unsafe fn cmd_set_hook_monitor_exec(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut window: ::core::ffi::c_int,

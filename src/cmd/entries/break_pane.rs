@@ -49,7 +49,6 @@ pub const BREAK_PANE_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_break_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"break-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -80,7 +79,7 @@ pub static mut cmd_break_pane_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_break_pane_float(
+unsafe fn cmd_break_pane_float(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut w: *mut window,

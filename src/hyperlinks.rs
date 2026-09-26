@@ -44,7 +44,7 @@ static mut hyperlinks_next_external_id: ::core::ffi::c_longlong = 1 as ::core::f
 // This queue owns the records and their insertion order. Boxes keep each node
 // at a stable address for the per-table URI and inner-ID indexes.
 static mut GLOBAL_HYPERLINKS: VecDeque<Box<hyperlinks_uri>> = VecDeque::new();
-unsafe extern "C" fn hyperlinks_by_uri_cmp(
+unsafe fn hyperlinks_by_uri_cmp(
     mut left: *mut hyperlinks_uri,
     mut right: *mut hyperlinks_uri,
 ) -> ::core::ffi::c_int {
@@ -73,14 +73,14 @@ unsafe extern "C" fn hyperlinks_by_uri_cmp(
     );
 }
 
-unsafe extern "C" fn hyperlinks_by_inner_cmp(
+unsafe fn hyperlinks_by_inner_cmp(
     mut left: *mut hyperlinks_uri,
     mut right: *mut hyperlinks_uri,
 ) -> ::core::ffi::c_int {
     return (*left).inner.wrapping_sub((*right).inner) as ::core::ffi::c_int;
 }
 
-unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
+unsafe fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
     let index = (*global_hyperlinks)
         .iter()
@@ -94,8 +94,7 @@ unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
     drop(owner);
 }
-#[no_mangle]
-pub unsafe extern "C" fn hyperlinks_put(
+pub unsafe fn hyperlinks_put(
     mut hl: *mut hyperlinks,
     mut uri_in: *const ::core::ffi::c_char,
     mut internal_id_in: *const ::core::ffi::c_char,
@@ -156,8 +155,7 @@ pub unsafe extern "C" fn hyperlinks_put(
     }
     return (*hlu).inner;
 }
-#[no_mangle]
-pub unsafe extern "C" fn hyperlinks_get(
+pub unsafe fn hyperlinks_get(
     mut hl: *mut hyperlinks,
     mut inner: u_int,
     mut uri_out: *mut *const ::core::ffi::c_char,
@@ -188,20 +186,17 @@ pub unsafe extern "C" fn hyperlinks_get(
     *uri_out = ((*hlu).uri).as_ptr().cast_mut();
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn hyperlinks_init() -> *mut hyperlinks {
+pub unsafe fn hyperlinks_init() -> *mut hyperlinks {
     let mut owner = Box::new(hyperlinks::empty());
     owner.next_inner = 1;
     owner.references = 1;
     Box::into_raw(owner)
 }
-#[no_mangle]
-pub unsafe extern "C" fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
+pub unsafe fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
     (*hl).references = (*hl).references.wrapping_add(1);
     return hl;
 }
-#[no_mangle]
-pub unsafe extern "C" fn hyperlinks_reset(mut hl: *mut hyperlinks) {
+pub unsafe fn hyperlinks_reset(mut hl: *mut hyperlinks) {
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     let mut hlu1: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     hlu = hyperlinks_by_inner_tree_minmax(&(*hl).by_inner, RB_NEGINF);
@@ -213,8 +208,7 @@ pub unsafe extern "C" fn hyperlinks_reset(mut hl: *mut hyperlinks) {
         hlu = hlu1;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn hyperlinks_free(mut hl: *mut hyperlinks) {
+pub unsafe fn hyperlinks_free(mut hl: *mut hyperlinks) {
     (*hl).references = (*hl).references.wrapping_sub(1);
     if (*hl).references == 0 as u_int {
         hyperlinks_reset(hl);

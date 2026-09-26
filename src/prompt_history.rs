@@ -68,8 +68,7 @@ unsafe fn prompt_add_typed_history(line: &CStr) {
     }
     prompt_add_history(line.as_ptr(), PROMPT_TYPE_COMMAND as u_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_load_history() {
+pub unsafe fn prompt_load_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut line = Vec::<u8>::new();
     let history_file = match prompt_find_history_file() {
@@ -100,8 +99,7 @@ pub unsafe extern "C" fn prompt_load_history() {
     }
     drop(stream);
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_save_history() {
+pub unsafe fn prompt_save_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut i: u_int = 0;
     let mut type_0: u_int = 0;
@@ -141,8 +139,7 @@ pub unsafe extern "C" fn prompt_save_history() {
     }
     drop(stream);
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_up_history(
+pub unsafe fn prompt_up_history(
     mut idx: *mut u_int,
     mut type_0: u_int,
 ) -> *const ::core::ffi::c_char {
@@ -157,8 +154,7 @@ pub unsafe extern "C" fn prompt_up_history(
     *fresh0 = (*fresh0).wrapping_add(1);
     return history[history.len() - *idx.offset(type_0 as isize) as usize].as_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_down_history(
+pub unsafe fn prompt_down_history(
     mut idx: *mut u_int,
     mut type_0: u_int,
 ) -> *const ::core::ffi::c_char {
@@ -176,11 +172,7 @@ pub unsafe extern "C" fn prompt_down_history(
     }
     return history[history.len() - *idx.offset(type_0 as isize) as usize].as_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_add_history(
-    mut line: *const ::core::ffi::c_char,
-    mut type_0: u_int,
-) {
+pub unsafe fn prompt_add_history(mut line: *const ::core::ffi::c_char, mut type_0: u_int) {
     if type_0 >= PROMPT_NTYPES as u_int {
         return;
     }
@@ -216,15 +208,13 @@ pub unsafe extern "C" fn prompt_add_history(
         history.push(added);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_history_size(mut type_0: prompt_type) -> u_int {
+pub unsafe fn prompt_history_size(mut type_0: prompt_type) -> u_int {
     if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
         return 0 as u_int;
     }
     return (&*(&raw const prompt_hlist[type_0 as usize])).len() as u_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_history_get(
+pub unsafe fn prompt_history_get(
     mut type_0: prompt_type,
     mut idx: u_int,
 ) -> *const ::core::ffi::c_char {
@@ -237,8 +227,7 @@ pub unsafe extern "C" fn prompt_history_get(
     }
     return history[idx as usize].as_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn prompt_history_clear(mut type_0: prompt_type) {
+pub unsafe fn prompt_history_clear(mut type_0: prompt_type) {
     if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
         return;
     }

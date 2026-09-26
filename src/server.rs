@@ -104,14 +104,12 @@ pub const S_IRWXG: ::core::ffi::c_int = S_IRWXU >> 3 as ::core::ffi::c_int;
 pub const S_IROTH: ::core::ffi::c_int = S_IRGRP >> 3 as ::core::ffi::c_int;
 pub const S_IXOTH: ::core::ffi::c_int = S_IXGRP >> 3 as ::core::ffi::c_int;
 pub const S_IRWXO: ::core::ffi::c_int = S_IRWXG >> 3 as ::core::ffi::c_int;
-#[no_mangle]
 pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
 static mut server_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
 static mut server_ev_accept: event = event::new();
 static mut server_ev_tidy: event = event::new();
-#[no_mangle]
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
     current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -122,13 +120,10 @@ pub static mut marked_pane: cmd_find_state = cmd_find_state {
     idx: 0,
 };
 static mut message_next: u_int = 0;
-#[no_mangle]
 // Filled through `message_list` methods; the head owns the collection.
 pub static mut message_log: message_list = message_list::new();
-#[no_mangle]
 pub static mut current_time: time_t = 0;
-#[no_mangle]
-pub unsafe extern "C" fn server_set_marked(
+pub unsafe fn server_set_marked(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -141,12 +136,10 @@ pub unsafe extern "C" fn server_set_marked(
     }
     marked_pane.wp = wp;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_clear_marked() {
+pub unsafe fn server_clear_marked() {
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_is_marked(
+pub unsafe fn server_is_marked(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -162,8 +155,7 @@ pub unsafe extern "C" fn server_is_marked(
     }
     return server_check_marked();
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_check_marked() -> ::core::ffi::c_int {
+pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
     return cmd_find_valid_state(&raw mut marked_pane);
 }
 pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
@@ -256,8 +248,7 @@ unsafe fn server_tidy_event(
     );
     event_add(&raw mut server_ev_tidy, &raw mut tv);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_start(
+pub unsafe fn server_start(
     mut client: *mut tmuxproc,
     mut flags: uint64_t,
     mut base: *mut event_base,
@@ -469,7 +460,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_send_exit() {
+unsafe fn server_send_exit() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut c1: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -499,8 +490,7 @@ unsafe extern "C" fn server_send_exit() {
         s = sessions_after(&*std::ptr::addr_of!(sessions), &name);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_update_socket() {
+pub unsafe fn server_update_socket() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut n: ::core::ffi::c_int = 0;
@@ -611,8 +601,7 @@ unsafe fn server_accept(
         (*c).flags |= CLIENT_EXIT as uint64_t;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
+pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let mut tv: timeval = timeval {
         tv_sec: timeout as __time_t,
         tv_usec: 0 as __suseconds_t,
@@ -671,7 +660,7 @@ unsafe fn server_signal(sig: ProcessSignal) {
         _ => {}
     };
 }
-unsafe extern "C" fn server_child_signal() {
+unsafe fn server_child_signal() {
     let mut status: ::core::ffi::c_int = 0;
     let mut pid: pid_t = 0;
     loop {
@@ -698,7 +687,7 @@ unsafe extern "C" fn server_child_signal() {
         }
     }
 }
-unsafe extern "C" fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
+unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut w1: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -731,7 +720,7 @@ unsafe extern "C" fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi
     }
     job_check_died(pid, status);
 }
-unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
+unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTIN
@@ -754,7 +743,6 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
     }
     job_check_died(pid, status);
 }
-#[no_mangle]
 pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaList;
     let mut limit: u_int = 0;

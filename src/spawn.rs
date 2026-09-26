@@ -126,7 +126,7 @@ pub const _PATH_DEFPATH: [::core::ffi::c_char; 14] =
 pub const _PATH_TMP: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
 
-unsafe extern "C" fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
+unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
     let mut s: *mut session = (*sc).s;
     let mut wl: *mut winlink = (*sc).wl;
     let mut wp0: *mut window_pane = (*sc).wp0;
@@ -179,7 +179,7 @@ unsafe extern "C" fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
         (*sc).idx,
     );
 }
-unsafe extern "C" fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut window_pane) {
+unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut window_pane) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -923,26 +923,23 @@ pub unsafe fn spawn_pane(
     }
     return new_wp;
 }
-unsafe extern "C" fn spawn_editor_free(es: *mut spawn_editor_state) {
+unsafe fn spawn_editor_free(es: *mut spawn_editor_state) {
     let owner = Box::from_raw(es as *mut spawn_editor_state);
     unlink(owner.path.as_ptr());
 }
-#[no_mangle]
-pub unsafe extern "C" fn spawn_cancel_editor(mut es: *mut spawn_editor_state) {
+pub unsafe fn spawn_cancel_editor(mut es: *mut spawn_editor_state) {
     if es.is_null() {
         return;
     }
     (*es).cb = None;
 }
-#[no_mangle]
-pub unsafe extern "C" fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -> pid_t {
+pub unsafe fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -> pid_t {
     if es.is_null() {
         return -(1 as pid_t);
     }
     return (*es).pid;
 }
-#[no_mangle]
-pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
+pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
     let mut es: *mut spawn_editor_state = (*wp).editor as *mut spawn_editor_state;
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut result: Option<Vec<u8>> = None;

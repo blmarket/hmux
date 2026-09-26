@@ -66,8 +66,6 @@ impl wait_event_item {
         }
     }
 }
-
-#[no_mangle]
 pub static mut cmd_wait_for_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"wait-for\0" as *const u8 as *const ::core::ffi::c_char,
@@ -204,7 +202,7 @@ unsafe fn wait_event_item_at(
         .unwrap_or(::core::ptr::null_mut())
 }
 
-unsafe extern "C" fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut wait_channel {
+unsafe fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut wait_channel {
     let name = CStr::from_ptr(name).to_owned();
     let mut owner = Box::new(wait_channel {
         name: name,
@@ -220,7 +218,7 @@ unsafe extern "C" fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut 
     );
     return wc;
 }
-unsafe extern "C" fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
+unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
     if (*wc).locked != 0 {
         return;
     }
@@ -233,7 +231,7 @@ unsafe extern "C" fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
     );
     drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
-unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
+unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     if (*wc).locked != 0 || (*wc).woken != 0 {
         return;
     }
@@ -247,9 +245,7 @@ unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 
-unsafe extern "C" fn cmd_wait_for_item_client_name(
-    mut item: *mut cmdq_item,
-) -> *const ::core::ffi::c_char {
+unsafe fn cmd_wait_for_item_client_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
     let mut c: *mut client = cmdq_get_client(item);
     if c.is_null() || (*c).name.is_none() {
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
@@ -258,9 +254,7 @@ unsafe extern "C" fn cmd_wait_for_item_client_name(
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
-unsafe extern "C" fn cmd_wait_for_client_name(
-    mut wei: *mut wait_event_item,
-) -> *const ::core::ffi::c_char {
+unsafe fn cmd_wait_for_client_name(mut wei: *mut wait_event_item) -> *const ::core::ffi::c_char {
     return cmd_wait_for_item_client_name((*wei).item);
 }
 unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
@@ -288,10 +282,7 @@ unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     return cmd_wait_for_wait(item, name, wc);
 }
-unsafe extern "C" fn cmd_wait_for_event_print(
-    mut wei: *mut wait_event_item,
-    mut ep: *mut event_payload,
-) {
+unsafe fn cmd_wait_for_event_print(mut wei: *mut wait_event_item, mut ep: *mut event_payload) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     epi = event_payload_first(ep);
@@ -349,7 +340,7 @@ unsafe fn cmd_wait_for_event_cb(
 unsafe fn cmd_wait_for_event_free(owner: Box<wait_event_item>) {
     events_remove_sink(owner.sink);
 }
-unsafe extern "C" fn cmd_wait_for_event(
+unsafe fn cmd_wait_for_event(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
@@ -397,7 +388,7 @@ unsafe extern "C" fn cmd_wait_for_event(
     (&raw mut wait_event_items).as_mut().unwrap().push(owner);
     return CMD_RETURN_WAIT;
 }
-unsafe extern "C" fn cmd_wait_for_event_list(
+unsafe fn cmd_wait_for_event_list(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
 ) -> cmd_retval {
@@ -413,7 +404,7 @@ unsafe extern "C" fn cmd_wait_for_event_list(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_wait_for_event_wake(
+unsafe fn cmd_wait_for_event_wake(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
@@ -439,10 +430,7 @@ unsafe extern "C" fn cmd_wait_for_event_wake(
     );
     return CMD_RETURN_ERROR;
 }
-unsafe extern "C" fn cmd_wait_for_list(
-    mut item: *mut cmdq_item,
-    mut wc: *mut wait_channel,
-) -> cmd_retval {
+unsafe fn cmd_wait_for_list(mut item: *mut cmdq_item, mut wc: *mut wait_channel) -> cmd_retval {
     if wc.is_null() {
         return CMD_RETURN_NORMAL;
     }
@@ -462,7 +450,7 @@ unsafe extern "C" fn cmd_wait_for_list(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_wait_for_wake(
+unsafe fn cmd_wait_for_wake(
     _item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
@@ -501,7 +489,7 @@ unsafe extern "C" fn cmd_wait_for_wake(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_wait_for_signal(
+unsafe fn cmd_wait_for_signal(
     _item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
@@ -532,7 +520,7 @@ unsafe extern "C" fn cmd_wait_for_signal(
     cmd_wait_for_remove(wc);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_wait_for_wait(
+unsafe fn cmd_wait_for_wait(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
@@ -565,7 +553,7 @@ unsafe extern "C" fn cmd_wait_for_wait(
     (*wait_channel_waiters(wc)).push(Box::new(wait_item { item }));
     return CMD_RETURN_WAIT;
 }
-unsafe extern "C" fn cmd_wait_for_lock(
+unsafe fn cmd_wait_for_lock(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
@@ -587,7 +575,7 @@ unsafe extern "C" fn cmd_wait_for_lock(
     (*wc).locked = 1 as ::core::ffi::c_int;
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_wait_for_unlock(
+unsafe fn cmd_wait_for_unlock(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
@@ -611,8 +599,7 @@ unsafe extern "C" fn cmd_wait_for_unlock(
     }
     return CMD_RETURN_NORMAL;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_wait_for_flush() {
+pub unsafe fn cmd_wait_for_flush() {
     let mut wei = (&raw mut wait_event_items)
         .as_mut()
         .unwrap()

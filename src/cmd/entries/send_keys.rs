@@ -31,8 +31,6 @@ use crate::src::shared::window::{window_mode_entry, winlink};
 use crate::src::style::colour::colour_palette_clear;
 use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::window_pane_key;
-
-#[no_mangle]
 pub static mut cmd_send_keys_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"send-keys\0" as *const u8 as *const ::core::ffi::c_char,
@@ -59,7 +57,6 @@ pub static mut cmd_send_keys_entry: cmd_entry = unsafe {
         exec: Some(cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_send_prefix_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"send-prefix\0" as *const u8 as *const ::core::ffi::c_char,
@@ -85,7 +82,7 @@ pub static mut cmd_send_prefix_entry: cmd_entry = unsafe {
         exec: Some(cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe extern "C" fn cmd_send_keys_inject_key(
+unsafe fn cmd_send_keys_inject_key(
     mut item: *mut cmdq_item,
     mut after: *mut cmdq_item,
     mut args: *mut args,
@@ -141,7 +138,7 @@ unsafe extern "C" fn cmd_send_keys_inject_key(
     }
     return after;
 }
-unsafe extern "C" fn cmd_send_keys_inject_string(
+unsafe fn cmd_send_keys_inject_string(
     mut item: *mut cmdq_item,
     mut after: *mut cmdq_item,
     mut args: *mut args,

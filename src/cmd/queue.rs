@@ -151,7 +151,7 @@ pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
     drop(owner);
 }
 
-unsafe extern "C" fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char {
+unsafe fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 256] = [0; 256];
     if c.is_null() {
         return b"<global>\0" as *const u8 as *const ::core::ffi::c_char;
@@ -175,7 +175,7 @@ unsafe extern "C" fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-unsafe extern "C" fn cmdq_get(mut c: *mut client) -> *mut cmdq_list {
+unsafe fn cmdq_get(mut c: *mut client) -> *mut cmdq_list {
     static mut global_queue: *mut cmdq_list = ::core::ptr::null::<cmdq_list>() as *mut cmdq_list;
     if c.is_null() {
         if global_queue.is_null() {
@@ -185,64 +185,51 @@ unsafe extern "C" fn cmdq_get(mut c: *mut client) -> *mut cmdq_list {
     }
     return (*c).queue;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_new() -> *mut cmdq_list {
+pub unsafe fn cmdq_new() -> *mut cmdq_list {
     Box::into_raw(Box::new(cmdq_list {
         item: std::ptr::null_mut(),
         list: std::collections::VecDeque::new(),
     }))
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_free(mut queue: *mut cmdq_list) {
+pub unsafe fn cmdq_free(mut queue: *mut cmdq_list) {
     if !(*queue).list.is_empty() {
         fatalx(b"queue not empty\0" as *const u8 as *const ::core::ffi::c_char);
     }
     drop(Box::from_raw(queue));
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
+pub unsafe fn cmdq_get_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
     return ((*item).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_cmd(mut item: *mut cmdq_item) -> *mut cmd {
+pub unsafe fn cmdq_get_cmd(mut item: *mut cmdq_item) -> *mut cmd {
     return (*item).cmd;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_client(mut item: *mut cmdq_item) -> *mut client {
+pub unsafe fn cmdq_get_client(mut item: *mut cmdq_item) -> *mut client {
     return (*item).client;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_target_client(mut item: *mut cmdq_item) -> *mut client {
+pub unsafe fn cmdq_get_target_client(mut item: *mut cmdq_item) -> *mut client {
     return (*item).target_client;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_state(mut item: *mut cmdq_item) -> *mut cmdq_state {
+pub unsafe fn cmdq_get_state(mut item: *mut cmdq_item) -> *mut cmdq_state {
     return (*item).state;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_target(mut item: *mut cmdq_item) -> *mut cmd_find_state {
+pub unsafe fn cmdq_get_target(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*item).target;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_source(mut item: *mut cmdq_item) -> *mut cmd_find_state {
+pub unsafe fn cmdq_get_source(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*item).source;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_event(mut item: *mut cmdq_item) -> *mut key_event {
+pub unsafe fn cmdq_get_event(mut item: *mut cmdq_item) -> *mut key_event {
     return &raw mut (*(*item).state).event;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_current(mut item: *mut cmdq_item) -> *mut cmd_find_state {
+pub unsafe fn cmdq_get_current(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*(*item).state).current;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_flags(mut item: *mut cmdq_item) -> ::core::ffi::c_int {
+pub unsafe fn cmdq_get_flags(mut item: *mut cmdq_item) -> ::core::ffi::c_int {
     return (*(*item).state).flags;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_new_state(
+pub unsafe fn cmdq_new_state(
     mut current: *mut cmd_find_state,
     mut event: *mut key_event,
     mut flags: ::core::ffi::c_int,
@@ -271,13 +258,11 @@ pub unsafe extern "C" fn cmdq_new_state(
     }
     return state;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_link_state(mut state: *mut cmdq_state) -> *mut cmdq_state {
+pub unsafe fn cmdq_link_state(mut state: *mut cmdq_state) -> *mut cmdq_state {
     (*state).references += 1;
     return state;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_copy_state(
+pub unsafe fn cmdq_copy_state(
     mut state: *mut cmdq_state,
     mut current: *mut cmd_find_state,
 ) -> *mut cmdq_state {
@@ -290,8 +275,7 @@ pub unsafe extern "C" fn cmdq_copy_state(
         (*state).flags,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_free_state(mut state: *mut cmdq_state) {
+pub unsafe fn cmdq_free_state(mut state: *mut cmdq_state) {
     (*state).references -= 1;
     if (*state).references != 0 as ::core::ffi::c_int {
         return;
@@ -301,7 +285,6 @@ pub unsafe extern "C" fn cmdq_free_state(mut state: *mut cmdq_state) {
     }
     drop(Box::from_raw(state));
 }
-#[no_mangle]
 pub unsafe extern "C" fn cmdq_add_format(
     mut state: *mut cmdq_state,
     mut key: *const ::core::ffi::c_char,
@@ -326,8 +309,7 @@ pub unsafe extern "C" fn cmdq_add_format(
         value.as_ptr(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_add_formats(mut state: *mut cmdq_state, mut ft: *mut format_tree) {
+pub unsafe fn cmdq_add_formats(mut state: *mut cmdq_state, mut ft: *mut format_tree) {
     if (*state).formats.is_null() {
         (*state).formats = format_create(
             ::core::ptr::null_mut::<client>(),
@@ -338,8 +320,7 @@ pub unsafe extern "C" fn cmdq_add_formats(mut state: *mut cmdq_state, mut ft: *m
     }
     format_merge((*state).formats, ft);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_tree) {
+pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_tree) {
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     if !(*item).cmd.is_null() {
         entry = cmd_get_entry((*item).cmd);
@@ -354,11 +335,7 @@ pub unsafe extern "C" fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *m
         format_merge(ft, (*(*item).state).formats);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_append(
-    mut c: *mut client,
-    mut item: *mut cmdq_item,
-) -> *mut cmdq_item {
+pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut cmdq_item {
     let mut queue: *mut cmdq_list = cmdq_get(c);
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     loop {
@@ -386,8 +363,7 @@ pub unsafe extern "C" fn cmdq_append(
     }
     return std::ptr::from_ref(&**(*queue).list.back().expect("appended command item")).cast_mut();
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_insert_after(
+pub unsafe fn cmdq_insert_after(
     mut after: *mut cmdq_item,
     mut item: *mut cmdq_item,
 ) -> *mut cmdq_item {
@@ -426,7 +402,6 @@ pub unsafe extern "C" fn cmdq_insert_after(
     }
     return after;
 }
-#[no_mangle]
 pub unsafe extern "C" fn cmdq_insert_hook(
     _s: *mut session,
     mut item: *mut cmdq_item,
@@ -527,11 +502,10 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     }
     events_fire(name.as_ptr(), ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_continue(mut item: *mut cmdq_item) {
+pub unsafe fn cmdq_continue(mut item: *mut cmdq_item) {
     (*item).flags &= !CMDQ_WAITING;
 }
-unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
+unsafe fn cmdq_remove(mut item: *mut cmdq_item) {
     assert!(
         (*item).wait_file.is_null(),
         "file wait must finish or cancel before queue item removal"
@@ -552,7 +526,7 @@ unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
     }
     drop(owner);
 }
-unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
+unsafe fn cmdq_remove_group(mut item: *mut cmdq_item) {
     if (*item).group == 0 as u_int {
         return;
     }
@@ -567,8 +541,7 @@ unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_command(
+pub unsafe fn cmdq_get_command(
     mut cmdlist: *mut cmd_list,
     mut state: *mut cmdq_state,
 ) -> *mut cmdq_item {
@@ -624,7 +597,7 @@ pub unsafe extern "C" fn cmdq_get_command(
     }
     return first;
 }
-unsafe extern "C" fn cmdq_find_flag(
+unsafe fn cmdq_find_flag(
     mut item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
     mut flag: *const cmd_entry_flag,
@@ -641,7 +614,7 @@ unsafe extern "C" fn cmdq_find_flag(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
+unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut c: *mut client = (*item).client;
     let mut state: *mut cmdq_state = (*item).state;
     let mut uid: uid_t = 0;
@@ -694,7 +667,7 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
         );
     }
 }
-unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut name: *const ::core::ffi::c_char = cmdq_name((*item).client);
     let mut state: *mut cmdq_state = (*item).state;
@@ -851,7 +824,6 @@ unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     }
     return retval;
 }
-#[no_mangle]
 pub unsafe fn cmdq_get_callback_owned(
     mut name: *const ::core::ffi::c_char,
     mut cb: cmdq_cb,
@@ -874,8 +846,7 @@ pub unsafe fn cmdq_get_callback_owned(
 }
 
 /// Compatibility adapter for callers that still provide an ABI callback.
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_callback1(
+pub unsafe fn cmdq_get_callback1(
     name: *const ::core::ffi::c_char,
     cb: Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>,
     data: *mut ::core::ffi::c_void,
@@ -888,9 +859,7 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     (*item).data = data;
     item
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
+pub unsafe fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
     let error = CStr::from_ptr(error).to_owned();
     let data = error.as_ptr().cast_mut().cast();
     let item = cmdq_get_callback_owned(
@@ -907,14 +876,13 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
     (*item).data = data;
     item
 }
-unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     (*item).flags |= CMDQ_FIRED;
     return (*item).cb.take().expect("non-null queue callback")(
         std::ptr::NonNull::new(item).expect("queue callback item is non-null"),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
+pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
     let mut current_block: u64;
     let mut queue: *mut cmdq_list = cmdq_get(c);
     let mut name: *const ::core::ffi::c_char = cmdq_name(c);
@@ -1013,8 +981,7 @@ pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_running(mut c: *mut client) -> *mut cmdq_item {
+pub unsafe fn cmdq_running(mut c: *mut client) -> *mut cmdq_item {
     let mut queue: *mut cmdq_list = cmdq_get(c);
     if (*queue).item.is_null() {
         return ::core::ptr::null_mut::<cmdq_item>();
@@ -1024,8 +991,7 @@ pub unsafe extern "C" fn cmdq_running(mut c: *mut client) -> *mut cmdq_item {
     }
     return (*queue).item;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_guard(
+pub unsafe fn cmdq_guard(
     mut item: *mut cmdq_item,
     mut guard: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
@@ -1037,11 +1003,9 @@ pub unsafe extern "C" fn cmdq_guard(
         control_write_guard(c, guard, t, number, flags);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: *mut evbuffer) {
+pub unsafe fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: *mut evbuffer) {
     server_client_print((*item).client, 1 as ::core::ffi::c_int, evb);
 }
-#[no_mangle]
 pub unsafe extern "C" fn cmdq_print(
     mut item: *mut cmdq_item,
     mut fmt: *const ::core::ffi::c_char,
@@ -1058,7 +1022,6 @@ pub unsafe extern "C" fn cmdq_print(
     cmdq_print_data(item, evb);
     evbuffer_free(evb);
 }
-#[no_mangle]
 pub unsafe extern "C" fn cmdq_error(
     mut item: *mut cmdq_item,
     mut fmt: *const ::core::ffi::c_char,
@@ -1163,7 +1126,7 @@ mod cancellation_tests {
         }
     }
 
-    unsafe extern "C" fn record_and_insert(
+    unsafe fn record_and_insert(
         item: *mut cmdq_item,
         data: *mut ::core::ffi::c_void,
     ) -> cmd_retval {

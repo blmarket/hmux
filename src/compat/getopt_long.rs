@@ -12,15 +12,10 @@ pub struct option {
 pub const no_argument: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const required_argument: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const optional_argument: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-#[no_mangle]
 pub static mut BSDopterr: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-#[no_mangle]
 pub static mut BSDoptind: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-#[no_mangle]
 pub static mut BSDoptopt: ::core::ffi::c_int = '?' as i32;
-#[no_mangle]
 pub static mut BSDoptreset: ::core::ffi::c_int = 0;
-#[no_mangle]
 pub static mut BSDoptarg: *mut ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char;
 pub const FLAG_PERMUTE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -57,10 +52,7 @@ static mut illoptchar: [::core::ffi::c_char; 21] = unsafe {
 static mut illoptstring: [::core::ffi::c_char; 21] = unsafe {
     ::core::mem::transmute::<[u8; 21], [::core::ffi::c_char; 21]>(*b"unknown option -- %s\0")
 };
-unsafe extern "C" fn gcd(
-    mut a: ::core::ffi::c_int,
-    mut b: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+unsafe fn gcd(mut a: ::core::ffi::c_int, mut b: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut c: ::core::ffi::c_int = 0;
     c = a % b;
     while c != 0 as ::core::ffi::c_int {
@@ -70,7 +62,7 @@ unsafe extern "C" fn gcd(
     }
     return b;
 }
-unsafe extern "C" fn permute_args(
+unsafe fn permute_args(
     mut panonopt_start: ::core::ffi::c_int,
     mut panonopt_end: ::core::ffi::c_int,
     mut opt_end: ::core::ffi::c_int,
@@ -110,7 +102,7 @@ unsafe extern "C" fn permute_args(
         i += 1;
     }
 }
-unsafe extern "C" fn parse_long_options(
+unsafe fn parse_long_options(
     mut nargv: *const *mut ::core::ffi::c_char,
     mut options: *const ::core::ffi::c_char,
     mut long_options: *const option,
@@ -238,7 +230,7 @@ unsafe extern "C" fn parse_long_options(
         return (*long_options.offset(match_0 as isize)).val;
     };
 }
-unsafe extern "C" fn getopt_internal(
+unsafe fn getopt_internal(
     mut nargc: ::core::ffi::c_int,
     mut nargv: *const *mut ::core::ffi::c_char,
     mut options: *const ::core::ffi::c_char,
@@ -436,8 +428,7 @@ unsafe extern "C" fn getopt_internal(
     }
     return optchar;
 }
-#[no_mangle]
-pub unsafe extern "C" fn BSDgetopt(
+pub unsafe fn BSDgetopt(
     mut nargc: ::core::ffi::c_int,
     mut nargv: *const *mut ::core::ffi::c_char,
     mut options: *const ::core::ffi::c_char,

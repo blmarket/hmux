@@ -991,10 +991,7 @@ static mut utf8_index_tree: utf8_index_tree = utf8_index_tree {
 };
 static mut utf8_no_width: ::core::ffi::c_int = 0;
 static mut utf8_next_index: u_int = 0;
-unsafe extern "C" fn utf8_item_by_data(
-    mut data: *const u_char,
-    mut size: size_t,
-) -> *mut utf8_item {
+unsafe fn utf8_item_by_data(mut data: *const u_char, mut size: size_t) -> *mut utf8_item {
     let mut ui: utf8_item = utf8_item {
         index: 0,
         data: [0; 32],
@@ -1008,7 +1005,7 @@ unsafe extern "C" fn utf8_item_by_data(
     ui.size = size as u_char;
     return utf8_data_tree_find(&*(&raw const utf8_data_tree), &ui);
 }
-unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
+unsafe fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
     let mut ui: utf8_item = utf8_item {
         index: 0,
         data: [0; 32],
@@ -1017,10 +1014,10 @@ unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
     ui.index = index;
     return utf8_index_tree_find(&*(&raw const utf8_index_tree), ui.index);
 }
-unsafe extern "C" fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
+unsafe fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
     return utf8_width_cache_find(&*(&raw const utf8_width_cache), wc);
 }
-unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) {
+unsafe fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) {
     let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     let mut old: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     log_debug(
@@ -1042,7 +1039,7 @@ unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) 
         utf8_width_cache_insert(&mut *(&raw mut utf8_width_cache), &mut *uw);
     }
 }
-unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
+unsafe fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut width: u_int = 0;
@@ -1171,8 +1168,7 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
         utf8_insert_width_cache(wc, width);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_update_width_cache() {
+pub unsafe fn utf8_update_width_cache() {
     let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     let mut uw1: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -1210,7 +1206,7 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
         a = options_array_next(a);
     }
 }
-unsafe extern "C" fn utf8_put_item(
+unsafe fn utf8_put_item(
     mut data: *const u_char,
     mut size: size_t,
     mut index: *mut u_int,
@@ -1257,11 +1253,7 @@ unsafe extern "C" fn utf8_put_item(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_from_data(
-    mut ud: *const utf8_data,
-    mut uc: *mut utf8_char,
-) -> utf8_state {
+pub unsafe fn utf8_from_data(mut ud: *const utf8_data, mut uc: *mut utf8_char) -> utf8_state {
     let mut current_block: u64;
     let mut index: u_int = 0;
     if (*ud).width as ::core::ffi::c_int > 2 as ::core::ffi::c_int {
@@ -1325,8 +1317,7 @@ pub unsafe extern "C" fn utf8_from_data(
     }
     return UTF8_ERROR;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_to_data(mut uc: utf8_char, mut ud: *mut utf8_data) {
+pub unsafe fn utf8_to_data(mut uc: utf8_char, mut ud: *mut utf8_data) {
     let mut ui: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
     let mut index: u_int = 0;
     memset(
@@ -1369,15 +1360,13 @@ pub unsafe extern "C" fn utf8_to_data(mut uc: utf8_char, mut ud: *mut utf8_data)
         &raw mut (*ud).data as *mut u_char,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_build_one(mut ch: u_char) -> utf8_char {
+pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
     return (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
         | (1 as ::core::ffi::c_int as utf8_char).wrapping_add(1 as utf8_char)
             << 29 as ::core::ffi::c_int
         | ch as utf8_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_set(mut ud: *mut utf8_data, mut ch: u_char) {
+pub unsafe fn utf8_set(mut ud: *mut utf8_data, mut ch: u_char) {
     static mut empty: utf8_data = utf8_data {
         data: [
             0 as ::core::ffi::c_int as u_char,
@@ -1424,8 +1413,7 @@ pub unsafe extern "C" fn utf8_set(mut ud: *mut utf8_data, mut ch: u_char) {
     );
     *(&raw mut (*ud).data as *mut u_char) = ch;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_copy(mut to: *mut utf8_data, mut from: *const utf8_data) {
+pub unsafe fn utf8_copy(mut to: *mut utf8_data, mut from: *const utf8_data) {
     let mut i: u_int = 0;
     memcpy(
         to as *mut ::core::ffi::c_void,
@@ -1438,10 +1426,7 @@ pub unsafe extern "C" fn utf8_copy(mut to: *mut utf8_data, mut from: *const utf8
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn utf8_width(
-    mut ud: *mut utf8_data,
-    mut width: *mut ::core::ffi::c_int,
-) -> utf8_state {
+unsafe fn utf8_width(mut ud: *mut utf8_data, mut width: *mut ::core::ffi::c_int) -> utf8_state {
     let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     let mut wc: wchar_t = 0;
     if utf8_towc(ud, &raw mut wc) as ::core::ffi::c_uint
@@ -1470,8 +1455,7 @@ unsafe extern "C" fn utf8_width(
     }
     return UTF8_ERROR;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_towc(mut ud: *const utf8_data, mut wc: *mut wchar_t) -> utf8_state {
+pub unsafe fn utf8_towc(mut ud: *const utf8_data, mut wc: *mut wchar_t) -> utf8_state {
     let size = (*ud).size as usize;
     if size > ::core::mem::size_of::<[u_char; 32]>() {
         return UTF8_ERROR;
@@ -1498,8 +1482,7 @@ pub unsafe extern "C" fn utf8_towc(mut ud: *const utf8_data, mut wc: *mut wchar_
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_has_whitespace(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+pub unsafe fn utf8_has_whitespace(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     let mut wc: wchar_t = 0;
     let mut offset: u_int = 0 as u_int;
     let mut size: u_int = 0;
@@ -1525,8 +1508,7 @@ pub unsafe extern "C" fn utf8_has_whitespace(mut ud: *const utf8_data) -> ::core
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_fromwc(mut wc: wchar_t, mut ud: *mut utf8_data) -> utf8_state {
+pub unsafe fn utf8_fromwc(mut wc: wchar_t, mut ud: *mut utf8_data) -> utf8_state {
     let mut size: ::core::ffi::c_int = 0;
     let mut width: ::core::ffi::c_int = 0;
     size = utf8proc_wctomb(
@@ -1555,8 +1537,7 @@ pub unsafe extern "C" fn utf8_fromwc(mut wc: wchar_t, mut ud: *mut utf8_data) ->
     }
     return UTF8_ERROR;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_open(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
+pub unsafe fn utf8_open(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
     memset(
         ud as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -1573,8 +1554,7 @@ pub unsafe extern "C" fn utf8_open(mut ud: *mut utf8_data, mut ch: u_char) -> ut
     utf8_append(ud, ch);
     UTF8_MORE
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_append(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
+pub unsafe fn utf8_append(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
     let mut width: ::core::ffi::c_int = 0;
     if (*ud).have as ::core::ffi::c_int >= (*ud).size as ::core::ffi::c_int {
         fatalx(b"UTF-8 character overflow\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1617,8 +1597,7 @@ pub unsafe extern "C" fn utf8_append(mut ud: *mut utf8_data, mut ch: u_char) -> 
         _ => UTF8_MORE,
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_strvis(
+pub unsafe fn utf8_strvis(
     mut dst: *mut ::core::ffi::c_char,
     mut src: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -1738,8 +1717,7 @@ pub(crate) fn utf8_stravisx_bytes(src: &[u8], flag: ::core::ffi::c_int) -> Vec<u
     buffer.truncate(escaped_len);
     buffer
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+pub unsafe fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -1827,8 +1805,7 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
     }
     CString::new(dst).expect("sanitized bytes contain no interior NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_strlen(mut s: *const utf8_data) -> size_t {
+pub unsafe fn utf8_strlen(mut s: *const utf8_data) -> size_t {
     let mut i: size_t = 0;
     i = 0 as size_t;
     while (*s.offset(i as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
@@ -1836,8 +1813,7 @@ pub unsafe extern "C" fn utf8_strlen(mut s: *const utf8_data) -> size_t {
     }
     return i;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_strwidth(mut s: *const utf8_data, mut n: ssize_t) -> u_int {
+pub unsafe fn utf8_strwidth(mut s: *const utf8_data, mut n: ssize_t) -> u_int {
     let mut i: ssize_t = 0;
     let mut width: u_int = 0 as u_int;
     i = 0 as ssize_t;
@@ -1906,8 +1882,7 @@ pub(crate) unsafe fn utf8_tocstr_cstring(mut src: *const utf8_data) -> CString {
     }
     CString::new(bytes).expect("the first NUL ends the copied string")
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_int {
+pub unsafe fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_int {
     let mut tmp: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -1960,8 +1935,7 @@ pub(crate) fn utf8_pad_cstring(s: &CStr, width: u_int, left: bool) -> CString {
     }
     CString::new(output).expect("padded C string contains no NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_cstrhas(
+pub unsafe fn utf8_cstrhas(
     s: *const ::core::ffi::c_char,
     ud: *const utf8_data,
 ) -> ::core::ffi::c_int {

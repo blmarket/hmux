@@ -37,14 +37,13 @@ use crate::src::window::{
 };
 use std::ffi::{CStr, CString};
 
-unsafe extern "C" fn layout_geometry_init(mut lg: *mut layout_geometry) {
+unsafe fn layout_geometry_init(mut lg: *mut layout_geometry) {
     (*lg).sx = UINT_MAX as u_int;
     (*lg).sy = UINT_MAX as u_int;
     (*lg).xoff = INT_MAX;
     (*lg).yoff = INT_MAX;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_create_cell(mut lcparent: *mut layout_cell) -> *mut layout_cell {
+pub unsafe fn layout_create_cell(mut lcparent: *mut layout_cell) -> *mut layout_cell {
     let mut cell = layout_cell {
         type_0: LAYOUT_WINDOWPANE,
         flags: 0,
@@ -62,11 +61,7 @@ pub unsafe extern "C" fn layout_create_cell(mut lcparent: *mut layout_cell) -> *
     layout_geometry_init(&raw mut (*lc).fg);
     Box::into_raw(Box::new(cell))
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_free_cell(
-    mut lc: *mut layout_cell,
-    mut only_nodes: ::core::ffi::c_int,
-) {
+pub unsafe fn layout_free_cell(mut lc: *mut layout_cell, mut only_nodes: ::core::ffi::c_int) {
     if lc.is_null()
         || only_nodes != 0
             && (*lc).type_0 as ::core::ffi::c_uint
@@ -105,8 +100,7 @@ pub unsafe extern "C" fn layout_free_cell(
     }
     drop(Box::from_raw(lc));
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_print_cell(
+pub unsafe fn layout_print_cell(
     mut lc: *mut layout_cell,
     mut hdr: *const ::core::ffi::c_char,
     mut n: u_int,
@@ -160,8 +154,7 @@ pub unsafe extern "C" fn layout_print_cell(
         2 | _ => {}
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_search_by_border(
+pub unsafe fn layout_search_by_border(
     mut lc: *mut layout_cell,
     mut x: u_int,
     mut y: u_int,
@@ -205,8 +198,7 @@ pub unsafe extern "C" fn layout_search_by_border(
     }
     return ::core::ptr::null_mut::<layout_cell>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_set_size(
+pub unsafe fn layout_set_size(
     mut lc: *mut layout_cell,
     mut sx: u_int,
     mut sy: u_int,
@@ -218,15 +210,13 @@ pub unsafe extern "C" fn layout_set_size(
     (*lc).g.xoff = xoff;
     (*lc).g.yoff = yoff;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_make_leaf(mut lc: *mut layout_cell, mut wp: *mut window_pane) {
+pub unsafe fn layout_make_leaf(mut lc: *mut layout_cell, mut wp: *mut window_pane) {
     (*lc).type_0 = LAYOUT_WINDOWPANE;
     layout_cells_require_empty(&*lc);
     (*wp).layout_cell = lc as *mut layout_cell;
     (*lc).wp = wp;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type) {
+pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type) {
     if type_0 as ::core::ffi::c_uint
         == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -239,18 +229,14 @@ pub unsafe extern "C" fn layout_make_node(mut lc: *mut layout_cell, mut type_0: 
     }
     (*lc).wp = ::core::ptr::null_mut::<window_pane>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_cell_is_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
+pub unsafe fn layout_cell_is_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut is_leaf: ::core::ffi::c_int = ((*lc).type_0 as ::core::ffi::c_uint
         == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;
     let mut is_floating: ::core::ffi::c_int = (*lc).flags & LAYOUT_CELL_FLOATING;
     return (is_leaf != 0 && is_floating == 0) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_cell_has_tiled_child(
-    mut lc: *mut layout_cell,
-) -> ::core::ffi::c_int {
+pub unsafe fn layout_cell_has_tiled_child(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if (*lc).type_0 as ::core::ffi::c_uint
         == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -266,7 +252,7 @@ pub unsafe extern "C" fn layout_cell_has_tiled_child(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_cell_is_first_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
+unsafe fn layout_cell_is_first_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcparent: *mut layout_cell = (*lc).parent;
     if lcparent.is_null() {
@@ -281,7 +267,7 @@ unsafe extern "C" fn layout_cell_is_first_tiled(mut lc: *mut layout_cell) -> ::c
     }
     return (lcchild == lc) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_cell_get_first_tiled(mut lc: *mut layout_cell) -> *mut layout_cell {
+unsafe fn layout_cell_get_first_tiled(mut lc: *mut layout_cell) -> *mut layout_cell {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcchild2: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if layout_cell_is_tiled(lc) != 0 {
@@ -309,7 +295,7 @@ unsafe extern "C" fn layout_cell_get_first_tiled(mut lc: *mut layout_cell) -> *m
     }
     return ::core::ptr::null_mut::<layout_cell>();
 }
-unsafe extern "C" fn layout_fix_offsets1(mut lc: *mut layout_cell) {
+unsafe fn layout_fix_offsets1(mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
@@ -351,8 +337,7 @@ unsafe extern "C" fn layout_fix_offsets1(mut lc: *mut layout_cell) {
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_fix_offsets(mut w: *mut window) {
+pub unsafe fn layout_fix_offsets(mut w: *mut window) {
     let mut lc: *mut layout_cell = (*w).layout_root;
     if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
         return;
@@ -361,7 +346,7 @@ pub unsafe extern "C" fn layout_fix_offsets(mut w: *mut window) {
     (*lc).g.yoff = 0 as ::core::ffi::c_int;
     layout_fix_offsets1(lc);
 }
-unsafe extern "C" fn layout_cell_is_last_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
+unsafe fn layout_cell_is_last_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcparent: *mut layout_cell = (*lc).parent;
     if lcparent.is_null() {
@@ -376,7 +361,7 @@ unsafe extern "C" fn layout_cell_is_last_tiled(mut lc: *mut layout_cell) -> ::co
     }
     return (lcchild == lc) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_cell_is_top(
+unsafe fn layout_cell_is_top(
     mut root: *mut layout_cell,
     mut lc: *mut layout_cell,
 ) -> ::core::ffi::c_int {
@@ -396,7 +381,7 @@ unsafe extern "C" fn layout_cell_is_top(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_cell_is_bottom(
+unsafe fn layout_cell_is_bottom(
     mut root: *mut layout_cell,
     mut lc: *mut layout_cell,
 ) -> ::core::ffi::c_int {
@@ -416,8 +401,7 @@ unsafe extern "C" fn layout_cell_is_bottom(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_add_horizontal_border(
+pub unsafe fn layout_add_horizontal_border(
     mut root: *mut layout_cell,
     mut lc: *mut layout_cell,
     mut status: ::core::ffi::c_int,
@@ -430,8 +414,7 @@ pub unsafe extern "C" fn layout_add_horizontal_border(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
+pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut root: *mut layout_cell = (*w).layout_root;
@@ -507,8 +490,7 @@ pub unsafe extern "C" fn layout_fix_panes(mut w: *mut window, mut skip: *mut win
         redraw_invalidate_scene(w);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_count_cells(
+pub unsafe fn layout_count_cells(
     mut lc: *mut layout_cell,
     mut with_floating: ::core::ffi::c_int,
 ) -> u_int {
@@ -534,7 +516,7 @@ pub unsafe extern "C" fn layout_count_cells(
         }
     };
 }
-unsafe extern "C" fn layout_resize_check(
+unsafe fn layout_resize_check(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -597,8 +579,7 @@ unsafe extern "C" fn layout_resize_check(
     }
     return available;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_adjust(
+pub unsafe fn layout_resize_adjust(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -656,8 +637,7 @@ pub unsafe extern "C" fn layout_resize_adjust(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_set_size(
+pub unsafe fn layout_resize_set_size(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -673,7 +653,7 @@ pub unsafe extern "C" fn layout_resize_set_size(
     }
     layout_resize_adjust(w, lc, type_0, change);
 }
-unsafe extern "C" fn layout_cell_get_neighbour_dir(
+unsafe fn layout_cell_get_neighbour_dir(
     mut lc: *mut layout_cell,
     mut direction: ::core::ffi::c_int,
 ) -> *mut layout_cell {
@@ -690,8 +670,7 @@ unsafe extern "C" fn layout_cell_get_neighbour_dir(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_cell_get_neighbour(mut lc: *mut layout_cell) -> *mut layout_cell {
+pub unsafe fn layout_cell_get_neighbour(mut lc: *mut layout_cell) -> *mut layout_cell {
     let mut lcother: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcparent: *mut layout_cell = (*lc).parent;
     let mut direction: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -707,8 +686,7 @@ pub unsafe extern "C" fn layout_cell_get_neighbour(mut lc: *mut layout_cell) -> 
     }
     return lcother;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_destroy_cell(
+pub unsafe fn layout_destroy_cell(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut lcroot: *mut *mut layout_cell,
@@ -761,8 +739,7 @@ pub unsafe extern "C" fn layout_destroy_cell(
         layout_free_cell(lcparent, 0 as ::core::ffi::c_int);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_init(mut w: *mut window, mut wp: *mut window_pane) {
+pub unsafe fn layout_init(mut w: *mut window, mut wp: *mut window_pane) {
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     (*w).layout_root = layout_create_cell(::core::ptr::null_mut::<layout_cell>());
     lc = (*w).layout_root;
@@ -776,11 +753,10 @@ pub unsafe extern "C" fn layout_init(mut w: *mut window, mut wp: *mut window_pan
     layout_make_leaf(lc, wp);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_free(mut w: *mut window, mut only_nodes: ::core::ffi::c_int) {
+pub unsafe fn layout_free(mut w: *mut window, mut only_nodes: ::core::ffi::c_int) {
     layout_free_cell((*w).layout_root, only_nodes);
 }
-unsafe extern "C" fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_int, mut sy: u_int) {
+unsafe fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_int, mut sy: u_int) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut pad: u_int = 0;
@@ -855,8 +831,7 @@ unsafe extern "C" fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_i
         wp = window_pane_z_next(wp);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize(mut w: *mut window, mut sx: u_int, mut sy: u_int) {
+pub unsafe fn layout_resize(mut w: *mut window, mut sx: u_int, mut sy: u_int) {
     let mut lc: *mut layout_cell = (*w).layout_root;
     let mut xlimit: ::core::ffi::c_int = 0;
     let mut ylimit: ::core::ffi::c_int = 0;
@@ -904,8 +879,7 @@ pub unsafe extern "C" fn layout_resize(mut w: *mut window, mut sx: u_int, mut sy
     layout_clamp_floating_panes(w, sx, sy);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_pane_to(
+pub unsafe fn layout_resize_pane_to(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut new_size: u_int,
@@ -1065,8 +1039,7 @@ pub unsafe fn layout_resize_floating_pane(
     redraw_invalidate_scene((*wp).window as *mut window);
     Ok(())
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_layout(
+pub unsafe fn layout_resize_layout(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -1095,8 +1068,7 @@ pub unsafe extern "C" fn layout_resize_layout(
         w,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_pane(
+pub unsafe fn layout_resize_pane(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut change: ::core::ffi::c_int,
@@ -1122,7 +1094,7 @@ pub unsafe extern "C" fn layout_resize_pane(
     }
     layout_resize_layout((*wp).window as *mut window, lc, type_0, change, opposite);
 }
-unsafe extern "C" fn layout_resize_pane_grow(
+unsafe fn layout_resize_pane_grow(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -1166,7 +1138,7 @@ unsafe extern "C" fn layout_resize_pane_grow(
     );
     return size as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_resize_pane_shrink(
+unsafe fn layout_resize_pane_shrink(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -1205,8 +1177,7 @@ unsafe extern "C" fn layout_resize_pane_shrink(
     );
     return size as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_assign_pane(
+pub unsafe fn layout_assign_pane(
     mut lc: *mut layout_cell,
     mut wp: *mut window_pane,
     mut do_not_resize: ::core::ffi::c_int,
@@ -1221,7 +1192,7 @@ pub unsafe extern "C" fn layout_assign_pane(
         );
     };
 }
-unsafe extern "C" fn layout_new_pane_size(
+unsafe fn layout_new_pane_size(
     mut w: *mut window,
     mut previous: u_int,
     mut lc: *mut layout_cell,
@@ -1262,7 +1233,7 @@ unsafe extern "C" fn layout_new_pane_size(
     }
     return new_size;
 }
-unsafe extern "C" fn layout_set_size_check(
+unsafe fn layout_set_size_check(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -1341,7 +1312,7 @@ unsafe extern "C" fn layout_set_size_check(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn layout_resize_child_cells(mut w: *mut window, mut lc: *mut layout_cell) {
+unsafe fn layout_resize_child_cells(mut w: *mut window, mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut prev: u_int = 0;
     let mut available: u_int = 0;
@@ -1425,8 +1396,7 @@ unsafe extern "C" fn layout_resize_child_cells(mut w: *mut window, mut lc: *mut 
         lcchild = layout_cell_next(lcchild);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_replace_with_node(
+pub unsafe fn layout_replace_with_node(
     mut w: *mut window,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -1443,8 +1413,7 @@ pub unsafe extern "C" fn layout_replace_with_node(
     layout_cells_push_front(lcparent, lc);
     return lcparent;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_split_check_space(
+pub unsafe fn layout_split_check_space(
     mut wp: *mut window_pane,
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
@@ -1491,8 +1460,7 @@ pub unsafe extern "C" fn layout_split_check_space(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_split_sizes(
+pub unsafe fn layout_split_sizes(
     mut lc: *mut layout_cell,
     mut size: ::core::ffi::c_int,
     mut before: ::core::ffi::c_int,
@@ -1533,8 +1501,7 @@ pub unsafe extern "C" fn layout_split_sizes(
     *size2 = s2;
     *saved_size = ss;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_split_pane(
+pub unsafe fn layout_split_pane(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut size: ::core::ffi::c_int,
@@ -1711,8 +1678,7 @@ pub unsafe extern "C" fn layout_split_pane(
     }
     return lcnew;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_floating_pane(
+pub unsafe fn layout_floating_pane(
     mut w: *mut window,
     mut wp: *mut window_pane,
     mut lg: *mut layout_geometry,
@@ -1735,8 +1701,7 @@ pub unsafe extern "C" fn layout_floating_pane(
     layout_set_size(lcnew, (*lg).sx, (*lg).sy, (*lg).xoff, (*lg).yoff);
     return lcnew;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_close_pane(mut wp: *mut window_pane) {
+pub unsafe fn layout_close_pane(mut wp: *mut window_pane) {
     let mut w: *mut window = (*wp).window as *mut window;
     if (*wp).layout_cell.is_null() {
         return;
@@ -1756,8 +1721,7 @@ pub unsafe extern "C" fn layout_close_pane(mut wp: *mut window_pane) {
         w,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_spread_cell(
+pub unsafe fn layout_spread_cell(
     mut w: *mut window,
     mut parent: *mut layout_cell,
 ) -> ::core::ffi::c_int {
@@ -1849,8 +1813,7 @@ pub unsafe extern "C" fn layout_spread_cell(
     }
     return changed;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_spread_out(mut wp: *mut window_pane) {
+pub unsafe fn layout_spread_out(mut wp: *mut window_pane) {
     let mut parent: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut w: *mut window = (*wp).window as *mut window;
     parent = (*(*wp).layout_cell).parent;
@@ -2311,8 +2274,7 @@ pub unsafe fn layout_split_floating_cell(
     );
     Ok(())
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_remove_tile(
+pub unsafe fn layout_remove_tile(
     mut w: *mut window,
     mut lc: *mut layout_cell,
 ) -> ::core::ffi::c_int {
@@ -2353,8 +2315,7 @@ pub unsafe extern "C" fn layout_remove_tile(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_insert_tile(
+pub unsafe fn layout_insert_tile(
     mut w: *mut window,
     mut lc: *mut layout_cell,
 ) -> ::core::ffi::c_int {

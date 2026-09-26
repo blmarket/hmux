@@ -2050,7 +2050,7 @@ static mut input_state_consume_st_table: [input_transition; 8] = unsafe {
     ]
 };
 static mut input_buffer_size: size_t = INPUT_BUF_DEFAULT_SIZE as size_t;
-unsafe extern "C" fn input_stop_utf8(mut ictx: *mut input_ctx) {
+unsafe fn input_stop_utf8(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     static mut rc: utf8_data = unsafe {
         utf8_data {
@@ -2068,7 +2068,7 @@ unsafe extern "C" fn input_stop_utf8(mut ictx: *mut input_ctx) {
     }
     (*ictx).utf8started = 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_fire_pane_title_changed(
+unsafe fn input_fire_pane_title_changed(
     mut wp: *mut window_pane,
     mut title: *const ::core::ffi::c_char,
 ) {
@@ -2115,7 +2115,7 @@ unsafe fn input_ground_timer_callback(
     );
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn input_start_ground_timer(mut ictx: *mut input_ctx) {
+unsafe fn input_start_ground_timer(mut ictx: *mut input_ctx) {
     let mut tv: timeval = timeval {
         tv_sec: 5 as __time_t,
         tv_usec: 0 as __suseconds_t,
@@ -2123,7 +2123,7 @@ unsafe extern "C" fn input_start_ground_timer(mut ictx: *mut input_ctx) {
     event_del(&raw mut (*ictx).ground_timer);
     event_add(&raw mut (*ictx).ground_timer, &raw mut tv);
 }
-unsafe extern "C" fn input_reset_cell(mut ictx: *mut input_ctx) {
+unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
     memcpy(
         &raw mut (*ictx).cell.cell as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
@@ -2140,7 +2140,7 @@ unsafe extern "C" fn input_reset_cell(mut ictx: *mut input_ctx) {
     (*ictx).old_cx = 0 as u_int;
     (*ictx).old_cy = 0 as u_int;
 }
-unsafe extern "C" fn input_save_state(mut ictx: *mut input_ctx) {
+unsafe fn input_save_state(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).s;
     memcpy(
@@ -2152,7 +2152,7 @@ unsafe extern "C" fn input_save_state(mut ictx: *mut input_ctx) {
     (*ictx).old_cy = (*s).cy;
     (*ictx).old_mode = (*s).mode;
 }
-unsafe extern "C" fn input_restore_state(mut ictx: *mut input_ctx) {
+unsafe fn input_restore_state(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     memcpy(
         &raw mut (*ictx).cell as *mut ::core::ffi::c_void,
@@ -2171,8 +2171,7 @@ unsafe extern "C" fn input_restore_state(mut ictx: *mut input_ctx) {
         0 as ::core::ffi::c_int,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_init(
+pub unsafe fn input_init(
     mut wp: *mut window_pane,
     mut bev: *mut bufferevent,
     mut palette: *mut colour_palette,
@@ -2207,8 +2206,7 @@ pub unsafe extern "C" fn input_init(
     input_reset(ictx, 0 as ::core::ffi::c_int);
     return ictx;
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
+pub unsafe fn input_free(mut ictx: *mut input_ctx) {
     input_clear_params(&mut *ictx);
     loop {
         let ir = input_ctx_requests(ictx)
@@ -2225,8 +2223,7 @@ pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
     screen_write_stop_sync((*ictx).wp);
     drop(Box::from_raw(ictx));
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
+pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = (*ictx).wp;
     input_reset_cell(ictx);
@@ -2243,11 +2240,10 @@ pub unsafe extern "C" fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core
     (*ictx).state = &raw const input_state_ground as *const input_state;
     (*ictx).flags = 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_pending(mut ictx: *mut input_ctx) -> *mut evbuffer {
+pub unsafe fn input_pending(mut ictx: *mut input_ctx) -> *mut evbuffer {
     return (*ictx).since_ground;
 }
-unsafe extern "C" fn input_set_state(mut ictx: *mut input_ctx, mut itr: *const input_transition) {
+unsafe fn input_set_state(mut ictx: *mut input_ctx, mut itr: *const input_transition) {
     if (*(*ictx).state).exit.is_some() {
         (*(*ictx).state).exit.expect("non-null function pointer")(ictx);
     }
@@ -2256,11 +2252,7 @@ unsafe extern "C" fn input_set_state(mut ictx: *mut input_ctx, mut itr: *const i
         (*(*ictx).state).enter.expect("non-null function pointer")(ictx);
     }
 }
-unsafe extern "C" fn input_parse(
-    mut ictx: *mut input_ctx,
-    mut buf: *const u_char,
-    mut len: size_t,
-) {
+unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len: size_t) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut state: *const input_state = ::core::ptr::null::<input_state>();
     let mut itr: *const input_transition = ::core::ptr::null::<input_transition>();
@@ -2310,8 +2302,7 @@ unsafe extern "C" fn input_parse(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_parse_pane(mut wp: *mut window_pane) {
+pub unsafe fn input_parse_pane(mut wp: *mut window_pane) {
     let mut new_data: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut new_size: size_t = 0;
     new_data = window_pane_get_new_data(wp, &raw mut (*wp).offset, &raw mut new_size);
@@ -2321,8 +2312,7 @@ pub unsafe extern "C" fn input_parse_pane(mut wp: *mut window_pane) {
     input_parse_buffer(wp, new_data as *const u_char, new_size);
     window_pane_update_used_data(wp, &raw mut (*wp).offset, new_size);
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_parse_buffer(
+pub unsafe fn input_parse_buffer(
     mut wp: *mut window_pane,
     mut buf: *const u_char,
     mut len: size_t,
@@ -2362,7 +2352,6 @@ pub unsafe extern "C" fn input_parse_buffer(
     input_parse(ictx, buf, len);
     screen_write_stop(sctx);
 }
-#[no_mangle]
 pub unsafe fn input_parse_screen(
     mut ictx: *mut input_ctx,
     mut s: *mut screen,
@@ -2378,7 +2367,7 @@ pub unsafe fn input_parse_screen(
     input_parse(ictx, buf, len);
     screen_write_stop(sctx);
 }
-unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -2440,7 +2429,7 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_get(
+unsafe fn input_get(
     mut ictx: *mut input_ctx,
     mut validx: u_int,
     mut minval: ::core::ffi::c_int,
@@ -2463,10 +2452,7 @@ unsafe extern "C" fn input_get(
     }
     return retval;
 }
-unsafe extern "C" fn input_send_reply(
-    mut ictx: *mut input_ctx,
-    mut reply: *const ::core::ffi::c_char,
-) {
+unsafe fn input_send_reply(mut ictx: *mut input_ctx, mut reply: *const ::core::ffi::c_char) {
     if !(*ictx).event.is_null() {
         log_debug(
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3574,7 +3560,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags &= !INPUT_LAST;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -3598,7 +3584,7 @@ unsafe extern "C" fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
@@ -3678,7 +3664,7 @@ unsafe extern "C" fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -3702,7 +3688,7 @@ unsafe extern "C" fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
@@ -3792,8 +3778,8 @@ unsafe extern "C" fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sm_graphics(_ictx: *mut input_ctx) {}
-unsafe extern "C" fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_sm_graphics(_ictx: *mut input_ctx) {}
+unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).s;
     let mut wp: *mut window_pane = (*ictx).wp;
@@ -3963,7 +3949,7 @@ unsafe extern "C" fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
         m += 1;
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sgr_256_do(
+unsafe fn input_csi_dispatch_sgr_256_do(
     mut ictx: *mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
@@ -3984,7 +3970,7 @@ unsafe extern "C" fn input_csi_dispatch_sgr_256_do(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_csi_dispatch_sgr_256(
+unsafe fn input_csi_dispatch_sgr_256(
     mut ictx: *mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut i: *mut u_int,
@@ -4000,7 +3986,7 @@ unsafe extern "C" fn input_csi_dispatch_sgr_256(
         *i = (*i).wrapping_add(1);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sgr_rgb_do(
+unsafe fn input_csi_dispatch_sgr_rgb_do(
     mut ictx: *mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut r: ::core::ffi::c_int,
@@ -4026,7 +4012,7 @@ unsafe extern "C" fn input_csi_dispatch_sgr_rgb_do(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_csi_dispatch_sgr_rgb(
+unsafe fn input_csi_dispatch_sgr_rgb(
     mut ictx: *mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut i: *mut u_int,
@@ -4056,7 +4042,7 @@ unsafe extern "C" fn input_csi_dispatch_sgr_rgb(
         *i = (*i).wrapping_add(3 as u_int);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
+unsafe fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let s = match &(*ictx).param_list[i as usize] {
         input_param::String(value) => value.as_ptr(),
@@ -4259,7 +4245,7 @@ mod sgr_colon_tests {
         assert_eq!(parse(b"38:5:196\0:2:1:2:3\0").fg, 196 | COLOUR_FLAG_256);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
     let mut link: u_int = 0;
@@ -4432,7 +4418,7 @@ unsafe fn input_enter_dcs(mut ictx: *mut input_ctx) {
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
 }
-unsafe extern "C" fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -4851,7 +4837,7 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags |= INPUT_LAST;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_osc_colour_reply(
+unsafe fn input_osc_colour_reply(
     mut ictx: *mut input_ctx,
     mut add: ::core::ffi::c_int,
     mut n: u_int,
@@ -4909,7 +4895,7 @@ unsafe extern "C" fn input_osc_colour_reply(
         );
     };
 }
-unsafe extern "C" fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     // strsep writes NULs into this private copy; the original OSC input stays intact.
     let mut copy = std::ffi::CStr::from_ptr(p).to_bytes_with_nul().to_vec();
     let mut s: *mut ::core::ffi::c_char = copy.as_mut_ptr().cast();
@@ -4978,7 +4964,7 @@ unsafe extern "C" fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core:
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
 }
-unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut current_block: u64;
     let mut hl: *mut hyperlinks = (*(*ictx).ctx.s).hyperlinks;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
@@ -5052,7 +5038,7 @@ unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core:
         p,
     );
 }
-unsafe extern "C" fn input_set_progress_bar(
+unsafe fn input_set_progress_bar(
     mut ictx: *mut input_ctx,
     mut state: progress_bar_state,
     mut p: ::core::ffi::c_int,
@@ -5063,7 +5049,7 @@ unsafe extern "C" fn input_set_progress_bar(
         server_status_window((*(*ictx).wp).window as *mut window);
     }
 }
-unsafe extern "C" fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut current_block: u64;
     let mut pb: *const ::core::ffi::c_char = p;
     let mut state: progress_bar_state = PROGRESS_BAR_HIDDEN;
@@ -5133,7 +5119,7 @@ unsafe extern "C" fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core:
         p,
     );
 }
-unsafe extern "C" fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
@@ -5189,7 +5175,7 @@ unsafe extern "C" fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
 }
-unsafe extern "C" fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     if *p as ::core::ffi::c_int != '\0' as i32 {
         return;
@@ -5202,7 +5188,7 @@ unsafe extern "C" fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::cor
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
 }
-unsafe extern "C" fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut c: ::core::ffi::c_int = 0;
     if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
@@ -5236,7 +5222,7 @@ unsafe extern "C" fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
 }
-unsafe extern "C" fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     if *p as ::core::ffi::c_int != '\0' as i32 {
         return;
@@ -5249,7 +5235,7 @@ unsafe extern "C" fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::cor
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
 }
-unsafe extern "C" fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut c: ::core::ffi::c_int = 0;
     if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
@@ -5279,14 +5265,12 @@ unsafe extern "C" fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core
     }
     screen_set_cursor_colour((*ictx).ctx.s, c);
 }
-unsafe extern "C" fn input_osc_112(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_112(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     if *p as ::core::ffi::c_int == '\0' as i32 {
         screen_set_cursor_colour((*ictx).ctx.s, -(1 as ::core::ffi::c_int));
     }
 }
-unsafe extern "C" fn input_osc_133_exit_status(
-    p: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+unsafe fn input_osc_133_exit_status(p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if *p.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ';' as i32
         || *p.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
@@ -5352,10 +5336,7 @@ mod osc_133_exit_status_tests {
         }
     }
 }
-unsafe extern "C" fn input_fire_command_event(
-    mut wp: *mut window_pane,
-    mut name: *const ::core::ffi::c_char,
-) {
+unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::core::ffi::c_char) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -5431,7 +5412,7 @@ unsafe extern "C" fn input_fire_command_event(
     }
     events_fire(name, ep);
 }
-unsafe extern "C" fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut s: *mut screen = (*ictx).ctx.s;
     let mut gd: *mut grid = (*s).grid;
@@ -5524,7 +5505,7 @@ unsafe extern "C" fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::cor
         _ => {}
     };
 }
-unsafe extern "C" fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_char) {
+unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_char) {
     let mut ev: *mut bufferevent = (*ictx).event;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut state: ::core::ffi::c_int = 0;
@@ -5639,7 +5620,7 @@ unsafe fn input_osc_52_parse(
     out.truncate(outlen as usize);
     Some(out)
 }
-unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -5684,7 +5665,7 @@ unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core
         paste_add_owned(None, out.into_boxed_slice());
     };
 }
-unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
+unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_long = 0;
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -5728,8 +5709,7 @@ unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::cor
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_reply_clipboard(
+pub unsafe fn input_reply_clipboard(
     mut bev: *mut bufferevent,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -5783,8 +5763,7 @@ pub unsafe extern "C" fn input_reply_clipboard(
     }
     bufferevent_write(bev, end as *const ::core::ffi::c_void, strlen(end));
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_set_buffer_size(mut buffer_size: size_t) {
+pub unsafe fn input_set_buffer_size(mut buffer_size: size_t) {
     log_debug(
         b"%s: %lu -> %lu\0" as *const u8 as *const ::core::ffi::c_char,
         b"input_set_buffer_size\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5829,7 +5808,7 @@ unsafe fn input_request_timer_callback(
         input_start_request_timer(ictx);
     }
 }
-unsafe extern "C" fn input_start_request_timer(mut ictx: *mut input_ctx) {
+unsafe fn input_start_request_timer(mut ictx: *mut input_ctx) {
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
         tv_usec: 100000 as __suseconds_t,
@@ -5837,7 +5816,7 @@ unsafe extern "C" fn input_start_request_timer(mut ictx: *mut input_ctx) {
     event_del(&raw mut (*ictx).request_timer);
     event_add(&raw mut (*ictx).request_timer, &raw mut tv);
 }
-unsafe extern "C" fn input_make_request(
+unsafe fn input_make_request(
     mut ictx: *mut input_ctx,
     mut type_0: input_request_type,
 ) -> *mut input_request {
@@ -5853,7 +5832,7 @@ unsafe extern "C" fn input_make_request(
     input_ctx_requests(ictx).push_back(owner);
     return ir;
 }
-unsafe extern "C" fn input_free_request(mut ir: *mut input_request) {
+unsafe fn input_free_request(mut ir: *mut input_request) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
     if !(*ir).c.is_null() {
         let c_requests = input_client_requests((*ir).c);
@@ -5871,7 +5850,7 @@ unsafe extern "C" fn input_free_request(mut ir: *mut input_request) {
         .expect("request missing from its input context owner");
     drop(requests.remove(index).unwrap());
 }
-unsafe extern "C" fn input_add_request(
+unsafe fn input_add_request(
     mut ictx: *mut input_ctx,
     mut type_0: input_request_type,
     mut idx: ::core::ffi::c_int,
@@ -5938,7 +5917,7 @@ unsafe extern "C" fn input_add_request(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_request_palette_reply(
+unsafe fn input_request_palette_reply(
     mut ir: *mut input_request,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -5952,7 +5931,7 @@ unsafe extern "C" fn input_request_palette_reply(
         (*ir).end,
     );
 }
-unsafe extern "C" fn input_request_clipboard_reply(
+unsafe fn input_request_clipboard_reply(
     mut ir: *mut input_request,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -5989,8 +5968,7 @@ unsafe extern "C" fn input_request_clipboard_reply(
         );
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_request_reply(
+pub unsafe fn input_request_reply(
     mut c: *mut client,
     mut type_0: input_request_type,
     mut data: *mut ::core::ffi::c_void,
@@ -6062,13 +6040,12 @@ pub unsafe extern "C" fn input_request_reply(
         input_free_request(ir);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_cancel_requests(mut c: *mut client) {
+pub unsafe fn input_cancel_requests(mut c: *mut client) {
     for ir in input_client_requests(c).clone() {
         input_free_request(ir);
     }
 }
-unsafe extern "C" fn input_report_current_theme(mut ictx: *mut input_ctx) {
+unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
     let mut wp: *mut window_pane = (*ictx).wp;
     if !wp.is_null() {
         (*wp).last_theme = window_pane_get_theme(wp);

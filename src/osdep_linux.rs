@@ -45,8 +45,7 @@ pub(crate) unsafe fn osdep_get_name_cstring(
         Some(CString::new(buf).expect("cmdline stops at the first NUL"))
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
+pub unsafe fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
     static mut target: [::core::ffi::c_char; 4097] = [0; 4097];
     let mut pgrp: pid_t = 0;
     let mut sid: pid_t = 0;
@@ -77,8 +76,7 @@ pub unsafe extern "C" fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::cor
     }
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn osdep_event_init() -> *mut event_base {
+pub unsafe fn osdep_event_init() -> *mut event_base {
     let mut base: *mut event_base = ::core::ptr::null_mut::<event_base>();
     setenv(
         b"EVENT_NOEPOLL\0" as *const u8 as *const ::core::ffi::c_char,

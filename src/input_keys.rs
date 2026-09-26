@@ -124,8 +124,6 @@ unsafe fn input_key_tree_next(
         .map(|(_, entry)| *entry)
         .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
 }
-
-#[no_mangle]
 pub static mut input_key_tree: input_key_tree = input_key_tree {
     entries: std::collections::BTreeMap::new(),
     generated: Vec::new(),
@@ -484,10 +482,10 @@ static mut input_key_modifiers: [key_code; 9] = [
     KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
-unsafe extern "C" fn input_key_get(mut key: key_code) -> *mut input_key_entry {
+unsafe fn input_key_get(mut key: key_code) -> *mut input_key_entry {
     return input_key_tree_find(&*(&raw const input_key_tree), key);
 }
-unsafe extern "C" fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
+unsafe fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
     if c > 0x7f as u_int {
         *dst.offset(0 as ::core::ffi::c_int as isize) =
             (c >> 6 as ::core::ffi::c_int | 0xc0 as u_int) as u_char;
@@ -498,8 +496,7 @@ unsafe extern "C" fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> siz
     *dst.offset(0 as ::core::ffi::c_int as isize) = c as u_char;
     return 1 as size_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_key_build() {
+pub unsafe fn input_key_build() {
     let mut ike: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
@@ -544,8 +541,7 @@ pub unsafe extern "C" fn input_key_build() {
         ike = input_key_tree_next(&*(&raw const input_key_tree), &*ike);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_key_pane(
+pub unsafe fn input_key_pane(
     mut wp: *mut window_pane,
     mut key: key_code,
     mut m: *mut mouse_event,
@@ -575,7 +571,7 @@ pub unsafe extern "C" fn input_key_pane(
     }
     return input_key((*wp).screen, (*wp).event, key);
 }
-unsafe extern "C" fn input_key_write(
+unsafe fn input_key_write(
     mut from: *const ::core::ffi::c_char,
     mut bev: *mut bufferevent,
     mut data: *const ::core::ffi::c_char,
@@ -589,10 +585,7 @@ unsafe extern "C" fn input_key_write(
     );
     bufferevent_write(bev, data as *const ::core::ffi::c_void, size);
 }
-unsafe extern "C" fn input_key_extended(
-    mut bev: *mut bufferevent,
-    mut key: key_code,
-) -> ::core::ffi::c_int {
+unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
     let mut modifier: ::core::ffi::c_char = 0;
     let mut ud: utf8_data = utf8_data {
@@ -674,10 +667,7 @@ unsafe extern "C" fn input_key_extended(
     );
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_key_vt10x(
-    mut bev: *mut bufferevent,
-    mut key: key_code,
-) -> ::core::ffi::c_int {
+unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -757,10 +747,7 @@ unsafe extern "C" fn input_key_vt10x(
     );
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_key_mode1(
-    mut bev: *mut bufferevent,
-    mut key: key_code,
-) -> ::core::ffi::c_int {
+unsafe fn input_key_mode1(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut onlykey: key_code = 0;
     log_debug(
         b"%s: key in %llx\0" as *const u8 as *const ::core::ffi::c_char,
@@ -783,8 +770,7 @@ unsafe extern "C" fn input_key_mode1(
     }
     return -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_key(
+pub unsafe fn input_key(
     mut s: *mut screen,
     mut bev: *mut bufferevent,
     mut key: key_code,
@@ -999,8 +985,7 @@ pub unsafe extern "C" fn input_key(
         _ => return input_key_vt10x(bev, key),
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn input_key_get_mouse(
+pub unsafe fn input_key_get_mouse(
     mut s: *mut screen,
     mut m: *mut mouse_event,
     mut x: u_int,
@@ -1109,7 +1094,7 @@ pub unsafe extern "C" fn input_key_get_mouse(
     *rlen = len;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse_event) {
+unsafe fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse_event) {
     let mut s: *mut screen = (*wp).screen;
     let mut x: u_int = 0;
     let mut y: u_int = 0;

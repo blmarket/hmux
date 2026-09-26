@@ -220,7 +220,6 @@ static mut options_table_status_format_default: [*const ::core::ffi::c_char; 4] 
     OPTIONS_TABLE_STATUS_FORMAT3.as_ptr(),
     ::core::ptr::null::<::core::ffi::c_char>(),
 ];
-#[no_mangle]
 pub static mut options_other_names: [options_name_map; 8] = [
     options_name_map {
         from: c"display-panes-color",
@@ -252,7 +251,6 @@ pub static mut options_other_names: [options_name_map; 8] = [
     },
     options_name_map { from: c"", to: c"" },
 ];
-#[no_mangle]
 pub static mut options_table: [options_table_entry; 273] = [options_table_entry {
     name: ::core::ptr::null::<::core::ffi::c_char>(),
     alternative_name: ::core::ptr::null::<::core::ffi::c_char>(),

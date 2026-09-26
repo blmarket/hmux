@@ -27,7 +27,6 @@ pub struct cmd_confirm_before_data {
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
 }
-#[no_mangle]
 pub static mut cmd_confirm_before_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"confirm-before\0" as *const u8 as *const ::core::ffi::c_char,

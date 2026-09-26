@@ -122,9 +122,7 @@ impl Drop for SystemdBusResources {
         }
     }
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn systemd_activated() -> ::core::ffi::c_int {
+pub unsafe fn systemd_activated() -> ::core::ffi::c_int {
     return (sd_listen_fds(0 as ::core::ffi::c_int) >= 1 as ::core::ffi::c_int)
         as ::core::ffi::c_int;
 }

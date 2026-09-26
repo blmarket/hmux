@@ -35,7 +35,7 @@ static mut tty_draw_line_states: [*const ::core::ffi::c_char; 7] = [
     b"SAME\0" as *const u8 as *const ::core::ffi::c_char,
     b"DONE\0" as *const u8 as *const ::core::ffi::c_char,
 ];
-unsafe extern "C" fn tty_draw_line_clear(
+unsafe fn tty_draw_line_clear(
     mut tty: *mut tty,
     mut px: u_int,
     mut py: u_int,
@@ -84,7 +84,7 @@ unsafe extern "C" fn tty_draw_line_clear(
         tty_repeat_space(tty, nx);
     };
 }
-unsafe extern "C" fn tty_draw_line_get_empty(
+unsafe fn tty_draw_line_get_empty(
     mut gc: *const grid_cell,
     mut last: *const grid_cell,
     mut nx: u_int,
@@ -114,8 +114,7 @@ unsafe extern "C" fn tty_draw_line_get_empty(
     }
     return empty;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_draw_line(
+pub unsafe fn tty_draw_line(
     mut tty: *mut tty,
     mut s: *mut screen,
     mut px: u_int,

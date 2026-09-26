@@ -90,7 +90,7 @@ unsafe fn alerts_callback(
     }
     alerts_fired = 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn alerts_action_applies(
+unsafe fn alerts_action_applies(
     mut wl: *mut winlink,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -107,15 +107,14 @@ unsafe extern "C" fn alerts_action_applies(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn alerts_check_all(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_all(mut w: *mut window) -> ::core::ffi::c_int {
     let mut alerts: ::core::ffi::c_int = 0;
     alerts = alerts_check_bell(w);
     alerts |= alerts_check_activity(w);
     alerts |= alerts_check_silence(w);
     return alerts;
 }
-#[no_mangle]
-pub unsafe extern "C" fn alerts_check_session(mut s: *mut session) {
+pub unsafe fn alerts_check_session(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
@@ -123,10 +122,7 @@ pub unsafe extern "C" fn alerts_check_session(mut s: *mut session) {
         wl = winlinks_next(&*wl);
     }
 }
-unsafe extern "C" fn alerts_enabled(
-    mut w: *mut window,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+unsafe fn alerts_enabled(mut w: *mut window, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if flags & WINDOW_BELL != 0 {
         if options_get_number(
             (*w).options,
@@ -156,8 +152,7 @@ unsafe extern "C" fn alerts_enabled(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn alerts_reset_all() {
+pub unsafe fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
@@ -165,7 +160,7 @@ pub unsafe extern "C" fn alerts_reset_all() {
         w = windows_next(&*w);
     }
 }
-unsafe extern "C" fn alerts_reset(mut w: *mut window) {
+unsafe fn alerts_reset(mut w: *mut window) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -195,8 +190,7 @@ unsafe extern "C" fn alerts_reset(mut w: *mut window) {
         event_add(&raw mut (*w).alerts_timer, &raw mut tv);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
+pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
     alerts_reset(w);
     if (*w).flags & flags != flags {
         (*w).flags |= flags;
@@ -232,7 +226,7 @@ pub unsafe extern "C" fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi
         }
     }
 }
-unsafe extern "C" fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*w).flags & WINDOW_BELL != 0 {
@@ -279,7 +273,7 @@ unsafe extern "C" fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int
     }
     return 0x1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*w).flags & WINDOW_ACTIVITY != 0 {
@@ -328,7 +322,7 @@ unsafe extern "C" fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c
     }
     return 0x2 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*w).flags & WINDOW_SILENCE != 0 {
@@ -377,7 +371,7 @@ unsafe extern "C" fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_
     }
     return 0x4 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn alerts_set_message(
+unsafe fn alerts_set_message(
     mut wl: *mut winlink,
     mut type_0: *const ::core::ffi::c_char,
     mut option: *const ::core::ffi::c_char,

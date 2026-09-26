@@ -3,9 +3,7 @@ use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
 use crate::src::shared::limits::{INT_MAX, SIZE_MAX};
 use std::ffi::{CStr, CString};
-
-#[no_mangle]
-pub unsafe extern "C" fn xcalloc(mut nmemb: size_t, mut size: size_t) -> *mut ::core::ffi::c_void {
+pub unsafe fn xcalloc(mut nmemb: size_t, mut size: size_t) -> *mut ::core::ffi::c_void {
     let mut ptr: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     if size == 0 as size_t || nmemb == 0 as size_t {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
@@ -22,7 +20,6 @@ pub unsafe extern "C" fn xcalloc(mut nmemb: size_t, mut size: size_t) -> *mut ::
     }
     return ptr;
 }
-#[no_mangle]
 pub unsafe extern "C" fn xasprintf(
     mut ret: *mut *mut ::core::ffi::c_char,
     mut fmt: *const ::core::ffi::c_char,
@@ -34,8 +31,7 @@ pub unsafe extern "C" fn xasprintf(
     i = xvasprintf(ret, fmt, ap);
     return i;
 }
-#[no_mangle]
-pub unsafe extern "C" fn xvasprintf(
+pub unsafe fn xvasprintf(
     mut ret: *mut *mut ::core::ffi::c_char,
     mut fmt: *const ::core::ffi::c_char,
     mut ap: ::core::ffi::VaList,
@@ -85,8 +81,6 @@ pub(crate) unsafe fn try_vasprintf_cstring(
     free(raw.cast());
     Some(value)
 }
-
-#[no_mangle]
 pub unsafe extern "C" fn xsnprintf(
     mut str: *mut ::core::ffi::c_char,
     mut len: size_t,
@@ -99,8 +93,7 @@ pub unsafe extern "C" fn xsnprintf(
     i = xvsnprintf(str, len, fmt, ap);
     return i;
 }
-#[no_mangle]
-pub unsafe extern "C" fn xvsnprintf(
+pub unsafe fn xvsnprintf(
     mut str: *mut ::core::ffi::c_char,
     mut len: size_t,
     mut fmt: *const ::core::ffi::c_char,

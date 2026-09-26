@@ -157,9 +157,7 @@ impl Drop for RedrawCellScratch {
 pub const REDRAW_ISOLATES: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_DEFAULT_SET: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_STATUS_TOP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-unsafe extern "C" fn redraw_flags_to_string(
-    mut flags: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+unsafe fn redraw_flags_to_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 128] = [0; 128];
     *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     if flags & REDRAW_STATUS != 0 {
@@ -224,7 +222,7 @@ unsafe extern "C" fn redraw_flags_to_string(
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-unsafe extern "C" fn redraw_get_window_offset(
+unsafe fn redraw_get_window_offset(
     mut c: *mut client,
     mut ox: *mut u_int,
     mut oy: *mut u_int,
@@ -243,7 +241,7 @@ unsafe extern "C" fn redraw_get_window_offset(
         *sy = tty_sy;
     }
 }
-unsafe extern "C" fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx) {
+unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx) {
     let mut s: *mut session = (*c).session;
     let mut w: *mut window = (*(*s).curw).window;
     memset(
@@ -265,7 +263,7 @@ unsafe extern "C" fn redraw_set_context(mut c: *mut client, mut bctx: *mut redra
         b"pane-border-indicators\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_get_build_cell(
+unsafe fn redraw_get_build_cell(
     mut bctx: *mut redraw_build_ctx,
     mut x: u_int,
     mut y: u_int,
@@ -275,11 +273,7 @@ unsafe extern "C" fn redraw_get_build_cell(
         .offset(y.wrapping_mul((*bctx).sx).wrapping_add(x) as isize)
         as *mut redraw_build_cell;
 }
-unsafe extern "C" fn redraw_reset_cell(
-    mut bctx: *mut redraw_build_ctx,
-    mut x: u_int,
-    mut y: u_int,
-) {
+unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
     let mut w: *mut window = (*bctx).w;
     (*bc).data = redraw_span_data::default();
@@ -289,7 +283,7 @@ unsafe extern "C" fn redraw_reset_cell(
         (*bc).data.type_0 = REDRAW_SPAN_OUTSIDE;
     };
 }
-unsafe extern "C" fn redraw_window_to_scene(
+unsafe fn redraw_window_to_scene(
     mut bctx: *mut redraw_build_ctx,
     mut wx: ::core::ffi::c_int,
     mut wy: ::core::ffi::c_int,
@@ -316,7 +310,7 @@ unsafe extern "C" fn redraw_window_to_scene(
     *y = sy as u_int;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_pane_to_scene(
+unsafe fn redraw_pane_to_scene(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
     mut px: ::core::ffi::c_int,
@@ -354,7 +348,7 @@ unsafe extern "C" fn redraw_pane_to_scene(
     }
     return redraw_window_to_scene(bctx, wx, wy, x, y);
 }
-unsafe extern "C" fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_int {
     match mask {
         15 => return 11 as ::core::ffi::c_int,
         7 => return 8 as ::core::ffi::c_int,
@@ -371,7 +365,7 @@ unsafe extern "C" fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::cor
     }
     return 12 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_check_two_pane_colours(
+unsafe fn redraw_check_two_pane_colours(
     mut w: *mut window,
     mut type_0: *mut layout_type,
 ) -> ::core::ffi::c_int {
@@ -390,10 +384,7 @@ unsafe extern "C" fn redraw_check_two_pane_colours(
     }
     return (count == 2 as u_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_mark_pane_inside(
-    mut bctx: *mut redraw_build_ctx,
-    mut wp: *mut window_pane,
-) {
+unsafe fn redraw_mark_pane_inside(mut bctx: *mut redraw_build_ctx, mut wp: *mut window_pane) {
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -428,7 +419,7 @@ unsafe extern "C" fn redraw_mark_pane_inside(
         py = py.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_mark_pane_scrollbar(
+unsafe fn redraw_mark_pane_scrollbar(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
     mut sb_w: ::core::ffi::c_int,
@@ -489,7 +480,7 @@ unsafe extern "C" fn redraw_mark_pane_scrollbar(
         sy = sy.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_data_has_pane(
+unsafe fn redraw_data_has_pane(
     mut data: *mut redraw_span_data,
     mut wp: *mut window_pane,
 ) -> ::core::ffi::c_int {
@@ -507,7 +498,7 @@ unsafe extern "C" fn redraw_data_has_pane(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_mark_border_cell(
+unsafe fn redraw_mark_border_cell(
     mut bctx: *mut redraw_build_ctx,
     mut wx: ::core::ffi::c_int,
     mut wy: ::core::ffi::c_int,
@@ -573,7 +564,7 @@ unsafe extern "C" fn redraw_mark_border_cell(
     (*bc).data.c2rust_unnamed.b.cell_mask = mask;
     (*bc).data.c2rust_unnamed.b.cell_type = redraw_get_cell_type(mask);
 }
-unsafe extern "C" fn redraw_mark_border_status(
+unsafe fn redraw_mark_border_status(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
     _left: ::core::ffi::c_int,
@@ -623,7 +614,7 @@ unsafe extern "C" fn redraw_mark_border_status(
         off = off.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_mark_border_arrows(
+unsafe fn redraw_mark_border_arrows(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
     mut left: ::core::ffi::c_int,
@@ -682,7 +673,7 @@ unsafe extern "C" fn redraw_mark_border_arrows(
         }
     }
 }
-unsafe extern "C" fn redraw_mark_pane_borders(
+unsafe fn redraw_mark_pane_borders(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
     mut sb_w: ::core::ffi::c_int,
@@ -845,7 +836,7 @@ unsafe extern "C" fn redraw_mark_pane_borders(
     redraw_mark_border_status(bctx, wp, left, right, top, bottom);
     redraw_mark_border_arrows(bctx, wp, left, right, top, bottom);
 }
-unsafe extern "C" fn redraw_mark_pane(mut bctx: *mut redraw_build_ctx, mut wp: *mut window_pane) {
+unsafe fn redraw_mark_pane(mut bctx: *mut redraw_build_ctx, mut wp: *mut window_pane) {
     let mut sb_w: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut sb_left: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut overlay: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -882,7 +873,7 @@ unsafe extern "C" fn redraw_mark_pane(mut bctx: *mut redraw_build_ctx, mut wp: *
     );
     redraw_mark_pane_scrollbar(bctx, wp, sb_w, sb_left, overlay);
 }
-unsafe extern "C" fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
+unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut sd: *mut redraw_span_data = ::core::ptr::null_mut::<redraw_span_data>();
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
@@ -934,7 +925,7 @@ unsafe extern "C" fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ct
         y = y.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_mark_menu(mut bctx: *mut redraw_build_ctx) {
+unsafe fn redraw_mark_menu(mut bctx: *mut redraw_build_ctx) {
     let mut md: *mut menu_data = (*(*bctx).w).menu;
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut px: u_int = 0;
@@ -976,7 +967,7 @@ unsafe extern "C" fn redraw_mark_menu(mut bctx: *mut redraw_build_ctx) {
         py = py.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_compare_data(
+unsafe fn redraw_compare_data(
     mut a: *mut redraw_build_cell,
     mut b: *mut redraw_build_cell,
 ) -> ::core::ffi::c_int {
@@ -1097,7 +1088,7 @@ unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<re
     redraw_mark_two_pane_colours(bctx);
     redraw_mark_menu(bctx);
 }
-unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
+unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
     let mut s: *mut session = (*c).session;
     let mut w: *mut window = (*(*s).curw).window;
     let mut bctx: redraw_build_ctx = redraw_build_ctx {
@@ -1194,8 +1185,7 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     );
     return scene;
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_free_scene(mut scene: *mut redraw_scene) {
+pub unsafe fn redraw_free_scene(mut scene: *mut redraw_scene) {
     if scene.is_null() {
         return;
     }
@@ -1206,12 +1196,10 @@ pub unsafe extern "C" fn redraw_free_scene(mut scene: *mut redraw_scene) {
     )));
     drop(Box::from_raw(scene));
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_invalidate_scene(mut w: *mut window) {
+pub unsafe fn redraw_invalidate_scene(mut w: *mut window) {
     (*w).redraw_scene_generation = (*w).redraw_scene_generation.wrapping_add(1);
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_invalidate_all_scenes() {
+pub unsafe fn redraw_invalidate_all_scenes() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
@@ -1219,7 +1207,7 @@ pub unsafe extern "C" fn redraw_invalidate_all_scenes() {
         w = windows_next(&*w);
     }
 }
-unsafe extern "C" fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
+unsafe fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
     let mut scene: *mut redraw_scene = (*c).redraw_scene;
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut reason: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1254,7 +1242,7 @@ unsafe extern "C" fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
     }
     return scene;
 }
-unsafe extern "C" fn redraw_draw_pane_span(
+unsafe fn redraw_draw_pane_span(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut x: u_int,
@@ -1301,7 +1289,7 @@ unsafe extern "C" fn redraw_draw_pane_span(
     py = (*span).data.c2rust_unnamed.p.py;
     tty_draw_line(tty, s, px, py, n, x, y, &raw mut style_ctx);
 }
-unsafe extern "C" fn redraw_get_default_border_style(
+unsafe fn redraw_get_default_border_style(
     mut dctx: *mut redraw_draw_ctx,
     mut gc: *mut grid_cell,
     mut pane_lines: *mut pane_lines,
@@ -1345,7 +1333,7 @@ unsafe extern "C" fn redraw_get_default_border_style(
     );
     *pane_lines = (*dctx).pane_lines;
 }
-unsafe extern "C" fn redraw_get_pane_for_border_style(
+unsafe fn redraw_get_pane_for_border_style(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
 ) -> *mut window_pane {
@@ -1375,7 +1363,7 @@ unsafe extern "C" fn redraw_get_pane_for_border_style(
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
-unsafe extern "C" fn redraw_draw_border_arrow(
+unsafe fn redraw_draw_border_arrow(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut gc: *mut grid_cell,
@@ -1405,7 +1393,7 @@ unsafe extern "C" fn redraw_draw_border_arrow(
     utf8_set(&raw mut (*gc).data, ch as u_char);
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
 }
-unsafe extern "C" fn redraw_draw_border_span(
+unsafe fn redraw_draw_border_span(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut x: u_int,
@@ -1494,7 +1482,7 @@ unsafe extern "C" fn redraw_draw_border_span(
         tty_puts(tty, REDRAW_START_ISOLATE.as_ptr());
     }
 }
-unsafe extern "C" fn redraw_draw_status_span(
+unsafe fn redraw_draw_status_span(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut x: u_int,
@@ -1530,7 +1518,7 @@ unsafe extern "C" fn redraw_draw_status_span(
         );
     }
 }
-unsafe extern "C" fn redraw_draw_scrollbar_span(
+unsafe fn redraw_draw_scrollbar_span(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut x: u_int,
@@ -1678,7 +1666,7 @@ unsafe extern "C" fn redraw_draw_scrollbar_span(
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_draw_menu_span(
+unsafe fn redraw_draw_menu_span(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut x: u_int,
@@ -1706,7 +1694,7 @@ unsafe extern "C" fn redraw_draw_menu_span(
         ::core::ptr::null::<tty_style_ctx>(),
     );
 }
-unsafe extern "C" fn redraw_draw_span(
+unsafe fn redraw_draw_span(
     mut dctx: *mut redraw_draw_ctx,
     mut span: *mut redraw_span,
     mut y: u_int,
@@ -1756,7 +1744,7 @@ unsafe extern "C" fn redraw_draw_span(
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_draw_pane_lines(
+unsafe fn redraw_draw_pane_lines(
     mut dctx: *mut redraw_draw_ctx,
     mut wp: *mut window_pane,
     mut flags: ::core::ffi::c_int,
@@ -1806,10 +1794,7 @@ unsafe extern "C" fn redraw_draw_pane_lines(
         y += 1;
     }
 }
-unsafe extern "C" fn redraw_draw_lines(
-    mut dctx: *mut redraw_draw_ctx,
-    mut flags: ::core::ffi::c_int,
-) {
+unsafe fn redraw_draw_lines(mut dctx: *mut redraw_draw_ctx, mut flags: ::core::ffi::c_int) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
     let mut spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
@@ -2228,7 +2213,7 @@ unsafe extern "C" fn redraw_draw_lines(
         y = y.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
+unsafe fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
     let mut y: u_int = 0;
@@ -2247,7 +2232,7 @@ unsafe extern "C" fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
         y = y.wrapping_add(1);
     }
 }
-unsafe extern "C" fn redraw_pane_status_line(
+unsafe fn redraw_pane_status_line(
     mut dctx: *mut redraw_draw_ctx,
     mut wp: *mut window_pane,
     mut line: *mut u_int,
@@ -2273,7 +2258,7 @@ unsafe extern "C" fn redraw_pane_status_line(
     *line = (wy as u_int).wrapping_sub((*scene).oy);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_pane_status_width(
+unsafe fn redraw_pane_status_width(
     mut dctx: *mut redraw_draw_ctx,
     mut wp: *mut window_pane,
     mut spans_out: *mut *mut redraw_spans,
@@ -2303,10 +2288,7 @@ unsafe extern "C" fn redraw_pane_status_width(
     }
     return width;
 }
-unsafe extern "C" fn redraw_set_draw_context(
-    mut dctx: *mut redraw_draw_ctx,
-    mut scene: *mut redraw_scene,
-) {
+unsafe fn redraw_set_draw_context(mut dctx: *mut redraw_draw_ctx, mut scene: *mut redraw_scene) {
     let mut c: *mut client = (*scene).c;
     let mut s: *mut session = (*c).session;
     let mut oo: *mut options = (*s).options;
@@ -2335,10 +2317,7 @@ unsafe extern "C" fn redraw_set_draw_context(
         (*dctx).flags |= REDRAW_ISOLATES;
     }
 }
-unsafe extern "C" fn redraw_draw_pane_prompt(
-    mut dctx: *mut redraw_draw_ctx,
-    mut wp: *mut window_pane,
-) {
+unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut window_pane) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut c: *mut client = (*scene).c;
     let mut tty: *mut tty = &raw mut (*c).tty;
@@ -2421,11 +2400,7 @@ unsafe extern "C" fn redraw_draw_pane_prompt(
     );
     screen_free(&raw mut screen);
 }
-unsafe extern "C" fn redraw_draw(
-    mut c: *mut client,
-    mut wp: *mut window_pane,
-    mut flags: ::core::ffi::c_int,
-) {
+unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: ::core::ffi::c_int) {
     let mut dctx: redraw_draw_ctx = redraw_draw_ctx {
         scene: ::core::ptr::null_mut::<redraw_scene>(),
         active: ::core::ptr::null_mut::<window_pane>(),
@@ -2639,8 +2614,7 @@ unsafe extern "C" fn redraw_draw(
         (*(*scene).w).id,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_get_status_border_cell_type(
+pub unsafe fn redraw_get_status_border_cell_type(
     mut spans: *const redraw_spans,
     mut span_index: *mut usize,
     mut x: u_int,
@@ -2685,8 +2659,7 @@ pub unsafe extern "C" fn redraw_get_status_border_cell_type(
     }
     return 2 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_screen(mut c: *mut client) {
+pub unsafe fn redraw_screen(mut c: *mut client) {
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         if (*c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
@@ -2719,14 +2692,12 @@ pub unsafe extern "C" fn redraw_screen(mut c: *mut client) {
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_pane(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn redraw_pane(mut c: *mut client, mut wp: *mut window_pane) {
     redraw_draw(c, wp, REDRAW_PANE | REDRAW_PANE_SCROLLBAR);
     if !(*(*(*(*c).session).curw).window).menu.is_null() {
         redraw_draw(c, ::core::ptr::null_mut::<window_pane>(), REDRAW_MENU);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn redraw_pane_scrollbar(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn redraw_pane_scrollbar(mut c: *mut client, mut wp: *mut window_pane) {
     redraw_draw(c, wp, REDRAW_PANE_SCROLLBAR);
 }

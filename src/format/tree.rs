@@ -155,9 +155,7 @@ unsafe fn format_entry_tree_next(
         .map(|(_, item)| *item)
         .unwrap_or(::core::ptr::null_mut::<format_entry>())
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn format_merge(mut ft: *mut format_tree, mut from: *mut format_tree) {
+pub unsafe fn format_merge(mut ft: *mut format_tree, mut from: *mut format_tree) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     fe = format_entry_tree_minmax(&raw mut (*from).tree, RB_NEGINF);
     while !fe.is_null() {
@@ -174,14 +172,10 @@ pub unsafe extern "C" fn format_merge(mut ft: *mut format_tree, mut from: *mut f
         fe = format_entry_tree_next(&raw mut (*from).tree, fe);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_get_pane(mut ft: *mut format_tree) -> *mut window_pane {
+pub unsafe fn format_get_pane(mut ft: *mut format_tree) -> *mut window_pane {
     return (*ft).wp;
 }
-pub(super) unsafe extern "C" fn format_create_add_item(
-    mut ft: *mut format_tree,
-    mut item: *mut cmdq_item,
-) {
+pub(super) unsafe fn format_create_add_item(mut ft: *mut format_tree, mut item: *mut cmdq_item) {
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut m: *mut mouse_event = &raw mut (*event).m;
     cmdq_merge_formats(item, ft);
@@ -191,8 +185,7 @@ pub(super) unsafe extern "C" fn format_create_add_item(
         ::core::mem::size_of::<mouse_event>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_create(
+pub unsafe fn format_create(
     mut c: *mut client,
     mut item: *mut cmdq_item,
     mut tag: ::core::ffi::c_int,
@@ -213,8 +206,7 @@ pub unsafe extern "C" fn format_create(
     }
     return ft;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_free(mut ft: *mut format_tree) {
+pub unsafe fn format_free(mut ft: *mut format_tree) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe1: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
@@ -235,11 +227,7 @@ pub unsafe extern "C" fn format_free(mut ft: *mut format_tree) {
     }
     drop(Box::from_raw(ft));
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_log_debug(
-    mut ft: *mut format_tree,
-    mut prefix: *const ::core::ffi::c_char,
-) {
+pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::core::ffi::c_char) {
     if log_get_level() == 0 as ::core::ffi::c_int {
         return;
     }
@@ -299,7 +287,6 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         cb(key.as_c_str(), value.as_c_str());
     }
 }
-#[no_mangle]
 pub unsafe extern "C" fn format_add(
     mut ft: *mut format_tree,
     mut key: *const ::core::ffi::c_char,
@@ -320,8 +307,7 @@ pub unsafe extern "C" fn format_add(
     ap = args.clone();
     format_entry_set_value(&mut *fe, Some(xvasprintf_cstring(fmt, ap)));
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_add_tv(
+pub unsafe fn format_add_tv(
     mut ft: *mut format_tree,
     mut key: *const ::core::ffi::c_char,
     mut tv: *mut timeval,

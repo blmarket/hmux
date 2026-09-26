@@ -12,8 +12,6 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::environment::environ;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::tmux::global_environ;
-
-#[no_mangle]
 pub static mut cmd_set_environment_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"set-environment\0" as *const u8 as *const ::core::ffi::c_char,

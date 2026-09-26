@@ -11,8 +11,7 @@ pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const VIS_ALL: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
 
 pub const VIS_GLOB: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-#[no_mangle]
-pub unsafe extern "C" fn vis(
+pub unsafe fn vis(
     mut dst: *mut ::core::ffi::c_char,
     mut c: ::core::ffi::c_int,
     mut flag: ::core::ffi::c_int,
@@ -924,8 +923,7 @@ pub unsafe extern "C" fn vis(
     *dst = '\0' as i32 as ::core::ffi::c_char;
     return dst;
 }
-#[no_mangle]
-pub unsafe extern "C" fn strvis(
+pub unsafe fn strvis(
     mut dst: *mut ::core::ffi::c_char,
     mut src: *const ::core::ffi::c_char,
     mut flag: ::core::ffi::c_int,
@@ -949,8 +947,7 @@ pub unsafe extern "C" fn strvis(
     *dst = '\0' as i32 as ::core::ffi::c_char;
     return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn strnvis(
+pub unsafe fn strnvis(
     mut dst: *mut ::core::ffi::c_char,
     mut src: *const ::core::ffi::c_char,
     mut siz: size_t,
@@ -1070,8 +1067,7 @@ pub(crate) fn stravis_cstring(src: &std::ffi::CStr, flag: ::core::ffi::c_int) ->
     buffer.truncate(escaped_len + 1);
     std::ffi::CString::from_vec_with_nul(buffer).expect("vis output contains no interior NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn strvisx(
+pub unsafe fn strvisx(
     mut dst: *mut ::core::ffi::c_char,
     mut src: *const ::core::ffi::c_char,
     mut len: size_t,

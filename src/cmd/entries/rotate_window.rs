@@ -17,8 +17,6 @@ use crate::src::window::{
     window_pane_list_insert_front, window_pane_list_remove, window_pane_next, window_pane_previous,
     window_pop_zoom, window_push_zoom, window_set_active_pane,
 };
-
-#[no_mangle]
 pub static mut cmd_rotate_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"rotate-window\0" as *const u8 as *const ::core::ffi::c_char,

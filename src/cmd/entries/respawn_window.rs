@@ -18,8 +18,6 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::winlink;
 use crate::src::spawn::spawn_window;
-
-#[no_mangle]
 pub static mut cmd_respawn_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"respawn-window\0" as *const u8 as *const ::core::ffi::c_char,

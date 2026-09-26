@@ -448,28 +448,19 @@ pub const LC_TIME: ::core::ffi::c_int = __LC_TIME;
 pub const CLOCK_MONOTONIC: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-
-#[no_mangle]
 pub static mut global_options: *mut options = ::core::ptr::null::<options>() as *mut options;
-#[no_mangle]
 pub static mut global_s_options: *mut options = ::core::ptr::null::<options>() as *mut options;
-#[no_mangle]
 pub static mut global_w_options: *mut options = ::core::ptr::null::<options>() as *mut options;
-#[no_mangle]
 pub static mut global_environ: *mut environ = ::core::ptr::null::<environ>() as *mut environ;
-#[no_mangle]
 pub static mut start_time: timeval = timeval {
     tv_sec: 0,
     tv_usec: 0,
 };
-#[no_mangle]
 pub static mut socket_path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-#[no_mangle]
 pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-#[no_mangle]
 pub static mut shell_command: *const ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>();
-unsafe extern "C" fn usage(mut status: ::core::ffi::c_int) -> ! {
+unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
     fprintf(
         if status != 0 { stderr } else { stdout },
         b"usage: %s [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n\0"
@@ -478,7 +469,7 @@ unsafe extern "C" fn usage(mut status: ::core::ffi::c_int) -> ! {
     );
     exit(status);
 }
-unsafe extern "C" fn getshell() -> *const ::core::ffi::c_char {
+unsafe fn getshell() -> *const ::core::ffi::c_char {
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     shell = getenv(b"SHELL\0" as *const u8 as *const ::core::ffi::c_char);
@@ -491,8 +482,7 @@ unsafe extern "C" fn getshell() -> *const ::core::ffi::c_char {
     }
     return b"/bin/sh\0" as *const u8 as *const ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+pub unsafe fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     if shell.is_null() || *shell as ::core::ffi::c_int != '/' as i32 {
         return 0 as ::core::ffi::c_int;
     }
@@ -504,7 +494,7 @@ pub unsafe extern "C" fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut progname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     ptr = strrchr(shell, '/' as i32);
@@ -715,8 +705,7 @@ pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CStrin
     argv0.extend_from_slice(name);
     CString::new(argv0).expect("shell path contains no NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn setblocking(mut fd: ::core::ffi::c_int, mut state: ::core::ffi::c_int) {
+pub unsafe fn setblocking(mut fd: ::core::ffi::c_int, mut state: ::core::ffi::c_int) {
     let mut mode: ::core::ffi::c_int = 0;
     mode = fcntl(fd, F_GETFL);
     if mode != -(1 as ::core::ffi::c_int) {
@@ -728,8 +717,7 @@ pub unsafe extern "C" fn setblocking(mut fd: ::core::ffi::c_int, mut state: ::co
         fcntl(fd, F_SETFL, mode);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn get_timer() -> uint64_t {
+pub unsafe fn get_timer() -> uint64_t {
     let mut ts: timespec = timespec {
         tv_sec: 0,
         tv_nsec: 0,
@@ -762,15 +750,13 @@ pub unsafe fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> 
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     ))
 }
-#[no_mangle]
-pub unsafe extern "C" fn check_name(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+pub unsafe fn check_name(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     if utf8_isvalid(name) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
+pub unsafe fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 11] = [0; 11];
     xsnprintf(
         &raw mut s as *mut ::core::ffi::c_char,
@@ -780,8 +766,7 @@ pub unsafe extern "C" fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::cor
     );
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn find_cwd() -> *const ::core::ffi::c_char {
+pub unsafe fn find_cwd() -> *const ::core::ffi::c_char {
     let mut resolved1: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut resolved2: [::core::ffi::c_char; 4096] = [0; 4096];
     static mut cwd: [::core::ffi::c_char; 4096] = [0; 4096];
@@ -841,12 +826,10 @@ pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
 }
 
 /// Compatibility adapter for the original C-facing contract.
-#[no_mangle]
-pub unsafe extern "C" fn find_home() -> *const ::core::ffi::c_char {
+pub unsafe fn find_home() -> *const ::core::ffi::c_char {
     find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr)
 }
-#[no_mangle]
-pub unsafe extern "C" fn getversion() -> *const ::core::ffi::c_char {
+pub unsafe fn getversion() -> *const ::core::ffi::c_char {
     return b"next-3.9\0" as *const u8 as *const ::core::ffi::c_char;
 }
 unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {

@@ -16,8 +16,6 @@ use crate::src::shared::command::{
 };
 use crate::src::shared::message::*;
 use crate::src::shared::session::session;
-
-#[no_mangle]
 pub static mut cmd_detach_client_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"detach-client\0" as *const u8 as *const ::core::ffi::c_char,
@@ -44,7 +42,6 @@ pub static mut cmd_detach_client_entry: cmd_entry = unsafe {
         exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_suspend_client_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"suspend-client\0" as *const u8 as *const ::core::ffi::c_char,

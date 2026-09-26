@@ -46,7 +46,7 @@ pub(crate) unsafe fn key_bindings_set_note(bd: *mut key_binding, note: Option<&C
     owner.note = Default::default();
     owner.note = next;
 }
-unsafe extern "C" fn key_table_cmp(
+unsafe fn key_table_cmp(
     mut table1: *mut key_table,
     mut table2: *mut key_table,
 ) -> ::core::ffi::c_int {
@@ -55,7 +55,7 @@ unsafe extern "C" fn key_table_cmp(
         ((*table2).name).as_ptr().cast_mut(),
     );
 }
-unsafe extern "C" fn key_bindings_cmp(
+unsafe fn key_bindings_cmp(
     mut bd1: *mut key_binding,
     mut bd2: *mut key_binding,
 ) -> ::core::ffi::c_int {
@@ -67,12 +67,11 @@ unsafe extern "C" fn key_bindings_cmp(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn key_bindings_free(mut bd: *mut key_binding) {
+unsafe fn key_bindings_free(mut bd: *mut key_binding) {
     cmd_list_free((*bd).cmdlist);
     drop(Box::from_raw(bd));
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_get_table(
+pub unsafe fn key_bindings_get_table(
     mut name: *const ::core::ffi::c_char,
     mut create: ::core::ffi::c_int,
 ) -> *mut key_table {
@@ -105,16 +104,13 @@ pub unsafe extern "C" fn key_bindings_get_table(
     key_tables_insert(&raw mut key_tables, table);
     return table;
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_first_table() -> *mut key_table {
+pub unsafe fn key_bindings_first_table() -> *mut key_table {
     return key_tables_minmax(&*std::ptr::addr_of!(key_tables), RB_NEGINF);
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
+pub unsafe fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
     return key_tables_next(&*table);
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
+pub unsafe fn key_bindings_unref_table(mut table: *mut key_table) {
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut bd1: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     (*table).references = (*table).references.wrapping_sub(1);
@@ -141,11 +137,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
     }
     drop(Box::from_raw(table));
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_get(
-    mut table: *mut key_table,
-    mut key: key_code,
-) -> *mut key_binding {
+pub unsafe fn key_bindings_get(mut table: *mut key_table, mut key: key_code) -> *mut key_binding {
     let mut bd: key_binding = key_binding {
         key: 0,
         cmdlist: ::core::ptr::null_mut::<cmd_list>(),
@@ -157,8 +149,7 @@ pub unsafe extern "C" fn key_bindings_get(
     bd.key = key;
     return key_bindings_index_find(&(*table).key_bindings, &bd);
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_get_default(
+pub unsafe fn key_bindings_get_default(
     mut table: *mut key_table,
     mut key: key_code,
 ) -> *mut key_binding {
@@ -173,19 +164,16 @@ pub unsafe extern "C" fn key_bindings_get_default(
     bd.key = key;
     return key_bindings_index_find(&(*table).default_key_bindings, &bd);
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_first(mut table: *mut key_table) -> *mut key_binding {
+pub unsafe fn key_bindings_first(mut table: *mut key_table) -> *mut key_binding {
     return key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_next(
+pub unsafe fn key_bindings_next(
     _table: *mut key_table,
     mut bd: *mut key_binding,
 ) -> *mut key_binding {
     return key_bindings_index_next(&*bd);
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_add(
+pub unsafe fn key_bindings_add(
     mut name: *const ::core::ffi::c_char,
     mut key: key_code,
     mut note: *const ::core::ffi::c_char,
@@ -232,11 +220,7 @@ pub unsafe extern "C" fn key_bindings_add(
         s.as_ptr(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_remove(
-    mut name: *const ::core::ffi::c_char,
-    mut key: key_code,
-) {
+pub unsafe fn key_bindings_remove(mut name: *const ::core::ffi::c_char, mut key: key_code) {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     table = key_bindings_get_table(name, 0 as ::core::ffi::c_int);
@@ -261,11 +245,7 @@ pub unsafe extern "C" fn key_bindings_remove(
         key_bindings_unref_table(table);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_reset(
-    mut name: *const ::core::ffi::c_char,
-    mut key: key_code,
-) {
+pub unsafe fn key_bindings_reset(mut name: *const ::core::ffi::c_char, mut key: key_code) {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut dd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -288,8 +268,7 @@ pub unsafe extern "C" fn key_bindings_reset(
     key_bindings_set_note(bd, (*dd).note.as_deref());
     (*bd).flags = (*dd).flags;
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     table = key_bindings_get_table(name, 0 as ::core::ffi::c_int);
@@ -305,8 +284,7 @@ pub unsafe extern "C" fn key_bindings_remove_table(mut name: *const ::core::ffi:
         key_bindings_unref_table(table);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_reset_table(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn key_bindings_reset_table(mut name: *const ::core::ffi::c_char) {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut bd1: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -368,8 +346,7 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
     }
     return CMD_RETURN_NORMAL;
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_init() {
+pub unsafe fn key_bindings_init() {
     static mut defaults: [*const ::core::ffi::c_char; 308] = [
         b"bind -N 'Send the prefix key' C-b { send-prefix }\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -1035,8 +1012,7 @@ unsafe fn key_bindings_read_only(mut item: *mut cmdq_item) -> cmd_retval {
     );
     return CMD_RETURN_ERROR;
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_dispatch(
+pub unsafe fn key_bindings_dispatch(
     mut bd: *mut key_binding,
     mut item: *mut cmdq_item,
     mut c: *mut client,
@@ -1074,8 +1050,7 @@ pub unsafe extern "C" fn key_bindings_dispatch(
     }
     return new_item;
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_bindings_has_repeat(
+pub unsafe fn key_bindings_has_repeat(
     mut l: *mut *mut key_binding,
     mut n: u_int,
 ) -> ::core::ffi::c_int {

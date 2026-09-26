@@ -268,7 +268,7 @@ fn paste_next_order_take() -> u_int {
     })
 }
 
-unsafe extern "C" fn paste_fire_event(
+unsafe fn paste_fire_event(
     mut name: *const ::core::ffi::c_char,
     mut pbname: *const ::core::ffi::c_char,
 ) {
@@ -282,22 +282,16 @@ unsafe extern "C" fn paste_fire_event(
     );
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_buffer_name(
-    mut pb: *mut paste_buffer,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn paste_buffer_name(mut pb: *mut paste_buffer) -> *const ::core::ffi::c_char {
     return ((*pb).name).as_ptr().cast_mut();
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_buffer_order(mut pb: *mut paste_buffer) -> u_int {
+pub unsafe fn paste_buffer_order(mut pb: *mut paste_buffer) -> u_int {
     return (*pb).order;
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_buffer_created(mut pb: *mut paste_buffer) -> time_t {
+pub unsafe fn paste_buffer_created(mut pb: *mut paste_buffer) -> time_t {
     return (*pb).created;
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_buffer_data(
+pub unsafe fn paste_buffer_data(
     mut pb: *mut paste_buffer,
     mut size: *mut size_t,
 ) -> *const ::core::ffi::c_char {
@@ -310,15 +304,13 @@ pub unsafe extern "C" fn paste_buffer_data(
             value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
         });
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
+pub unsafe fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
     if pb.is_null() {
         return paste_time_tree_minmax_local(RB_NEGINF);
     }
     return paste_time_tree_next_local(&*pb);
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_is_empty() -> ::core::ffi::c_int {
+pub unsafe fn paste_is_empty() -> ::core::ffi::c_int {
     return paste_time_tree_is_empty_local() as ::core::ffi::c_int;
 }
 pub(crate) unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut paste_buffer {
@@ -335,15 +327,13 @@ pub(crate) unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut p
     }
     return pb;
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_get_name(mut name: *const ::core::ffi::c_char) -> *mut paste_buffer {
+pub unsafe fn paste_get_name(mut name: *const ::core::ffi::c_char) -> *mut paste_buffer {
     if name.is_null() || *name as ::core::ffi::c_int == '\0' as i32 {
         return ::core::ptr::null_mut::<paste_buffer>();
     }
     return paste_name_tree_find_local(CStr::from_ptr(name));
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
+pub unsafe fn paste_free(mut pb: *mut paste_buffer) {
     paste_fire_event(
         b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
@@ -355,8 +345,7 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
     }
     drop(Box::from_raw(pb));
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_add(
+pub unsafe fn paste_add(
     prefix: *const ::core::ffi::c_char,
     data: *mut ::core::ffi::c_char,
     size: size_t,
@@ -568,8 +557,7 @@ unsafe fn paste_set_inner(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_replace(
+pub unsafe fn paste_replace(
     mut pb: *mut paste_buffer,
     mut data: *mut ::core::ffi::c_char,
     mut size: size_t,

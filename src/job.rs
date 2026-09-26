@@ -416,8 +416,7 @@ pub unsafe fn job_run(
     drop(argv0);
     return ::core::ptr::null_mut::<job>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_transfer(
+pub unsafe fn job_transfer(
     mut job: *mut job,
     mut pid: *mut pid_t,
     mut tty: *mut ::core::ffi::c_char,
@@ -450,8 +449,7 @@ pub unsafe extern "C" fn job_transfer(
     drop(Box::from_raw(job));
     return fd;
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_free(mut job: *mut job) {
+pub unsafe fn job_free(mut job: *mut job) {
     log_debug(
         b"free job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
         job,
@@ -477,8 +475,7 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
     }
     drop(Box::from_raw(job));
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
+pub unsafe fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
     let mut ws: winsize = winsize {
         ws_row: 0,
         ws_col: 0,
@@ -563,8 +560,7 @@ unsafe fn job_error_callback(
         (*job).state = JOB_CLOSED;
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
+pub unsafe fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
     job = all_jobs.lh_first;
     while !job.is_null() {
@@ -606,16 +602,13 @@ pub unsafe extern "C" fn job_check_died(mut pid: pid_t, mut status: ::core::ffi:
         (*job).state = JOB_DEAD;
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_get_status(mut job: *mut job) -> ::core::ffi::c_int {
+pub unsafe fn job_get_status(mut job: *mut job) -> ::core::ffi::c_int {
     return (*job).status;
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_get_event(mut job: *mut job) -> *mut bufferevent {
+pub unsafe fn job_get_event(mut job: *mut job) -> *mut bufferevent {
     return (*job).event;
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_kill_all() {
+pub unsafe fn job_kill_all() {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
     job = all_jobs.lh_first;
     while !job.is_null() {
@@ -625,8 +618,7 @@ pub unsafe extern "C" fn job_kill_all() {
         job = (*job).entry.le_next;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_still_running() -> ::core::ffi::c_int {
+pub unsafe fn job_still_running() -> ::core::ffi::c_int {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
     job = all_jobs.lh_first;
     while !job.is_null() {
@@ -640,11 +632,7 @@ pub unsafe extern "C" fn job_still_running() -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn job_print_summary(
-    mut item: *mut cmdq_item,
-    mut blank: ::core::ffi::c_int,
-) {
+pub unsafe fn job_print_summary(mut item: *mut cmdq_item, mut blank: ::core::ffi::c_int) {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
     let mut n: u_int = 0 as u_int;
     job = all_jobs.lh_first;

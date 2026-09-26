@@ -134,10 +134,7 @@ unsafe fn proc_signal_cb(
         .as_mut()
         .expect("signal callback is installed")(ProcessSignal::from_raw(signo));
 }
-unsafe extern "C" fn peer_check_version(
-    mut peer: *mut tmuxpeer,
-    mut imsg: *mut imsg,
-) -> ::core::ffi::c_int {
+unsafe fn peer_check_version(mut peer: *mut tmuxpeer, mut imsg: *mut imsg) -> ::core::ffi::c_int {
     let mut version: ::core::ffi::c_int = 0;
     version = ((*imsg).hdr.peerid & 0xff as uint32_t) as ::core::ffi::c_int;
     if (*imsg).hdr.type_0 != MSG_VERSION as ::core::ffi::c_int as uint32_t
@@ -160,7 +157,7 @@ unsafe extern "C" fn peer_check_version(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn proc_update_event(mut peer: *mut tmuxpeer) {
+unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
     let mut events: ::core::ffi::c_short = 0;
     events = EV_READ as ::core::ffi::c_short;
     if imsgbuf_queuelen(&raw mut (*peer).ibuf) > 0 as uint32_t {
@@ -182,8 +179,7 @@ unsafe extern "C" fn proc_update_event(mut peer: *mut tmuxpeer) {
     );
     event_add(&raw mut (*peer).event, ::core::ptr::null::<timeval>());
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_send(
+pub unsafe fn proc_send(
     mut peer: *mut tmuxpeer,
     mut type_0: msgtype,
     mut fd: ::core::ffi::c_int,
@@ -217,8 +213,7 @@ pub unsafe extern "C" fn proc_send(
     proc_update_event(peer);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc {
+pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc {
     let mut tp: *mut tmuxproc = ::core::ptr::null_mut::<tmuxproc>();
     let mut u: utsname = utsname {
         sysname: [0; 65],
@@ -302,8 +297,7 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
         (*tp).name.as_ptr(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_exit(mut tp: *mut tmuxproc) {
+pub unsafe fn proc_exit(mut tp: *mut tmuxproc) {
     for peer in (*tp).peers.iter_mut() {
         let peer: *mut tmuxpeer = &mut **peer;
         imsgbuf_flush(&raw mut (*peer).ibuf);
@@ -393,11 +387,7 @@ pub unsafe fn proc_set_signals(
     );
     event_add(&raw mut (*tp).ev_sigwinch, ::core::ptr::null::<timeval>());
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_clear_signals(
-    mut tp: *mut tmuxproc,
-    mut defaults: ::core::ffi::c_int,
-) {
+pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
     let mut sa: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
@@ -467,8 +457,7 @@ pub unsafe fn proc_add_peer(
     proc_update_event(peer);
     return peer;
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_remove_peer(peer: *mut tmuxpeer) {
+pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
     let peers = &mut (*(*peer).parent).peers;
     let peer_index = peers
         .iter()
@@ -484,20 +473,16 @@ pub unsafe extern "C" fn proc_remove_peer(peer: *mut tmuxpeer) {
     close((*peer).ibuf.fd);
     drop(owned_peer);
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_kill_peer(mut peer: *mut tmuxpeer) {
+pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
     (*peer).flags |= PEER_BAD;
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_flush_peer(mut peer: *mut tmuxpeer) {
+pub unsafe fn proc_flush_peer(mut peer: *mut tmuxpeer) {
     imsgbuf_flush(&raw mut (*peer).ibuf);
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_toggle_log(mut tp: *mut tmuxproc) {
+pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
     log_toggle((*tp).name.as_ptr());
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {
+pub unsafe fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {
     let mut pid: pid_t = 0;
     let mut pair: [::core::ffi::c_int; 2] = [0; 2];
     if socketpair(
@@ -529,11 +514,9 @@ pub unsafe extern "C" fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_get_peer_uid(mut peer: *mut tmuxpeer) -> uid_t {
+pub unsafe fn proc_get_peer_uid(mut peer: *mut tmuxpeer) -> uid_t {
     return (*peer).uid;
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_get_peer_gid(mut peer: *mut tmuxpeer) -> gid_t {
+pub unsafe fn proc_get_peer_gid(mut peer: *mut tmuxpeer) -> gid_t {
     return (*peer).gid;
 }

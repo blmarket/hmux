@@ -66,10 +66,7 @@ use crate::src::shared::tty::*;
 use crate::src::shared::window::WINLINK_ALERTFLAGS;
 use crate::src::shared::window::{window, winlink};
 
-unsafe extern "C" fn server_fire_pane_exit(
-    mut name: *const ::core::ffi::c_char,
-    mut wp: *mut window_pane,
-) {
+unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *mut window_pane) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -123,16 +120,13 @@ unsafe extern "C" fn server_fire_pane_exit(
     );
     events_fire(name, ep);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_redraw_client(mut c: *mut client) {
+pub unsafe fn server_redraw_client(mut c: *mut client) {
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_status_client(mut c: *mut client) {
+pub unsafe fn server_status_client(mut c: *mut client) {
     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_redraw_session(mut s: *mut session) {
+pub unsafe fn server_redraw_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -142,8 +136,7 @@ pub unsafe extern "C" fn server_redraw_session(mut s: *mut session) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_redraw_session_group(mut s: *mut session) {
+pub unsafe fn server_redraw_session_group(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
@@ -154,8 +147,7 @@ pub unsafe extern "C" fn server_redraw_session_group(mut s: *mut session) {
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_status_session(mut s: *mut session) {
+pub unsafe fn server_status_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -165,8 +157,7 @@ pub unsafe extern "C" fn server_status_session(mut s: *mut session) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_status_session_group(mut s: *mut session) {
+pub unsafe fn server_status_session_group(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
@@ -177,8 +168,7 @@ pub unsafe extern "C" fn server_status_session_group(mut s: *mut session) {
         }
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_redraw_window(mut w: *mut window) {
+pub unsafe fn server_redraw_window(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -191,8 +181,7 @@ pub unsafe extern "C" fn server_redraw_window(mut w: *mut window) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_redraw_window_menu(mut w: *mut window) {
+pub unsafe fn server_redraw_window_menu(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -205,8 +194,7 @@ pub unsafe extern "C" fn server_redraw_window_menu(mut w: *mut window) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_redraw_window_borders(mut w: *mut window) {
+pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -219,8 +207,7 @@ pub unsafe extern "C" fn server_redraw_window_borders(mut w: *mut window) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_status_window(mut w: *mut window) {
+pub unsafe fn server_status_window(mut w: *mut window) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
@@ -230,8 +217,7 @@ pub unsafe extern "C" fn server_status_window(mut w: *mut window) {
         s = sessions_next(&*s);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_lock() {
+pub unsafe fn server_lock() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -241,8 +227,7 @@ pub unsafe extern "C" fn server_lock() {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_lock_session(mut s: *mut session) {
+pub unsafe fn server_lock_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -252,8 +237,7 @@ pub unsafe extern "C" fn server_lock_session(mut s: *mut session) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_lock_client(mut c: *mut client) {
+pub unsafe fn server_lock_client(mut c: *mut client) {
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return;
@@ -290,8 +274,7 @@ pub unsafe extern "C" fn server_lock_client(mut c: *mut client) {
         strlen(cmd).wrapping_add(1 as size_t),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_kill_pane(mut wp: *mut window_pane) {
+pub unsafe fn server_kill_pane(mut wp: *mut window_pane) {
     let mut w: *mut window = (*wp).window as *mut window;
     if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
         server_kill_window(w, 1 as ::core::ffi::c_int);
@@ -305,8 +288,7 @@ pub unsafe extern "C" fn server_kill_pane(mut wp: *mut window_pane) {
         server_redraw_window(w);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::c_int) {
+pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     window_add_ref(
@@ -343,8 +325,7 @@ pub unsafe extern "C" fn server_kill_window(mut w: *mut window, mut renumber: ::
         b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_renumber_session(mut s: *mut session) {
+pub unsafe fn server_renumber_session(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if options_get_number(
         (*s).options,
@@ -361,8 +342,7 @@ pub unsafe extern "C" fn server_renumber_session(mut s: *mut session) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_renumber_all() {
+pub unsafe fn server_renumber_all() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
@@ -426,19 +406,14 @@ pub unsafe fn server_link_window(
     server_redraw_session_group(dst);
     Ok(())
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {
+pub unsafe fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {
     if session_detach(s, wl) != 0 {
         server_destroy_session_group(s);
     } else {
         server_redraw_session_group(s);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_destroy_pane(
-    mut wp: *mut window_pane,
-    mut notify: ::core::ffi::c_int,
-) {
+pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::ffi::c_int) {
     let mut w: *mut window = (*wp).window as *mut window;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -580,7 +555,7 @@ pub unsafe extern "C" fn server_destroy_pane(
         server_redraw_window(w);
     };
 }
-unsafe extern "C" fn server_destroy_session_group(mut s: *mut session) {
+unsafe fn server_destroy_session_group(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
@@ -632,8 +607,7 @@ fn server_newer_detached_session(s_loop: &session, s_out: Option<&session>) -> b
     }
     return server_newer_session(s_loop, s_out);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_destroy_session(mut s: *mut session) {
+pub unsafe fn server_destroy_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s_new: *mut session = ::core::ptr::null_mut::<session>();
     let mut cs_new: *mut session = ::core::ptr::null_mut::<session>();
@@ -686,8 +660,7 @@ pub unsafe extern "C" fn server_destroy_session(mut s: *mut session) {
     }
     recalculate_sizes();
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_check_unattached() {
+pub unsafe fn server_check_unattached() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current_block_4: u64;
@@ -807,8 +780,7 @@ pub unsafe extern "C" fn server_check_unattached() {
         s = sessions_after(&*std::ptr::addr_of!(sessions), &name);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_unzoom_window(mut w: *mut window) {
+pub unsafe fn server_unzoom_window(mut w: *mut window) {
     if window_unzoom(w, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
         server_redraw_window(w);
     }

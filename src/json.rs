@@ -207,8 +207,7 @@ pub unsafe fn json_parse(
     pctx.depth = 0 as ::core::ffi::c_int;
     json_parse_tokens(&tokens, &raw mut pctx)
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_find(
+pub unsafe fn json_find(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut json_node {
@@ -220,8 +219,7 @@ pub unsafe extern "C" fn json_find(
     }
     return json_fields_find(&(*jn).c2rust_unnamed.fields, CStr::from_ptr(key));
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_array_first(mut jn: *mut json_node) -> *mut json_node {
+pub unsafe fn json_array_first(mut jn: *mut json_node) -> *mut json_node {
     if (*jn).type_0 as ::core::ffi::c_uint
         != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -229,8 +227,7 @@ pub unsafe extern "C" fn json_array_first(mut jn: *mut json_node) -> *mut json_n
     }
     return json_members_first(&(*jn).c2rust_unnamed.members);
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_array_next(mut member: *mut json_node) -> *mut json_node {
+pub unsafe fn json_array_next(mut member: *mut json_node) -> *mut json_node {
     if member.is_null()
         || (*member).parent.is_null()
         || (*(*member).parent).type_0 as ::core::ffi::c_uint
@@ -240,8 +237,7 @@ pub unsafe extern "C" fn json_array_next(mut member: *mut json_node) -> *mut jso
     }
     return json_members_next(&(*(*member).parent).c2rust_unnamed.members, &*member);
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_get_string(
+pub unsafe fn json_get_string(
     mut jn: *mut json_node,
     mut s: *mut *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -253,11 +249,7 @@ pub unsafe extern "C" fn json_get_string(
     *s = (*jn).c2rust_unnamed.str_0;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_get_number(
-    mut jn: *mut json_node,
-    mut i: *mut int64_t,
-) -> ::core::ffi::c_int {
+pub unsafe fn json_get_number(mut jn: *mut json_node, mut i: *mut int64_t) -> ::core::ffi::c_int {
     if (*jn).type_0 as ::core::ffi::c_uint
         != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -266,8 +258,7 @@ pub unsafe extern "C" fn json_get_number(
     *i = (*jn).c2rust_unnamed.num;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_get_boolean(
+pub unsafe fn json_get_boolean(
     mut jn: *mut json_node,
     mut b: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -279,8 +270,7 @@ pub unsafe extern "C" fn json_get_boolean(
     *b = (*jn).c2rust_unnamed.boolean;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_get_object(
+pub unsafe fn json_get_object(
     mut jn: *mut json_node,
     mut o: *mut *mut json_node,
 ) -> ::core::ffi::c_int {
@@ -292,8 +282,7 @@ pub unsafe extern "C" fn json_get_object(
     *o = jn;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_get_array(
+pub unsafe fn json_get_array(
     mut jn: *mut json_node,
     mut a: *mut *mut json_node,
 ) -> ::core::ffi::c_int {
@@ -656,7 +645,7 @@ unsafe fn json_add_token(
         len,
     });
 }
-unsafe extern "C" fn json_create_node(
+unsafe fn json_create_node(
     mut parent: *mut json_node,
     mut type_0: json_node_type,
     mut key: *const ::core::ffi::c_char,
@@ -692,8 +681,7 @@ unsafe extern "C" fn json_create_node(
     }
     return node;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
+pub unsafe fn json_destroy_node(mut node: *mut json_node) {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut field1: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let _member: *mut json_node = ::core::ptr::null_mut::<json_node>();
@@ -732,10 +720,7 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
     }
     drop(Box::from_raw(node));
 }
-unsafe extern "C" fn json_assign_value(
-    mut node: *mut json_node,
-    mut val: *mut ::core::ffi::c_void,
-) {
+unsafe fn json_assign_value(mut node: *mut json_node, mut val: *mut ::core::ffi::c_void) {
     let mut child: *mut json_node = val as *mut json_node;
     match (*node).type_0 as ::core::ffi::c_uint {
         0 => {
@@ -843,7 +828,7 @@ unsafe fn json_parse_key(
     );
     return None;
 }
-unsafe extern "C" fn json_parse_object(
+unsafe fn json_parse_object(
     mut tok: *mut *mut json_token,
     mut pctx: *mut json_parse_ctx,
     mut key: *const ::core::ffi::c_char,
@@ -1001,7 +986,7 @@ unsafe extern "C" fn json_parse_object(
         }
     };
 }
-unsafe extern "C" fn json_parse_array(
+unsafe fn json_parse_array(
     mut tok: *mut *mut json_token,
     mut pctx: *mut json_parse_ctx,
     mut key: *const ::core::ffi::c_char,
@@ -1093,7 +1078,7 @@ unsafe extern "C" fn json_parse_array(
         }
     };
 }
-unsafe extern "C" fn json_parse_string(
+unsafe fn json_parse_string(
     mut tok: *mut *mut json_token,
     mut pctx: *mut json_parse_ctx,
     mut key: *const ::core::ffi::c_char,
@@ -1131,7 +1116,7 @@ unsafe extern "C" fn json_parse_string(
     );
     return ::core::ptr::null_mut::<json_node>();
 }
-unsafe extern "C" fn json_parse_number(
+unsafe fn json_parse_number(
     mut tok: *mut *mut json_token,
     mut pctx: *mut json_parse_ctx,
     mut key: *const ::core::ffi::c_char,
@@ -1168,7 +1153,7 @@ unsafe extern "C" fn json_parse_number(
     );
     return ::core::ptr::null_mut::<json_node>();
 }
-unsafe extern "C" fn json_parse_boolean(
+unsafe fn json_parse_boolean(
     mut tok: *mut *mut json_token,
     mut pctx: *mut json_parse_ctx,
     mut key: *const ::core::ffi::c_char,
@@ -1209,7 +1194,7 @@ unsafe extern "C" fn json_parse_boolean(
         &raw mut boolean as *mut ::core::ffi::c_void,
     );
 }
-unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node) {
+unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node) {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

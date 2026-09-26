@@ -118,8 +118,6 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-
-#[no_mangle]
 pub static mut cmd_table: [*const cmd_entry; 93] = unsafe {
     [
         &raw const cmd_attach_session_entry,
@@ -277,20 +275,16 @@ pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<C
     }
     Some(CString::new(bytes).expect("escaped argv contains no interior NUL"))
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_get_entry(mut cmd: *mut cmd) -> *const cmd_entry {
+pub unsafe fn cmd_get_entry(mut cmd: *mut cmd) -> *const cmd_entry {
     return (*cmd).entry;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_get_args(mut cmd: *mut cmd) -> *mut args {
+pub unsafe fn cmd_get_args(mut cmd: *mut cmd) -> *mut args {
     return (*cmd).args;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_get_group(mut cmd: *mut cmd) -> u_int {
+pub unsafe fn cmd_get_group(mut cmd: *mut cmd) -> u_int {
     return (*cmd).group;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_get_source(
+pub unsafe fn cmd_get_source(
     mut cmd: *mut cmd,
     mut file: *mut *const ::core::ffi::c_char,
     mut line: *mut u_int,
@@ -304,8 +298,7 @@ pub unsafe extern "C" fn cmd_get_source(
         *line = (*cmd).line;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_get_parse_flags(mut cmd: *mut cmd) -> ::core::ffi::c_int {
+pub unsafe fn cmd_get_parse_flags(mut cmd: *mut cmd) -> ::core::ffi::c_int {
     return (*cmd).parse_flags;
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
@@ -470,8 +463,7 @@ pub unsafe fn cmd_parse(
     (*cmd).line = line;
     return Ok(cmd);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
+pub unsafe fn cmd_free(mut cmd: *mut cmd) {
     args_free((*cmd).args);
     drop(Box::from_raw(cmd));
 }
@@ -506,8 +498,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     }
     CString::new(buf).expect("command print contains no interior NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
+pub unsafe fn cmd_list_new() -> *mut cmd_list {
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     cmdlist = Box::into_raw(Box::new(cmd_list::default()));
     (*cmdlist).references = 1 as ::core::ffi::c_int;
@@ -517,8 +508,7 @@ pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
     (*cmdlist).list = Box::into_raw(Box::new(Vec::<*mut cmd>::new()));
     return cmdlist;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_append(mut cmdlist: *mut cmd_list, mut cmd: *mut cmd) {
+pub unsafe fn cmd_list_append(mut cmdlist: *mut cmd_list, mut cmd: *mut cmd) {
     (*cmd).group = (*cmdlist).group;
     let commands = &mut *(*cmdlist).list;
     let mut memberships = cmd_list_memberships()
@@ -527,8 +517,7 @@ pub unsafe extern "C" fn cmd_list_append(mut cmdlist: *mut cmd_list, mut cmd: *m
     memberships.insert(cmd as usize, (cmdlist as usize, commands.len()));
     commands.push(cmd);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_append_all(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
+pub unsafe fn cmd_list_append_all(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
     if cmdlist == from {
         return;
     }
@@ -544,8 +533,7 @@ pub unsafe extern "C" fn cmd_list_append_all(mut cmdlist: *mut cmd_list, mut fro
     }
     destination.append(source);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
+pub unsafe fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
     if cmdlist != from {
         let destination = &mut *(*cmdlist).list;
         let source = &mut *(*from).list;
@@ -562,8 +550,7 @@ pub unsafe extern "C" fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mu
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = fresh8;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
+pub unsafe fn cmd_list_free(mut cmdlist: *mut cmd_list) {
     (*cmdlist).references -= 1;
     if (*cmdlist).references != 0 as ::core::ffi::c_int {
         return;
@@ -637,15 +624,13 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
 pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: ::core::ffi::c_int) -> CString {
     cmd_list_print_cstring(cmdlist, flags)
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {
+pub unsafe fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {
     return (*(*cmdlist).list)
         .first()
         .copied()
         .unwrap_or(::core::ptr::null_mut());
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_next(mut cmd: *mut cmd) -> *mut cmd {
+pub unsafe fn cmd_list_next(mut cmd: *mut cmd) -> *mut cmd {
     if cmd.is_null() {
         return ::core::ptr::null_mut();
     }
@@ -661,8 +646,7 @@ pub unsafe extern "C" fn cmd_list_next(mut cmd: *mut cmd) -> *mut cmd {
     }
     return ::core::ptr::null_mut();
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_all_have(
+pub unsafe fn cmd_list_all_have(
     mut cmdlist: *mut cmd_list,
     mut flag: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -673,8 +657,7 @@ pub unsafe extern "C" fn cmd_list_all_have(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_any_have(
+pub unsafe fn cmd_list_any_have(
     mut cmdlist: *mut cmd_list,
     mut flag: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -685,8 +668,7 @@ pub unsafe extern "C" fn cmd_list_any_have(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_mouse_at(
+pub unsafe fn cmd_mouse_at(
     mut wp: *mut window_pane,
     mut m: *mut mouse_event,
     mut xp: *mut u_int,
@@ -734,11 +716,7 @@ pub unsafe extern "C" fn cmd_mouse_at(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_mouse_window(
-    mut m: *mut mouse_event,
-    mut sp: *mut *mut session,
-) -> *mut winlink {
+pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut session) -> *mut winlink {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -765,8 +743,7 @@ pub unsafe extern "C" fn cmd_mouse_window(
     }
     return wl;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_mouse_pane(
+pub unsafe fn cmd_mouse_pane(
     mut m: *mut mouse_event,
     mut sp: *mut *mut session,
     mut wlp: *mut *mut winlink,

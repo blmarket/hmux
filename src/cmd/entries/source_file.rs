@@ -42,7 +42,6 @@ pub struct cmd_source_file_data {
 pub const GLOB_NOSPACE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const GLOB_NOMATCH: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 static mut cmd_source_file_depth: u_int = 0;
-#[no_mangle]
 pub static mut cmd_source_file_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"source-file\0" as *const u8 as *const ::core::ffi::c_char,
@@ -107,7 +106,7 @@ unsafe fn cmd_source_file_complete_cb(
     cmd_source_file_free_data(cdata);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_data) {
+unsafe fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_data) {
     let mut c: *mut client = (*cdata).client;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if cfg_finished == 0 {

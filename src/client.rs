@@ -85,9 +85,7 @@ static mut client_exitmessage: Option<Vec<u8>> = None;
 static mut client_exec_payload: Option<(CString, CString)> = None;
 static mut client_attached: ::core::ffi::c_int = 0;
 static mut client_files: client_files = client_files { storage: None };
-unsafe extern "C" fn client_get_lock(
-    mut lockfile: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
     log_debug(
         b"lock file is %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -117,7 +115,7 @@ unsafe extern "C" fn client_get_lock(
     log_debug(b"flock succeeded\0" as *const u8 as *const ::core::ffi::c_char);
     return lockfd;
 }
-unsafe extern "C" fn client_connect(
+unsafe fn client_connect(
     mut base: *mut event_base,
     mut path: *const ::core::ffi::c_char,
     mut flags: uint64_t,
@@ -242,7 +240,7 @@ unsafe extern "C" fn client_connect(
         }
     };
 }
-unsafe extern "C" fn client_exit_message() -> *const ::core::ffi::c_char {
+unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
     static mut msg: [::core::ffi::c_char; 256] = [0; 256];
     match client_exitreason as ::core::ffi::c_uint {
         1 => {
@@ -287,7 +285,7 @@ unsafe extern "C" fn client_exit_message() -> *const ::core::ffi::c_char {
     }
     return b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char;
 }
-unsafe extern "C" fn client_exit() {
+unsafe fn client_exit() {
     if file_write_left(&raw mut client_files) == 0 {
         proc_exit(client_proc);
     }
@@ -691,7 +689,7 @@ unsafe fn client_send_identify(
         0 as size_t,
     );
 }
-unsafe extern "C" fn client_exec(
+unsafe fn client_exec(
     mut shell: *const ::core::ffi::c_char,
     mut shellcmd: *const ::core::ffi::c_char,
 ) -> ! {
@@ -849,10 +847,7 @@ unsafe fn client_dispatch(message: crate::src::shared::process::PeerMessage<'_>)
         client_dispatch_wait(imsg);
     };
 }
-unsafe extern "C" fn client_dispatch_exit_message(
-    mut data: *mut ::core::ffi::c_char,
-    mut datalen: size_t,
-) {
+unsafe fn client_dispatch_exit_message(mut data: *mut ::core::ffi::c_char, mut datalen: size_t) {
     let mut retval: ::core::ffi::c_int = 0;
     if datalen < ::core::mem::size_of::<::core::ffi::c_int>() as usize && datalen != 0 as size_t {
         fatalx(b"bad MSG_EXIT size\0" as *const u8 as *const ::core::ffi::c_char);
@@ -877,7 +872,7 @@ unsafe extern "C" fn client_dispatch_exit_message(
         client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
     }
 }
-unsafe extern "C" fn client_dispatch_wait(mut imsg: *mut imsg) {
+unsafe fn client_dispatch_wait(mut imsg: *mut imsg) {
     let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut datalen: ssize_t = 0;
     static mut pledge_applied: ::core::ffi::c_int = 0;
@@ -1002,7 +997,7 @@ unsafe extern "C" fn client_dispatch_wait(mut imsg: *mut imsg) {
         }
     };
 }
-unsafe extern "C" fn client_dispatch_attached(mut imsg: *mut imsg) {
+unsafe fn client_dispatch_attached(mut imsg: *mut imsg) {
     let mut sigact: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },

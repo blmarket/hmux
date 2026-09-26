@@ -136,7 +136,7 @@ static mut cmd_find_pane_table: [[*const ::core::ffi::c_char; 2]; 16] = [
         ::core::ptr::null::<::core::ffi::c_char>(),
     ],
 ];
-unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
+unsafe fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     if c.is_null() {
@@ -179,10 +179,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
     }
     return wp;
 }
-unsafe extern "C" fn cmd_find_client_better(
-    mut c: *mut client,
-    mut than: *mut client,
-) -> ::core::ffi::c_int {
+unsafe fn cmd_find_client_better(mut c: *mut client, mut than: *mut client) -> ::core::ffi::c_int {
     if than.is_null() {
         return 1 as ::core::ffi::c_int;
     }
@@ -192,8 +189,7 @@ unsafe extern "C" fn cmd_find_client_better(
         ((*c).activity_time.tv_sec > (*than).activity_time.tv_sec) as ::core::ffi::c_int
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_best_client(mut s: *mut session) -> *mut client {
+pub unsafe fn cmd_find_best_client(mut s: *mut session) -> *mut client {
     let mut c_loop: *mut client = ::core::ptr::null_mut::<client>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if (*s).attached == 0 as u_int {
@@ -213,7 +209,7 @@ pub unsafe extern "C" fn cmd_find_best_client(mut s: *mut session) -> *mut clien
     }
     return c;
 }
-unsafe extern "C" fn cmd_find_session_better(
+unsafe fn cmd_find_session_better(
     mut s: *mut session,
     mut than: *mut session,
     mut flags: ::core::ffi::c_int,
@@ -236,7 +232,7 @@ unsafe extern "C" fn cmd_find_session_better(
         ((*s).activity_time.tv_sec > (*than).activity_time.tv_sec) as ::core::ffi::c_int
     };
 }
-unsafe extern "C" fn cmd_find_session_valid(mut s: *mut session) -> ::core::ffi::c_int {
+unsafe fn cmd_find_session_valid(mut s: *mut session) -> ::core::ffi::c_int {
     if session_alive(s) == 0
         || (*s).curw.is_null()
         || (*(*s).curw).window.is_null()
@@ -246,7 +242,7 @@ unsafe extern "C" fn cmd_find_session_valid(mut s: *mut session) -> ::core::ffi:
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn cmd_find_best_session(
+unsafe fn cmd_find_best_session(
     mut slist: *mut *mut session,
     mut ssize: u_int,
     mut flags: ::core::ffi::c_int,
@@ -283,9 +279,7 @@ unsafe extern "C" fn cmd_find_best_session(
     }
     return s;
 }
-unsafe extern "C" fn cmd_find_best_session_with_window(
-    mut fs: *mut cmd_find_state,
-) -> ::core::ffi::c_int {
+unsafe fn cmd_find_best_session_with_window(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
     let mut slist: Vec<*mut session> = Vec::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     log_debug(
@@ -319,9 +313,7 @@ unsafe extern "C" fn cmd_find_best_session_with_window(
     drop(slist);
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn cmd_find_best_winlink_with_window(
-    mut fs: *mut cmd_find_state,
-) -> ::core::ffi::c_int {
+unsafe fn cmd_find_best_winlink_with_window(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl_loop: *mut winlink = ::core::ptr::null_mut::<winlink>();
     log_debug(
@@ -350,7 +342,7 @@ unsafe extern "C" fn cmd_find_best_winlink_with_window(
     (*fs).idx = (*(*fs).wl).idx;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn cmd_find_map_table(
+unsafe fn cmd_find_map_table(
     mut table: *mut [*const ::core::ffi::c_char; 2],
     mut s: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -368,7 +360,7 @@ unsafe extern "C" fn cmd_find_map_table(
     }
     return s;
 }
-unsafe extern "C" fn cmd_find_get_session(
+unsafe fn cmd_find_get_session(
     mut fs: *mut cmd_find_state,
     mut session: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -445,7 +437,7 @@ unsafe extern "C" fn cmd_find_get_session(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn cmd_find_get_window(
+unsafe fn cmd_find_get_window(
     mut fs: *mut cmd_find_state,
     mut window: *const ::core::ffi::c_char,
     mut only: ::core::ffi::c_int,
@@ -476,7 +468,7 @@ unsafe extern "C" fn cmd_find_get_window(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn cmd_find_get_window_with_session(
+unsafe fn cmd_find_get_window_with_session(
     mut fs: *mut cmd_find_state,
     mut window: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -662,7 +654,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn cmd_find_get_pane(
+unsafe fn cmd_find_get_pane(
     mut fs: *mut cmd_find_state,
     mut pane: *const ::core::ffi::c_char,
     mut only: ::core::ffi::c_int,
@@ -695,7 +687,7 @@ unsafe extern "C" fn cmd_find_get_pane(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn cmd_find_get_pane_with_session(
+unsafe fn cmd_find_get_pane_with_session(
     mut fs: *mut cmd_find_state,
     mut pane: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -717,7 +709,7 @@ unsafe extern "C" fn cmd_find_get_pane_with_session(
     (*fs).w = (*(*fs).wl).window;
     return cmd_find_get_pane_with_window(fs, pane);
 }
-unsafe extern "C" fn cmd_find_get_pane_with_window(
+unsafe fn cmd_find_get_pane_with_window(
     mut fs: *mut cmd_find_state,
     mut pane: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -831,11 +823,7 @@ unsafe extern "C" fn cmd_find_get_pane_with_window(
     }
     return -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_clear_state(
-    mut fs: *mut cmd_find_state,
-    mut flags: ::core::ffi::c_int,
-) {
+pub unsafe fn cmd_find_clear_state(mut fs: *mut cmd_find_state, mut flags: ::core::ffi::c_int) {
     memset(
         fs as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -844,15 +832,13 @@ pub unsafe extern "C" fn cmd_find_clear_state(
     (*fs).flags = flags;
     (*fs).idx = -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_empty_state(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
+pub unsafe fn cmd_find_empty_state(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
     if (*fs).s.is_null() && (*fs).wl.is_null() && (*fs).w.is_null() && (*fs).wp.is_null() {
         return 1 as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
+pub unsafe fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if (*fs).s.is_null() || (*fs).wl.is_null() || (*fs).w.is_null() || (*fs).wp.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -875,21 +861,14 @@ pub unsafe extern "C" fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::
     }
     return window_has_pane((*fs).w, (*fs).wp);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_copy_state(
-    mut dst: *mut cmd_find_state,
-    mut src: *mut cmd_find_state,
-) {
+pub unsafe fn cmd_find_copy_state(mut dst: *mut cmd_find_state, mut src: *mut cmd_find_state) {
     (*dst).s = (*src).s;
     (*dst).wl = (*src).wl;
     (*dst).idx = (*src).idx;
     (*dst).w = (*src).w;
     (*dst).wp = (*src).wp;
 }
-unsafe extern "C" fn cmd_find_log_state(
-    mut prefix: *const ::core::ffi::c_char,
-    mut fs: *mut cmd_find_state,
-) {
+unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mut cmd_find_state) {
     if !(*fs).s.is_null() {
         log_debug(
             b"%s: s=$%u %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -943,8 +922,7 @@ unsafe extern "C" fn cmd_find_log_state(
         );
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_session(
+pub unsafe fn cmd_find_from_session(
     mut fs: *mut cmd_find_state,
     mut s: *mut session,
     mut flags: ::core::ffi::c_int,
@@ -959,8 +937,7 @@ pub unsafe extern "C" fn cmd_find_from_session(
         fs,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_winlink(
+pub unsafe fn cmd_find_from_winlink(
     mut fs: *mut cmd_find_state,
     mut wl: *mut winlink,
     mut flags: ::core::ffi::c_int,
@@ -975,8 +952,7 @@ pub unsafe extern "C" fn cmd_find_from_winlink(
         fs,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_session_window(
+pub unsafe fn cmd_find_from_session_window(
     mut fs: *mut cmd_find_state,
     mut s: *mut session,
     mut w: *mut window,
@@ -996,8 +972,7 @@ pub unsafe extern "C" fn cmd_find_from_session_window(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_window(
+pub unsafe fn cmd_find_from_window(
     mut fs: *mut cmd_find_state,
     mut w: *mut window,
     mut flags: ::core::ffi::c_int,
@@ -1019,8 +994,7 @@ pub unsafe extern "C" fn cmd_find_from_window(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_winlink_pane(
+pub unsafe fn cmd_find_from_winlink_pane(
     mut fs: *mut cmd_find_state,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -1037,8 +1011,7 @@ pub unsafe extern "C" fn cmd_find_from_winlink_pane(
         fs,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_pane(
+pub unsafe fn cmd_find_from_pane(
     mut fs: *mut cmd_find_state,
     mut wp: *mut window_pane,
     mut flags: ::core::ffi::c_int,
@@ -1053,8 +1026,7 @@ pub unsafe extern "C" fn cmd_find_from_pane(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_nothing(
+pub unsafe fn cmd_find_from_nothing(
     mut fs: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -1074,8 +1046,7 @@ pub unsafe extern "C" fn cmd_find_from_nothing(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_mouse(
+pub unsafe fn cmd_find_from_mouse(
     mut fs: *mut cmd_find_state,
     mut m: *mut mouse_event,
     mut flags: ::core::ffi::c_int,
@@ -1096,8 +1067,7 @@ pub unsafe extern "C" fn cmd_find_from_mouse(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_from_client(
+pub unsafe fn cmd_find_from_client(
     mut fs: *mut cmd_find_state,
     mut c: *mut client,
     mut flags: ::core::ffi::c_int,
@@ -1139,8 +1109,7 @@ pub unsafe extern "C" fn cmd_find_from_client(
     }
     return cmd_find_from_nothing(fs, flags);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_target(
+pub unsafe fn cmd_find_target(
     mut fs: *mut cmd_find_state,
     mut item: *mut cmdq_item,
     mut target: *const ::core::ffi::c_char,
@@ -1329,11 +1298,7 @@ pub unsafe extern "C" fn cmd_find_target(
                     b"{mouse}\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
             {
-                m = &raw mut (*(cmdq_get_event
-                    as unsafe extern "C" fn(*mut cmdq_item) -> *mut key_event)(
-                    item
-                ))
-                .m;
+                m = &raw mut (*cmdq_get_event(item)).m;
                 let mut current_block_56: u64;
                 match type_0 as ::core::ffi::c_uint {
                     0 => {
@@ -1671,7 +1636,7 @@ pub unsafe extern "C" fn cmd_find_target(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn cmd_find_current_client(
+unsafe fn cmd_find_current_client(
     mut item: *mut cmdq_item,
     mut quiet: ::core::ffi::c_int,
 ) -> *mut client {
@@ -1727,8 +1692,7 @@ unsafe extern "C" fn cmd_find_current_client(
     );
     return found;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find_client(
+pub unsafe fn cmd_find_client(
     mut item: *mut cmdq_item,
     mut target: *const ::core::ffi::c_char,
     mut quiet: ::core::ffi::c_int,

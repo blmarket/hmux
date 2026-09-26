@@ -11,8 +11,6 @@ use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::tmux::global_environ;
 use std::ffi::{CStr, CString};
-
-#[no_mangle]
 pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"show-environment\0" as *const u8 as *const ::core::ffi::c_char,
@@ -57,7 +55,7 @@ unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
     }
     CString::new(escaped).expect("environment value was truncated at its first NUL")
 }
-unsafe extern "C" fn cmd_show_environment_print(
+unsafe fn cmd_show_environment_print(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
     mut envent: *mut environ_entry,

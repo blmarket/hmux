@@ -325,20 +325,16 @@ unsafe fn environ_insert(
         std::collections::btree_map::Entry::Occupied(_) => drop(owned),
     }
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn environ_create() -> *mut environ {
+pub unsafe fn environ_create() -> *mut environ {
     Box::into_raw(Box::new(environ::default()))
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_free(mut env: *mut environ) {
+pub unsafe fn environ_free(mut env: *mut environ) {
     if env.is_null() {
         return;
     }
     drop(Box::from_raw(env));
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_first(mut env: *mut environ) -> *mut environ_entry {
+pub unsafe fn environ_first(mut env: *mut environ) -> *mut environ_entry {
     let storage = (*env)
         .entries
         .try_borrow_mut()
@@ -350,8 +346,7 @@ pub unsafe extern "C" fn environ_first(mut env: *mut environ) -> *mut environ_en
         .map(|owned| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_next(mut envent: *mut environ_entry) -> *mut environ_entry {
+pub unsafe fn environ_next(mut envent: *mut environ_entry) -> *mut environ_entry {
     if envent.is_null() {
         return std::ptr::null_mut();
     }
@@ -371,8 +366,7 @@ pub unsafe extern "C" fn environ_next(mut envent: *mut environ_entry) -> *mut en
         .map(|(_, owned)| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut environ) {
+pub unsafe fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut environ) {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     envent = environ_first(srcenv);
     while !envent.is_null() {
@@ -392,8 +386,7 @@ pub unsafe extern "C" fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut
         envent = environ_next(envent);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_find(
+pub unsafe fn environ_find(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut environ_entry {
@@ -407,7 +400,6 @@ pub unsafe extern "C" fn environ_find(
         .map(|owned| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
-#[no_mangle]
 pub unsafe extern "C" fn environ_set(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
@@ -437,11 +429,7 @@ pub unsafe extern "C" fn environ_set(
         environ_insert(&mut *env, CStr::from_ptr(name).to_owned(), flags, value);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_clear(
-    mut env: *mut environ,
-    mut name: *const ::core::ffi::c_char,
-) {
+pub unsafe fn environ_clear(mut env: *mut environ, mut name: *const ::core::ffi::c_char) {
     let inserted = {
         let mut storage = (*env)
             .entries
@@ -458,8 +446,7 @@ pub unsafe extern "C" fn environ_clear(
         environ_insert(&mut *env, CStr::from_ptr(name).to_owned(), 0, None);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_put(
+pub unsafe fn environ_put(
     mut env: *mut environ,
     mut var: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
@@ -479,11 +466,7 @@ pub unsafe extern "C" fn environ_put(
         value.as_ptr(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_unset(
-    mut env: *mut environ,
-    mut name: *const ::core::ffi::c_char,
-) {
+pub unsafe fn environ_unset(mut env: *mut environ, mut name: *const ::core::ffi::c_char) {
     let removed = (*env)
         .entries
         .try_borrow_mut()
@@ -495,12 +478,7 @@ pub unsafe extern "C" fn environ_unset(
         drop(removed);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_update(
-    mut oo: *mut options,
-    mut src: *mut environ,
-    mut dst: *mut environ,
-) {
+pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut dst: *mut environ) {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut envent1: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -548,8 +526,7 @@ pub unsafe extern "C" fn environ_update(
         a = options_array_next(a);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_push(mut env: *mut environ) {
+pub unsafe fn environ_push(mut env: *mut environ) {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let seed = xcalloc(
         1 as size_t,
@@ -575,7 +552,6 @@ pub unsafe extern "C" fn environ_push(mut env: *mut environ) {
     }
     drop(seed_owner);
 }
-#[no_mangle]
 pub unsafe extern "C" fn environ_log(
     mut env: *mut environ,
     mut fmt: *const ::core::ffi::c_char,
@@ -602,8 +578,7 @@ pub unsafe extern "C" fn environ_log(
         envent = environ_next(envent);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn environ_for_session(
+pub unsafe fn environ_for_session(
     mut s: *mut session,
     mut no_TERM: ::core::ffi::c_int,
 ) -> *mut environ {

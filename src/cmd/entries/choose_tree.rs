@@ -20,8 +20,6 @@ use crate::src::window_customize::window_customize_mode;
 use crate::src::window_panes::window_panes_mode;
 use crate::src::window_switch::window_switch_mode;
 use crate::src::window_tree::window_tree_mode;
-
-#[no_mangle]
 pub static mut cmd_choose_tree_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"choose-tree\0" as *const u8 as *const ::core::ffi::c_char,
@@ -54,7 +52,6 @@ pub static mut cmd_choose_tree_entry: cmd_entry = unsafe {
         ),
     }
 };
-#[no_mangle]
 pub static mut cmd_choose_client_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"choose-client\0" as *const u8 as *const ::core::ffi::c_char,
@@ -86,7 +83,6 @@ pub static mut cmd_choose_client_entry: cmd_entry = unsafe {
         ),
     }
 };
-#[no_mangle]
 pub static mut cmd_choose_buffer_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"choose-buffer\0" as *const u8 as *const ::core::ffi::c_char,
@@ -118,7 +114,6 @@ pub static mut cmd_choose_buffer_entry: cmd_entry = unsafe {
         ),
     }
 };
-#[no_mangle]
 pub static mut cmd_customize_mode_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"customize-mode\0" as *const u8 as *const ::core::ffi::c_char,
@@ -145,7 +140,6 @@ pub static mut cmd_customize_mode_entry: cmd_entry = unsafe {
         exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_switch_mode_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"switch-mode\0" as *const u8 as *const ::core::ffi::c_char,
@@ -172,7 +166,6 @@ pub static mut cmd_switch_mode_entry: cmd_entry = unsafe {
         exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_display_panes_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"display-panes\0" as *const u8 as *const ::core::ffi::c_char,

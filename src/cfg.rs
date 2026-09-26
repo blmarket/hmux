@@ -34,16 +34,12 @@ use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
-
-#[no_mangle]
 pub static mut cfg_client: *mut client = ::core::ptr::null::<client>() as *mut client;
-#[no_mangle]
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 #[cfg(test)]
 pub(crate) static CFG_TEST_LOCK: Mutex<()> = Mutex::new(());
 static mut cfg_item: *mut cmdq_item = ::core::ptr::null::<cmdq_item>() as *mut cmdq_item;
-#[no_mangle]
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 // Startup publishes the list before client_main can start a server. C readers
 // borrow the stable CString storage; the list is never mutated after publication.
@@ -77,8 +73,7 @@ unsafe fn cfg_done() -> cmd_retval {
     prompt_load_history();
     return CMD_RETURN_NORMAL;
 }
-#[no_mangle]
-pub unsafe extern "C" fn start_cfg() {
+pub unsafe fn start_cfg() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     c = clients.first();
@@ -111,8 +106,7 @@ pub unsafe extern "C" fn start_cfg() {
         ),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn load_cfg(
+pub unsafe fn load_cfg(
     mut path: *const ::core::ffi::c_char,
     mut c: *mut client,
     mut item: *mut cmdq_item,
@@ -212,8 +206,7 @@ pub unsafe extern "C" fn load_cfg(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn load_cfg_from_buffer(
+pub unsafe fn load_cfg_from_buffer(
     mut buf: *const ::core::ffi::c_void,
     mut len: size_t,
     mut path: *const ::core::ffi::c_char,
@@ -300,7 +293,6 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
 pub unsafe extern "C" fn cfg_add_cause(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
@@ -324,9 +316,7 @@ pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
     cfg_drain_causes(|cause| causes.push(cause.to_bytes().to_vec()));
     causes
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn cfg_print_causes(mut item: *mut cmdq_item) {
+pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
     let mut c: *mut client = cmdq_get_client(item);
     cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -344,8 +334,7 @@ pub unsafe extern "C" fn cfg_print_causes(mut item: *mut cmdq_item) {
         }
     });
 }
-#[no_mangle]
-pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
+pub unsafe fn cfg_show_causes(mut s: *mut session) {
     let mut c: *mut client = clients.first();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();

@@ -100,8 +100,7 @@ unsafe fn status_timer_callback(
         tv.tv_sec as ::core::ffi::c_int,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_timer_start(mut c: *mut client) {
+pub unsafe fn status_timer_start(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     if event_initialized(&(*c).status.timer) != 0 {
         event_del(&raw mut (*c).status.timer);
@@ -128,8 +127,7 @@ pub unsafe extern "C" fn status_timer_start(mut c: *mut client) {
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_timer_start_all() {
+pub unsafe fn status_timer_start_all() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -137,8 +135,7 @@ pub unsafe extern "C" fn status_timer_start_all() {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_update_cache(mut s: *mut session) {
+pub unsafe fn status_update_cache(mut s: *mut session) {
     (*s).statuslines = options_get_number(
         (*s).options,
         b"status\0" as *const u8 as *const ::core::ffi::c_char,
@@ -155,8 +152,7 @@ pub unsafe extern "C" fn status_update_cache(mut s: *mut session) {
         (*s).statusat = 1 as ::core::ffi::c_int;
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_at_line(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_at_line(mut c: *mut client) -> ::core::ffi::c_int {
     let mut s: *mut session = (*c).session;
     if (*c).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return -(1 as ::core::ffi::c_int);
@@ -166,8 +162,7 @@ pub unsafe extern "C" fn status_at_line(mut c: *mut client) -> ::core::ffi::c_in
     }
     return (*c).tty.sy.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_line_size(mut c: *mut client) -> u_int {
+pub unsafe fn status_line_size(mut c: *mut client) -> u_int {
     let mut s: *mut session = (*c).session;
     if (*c).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return 0 as u_int;
@@ -180,8 +175,7 @@ pub unsafe extern "C" fn status_line_size(mut c: *mut client) -> u_int {
     }
     return (*s).statuslines;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_line_at(mut c: *mut client) -> u_int {
+pub unsafe fn status_prompt_line_at(mut c: *mut client) -> u_int {
     let mut s: *mut session = (*c).session;
     let mut line: u_int = 0;
     let mut lines: u_int = 0;
@@ -198,12 +192,7 @@ pub unsafe extern "C" fn status_prompt_line_at(mut c: *mut client) -> u_int {
     }
     return line;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_get_range(
-    mut c: *mut client,
-    mut x: u_int,
-    mut y: u_int,
-) -> *mut style_range {
+pub unsafe fn status_get_range(mut c: *mut client, mut x: u_int, mut y: u_int) -> *mut style_range {
     let mut sl: *mut status_line = &raw mut (*c).status;
     if y as usize
         >= (::core::mem::size_of::<[style_line_entry; 5]>() as usize)
@@ -216,7 +205,7 @@ pub unsafe extern "C" fn status_get_range(
         x,
     );
 }
-unsafe extern "C" fn status_push_screen(mut c: *mut client) {
+unsafe fn status_push_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     if (*sl).active == &raw mut (*sl).screen {
         server_client_set_saved_status_screen(&mut *c, Box::new(screen::empty()));
@@ -224,7 +213,7 @@ unsafe extern "C" fn status_push_screen(mut c: *mut client) {
     }
     (*sl).references += 1;
 }
-unsafe extern "C" fn status_pop_screen(mut c: *mut client) {
+unsafe fn status_pop_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     (*sl).references -= 1;
     if (*sl).references == 0 as ::core::ffi::c_int {
@@ -232,8 +221,7 @@ unsafe extern "C" fn status_pop_screen(mut c: *mut client) {
         server_client_clear_saved_status_screen(&mut *c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_init(mut c: *mut client) {
+pub unsafe fn status_init(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -249,8 +237,7 @@ pub unsafe extern "C" fn status_init(mut c: *mut client) {
     screen_init(&raw mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
     (*sl).active = &raw mut (*sl).screen;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_free(mut c: *mut client) {
+pub unsafe fn status_free(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -273,8 +260,7 @@ pub unsafe extern "C" fn status_free(mut c: *mut client) {
     }
     screen_free(&raw mut (*sl).screen);
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut sle: *mut style_line_entry = ::core::ptr::null_mut::<style_line_entry>();
     let mut s: *mut session = (*c).session;
@@ -465,7 +451,6 @@ mod status_message_escape_tests {
         assert!(status_message_escape(c"").as_bytes().is_empty());
     }
 }
-#[no_mangle]
 pub unsafe extern "C" fn status_message_set(
     mut c: *mut client,
     mut delay: ::core::ffi::c_int,
@@ -539,8 +524,7 @@ pub unsafe extern "C" fn status_message_set(
     (*c).tty.flags |= TTY_NOCURSOR;
     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_message_clear(mut c: *mut client) {
+pub unsafe fn status_message_clear(mut c: *mut client) {
     if (*c).message_string.is_none() {
         return;
     }
@@ -551,11 +535,7 @@ pub unsafe extern "C" fn status_message_clear(mut c: *mut client) {
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
     status_pop_screen(c);
 }
-unsafe extern "C" fn status_message_area(
-    mut c: *mut client,
-    mut area_x: *mut u_int,
-    mut area_w: *mut u_int,
-) {
+unsafe fn status_message_area(mut c: *mut client, mut area_x: *mut u_int, mut area_w: *mut u_int) {
     let mut s: *mut session = (*c).session;
     let mut sy: *mut style = ::core::ptr::null_mut::<style>();
     let mut w: u_int = 0;
@@ -605,8 +585,7 @@ unsafe fn status_message_callback(
     let mut c: *mut client = data as *mut client;
     status_message_clear(c);
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -780,8 +759,7 @@ pub unsafe fn status_prompt_set(
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_clear(mut c: *mut client) {
+pub unsafe fn status_prompt_clear(mut c: *mut client) {
     if (*c).prompt.is_null() {
         return;
     }
@@ -791,8 +769,7 @@ pub unsafe extern "C" fn status_prompt_clear(mut c: *mut client) {
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
     status_pop_screen(c);
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_update(
+pub unsafe fn status_prompt_update(
     mut c: *mut client,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
@@ -803,7 +780,7 @@ pub unsafe extern "C" fn status_prompt_update(
     prompt_update((*c).prompt, msg, input);
     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
-unsafe extern "C" fn status_prompt_screen_line(mut c: *mut client) -> u_int {
+unsafe fn status_prompt_screen_line(mut c: *mut client) -> u_int {
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut n: u_int = 0;
     if options_get_number(
@@ -819,8 +796,7 @@ unsafe extern "C" fn status_prompt_screen_line(mut c: *mut client) -> u_int {
     }
     return (*tty).sy.wrapping_sub(1 as u_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -880,17 +856,11 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
     screen_free(&raw mut old_screen);
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_cursor(
-    mut c: *mut client,
-    mut cx: *mut u_int,
-    mut cy: *mut u_int,
-) {
+pub unsafe fn status_prompt_cursor(mut c: *mut client, mut cx: *mut u_int, mut cy: *mut u_int) {
     *cy = status_prompt_screen_line(c);
     *cx = (*c).status.prompt_cx;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_key(
+pub unsafe fn status_prompt_key(
     mut c: *mut client,
     mut key: key_code,
     mut m: *mut mouse_event,

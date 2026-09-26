@@ -16,8 +16,6 @@ use crate::src::shared::command::{
 use crate::src::shared::paste::paste_buffer;
 use crate::src::tty::tty_set_selection;
 use std::ffi::{CStr, CString};
-
-#[no_mangle]
 pub static mut cmd_set_buffer_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"set-buffer\0" as *const u8 as *const ::core::ffi::c_char,
@@ -44,7 +42,6 @@ pub static mut cmd_set_buffer_entry: cmd_entry = unsafe {
         exec: Some(cmd_set_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_delete_buffer_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"delete-buffer\0" as *const u8 as *const ::core::ffi::c_char,

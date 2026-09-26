@@ -38,8 +38,6 @@ use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
 use crate::src::window::{window_pane_destroy_ready, window_pane_exited};
-
-#[no_mangle]
 pub static mut cmd_pipe_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"pipe-pane\0" as *const u8 as *const ::core::ffi::c_char,

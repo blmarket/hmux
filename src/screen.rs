@@ -32,16 +32,10 @@ use crate::src::tty_acs::tty_acs_get;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
-unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
+unsafe fn screen_free_titles(mut s: *mut screen) {
     (*s).titles = VecDeque::new();
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_init(
-    mut s: *mut screen,
-    mut sx: u_int,
-    mut sy: u_int,
-    mut hlimit: u_int,
-) {
+pub unsafe fn screen_init(mut s: *mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
     (*s).grid = grid_create(sx, sy, hlimit);
     (*s).saved_grid = ::core::ptr::null_mut::<grid>();
     (*s).title = CString::default();
@@ -59,8 +53,7 @@ pub unsafe extern "C" fn screen_init(
     (*s).hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
     screen_reinit(s, 1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
+pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
     (*s).cx = 0 as u_int;
     (*s).cy = 0 as u_int;
     (*s).rupper = 0 as u_int;
@@ -92,16 +85,14 @@ pub unsafe extern "C" fn screen_reinit(mut s: *mut screen, mut check: ::core::ff
     screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
     screen_reset_hyperlinks(s);
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_reset_hyperlinks(mut s: *mut screen) {
+pub unsafe fn screen_reset_hyperlinks(mut s: *mut screen) {
     if (*s).hyperlinks.is_null() {
         (*s).hyperlinks = hyperlinks_init();
     } else {
         hyperlinks_reset((*s).hyperlinks);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
+pub unsafe fn screen_free(mut s: *mut screen) {
     drop((*s).sel.take());
     (*s).tabs = Vec::new();
     (*s).path = None;
@@ -121,8 +112,7 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
     (*s).saved_grid = std::ptr::null_mut();
     (*s).hyperlinks = std::ptr::null_mut();
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_reset_tabs(mut s: *mut screen) {
+pub unsafe fn screen_reset_tabs(mut s: *mut screen) {
     let bytes = ((*(*s).grid).sx as usize).div_ceil(8);
     (*s).tabs.clear();
     if (*s).tabs.try_reserve_exact(bytes).is_err() {
@@ -163,8 +153,7 @@ pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options) {
+pub unsafe fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -198,8 +187,7 @@ pub unsafe extern "C" fn screen_set_default_cursor(mut s: *mut screen, mut oo: *
         &raw mut (*s).default_mode,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_cursor_style(
+pub unsafe fn screen_set_cursor_style(
     mut style: u_int,
     mut cstyle: *mut screen_cursor_style,
     mut mode: *mut ::core::ffi::c_int,
@@ -235,15 +223,10 @@ pub unsafe extern "C" fn screen_set_cursor_style(
         _ => {}
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_cursor_colour(
-    mut s: *mut screen,
-    mut colour: ::core::ffi::c_int,
-) {
+pub unsafe fn screen_set_cursor_colour(mut s: *mut screen, mut colour: ::core::ffi::c_int) {
     (*s).ccolour = colour;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_title(
+pub unsafe fn screen_set_title(
     mut s: *mut screen,
     mut title: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
@@ -254,8 +237,7 @@ pub unsafe extern "C" fn screen_set_title(
     (*s).title = new_title;
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_path(
+pub unsafe fn screen_set_path(
     mut s: *mut screen,
     mut path: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
@@ -266,8 +248,7 @@ pub unsafe extern "C" fn screen_set_path(
     (*s).path = Some(new_path);
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
+pub unsafe fn screen_push_title(mut s: *mut screen) {
     log_debug(
         b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
         b"screen_push_title\0" as *const u8 as *const ::core::ffi::c_char,
@@ -280,8 +261,7 @@ pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
     }
     (*s).titles.push_front((*s).title.clone());
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
+pub unsafe fn screen_pop_title(mut s: *mut screen) {
     if (*s).titles.is_empty() {
         return;
     }
@@ -294,8 +274,7 @@ pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
         (*s).title = title;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_progress_bar(
+pub unsafe fn screen_set_progress_bar(
     mut s: *mut screen,
     mut pbs: progress_bar_state,
     mut p: ::core::ffi::c_int,
@@ -308,8 +287,7 @@ pub unsafe extern "C" fn screen_set_progress_bar(
         (*s).progress_bar.progress = p;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_resize_cursor(
+pub unsafe fn screen_resize_cursor(
     mut s: *mut screen,
     mut sx: u_int,
     mut sy: u_int,
@@ -373,8 +351,7 @@ pub unsafe extern "C" fn screen_resize_cursor(
         screen_write_make_list(s);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_resize(
+pub unsafe fn screen_resize(
     mut s: *mut screen,
     mut sx: u_int,
     mut sy: u_int,
@@ -389,7 +366,7 @@ pub unsafe extern "C" fn screen_resize(
         1 as ::core::ffi::c_int,
     );
 }
-unsafe extern "C" fn screen_resize_y(
+unsafe fn screen_resize_y(
     mut s: *mut screen,
     mut sy: u_int,
     mut eat_empty: ::core::ffi::c_int,
@@ -452,8 +429,7 @@ unsafe extern "C" fn screen_resize_y(
     (*s).rupper = 0 as u_int;
     (*s).rlower = (*(*s).grid).sy.wrapping_sub(1 as u_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_set_selection(
+pub unsafe fn screen_set_selection(
     mut s: *mut screen,
     mut sx: u_int,
     mut sy: u_int,
@@ -481,18 +457,15 @@ pub unsafe extern "C" fn screen_set_selection(
         (*s).sel = Some(Box::new(selection));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_clear_selection(mut s: *mut screen) {
+pub unsafe fn screen_clear_selection(mut s: *mut screen) {
     drop((*s).sel.take());
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_hide_selection(mut s: *mut screen) {
+pub unsafe fn screen_hide_selection(mut s: *mut screen) {
     if let Some(selection) = (*s).sel.as_mut() {
         selection.hidden = 1;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_check_selection(
+pub unsafe fn screen_check_selection(
     mut s: *mut screen,
     mut px: u_int,
     mut py: u_int,
@@ -598,8 +571,7 @@ pub unsafe extern "C" fn screen_check_selection(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_select_cell(
+pub unsafe fn screen_select_cell(
     mut s: *mut screen,
     mut dst: *mut grid_cell,
     mut src: *const grid_cell,
@@ -633,7 +605,7 @@ pub unsafe extern "C" fn screen_select_cell(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn screen_reflow(
+unsafe fn screen_reflow(
     mut s: *mut screen,
     mut new_x: u_int,
     mut cx: *mut u_int,
@@ -667,8 +639,7 @@ unsafe extern "C" fn screen_reflow(
         *cy = (*(*s).grid).hsize;
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_alternate_on(
+pub unsafe fn screen_alternate_on(
     mut s: *mut screen,
     mut gc: *mut grid_cell,
     mut cursor: ::core::ffi::c_int,
@@ -702,8 +673,7 @@ pub unsafe extern "C" fn screen_alternate_on(
     (*(*s).grid).flags &= !GRID_HISTORY;
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_alternate_off(
+pub unsafe fn screen_alternate_off(
     mut s: *mut screen,
     mut gc: *mut grid_cell,
     mut cursor: ::core::ffi::c_int,
@@ -759,10 +729,7 @@ pub unsafe extern "C" fn screen_alternate_off(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_mode_to_string(
-    mut mode: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn screen_mode_to_string(mut mode: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut tmp: [::core::ffi::c_char; 1024] = [0; 1024];
     if mode == 0 as ::core::ffi::c_int {
         return b"NONE\0" as *const u8 as *const ::core::ffi::c_char;
@@ -924,8 +891,7 @@ pub unsafe extern "C" fn screen_mode_to_string(
     }
     return &raw mut tmp as *mut ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn screen_print(
+pub unsafe fn screen_print(
     mut s: *mut screen,
     mut line: ::core::ffi::c_int,
 ) -> *const ::core::ffi::c_char {

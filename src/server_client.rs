@@ -212,8 +212,6 @@ impl ClientRegistry {
 }
 
 pub type clients = ClientRegistry;
-
-#[no_mangle]
 pub static mut clients: ClientRegistry = ClientRegistry::new();
 
 pub(crate) fn server_client_set_message(c: &mut client, message: Option<CString>) {
@@ -842,9 +840,7 @@ use crate::src::shared::window::{WINDOW_RESIZE, WINDOW_SIZE_LATEST, WINLINK_ALER
 
 pub const _PATH_TTY: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"/dev/tty\0") };
-
-#[no_mangle]
-pub unsafe extern "C" fn server_client_how_many() -> u_int {
+pub unsafe fn server_client_how_many() -> u_int {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0;
     n = 0 as u_int;
@@ -946,10 +942,7 @@ pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
     }
     server_redraw_client(c);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_ranges_is_empty(
-    mut r: *mut visible_ranges,
-) -> ::core::ffi::c_int {
+pub unsafe fn server_client_ranges_is_empty(mut r: *mut visible_ranges) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < (*r).used {
@@ -960,12 +953,10 @@ pub unsafe extern "C" fn server_client_ranges_is_empty(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_ensure_ranges(mut r: *mut visible_ranges, mut n: u_int) {
+pub unsafe fn server_client_ensure_ranges(mut r: *mut visible_ranges, mut n: u_int) {
     (*r).ensure(n);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_overlay_range(
+pub unsafe fn server_client_overlay_range(
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
@@ -1009,8 +1000,7 @@ pub unsafe extern "C" fn server_client_overlay_range(
     }
     (*r).used = 2 as u_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_int {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     envent = environ_find(
@@ -1042,8 +1032,7 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_set_key_table(
+pub unsafe fn server_client_set_key_table(
     mut c: *mut client,
     mut name: *const ::core::ffi::c_char,
 ) {
@@ -1057,7 +1046,7 @@ pub unsafe extern "C" fn server_client_set_key_table(
         fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
 }
-unsafe extern "C" fn server_client_key_table_activity_diff(mut c: *mut client) -> uint64_t {
+unsafe fn server_client_key_table_activity_diff(mut c: *mut client) -> uint64_t {
     let mut diff: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -1075,10 +1064,7 @@ unsafe extern "C" fn server_client_key_table_activity_diff(mut c: *mut client) -
                 .wrapping_div(1000 as ::core::ffi::c_ulonglong),
         ) as uint64_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_get_key_table(
-    mut c: *mut client,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn server_client_get_key_table(mut c: *mut client) -> *const ::core::ffi::c_char {
     let mut s: *mut session = (*c).session;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if s.is_null() {
@@ -1093,7 +1079,7 @@ pub unsafe extern "C" fn server_client_get_key_table(
     }
     return name;
 }
-unsafe extern "C" fn server_client_is_default_key_table(
+unsafe fn server_client_is_default_key_table(
     mut c: *mut client,
     mut table: *mut key_table,
 ) -> ::core::ffi::c_int {
@@ -1102,8 +1088,7 @@ unsafe extern "C" fn server_client_is_default_key_table(
         server_client_get_key_table(c),
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
+pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
@@ -1235,7 +1220,7 @@ pub unsafe fn server_client_open(mut c: *mut client) -> Result<(), CString> {
     server_client_update_theme_colours(c);
     Ok(())
 }
-unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
+unsafe fn server_client_attached_lost(mut c: *mut client) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
@@ -1273,7 +1258,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
         w = windows_next(&*w);
     }
 }
-unsafe extern "C" fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
+unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -1343,11 +1328,7 @@ unsafe extern "C" fn server_client_fire_session_changed(mut c: *mut client, mut 
         ep,
     );
 }
-unsafe extern "C" fn server_client_fire_resized(
-    mut c: *mut client,
-    mut old_sx: u_int,
-    mut old_sy: u_int,
-) {
+unsafe fn server_client_fire_resized(mut c: *mut client, mut old_sx: u_int, mut old_sy: u_int) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -1425,8 +1406,7 @@ unsafe extern "C" fn server_client_fire_resized(
         ep,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_set_session(mut c: *mut client, mut s: *mut session) {
+pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session) {
     let mut old: *mut session = (*c).session;
     if !s.is_null() && !(*c).session.is_null() && (*c).session != s {
         (*c).last_session = (*c).session;
@@ -1455,8 +1435,7 @@ pub unsafe extern "C" fn server_client_set_session(mut c: *mut client, mut s: *m
     server_check_unattached();
     server_update_socket();
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
+pub unsafe fn server_client_lost(mut c: *mut client) {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut cf1: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if cfg_client == c {
@@ -1543,8 +1522,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_check_unattached();
     server_update_socket();
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_unref(mut c: *mut client) {
+pub unsafe fn server_client_unref(mut c: *mut client) {
     log_debug(
         b"unref client %p (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
         c,
@@ -1585,8 +1563,7 @@ unsafe fn server_client_free(
         clients.release(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_suspend(mut c: *mut client) {
+pub unsafe fn server_client_suspend(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     if s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
@@ -1601,8 +1578,7 @@ pub unsafe extern "C" fn server_client_suspend(mut c: *mut client) {
         0 as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_detach(mut c: *mut client, mut msgtype: msgtype) {
+pub unsafe fn server_client_detach(mut c: *mut client, mut msgtype: msgtype) {
     let mut s: *mut session = (*c).session;
     if s.is_null() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
         return;
@@ -1615,11 +1591,7 @@ pub unsafe extern "C" fn server_client_detach(mut c: *mut client, mut msgtype: m
         Some(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_owned()),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_exec(
-    mut c: *mut client,
-    mut cmd: *const ::core::ffi::c_char,
-) {
+pub unsafe fn server_client_exec(mut c: *mut client, mut cmd: *const ::core::ffi::c_char) {
     let mut s: *mut session = (*c).session;
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if *cmd as ::core::ffi::c_int == '\0' as i32 {
@@ -1652,7 +1624,7 @@ pub unsafe extern "C" fn server_client_exec(
         msg.len(),
     );
 }
-unsafe extern "C" fn server_client_in_scrollbar_area(
+unsafe fn server_client_in_scrollbar_area(
     mut wp: *mut window_pane,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
@@ -1684,7 +1656,7 @@ unsafe extern "C" fn server_client_in_scrollbar_area(
     }
     return (px >= start && px <= end) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_update_scrollbar_hover(
+unsafe fn server_client_update_scrollbar_hover(
     mut c: *mut client,
     mut type_0: ::core::ffi::c_int,
     mut px: ::core::ffi::c_int,
@@ -1709,7 +1681,7 @@ unsafe extern "C" fn server_client_update_scrollbar_hover(
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn server_client_check_mouse_in_pane(
+unsafe fn server_client_check_mouse_in_pane(
     mut wp: *mut window_pane,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
@@ -1890,10 +1862,7 @@ unsafe extern "C" fn server_client_check_mouse_in_pane(
     }
     return KEYC_MOUSE_LOCATION_NOWHERE;
 }
-unsafe extern "C" fn server_client_check_mouse(
-    mut c: *mut client,
-    mut event: *mut key_event,
-) -> key_code {
+unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_event) -> key_code {
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut s: *mut session = (*c).session;
@@ -2492,8 +2461,7 @@ unsafe extern "C" fn server_client_check_mouse(
     }
     return key;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_update_theme_colours(mut c: *mut client) {
+pub unsafe fn server_client_update_theme_colours(mut c: *mut client) {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2554,7 +2522,7 @@ pub unsafe extern "C" fn server_client_update_theme_colours(mut c: *mut client) 
     }
     format_free(ft);
 }
-unsafe extern "C" fn server_client_is_bracket_paste(
+unsafe fn server_client_is_bracket_paste(
     mut c: *mut client,
     mut key: key_code,
 ) -> ::core::ffi::c_int {
@@ -2586,7 +2554,7 @@ unsafe extern "C" fn server_client_is_bracket_paste(
     return ((*c).flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0)
         as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_int {
+unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_int {
     let mut s: *mut session = (*c).session;
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -2638,7 +2606,7 @@ unsafe extern "C" fn server_client_is_assume_paste(mut c: *mut client) -> ::core
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_update_latest(mut c: *mut client) {
+unsafe fn server_client_update_latest(mut c: *mut client) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     if (*c).session.is_null() {
         return;
@@ -2660,10 +2628,7 @@ unsafe extern "C" fn server_client_update_latest(mut c: *mut client) {
         c,
     );
 }
-unsafe extern "C" fn server_client_repeat_time(
-    mut c: *mut client,
-    mut bd: *mut key_binding,
-) -> u_int {
+unsafe fn server_client_repeat_time(mut c: *mut client, mut bd: *mut key_binding) -> u_int {
     let mut s: *mut session = (*c).session;
     let mut repeat: u_int = 0;
     let mut initial: u_int = 0;
@@ -2688,7 +2653,7 @@ unsafe extern "C" fn server_client_repeat_time(
     }
     return repeat;
 }
-unsafe extern "C" fn server_client_handle_dead_key(
+unsafe fn server_client_handle_dead_key(
     mut wp: *mut window_pane,
     mut key: key_code,
 ) -> ::core::ffi::c_int {
@@ -3187,7 +3152,7 @@ impl Drop for QueuedKeyEvent {
     }
 }
 
-unsafe extern "C" fn server_client_handle_menu_key(
+unsafe fn server_client_handle_menu_key(
     mut c: *mut client,
     mut event: *mut key_event,
 ) -> ::core::ffi::c_int {
@@ -3395,8 +3360,7 @@ pub unsafe fn server_client_handle_key_after(
 ) -> ::core::ffi::c_int {
     return server_client_handle_key0(c, event, after, next);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_loop() {
+pub unsafe fn server_client_loop() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -3456,7 +3420,7 @@ pub unsafe extern "C" fn server_client_loop() {
         w = windows_next(&*w);
     }
 }
-unsafe extern "C" fn server_client_check_window_resize(mut w: *mut window) {
+unsafe fn server_client_check_window_resize(mut w: *mut window) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*w).flags & WINDOW_RESIZE != 0 {
         return;
@@ -3497,7 +3461,7 @@ unsafe fn server_client_resize_timer(
     );
     event_del(&raw mut (*wp).resize_timer);
 }
-unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
+unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 250000 as __suseconds_t,
@@ -3580,7 +3544,7 @@ unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     }
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);
 }
-unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
+unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
     let mut evb: *mut evbuffer = (*(*wp).event).input;
     let mut minimum: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -3685,7 +3649,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
         bufferevent_enable((*wp).event, EV_READ as ::core::ffi::c_short);
     };
 }
-unsafe extern "C" fn server_client_prompt_cursor(
+unsafe fn server_client_prompt_cursor(
     mut c: *mut client,
     mut wp: *mut window_pane,
     mut mode: *mut ::core::ffi::c_int,
@@ -3737,7 +3701,7 @@ unsafe extern "C" fn server_client_prompt_cursor(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
+unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut wp: *mut window_pane = (*w).active;
@@ -3940,7 +3904,7 @@ unsafe fn server_client_click_timer(
     }
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
-unsafe extern "C" fn server_client_start_exit_timer(mut c: *mut client) {
+unsafe fn server_client_start_exit_timer(mut c: *mut client) {
     let mut tv: timeval = timeval {
         tv_sec: 10 as __time_t,
         tv_usec: 0,
@@ -3983,7 +3947,7 @@ unsafe fn server_client_exit_timer(
         server_client_check_exit(c, 1 as ::core::ffi::c_int);
     }
 }
-unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c_int) {
+unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c_int) {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut name: *const ::core::ffi::c_char = ((*c).exit_session)
         .as_ref()
@@ -4067,7 +4031,7 @@ unsafe fn server_client_redraw_timer(
 ) {
     log_debug(b"redraw timer fired\0" as *const u8 as *const ::core::ffi::c_char);
 }
-unsafe extern "C" fn server_client_check_modes(mut c: *mut client) {
+unsafe fn server_client_check_modes(mut c: *mut client) {
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -4086,7 +4050,7 @@ unsafe extern "C" fn server_client_check_modes(mut c: *mut client) {
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut s: *mut session = (*c).session;
     let mut w: *mut window = (*(*s).curw).window;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -4102,7 +4066,7 @@ unsafe extern "C" fn server_client_any_pane_redraw(mut c: *mut client) -> ::core
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
+unsafe fn server_client_check_redraw(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut w: *mut window = (*(*s).curw).window;
@@ -4280,7 +4244,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         (*c).redraw,
     );
 }
-unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
+unsafe fn server_client_set_title(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -4313,7 +4277,7 @@ unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
     }
     format_free(ft);
 }
-unsafe extern "C" fn server_client_set_path(mut c: *mut client) {
+unsafe fn server_client_set_path(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     if (*s).curw.is_null() || (*(*(*s).curw).window).active.is_null() {
         return;
@@ -4329,7 +4293,7 @@ unsafe extern "C" fn server_client_set_path(mut c: *mut client) {
         tty_set_path(&raw mut (*c).tty, path.as_ptr());
     }
 }
-unsafe extern "C" fn server_client_set_progress_bar(mut c: *mut client) {
+unsafe fn server_client_set_progress_bar(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     let mut pane_pb: *mut progress_bar = ::core::ptr::null_mut::<progress_bar>();
     if (*s).curw.is_null() || (*(*(*s).curw).window).active.is_null() {
@@ -4549,7 +4513,7 @@ unsafe fn server_client_command_done(mut item: *mut cmdq_item) -> cmd_retval {
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn server_client_dispatch_command(
+unsafe fn server_client_dispatch_command(
     mut c: *mut client,
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {
@@ -4660,7 +4624,7 @@ unsafe extern "C" fn server_client_dispatch_command(
     (*c).flags |= CLIENT_EXIT as uint64_t;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_dispatch_identify(
+unsafe fn server_client_dispatch_identify(
     mut c: *mut client,
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {
@@ -4908,7 +4872,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_dispatch_shell(mut c: *mut client) -> ::core::ffi::c_int {
+unsafe fn server_client_dispatch_shell(mut c: *mut client) -> ::core::ffi::c_int {
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     shell = options_get_string(
         global_s_options,
@@ -4927,8 +4891,7 @@ unsafe extern "C" fn server_client_dispatch_shell(mut c: *mut client) -> ::core:
     proc_kill_peer((*c).peer);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_get_cwd(
+pub unsafe fn server_client_get_cwd(
     mut c: *mut client,
     mut s: *mut session,
 ) -> *const ::core::ffi::c_char {
@@ -4963,7 +4926,7 @@ pub unsafe extern "C" fn server_client_get_cwd(
     }
     return b"/\0" as *const u8 as *const ::core::ffi::c_char;
 }
-unsafe extern "C" fn server_client_control_flags(
+unsafe fn server_client_control_flags(
     mut c: *mut client,
     mut next: *const ::core::ffi::c_char,
 ) -> uint64_t {
@@ -5007,11 +4970,7 @@ unsafe extern "C" fn server_client_control_flags(
     }
     return 0 as uint64_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_set_flags(
-    mut c: *mut client,
-    mut flags: *const ::core::ffi::c_char,
-) {
+pub unsafe fn server_client_set_flags(mut c: *mut client, mut flags: *const ::core::ffi::c_char) {
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: uint64_t = 0;
@@ -5085,8 +5044,7 @@ pub unsafe extern "C" fn server_client_set_flags(
         ::core::mem::size_of::<uint64_t>() as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_get_flags(mut c: *mut client) -> *const ::core::ffi::c_char {
+pub unsafe fn server_client_get_flags(mut c: *mut client) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 256] = [0; 256];
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
@@ -5186,8 +5144,7 @@ pub unsafe extern "C" fn server_client_get_flags(mut c: *mut client) -> *const :
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_remove_pane(mut wp: *mut window_pane) {
+pub unsafe fn server_client_remove_pane(mut wp: *mut window_pane) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -5199,8 +5156,7 @@ pub unsafe extern "C" fn server_client_remove_pane(mut wp: *mut window_pane) {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_print(
+pub unsafe fn server_client_print(
     mut c: *mut client,
     mut parse: ::core::ffi::c_int,
     mut evb: *mut evbuffer,
@@ -5314,7 +5270,7 @@ pub unsafe extern "C" fn server_client_print(
         }
     }
 }
-unsafe extern "C" fn server_client_report_theme(mut c: *mut client, mut theme: client_theme) {
+unsafe fn server_client_report_theme(mut c: *mut client, mut theme: client_theme) {
     let mut old: client_theme = (*c).theme;
     if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
         (*c).theme = THEME_LIGHT;

@@ -113,7 +113,7 @@ pub struct window_tree_itemdata {
     pub pane: ::core::ffi::c_int,
 }
 #[inline]
-unsafe extern "C" fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -204,7 +204,6 @@ static mut window_tree_menu_items: [menu_item; 13] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-#[no_mangle]
 pub static mut window_tree_mode: window_mode = unsafe {
     window_mode {
         name: c"tree-mode",
@@ -294,7 +293,7 @@ static mut window_tree_session_info_lines: [*const ::core::ffi::c_char; 9] = [
     b"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?session_attached,#[fg=themegreen],#[fg=themelightgrey]}attached#[default] #{?session_grouped,#[fg=themegreen],#[fg=themelightgrey]}grouped#[default] #{?session_marked,#[fg=themegreen],#[fg=themelightgrey]}marked#[default] #{?session_bell_flag,#[fg=themegreen],#[fg=themelightgrey]}bell#[default] #{?session_activity_flag,#[fg=themegreen],#[fg=themelightgrey]}activity#[default] #{?session_silence_flag,#[fg=themegreen],#[fg=themelightgrey]}silence#[default]\0"
         as *const u8 as *const ::core::ffi::c_char,
 ];
-unsafe extern "C" fn window_tree_pull_item(
+unsafe fn window_tree_pull_item(
     mut item: *mut window_tree_itemdata,
     mut sp: *mut *mut session,
     mut wlp: *mut *mut winlink,
@@ -334,9 +333,7 @@ unsafe extern "C" fn window_tree_pull_item(
         return;
     }
 }
-unsafe extern "C" fn window_tree_add_item(
-    mut data: *mut window_tree_modedata,
-) -> *mut window_tree_itemdata {
+unsafe fn window_tree_add_item(mut data: *mut window_tree_modedata) -> *mut window_tree_itemdata {
     (*data).item_list.push(Box::new(window_tree_itemdata {
         type_0: 0,
         session: 0,
@@ -345,7 +342,7 @@ unsafe extern "C" fn window_tree_add_item(
     }));
     (*data).item_list.last_mut().unwrap().as_mut() as *mut window_tree_itemdata
 }
-unsafe extern "C" fn window_tree_remove_last_item(
+unsafe fn window_tree_remove_last_item(
     data: *mut window_tree_modedata,
     item: *mut window_tree_itemdata,
     mti: *mut mode_tree_item,
@@ -360,7 +357,7 @@ unsafe extern "C" fn window_tree_remove_last_item(
     mode_tree_remove((*data).data, mti);
     (*data).item_list.pop();
 }
-unsafe extern "C" fn window_tree_build_pane(
+unsafe fn window_tree_build_pane(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -399,7 +396,7 @@ unsafe extern "C" fn window_tree_build_pane(
     ) as *mut mode_tree_item;
     mode_tree_align(mti, 1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_tree_filter_pane(
+unsafe fn window_tree_filter_pane(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -420,7 +417,7 @@ unsafe extern "C" fn window_tree_filter_pane(
     result = format_true(cp.as_ptr());
     return result;
 }
-unsafe extern "C" fn window_tree_build_window(
+unsafe fn window_tree_build_window(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut modedata: *mut ::core::ffi::c_void,
@@ -498,7 +495,7 @@ unsafe extern "C" fn window_tree_build_window(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_tree_build_session(
+unsafe fn window_tree_build_session(
     mut s: *mut session,
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
@@ -636,7 +633,7 @@ unsafe fn window_tree_build(
         0 | _ => {}
     };
 }
-unsafe extern "C" fn window_tree_draw_label(
+unsafe fn window_tree_draw_label(
     mut ctx: *mut screen_write_ctx,
     mut px: u_int,
     mut py: u_int,
@@ -716,7 +713,7 @@ unsafe extern "C" fn window_tree_draw_label(
         0 as ::core::ffi::c_int,
     );
 }
-unsafe extern "C" fn window_tree_border_cell(
+unsafe fn window_tree_border_cell(
     mut gc: *mut grid_cell,
     mut oo: *mut options,
     mut ft: *mut format_tree,
@@ -733,7 +730,7 @@ unsafe extern "C" fn window_tree_border_cell(
         ft,
     );
 }
-unsafe extern "C" fn window_tree_draw_session(
+unsafe fn window_tree_draw_session(
     mut data: *mut window_tree_modedata,
     mut s: *mut session,
     mut ctx: *mut screen_write_ctx,
@@ -1010,7 +1007,7 @@ unsafe extern "C" fn window_tree_draw_session(
         wl = winlinks_next(&*wl);
     }
 }
-unsafe extern "C" fn window_tree_draw_window(
+unsafe fn window_tree_draw_window(
     mut data: *mut window_tree_modedata,
     mut s: *mut session,
     mut wl: *mut winlink,
@@ -1291,7 +1288,7 @@ unsafe extern "C" fn window_tree_draw_window(
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn window_tree_draw_info(
+unsafe fn window_tree_draw_info(
     mut data: *mut window_tree_modedata,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
@@ -1850,7 +1847,7 @@ unsafe fn window_tree_init(
     (*data).type_0 = WINDOW_TREE_NONE;
     return s;
 }
-unsafe extern "C" fn window_tree_destroy(mut data: *mut window_tree_modedata) {
+unsafe fn window_tree_destroy(mut data: *mut window_tree_modedata) {
     (*data).references -= 1;
     if (*data).references != 0 as ::core::ffi::c_int {
         return;
@@ -2130,7 +2127,7 @@ unsafe fn window_tree_kill_tagged_callback(
     window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_tree_mouse(
+unsafe fn window_tree_mouse(
     mut data: *mut window_tree_modedata,
     mut key: key_code,
     mut x: u_int,

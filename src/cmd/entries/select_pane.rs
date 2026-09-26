@@ -42,8 +42,6 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_INPUTOFF, PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
-
-#[no_mangle]
 pub static mut cmd_select_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"select-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -70,7 +68,6 @@ pub static mut cmd_select_pane_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_last_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"last-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -96,7 +93,7 @@ pub static mut cmd_last_pane_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe extern "C" fn cmd_select_pane_redraw(mut w: *mut window) {
+unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
@@ -115,7 +112,7 @@ unsafe extern "C" fn cmd_select_pane_redraw(mut w: *mut window) {
         c = clients.next(c);
     }
 }
-unsafe extern "C" fn cmd_select_pane_marked_pane(
+unsafe fn cmd_select_pane_marked_pane(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

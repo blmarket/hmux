@@ -623,29 +623,19 @@ static mut tty_acs_rounded_borders_list: [utf8_data; 13] = unsafe {
         },
     ]
 };
-#[no_mangle]
-pub unsafe extern "C" fn tty_acs_double_borders(
-    mut cell_type: ::core::ffi::c_int,
-) -> *const utf8_data {
+pub unsafe fn tty_acs_double_borders(mut cell_type: ::core::ffi::c_int) -> *const utf8_data {
     return (&raw const tty_acs_double_borders_list as *const utf8_data).offset(cell_type as isize)
         as *const utf8_data;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_acs_heavy_borders(
-    mut cell_type: ::core::ffi::c_int,
-) -> *const utf8_data {
+pub unsafe fn tty_acs_heavy_borders(mut cell_type: ::core::ffi::c_int) -> *const utf8_data {
     return (&raw const tty_acs_heavy_borders_list as *const utf8_data).offset(cell_type as isize)
         as *const utf8_data;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_acs_rounded_borders(
-    mut cell_type: ::core::ffi::c_int,
-) -> *const utf8_data {
+pub unsafe fn tty_acs_rounded_borders(mut cell_type: ::core::ffi::c_int) -> *const utf8_data {
     return (&raw const tty_acs_rounded_borders_list as *const utf8_data).offset(cell_type as isize)
         as *const utf8_data;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_acs_needed(mut tty: *mut tty) -> ::core::ffi::c_int {
+pub unsafe fn tty_acs_needed(mut tty: *mut tty) -> ::core::ffi::c_int {
     if tty.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -659,11 +649,7 @@ pub unsafe extern "C" fn tty_acs_needed(mut tty: *mut tty) -> ::core::ffi::c_int
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_acs_get(
-    mut tty: *mut tty,
-    mut ch: u_char,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn tty_acs_get(mut tty: *mut tty, mut ch: u_char) -> *const ::core::ffi::c_char {
     let mut entry: *const tty_acs_entry = ::core::ptr::null::<tty_acs_entry>();
     if tty_acs_needed(tty) != 0 {
         if (*(*tty).term).acs[ch as usize][0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
@@ -686,8 +672,7 @@ pub unsafe extern "C" fn tty_acs_get(
     }
     return (*entry).string.as_ptr();
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_acs_reverse_get(
+pub unsafe fn tty_acs_reverse_get(
     _tty: *mut tty,
     mut s: *const ::core::ffi::c_char,
     mut slen: size_t,

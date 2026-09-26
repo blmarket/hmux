@@ -243,9 +243,8 @@ pub struct msgbuf {
     pub rbufs: ibufqueue,
     pub rbuf: *mut ::core::ffi::c_char,
     pub rpmsg: *mut OwnedIbuf,
-    pub readhdr: Option<
-        Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>)>,
-    >,
+    pub readhdr:
+        Option<Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>)>>,
     pub roff: size_t,
     pub hdrsize: size_t,
 }

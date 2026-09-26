@@ -3,9 +3,7 @@ use crate::src::ffi::libc::{getpid, snprintf};
 use crate::src::log::fatal;
 use crate::src::shared::abi::*;
 use std::ffi::CStr;
-
-#[no_mangle]
-pub unsafe extern "C" fn getdtablecount() -> ::core::ffi::c_int {
+pub unsafe fn getdtablecount() -> ::core::ffi::c_int {
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut n: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if snprintf(

@@ -3,7 +3,6 @@ use crate::src::ffi::libc::{prctl, snprintf, strrchr, vsnprintf};
 use crate::src::shared::abi::*;
 
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-#[no_mangle]
 pub unsafe extern "C" fn setproctitle(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
     let mut title: [::core::ffi::c_char; 16] = [0; 16];
     let mut name: [::core::ffi::c_char; 16] = [0; 16];

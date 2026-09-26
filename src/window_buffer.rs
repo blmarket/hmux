@@ -92,7 +92,7 @@ pub struct window_buffer_editdata {
 }
 
 #[inline]
-unsafe extern "C" fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
@@ -175,7 +175,6 @@ static mut window_buffer_menu_items: [menu_item; 12] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-#[no_mangle]
 pub static mut window_buffer_mode: window_mode = unsafe {
     window_mode {
         name: c"buffer-mode",
@@ -367,7 +366,7 @@ unsafe fn window_buffer_draw(
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn window_buffer_find(
+unsafe fn window_buffer_find(
     mut data: *const ::core::ffi::c_void,
     mut datalen: size_t,
     mut find: *const ::core::ffi::c_void,
@@ -735,10 +734,10 @@ unsafe fn window_buffer_do_paste(
         );
     }
 }
-unsafe extern "C" fn window_buffer_finish_edit(ed: *mut window_buffer_editdata) {
+unsafe fn window_buffer_finish_edit(ed: *mut window_buffer_editdata) {
     drop(Box::from_raw(ed));
 }
-unsafe extern "C" fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
+unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -913,7 +912,7 @@ unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_
     }
     window_buffer_finish_edit(ed);
 }
-unsafe extern "C" fn window_buffer_start_edit(
+unsafe fn window_buffer_start_edit(
     mut data: *mut window_buffer_modedata,
     mut item: *mut window_buffer_itemdata,
     mut c: *mut client,

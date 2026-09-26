@@ -27,8 +27,7 @@ pub const HANGULJAMO_SUBCLASS_OLD_CHOSEONG: hanguljamo_subclass = 2;
 pub const HANGULJAMO_SUBCLASS_CHOSEONG_FILLER: hanguljamo_subclass = 3;
 pub const HANGULJAMO_SUBCLASS_CHOSEONG: hanguljamo_subclass = 1;
 pub type hanguljamo_subclass = ::core::ffi::c_uint;
-#[no_mangle]
-pub unsafe extern "C" fn utf8_has_zwj(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+pub unsafe fn utf8_has_zwj(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     if ((*ud).size as ::core::ffi::c_int) < 3 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -40,8 +39,7 @@ pub unsafe extern "C" fn utf8_has_zwj(mut ud: *const utf8_data) -> ::core::ffi::
         3 as size_t,
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_is_zwj(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+pub unsafe fn utf8_is_zwj(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -51,8 +49,7 @@ pub unsafe extern "C" fn utf8_is_zwj(mut ud: *const utf8_data) -> ::core::ffi::c
         3 as size_t,
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_is_vs(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+pub unsafe fn utf8_is_vs(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -62,8 +59,7 @@ pub unsafe extern "C" fn utf8_is_vs(mut ud: *const utf8_data) -> ::core::ffi::c_
         3 as size_t,
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_is_hangul_filler(mut ud: *const utf8_data) -> ::core::ffi::c_int {
+pub unsafe fn utf8_is_hangul_filler(mut ud: *const utf8_data) -> ::core::ffi::c_int {
     if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -94,8 +90,7 @@ fn utf8_regional_count(ud: &utf8_data) -> u_int {
     }
     return count;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_should_combine(
+pub unsafe fn utf8_should_combine(
     mut with: *const utf8_data,
     mut add: *const utf8_data,
 ) -> ::core::ffi::c_int {
@@ -251,8 +246,7 @@ fn hanguljamo_last_three(ud: &utf8_data) -> Option<&[u_char; 3]> {
     let start = size.checked_sub(3)?;
     ud.data.get(start..size)?.try_into().ok()
 }
-#[no_mangle]
-pub unsafe extern "C" fn hanguljamo_check_state(
+pub unsafe fn hanguljamo_check_state(
     mut p_ud: *const utf8_data,
     mut ud: *const utf8_data,
 ) -> hanguljamo_state {

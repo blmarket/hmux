@@ -63,7 +63,6 @@ pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
-#[no_mangle]
 pub static mut cmd_new_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"new-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -94,7 +93,6 @@ pub static mut cmd_new_pane_entry: cmd_entry = unsafe {
         ),
     }
 };
-#[no_mangle]
 pub static mut cmd_split_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"split-window\0" as *const u8 as *const ::core::ffi::c_char,

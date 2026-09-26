@@ -1235,11 +1235,7 @@ static mut tty_default_code_keys: [tty_default_key_code; 136] = [
             | KEYC_CTRL,
     },
 ];
-unsafe extern "C" fn tty_keys_add(
-    mut tty: *mut tty,
-    mut s: *const ::core::ffi::c_char,
-    mut key: key_code,
-) {
+unsafe fn tty_keys_add(mut tty: *mut tty, mut s: *const ::core::ffi::c_char, mut key: key_code) {
     let mut tk: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
     let mut size: size_t = 0;
     let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1264,7 +1260,7 @@ unsafe extern "C" fn tty_keys_add(
         (*tk).key = key;
     };
 }
-unsafe extern "C" fn tty_keys_add1(
+unsafe fn tty_keys_add1(
     mut tkp: *mut *mut tty_key,
     mut s: *const ::core::ffi::c_char,
     mut key: key_code,
@@ -1295,8 +1291,7 @@ unsafe extern "C" fn tty_keys_add1(
     }
     tty_keys_add1(tkp, s, key);
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
+pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     let mut tdkr: *const tty_default_key_raw = ::core::ptr::null::<tty_default_key_raw>();
     let mut tdkx: *const tty_default_key_xterm = ::core::ptr::null::<tty_default_key_xterm>();
     let mut tdkc: *const tty_default_key_code = ::core::ptr::null::<tty_default_key_code>();
@@ -1384,11 +1379,10 @@ pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_keys_free(mut tty: *mut tty) {
+pub unsafe fn tty_keys_free(mut tty: *mut tty) {
     tty_keys_free1((*tty).key_tree);
 }
-unsafe extern "C" fn tty_keys_free1(mut tk: *mut tty_key) {
+unsafe fn tty_keys_free1(mut tk: *mut tty_key) {
     if !(*tk).next.is_null() {
         tty_keys_free1((*tk).next);
     }
@@ -1400,7 +1394,7 @@ unsafe extern "C" fn tty_keys_free1(mut tk: *mut tty_key) {
     }
     drop(Box::from_raw(tk));
 }
-unsafe extern "C" fn tty_keys_find(
+unsafe fn tty_keys_find(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -1409,7 +1403,7 @@ unsafe extern "C" fn tty_keys_find(
     *size = 0 as size_t;
     return tty_keys_find1((*tty).key_tree, buf, len, size);
 }
-unsafe extern "C" fn tty_keys_find1(
+unsafe fn tty_keys_find1(
     mut tk: *mut tty_key,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -1438,7 +1432,7 @@ unsafe extern "C" fn tty_keys_find1(
     }
     return tty_keys_find1(tk, buf, len, size);
 }
-unsafe extern "C" fn tty_keys_next1(
+unsafe fn tty_keys_next1(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -1526,7 +1520,7 @@ unsafe extern "C" fn tty_keys_next1(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn tty_keys_winsz(
+unsafe fn tty_keys_winsz(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -1629,8 +1623,7 @@ unsafe extern "C" fn tty_keys_winsz(
     );
     return -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
+pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut c: *mut client = (*tty).client;
     let mut tv: timeval = timeval {
@@ -2217,7 +2210,7 @@ unsafe fn tty_keys_callback(
         while tty_keys_next(tty) != 0 {}
     }
 }
-unsafe extern "C" fn tty_keys_extended_key(
+unsafe fn tty_keys_extended_key(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -2370,7 +2363,7 @@ unsafe extern "C" fn tty_keys_extended_key(
     *key = nkey;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_mouse(
+unsafe fn tty_keys_mouse(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -2532,7 +2525,7 @@ unsafe extern "C" fn tty_keys_mouse(
     (*tty).mouse_last_b = b;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_clipboard(
+unsafe fn tty_keys_clipboard(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -2659,7 +2652,7 @@ unsafe extern "C" fn tty_keys_clipboard(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_device_attributes(
+unsafe fn tty_keys_device_attributes(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -2828,7 +2821,7 @@ unsafe extern "C" fn tty_keys_device_attributes(
     (*tty).flags |= TTY_HAVEDA;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_sync(
+unsafe fn tty_keys_sync(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -2905,7 +2898,7 @@ unsafe extern "C" fn tty_keys_sync(
     (*tty).flags |= TTY_HAVESYNC;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_device_attributes2(
+unsafe fn tty_keys_device_attributes2(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -3054,7 +3047,7 @@ unsafe extern "C" fn tty_keys_device_attributes2(
     (*tty).flags |= TTY_HAVEDA2;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_extended_device_attributes(
+unsafe fn tty_keys_extended_device_attributes(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -3221,8 +3214,7 @@ unsafe extern "C" fn tty_keys_extended_device_attributes(
     (*tty).flags |= TTY_HAVEXDA;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_keys_colours(
+pub unsafe fn tty_keys_colours(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -3347,7 +3339,7 @@ pub unsafe extern "C" fn tty_keys_colours(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_keys_palette(
+unsafe fn tty_keys_palette(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,

@@ -12,8 +12,7 @@ pub struct ucred {
 }
 
 pub const SO_PEERCRED: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-#[no_mangle]
-pub unsafe extern "C" fn getpeereid(
+pub unsafe fn getpeereid(
     mut s: ::core::ffi::c_int,
     mut uid: *mut uid_t,
     mut gid: *mut gid_t,

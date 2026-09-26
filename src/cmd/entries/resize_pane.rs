@@ -36,8 +36,6 @@ use crate::src::window::{
     window_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
     window_redraw_active_switch, window_set_active_pane, window_unzoom, window_zoom,
 };
-
-#[no_mangle]
 pub static mut cmd_resize_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"resize-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -271,10 +269,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     server_redraw_window(w);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_resize_pane_mouse_update(
-    _self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_resize_pane_mouse_update(_self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut wp: *mut window_pane = (*target).wp;

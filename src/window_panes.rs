@@ -87,7 +87,6 @@ pub struct window_panes_area {
 }
 
 pub const WINDOW_MODE_FILL_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-#[no_mangle]
 pub static mut window_panes_mode: window_mode = unsafe {
     window_mode {
         name: c"panes-mode",
@@ -130,7 +129,7 @@ pub const WINDOW_PANES_BORDER_L: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_R: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_U: ::core::ffi::c_int = 4;
 pub const WINDOW_PANES_BORDER_D: ::core::ffi::c_int = 8;
-unsafe extern "C" fn window_panes_get_source(
+unsafe fn window_panes_get_source(
     mut data: *mut window_panes_modedata,
     mut sp: *mut *mut session,
     mut wlp: *mut *mut winlink,
@@ -164,7 +163,7 @@ unsafe extern "C" fn window_panes_get_source(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
+unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     let mut wp: *mut window_pane = (*data).wp;
     let mut src: *mut screen = &raw mut (*wp).base;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -188,10 +187,10 @@ unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modeda
     (*dst).cx = (*src).cx;
     (*dst).cy = (*src).cy;
 }
-unsafe extern "C" fn window_panes_free_areas(mut data: *mut window_panes_modedata) {
+unsafe fn window_panes_free_areas(mut data: *mut window_panes_modedata) {
     (*data).areas = Vec::new();
 }
-unsafe extern "C" fn window_panes_add_area(
+unsafe fn window_panes_add_area(
     mut data: *mut window_panes_modedata,
     mut wp: *mut window_pane,
     mut x: u_int,
@@ -207,7 +206,7 @@ unsafe extern "C" fn window_panes_add_area(
         sy,
     });
 }
-unsafe extern "C" fn window_panes_pane_floating(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+unsafe fn window_panes_pane_floating(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut lc: *mut layout_cell = (*wp).saved_layout_cell;
     if lc.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -217,13 +216,13 @@ unsafe extern "C" fn window_panes_pane_floating(mut wp: *mut window_pane) -> ::c
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_pane_visible(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+unsafe fn window_panes_pane_visible(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     if !(*wp).saved_layout_cell.is_null() {
         return 1 as ::core::ffi::c_int;
     }
     return window_pane_is_visible(wp);
 }
-unsafe extern "C" fn window_panes_get_geometry(
+unsafe fn window_panes_get_geometry(
     mut wp: *mut window_pane,
     mut root: *mut layout_cell,
     mut osx: u_int,
@@ -304,7 +303,7 @@ unsafe extern "C" fn window_panes_get_geometry(
     *syp = sy;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_get_border_cell(
+unsafe fn window_panes_get_border_cell(
     mut data: *mut window_panes_modedata,
     mut gc: *mut grid_cell,
 ) {
@@ -331,27 +330,19 @@ unsafe extern "C" fn window_panes_get_border_cell(
     );
     format_free(ft);
 }
-unsafe extern "C" fn window_panes_map_x(
-    mut x: u_int,
-    mut osx: u_int,
-    mut dsx: u_int,
-) -> ::core::ffi::c_int {
+unsafe fn window_panes_map_x(mut x: u_int, mut osx: u_int, mut dsx: u_int) -> ::core::ffi::c_int {
     if osx <= dsx {
         return x as ::core::ffi::c_int;
     }
     return x.wrapping_mul(dsx).wrapping_div(osx) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_map_y(
-    mut y: u_int,
-    mut osy: u_int,
-    mut dsy: u_int,
-) -> ::core::ffi::c_int {
+unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::core::ffi::c_int {
     if osy <= dsy {
         return y as ::core::ffi::c_int;
     }
     return y.wrapping_mul(dsy).wrapping_div(osy) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *mut layout_cell {
+unsafe fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *mut layout_cell {
     let mut next: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     next = layout_cell_next(lc);
     while !next.is_null() {
@@ -362,7 +353,7 @@ unsafe extern "C" fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *
     }
     return ::core::ptr::null_mut::<layout_cell>();
 }
-unsafe extern "C" fn window_panes_mark_border(
+unsafe fn window_panes_mark_border(
     mut map: *mut u_char,
     mut dsx: u_int,
     mut dsy: u_int,
@@ -375,7 +366,7 @@ unsafe extern "C" fn window_panes_mark_border(
         *fresh0 = (*fresh0 as ::core::ffi::c_int | mask as ::core::ffi::c_int) as u_char;
     }
 }
-unsafe extern "C" fn window_panes_mark_vline(
+unsafe fn window_panes_mark_vline(
     mut map: *mut u_char,
     mut dsx: u_int,
     mut dsy: u_int,
@@ -410,7 +401,7 @@ unsafe extern "C" fn window_panes_mark_vline(
         yy += 1;
     }
 }
-unsafe extern "C" fn window_panes_mark_hline(
+unsafe fn window_panes_mark_hline(
     mut map: *mut u_char,
     mut dsx: u_int,
     mut dsy: u_int,
@@ -445,7 +436,7 @@ unsafe extern "C" fn window_panes_mark_hline(
         xx += 1;
     }
 }
-unsafe extern "C" fn window_panes_mark_borders_cell(
+unsafe fn window_panes_mark_borders_cell(
     mut map: *mut u_char,
     mut lc: *mut layout_cell,
     mut osx: u_int,
@@ -504,7 +495,7 @@ unsafe extern "C" fn window_panes_mark_borders_cell(
         lcchild = layout_cell_next(lcchild);
     }
 }
-unsafe extern "C" fn window_panes_mark_pane_status_borders(
+unsafe fn window_panes_mark_pane_status_borders(
     mut map: *mut u_char,
     mut w: *mut window,
     mut root: *mut layout_cell,
@@ -550,7 +541,7 @@ unsafe extern "C" fn window_panes_mark_pane_status_borders(
         wp = window_pane_next(wp);
     }
 }
-unsafe extern "C" fn window_panes_get_floating_borders(
+unsafe fn window_panes_get_floating_borders(
     mut wp: *mut window_pane,
     mut osx: u_int,
     mut osy: u_int,
@@ -583,7 +574,7 @@ unsafe extern "C" fn window_panes_get_floating_borders(
     *y2p = window_panes_map_y(((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy), osy, dsy);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_clip_floating_pane(
+unsafe fn window_panes_clip_floating_pane(
     mut wp: *mut window_pane,
     mut osx: u_int,
     mut osy: u_int,
@@ -641,7 +632,7 @@ unsafe extern "C" fn window_panes_clip_floating_pane(
     *syp = (by2 - by + 1 as ::core::ffi::c_int) as u_int;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int {
+unsafe fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int {
     match mask as ::core::ffi::c_int {
         15 => return 11 as ::core::ffi::c_int,
         7 => return 8 as ::core::ffi::c_int,
@@ -662,15 +653,15 @@ unsafe extern "C" fn window_panes_border_cell_type(mut mask: u_char) -> ::core::
     }
     return 12 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_border_has_horizontal(mut mask: u_char) -> ::core::ffi::c_int {
+unsafe fn window_panes_border_has_horizontal(mut mask: u_char) -> ::core::ffi::c_int {
     return (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_L | WINDOW_PANES_BORDER_R)
         != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_border_has_vertical(mut mask: u_char) -> ::core::ffi::c_int {
+unsafe fn window_panes_border_has_vertical(mut mask: u_char) -> ::core::ffi::c_int {
     return (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_U | WINDOW_PANES_BORDER_D)
         != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_panes_mark_border_joins_cell(
+unsafe fn window_panes_mark_border_joins_cell(
     mut map: *mut u_char,
     mut lc: *mut layout_cell,
     mut osx: u_int,
@@ -836,7 +827,7 @@ unsafe extern "C" fn window_panes_mark_border_joins_cell(
         lcchild = layout_cell_next(lcchild);
     }
 }
-unsafe extern "C" fn window_panes_draw_borders(
+unsafe fn window_panes_draw_borders(
     mut ctx: *mut screen_write_ctx,
     mut w: *mut window,
     mut lc: *mut layout_cell,
@@ -902,7 +893,7 @@ unsafe extern "C" fn window_panes_draw_borders(
         yy = yy.wrapping_add(1);
     }
 }
-unsafe extern "C" fn window_panes_draw_floating_border(
+unsafe fn window_panes_draw_floating_border(
     mut ctx: *mut screen_write_ctx,
     mut wp: *mut window_pane,
     mut gc: *const grid_cell,
@@ -1014,7 +1005,7 @@ unsafe extern "C" fn window_panes_draw_floating_border(
         yy = yy.wrapping_add(1);
     }
 }
-unsafe extern "C" fn window_panes_clear_floating_area(
+unsafe fn window_panes_clear_floating_area(
     mut ctx: *mut screen_write_ctx,
     mut wp: *mut window_pane,
     mut osx: u_int,
@@ -1087,7 +1078,7 @@ unsafe extern "C" fn window_panes_clear_floating_area(
         yy += 1;
     }
 }
-unsafe extern "C" fn window_panes_draw_format(
+unsafe fn window_panes_draw_format(
     mut data: *mut window_panes_modedata,
     mut ctx: *mut screen_write_ctx,
     mut wp: *mut window_pane,
@@ -1143,7 +1134,7 @@ unsafe extern "C" fn window_panes_draw_format(
         );
     }
 }
-unsafe extern "C" fn window_panes_draw_number(
+unsafe fn window_panes_draw_number(
     mut data: *mut window_panes_modedata,
     mut ctx: *mut screen_write_ctx,
     mut wp: *mut window_pane,
@@ -1368,7 +1359,7 @@ unsafe extern "C" fn window_panes_draw_number(
         );
     }
 }
-unsafe extern "C" fn window_panes_draw_pane(
+unsafe fn window_panes_draw_pane(
     mut data: *mut window_panes_modedata,
     mut ctx: *mut screen_write_ctx,
     mut wp: *mut window_pane,
@@ -1444,7 +1435,7 @@ unsafe extern "C" fn window_panes_draw_pane(
     }
     window_panes_draw_number(data, ctx, wp, pane, x, y, sx, sy);
 }
-unsafe extern "C" fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
+unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1680,7 +1671,7 @@ unsafe fn window_panes_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mu
     screen_resize(&raw mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     window_panes_draw_screen(wme);
 }
-unsafe extern "C" fn window_panes_run_command(
+unsafe fn window_panes_run_command(
     mut data: *mut window_panes_modedata,
     mut c: *mut client,
     mut wp: *mut window_pane,
@@ -1707,7 +1698,7 @@ unsafe extern "C" fn window_panes_run_command(
         }
     }
 }
-unsafe extern "C" fn window_panes_find_pane(
+unsafe fn window_panes_find_pane(
     mut data: *mut window_panes_modedata,
     mut x: u_int,
     mut y: u_int,
@@ -1721,7 +1712,7 @@ unsafe extern "C" fn window_panes_find_pane(
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
-unsafe extern "C" fn window_panes_key_pane(
+unsafe fn window_panes_key_pane(
     mut data: *mut window_panes_modedata,
     mut key: key_code,
 ) -> *mut window_pane {
@@ -1750,7 +1741,7 @@ unsafe extern "C" fn window_panes_key_pane(
     }
     return window_pane_at_index(w, index);
 }
-unsafe extern "C" fn window_panes_get_target(
+unsafe fn window_panes_get_target(
     mut wme: *mut window_mode_entry,
     mut key: key_code,
     mut m: *mut mouse_event,

@@ -46,8 +46,6 @@ use crate::src::window::{
     window_pane_z_next, window_pane_z_previous, window_pane_z_remove, window_redraw_active_switch,
     window_set_active_pane,
 };
-
-#[no_mangle]
 pub static mut cmd_join_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"join-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -74,7 +72,6 @@ pub static mut cmd_join_pane_entry: cmd_entry = unsafe {
         exec: Some(cmd_join_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_move_pane_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"move-pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -105,7 +102,7 @@ pub static mut cmd_move_pane_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_join_pane_place(
+unsafe fn cmd_join_pane_place(
     mut item: *mut cmdq_item,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -359,7 +356,7 @@ unsafe extern "C" fn cmd_join_pane_place(
     server_redraw_window(w);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_join_pane_move(
+unsafe fn cmd_join_pane_move(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut wl: *mut winlink,
@@ -480,7 +477,7 @@ unsafe extern "C" fn cmd_join_pane_move(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut c: *mut client = cmdq_get_client(item);
@@ -547,7 +544,7 @@ unsafe fn cmd_join_pane_mouse_move(mut c: *mut client, mut m: *mut mouse_event) 
         server_redraw_window_borders(w);
     }
 }
-unsafe extern "C" fn cmd_join_pane_zindex(
+unsafe fn cmd_join_pane_zindex(
     mut item: *mut cmdq_item,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
@@ -598,7 +595,7 @@ unsafe extern "C" fn cmd_join_pane_zindex(
     server_redraw_window(w);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_join_pane_tile(
+unsafe fn cmd_join_pane_tile(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut w: *mut window,

@@ -36,8 +36,6 @@ pub struct window_clock_mode_data {
     pub tim: time_t,
     pub timer: event,
 }
-
-#[no_mangle]
 pub static mut window_clock_mode: window_mode = unsafe {
     window_mode {
         name: c"clock-mode",
@@ -73,7 +71,6 @@ pub static mut window_clock_mode: window_mode = unsafe {
         get_screen: None,
     }
 };
-#[no_mangle]
 pub static mut window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
     [
         [
@@ -594,7 +591,7 @@ pub static mut window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
         ],
     ],
 ];
-unsafe extern "C" fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
+unsafe fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -715,7 +712,7 @@ unsafe fn window_clock_key(
 ) {
     window_pane_reset_mode((*wme).wp);
 }
-unsafe extern "C" fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
+unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;

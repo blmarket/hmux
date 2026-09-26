@@ -6,9 +6,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::grid::grid_reader;
 use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
-
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_start(
+pub unsafe fn grid_reader_start(
     mut gr: *mut grid_reader,
     mut gd: *mut grid,
     mut cx: u_int,
@@ -18,8 +16,7 @@ pub unsafe extern "C" fn grid_reader_start(
     (*gr).cx = cx;
     (*gr).cy = cy;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_get_cursor(
+pub unsafe fn grid_reader_get_cursor(
     mut gr: *mut grid_reader,
     mut cx: *mut u_int,
     mut cy: *mut u_int,
@@ -27,12 +24,10 @@ pub unsafe extern "C" fn grid_reader_get_cursor(
     *cx = (*gr).cx;
     *cy = (*gr).cy;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_line_length(mut gr: *mut grid_reader) -> u_int {
+pub unsafe fn grid_reader_line_length(mut gr: *mut grid_reader) -> u_int {
     return grid_line_length((*gr).gd, (*gr).cy);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_right(
+pub unsafe fn grid_reader_cursor_right(
     mut gr: *mut grid_reader,
     mut wrap: ::core::ffi::c_int,
     mut all: ::core::ffi::c_int,
@@ -81,11 +76,7 @@ pub unsafe extern "C" fn grid_reader_cursor_right(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_left(
-    mut gr: *mut grid_reader,
-    mut wrap: ::core::ffi::c_int,
-) {
+pub unsafe fn grid_reader_cursor_left(mut gr: *mut grid_reader, mut wrap: ::core::ffi::c_int) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -121,8 +112,7 @@ pub unsafe extern "C" fn grid_reader_cursor_left(
         (*gr).cx = (*gr).cx.wrapping_sub(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_down(mut gr: *mut grid_reader) {
+pub unsafe fn grid_reader_cursor_down(mut gr: *mut grid_reader) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -153,8 +143,7 @@ pub unsafe extern "C" fn grid_reader_cursor_down(mut gr: *mut grid_reader) {
         (*gr).cx = (*gr).cx.wrapping_sub(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_up(mut gr: *mut grid_reader) {
+pub unsafe fn grid_reader_cursor_up(mut gr: *mut grid_reader) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -180,8 +169,7 @@ pub unsafe extern "C" fn grid_reader_cursor_up(mut gr: *mut grid_reader) {
         (*gr).cx = (*gr).cx.wrapping_sub(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_start_of_line(
+pub unsafe fn grid_reader_cursor_start_of_line(
     mut gr: *mut grid_reader,
     mut wrap: ::core::ffi::c_int,
 ) {
@@ -197,8 +185,7 @@ pub unsafe extern "C" fn grid_reader_cursor_start_of_line(
     }
     (*gr).cx = 0 as u_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_end_of_line(
+pub unsafe fn grid_reader_cursor_end_of_line(
     mut gr: *mut grid_reader,
     mut wrap: ::core::ffi::c_int,
     mut all: ::core::ffi::c_int,
@@ -222,7 +209,7 @@ pub unsafe extern "C" fn grid_reader_cursor_end_of_line(
         (*gr).cx = grid_reader_line_length(gr);
     };
 }
-unsafe extern "C" fn grid_reader_handle_wrap(
+unsafe fn grid_reader_handle_wrap(
     mut gr: *mut grid_reader,
     mut xx: *mut u_int,
     mut yy: *mut u_int,
@@ -242,15 +229,13 @@ unsafe extern "C" fn grid_reader_handle_wrap(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_in_set(
+pub unsafe fn grid_reader_in_set(
     mut gr: *mut grid_reader,
     mut set: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     return grid_in_set((*gr).gd, (*gr).cx, (*gr).cy, set);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_next_word(
+pub unsafe fn grid_reader_cursor_next_word(
     mut gr: *mut grid_reader,
     mut separators: *const ::core::ffi::c_char,
 ) {
@@ -299,8 +284,7 @@ pub unsafe extern "C" fn grid_reader_cursor_next_word(
         (*gr).cx = (*gr).cx.wrapping_add(width);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_next_word_end(
+pub unsafe fn grid_reader_cursor_next_word_end(
     mut gr: *mut grid_reader,
     mut separators: *const ::core::ffi::c_char,
 ) {
@@ -343,8 +327,7 @@ pub unsafe extern "C" fn grid_reader_cursor_next_word_end(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_previous_word(
+pub unsafe fn grid_reader_cursor_previous_word(
     mut gr: *mut grid_reader,
     mut separators: *const ::core::ffi::c_char,
     mut already: ::core::ffi::c_int,
@@ -417,7 +400,7 @@ pub unsafe extern "C" fn grid_reader_cursor_previous_word(
     (*gr).cx = oldx as u_int;
     (*gr).cy = oldy as u_int;
 }
-unsafe extern "C" fn grid_reader_cell_equals_data(
+unsafe fn grid_reader_cell_equals_data(
     mut gc: *const grid_cell,
     mut ud: *const utf8_data,
 ) -> ::core::ffi::c_int {
@@ -439,8 +422,7 @@ unsafe extern "C" fn grid_reader_cell_equals_data(
         (*gc).data.size as size_t,
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_jump(
+pub unsafe fn grid_reader_cursor_jump(
     mut gr: *mut grid_reader,
     mut jc: *const utf8_data,
 ) -> ::core::ffi::c_int {
@@ -489,8 +471,7 @@ pub unsafe extern "C" fn grid_reader_cursor_jump(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_jump_back(
+pub unsafe fn grid_reader_cursor_jump_back(
     mut gr: *mut grid_reader,
     mut jc: *const utf8_data,
 ) -> ::core::ffi::c_int {
@@ -541,8 +522,7 @@ pub unsafe extern "C" fn grid_reader_cursor_jump_back(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_reader_cursor_back_to_indentation(mut gr: *mut grid_reader) {
+pub unsafe fn grid_reader_cursor_back_to_indentation(mut gr: *mut grid_reader) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],

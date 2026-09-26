@@ -50,7 +50,7 @@ pub unsafe fn monitor_window_new() -> *mut monitor_window {
     .cast()
 }
 
-unsafe extern "C" fn monitor_get_session(mut ms: *mut monitor_set) -> *mut session {
+unsafe fn monitor_get_session(mut ms: *mut monitor_set) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*ms).client.is_null() {
         return (*(*ms).client).session;
@@ -64,7 +64,7 @@ unsafe extern "C" fn monitor_get_session(mut ms: *mut monitor_set) -> *mut sessi
     }
     return s;
 }
-unsafe extern "C" fn monitor_create_formats(
+unsafe fn monitor_create_formats(
     mut c: *mut client,
     mut s: *mut session,
     mut wl: *mut winlink,
@@ -80,7 +80,7 @@ unsafe extern "C" fn monitor_create_formats(
     format_defaults(ft, c, s, wl, wp);
     return ft;
 }
-unsafe extern "C" fn monitor_item_cmp(
+unsafe fn monitor_item_cmp(
     mut m1: *mut monitor_item,
     mut m2: *mut monitor_item,
 ) -> ::core::ffi::c_int {
@@ -90,7 +90,7 @@ unsafe extern "C" fn monitor_item_cmp(
     );
 }
 
-unsafe extern "C" fn monitor_pane_cmp(
+unsafe fn monitor_pane_cmp(
     mut mp1: *mut monitor_pane,
     mut mp2: *mut monitor_pane,
 ) -> ::core::ffi::c_int {
@@ -109,7 +109,7 @@ unsafe extern "C" fn monitor_pane_cmp(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe extern "C" fn monitor_window_cmp(
+unsafe fn monitor_window_cmp(
     mut mw1: *mut monitor_window,
     mut mw2: *mut monitor_window,
 ) -> ::core::ffi::c_int {
@@ -128,7 +128,7 @@ unsafe extern "C" fn monitor_window_cmp(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
+unsafe fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     let mut mp1: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
@@ -154,7 +154,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
     monitor_items_remove(&raw mut (*ms).items, me);
     drop(Box::from_raw(me));
 }
-unsafe extern "C" fn monitor_report(
+unsafe fn monitor_report(
     mut ms: *mut monitor_set,
     mut me: *mut monitor_item,
     mut s: *mut session,
@@ -231,7 +231,7 @@ unsafe fn monitor_check_value(
         monitor_report(ms, me, s, wl, wp, value.as_ptr(), previous.as_ptr());
     }
 }
-unsafe extern "C" fn monitor_check_session(
+unsafe fn monitor_check_session(
     mut ms: *mut monitor_set,
     mut me: *mut monitor_item,
     mut ft: *mut format_tree,
@@ -248,7 +248,7 @@ unsafe extern "C" fn monitor_check_session(
         &raw mut (*me).last,
     );
 }
-unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
+unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let mut c: *mut client = (*ms).client;
     let mut s: *mut session = monitor_get_session(ms);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -288,7 +288,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
         wl = window_winlinks_next(w, wl);
     }
 }
-unsafe extern "C" fn monitor_check_all_panes_one(
+unsafe fn monitor_check_all_panes_one(
     mut ms: *mut monitor_set,
     mut me: *mut monitor_item,
     mut ft: *mut format_tree,
@@ -317,7 +317,7 @@ unsafe extern "C" fn monitor_check_all_panes_one(
     (*mp).generation = (*ms).generation;
     monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
 }
-unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
+unsafe fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     let mut mp1: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     mp = monitor_panes_minmax(&(*me).panes, RB_NEGINF);
@@ -332,7 +332,7 @@ unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut gene
         mp = mp1;
     }
 }
-unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
+unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let mut c: *mut client = (*ms).client;
     let mut s: *mut session = monitor_get_session(ms);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -378,7 +378,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
         wl = window_winlinks_next(w, wl);
     }
 }
-unsafe extern "C" fn monitor_check_all_windows_one(
+unsafe fn monitor_check_all_windows_one(
     mut ms: *mut monitor_set,
     mut me: *mut monitor_item,
     mut ft: *mut format_tree,
@@ -415,7 +415,7 @@ unsafe extern "C" fn monitor_check_all_windows_one(
         &raw mut (*mw).last,
     );
 }
-unsafe extern "C" fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u_int) {
+unsafe fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
     let mut mw1: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
     mw = monitor_windows_minmax(&(*me).windows, RB_NEGINF);
@@ -430,7 +430,7 @@ unsafe extern "C" fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut ge
         mw = mw1;
     }
 }
-unsafe extern "C" fn monitor_check_sessions(mut ms: *mut monitor_set) {
+unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
     let mut c: *mut client = (*ms).client;
     let mut s: *mut session = monitor_get_session(ms);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -456,7 +456,7 @@ unsafe extern "C" fn monitor_check_sessions(mut ms: *mut monitor_set) {
     }
     format_free(ft);
 }
-unsafe extern "C" fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
+unsafe fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
@@ -476,7 +476,7 @@ unsafe extern "C" fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
         me = me1;
     }
 }
-unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
+unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     let mut c: *mut client = (*ms).client;
     let mut s: *mut session = monitor_get_session(ms);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -523,7 +523,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
         me = me1;
     }
 }
-unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
+unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     let mut c: *mut client = (*ms).client;
     let mut s: *mut session = monitor_get_session(ms);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -642,8 +642,7 @@ pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mu
     }
     return ms;
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
+pub unsafe fn monitor_destroy(mut ms: *mut monitor_set) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     if !ms.is_null() {
@@ -729,9 +728,7 @@ unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
 pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
     unsafe { monitor_parse_parts(value) }
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn monitor_add(
+pub unsafe fn monitor_add(
     mut ms: *mut monitor_set,
     mut name: *const ::core::ffi::c_char,
     mut type_0: monitor_type,
@@ -796,11 +793,7 @@ pub unsafe extern "C" fn monitor_add(
         event_add(&raw mut (*ms).timer, &raw mut tv);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_remove(
-    mut ms: *mut monitor_set,
-    mut name: *const ::core::ffi::c_char,
-) {
+pub unsafe fn monitor_remove(mut ms: *mut monitor_set, mut name: *const ::core::ffi::c_char) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut find: monitor_item = monitor_item {
         name: ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned(),
@@ -823,8 +816,7 @@ pub unsafe extern "C" fn monitor_remove(
         event_del(&raw mut (*ms).timer);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_get_fire_count(
+pub unsafe fn monitor_get_fire_count(
     mut ms: *mut monitor_set,
     mut name: *const ::core::ffi::c_char,
 ) -> u_int {
@@ -848,8 +840,7 @@ pub unsafe extern "C" fn monitor_get_fire_count(
     }
     return (*me).fire_count;
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_get_fire_time(
+pub unsafe fn monitor_get_fire_time(
     mut ms: *mut monitor_set,
     mut name: *const ::core::ffi::c_char,
 ) -> time_t {

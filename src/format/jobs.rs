@@ -254,10 +254,7 @@ unsafe fn format_job_find_or_insert(
     })
 }
 
-pub(super) unsafe extern "C" fn format_job_tidy(
-    jobs: *mut format_job_tree,
-    force: ::core::ffi::c_int,
-) {
+pub(super) unsafe fn format_job_tidy(jobs: *mut format_job_tree, force: ::core::ffi::c_int) {
     format_job_tidy_at(jobs, force, time(::core::ptr::null_mut()));
 }
 
@@ -291,8 +288,7 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
         drop(Box::from_raw(fj));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_tidy_jobs() {
+pub unsafe fn format_tidy_jobs() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     format_job_tidy(&raw mut format_jobs, 0 as ::core::ffi::c_int);
     c = clients.first();
@@ -303,8 +299,7 @@ pub unsafe extern "C" fn format_tidy_jobs() {
         c = clients.next(c);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_lost_client(mut c: *mut client) {
+pub unsafe fn format_lost_client(mut c: *mut client) {
     if !(*c).jobs.is_null() {
         format_job_tidy((*c).jobs, 1 as ::core::ffi::c_int);
         drop(Box::from_raw((*c).jobs));

@@ -18,7 +18,6 @@ use crate::src::shared::window::{
 };
 
 pub const WINDOW_SIZE_SMALLEST: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-#[no_mangle]
 pub static mut cmd_resize_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"resize-window\0" as *const u8 as *const ::core::ffi::c_char,

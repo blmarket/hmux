@@ -119,11 +119,7 @@ pub unsafe extern "C" fn evbuffer_add_printf(
 ) -> c_int {
     evbuffer_add_vprintf(b, fmt, args.clone())
 }
-pub unsafe extern "C" fn evbuffer_add_vprintf(
-    b: *mut ByteBuffer,
-    fmt: *const c_char,
-    args: VaList,
-) -> c_int {
+pub unsafe fn evbuffer_add_vprintf(b: *mut ByteBuffer, fmt: *const c_char, args: VaList) -> c_int {
     let Some(mut formatted) = format_buffer(CStr::from_ptr(fmt), args) else {
         return -1;
     };

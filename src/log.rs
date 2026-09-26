@@ -20,17 +20,13 @@ unsafe fn log_file_ptr() -> *mut FILE {
         .as_ref()
         .map_or(::core::ptr::null_mut::<FILE>(), CFile::as_ptr)
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn log_add_level() {
+pub unsafe fn log_add_level() {
     log_level += 1;
 }
-#[no_mangle]
-pub unsafe extern "C" fn log_get_level() -> ::core::ffi::c_int {
+pub unsafe fn log_get_level() -> ::core::ffi::c_int {
     return log_level;
 }
-#[no_mangle]
-pub unsafe extern "C" fn log_open(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn log_open(mut name: *const ::core::ffi::c_char) {
     if log_level == 0 as ::core::ffi::c_int {
         return;
     }
@@ -57,8 +53,7 @@ pub unsafe extern "C" fn log_open(mut name: *const ::core::ffi::c_char) {
         0 as size_t,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn log_toggle(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn log_toggle(mut name: *const ::core::ffi::c_char) {
     if log_level == 0 as ::core::ffi::c_int {
         log_level = 1 as ::core::ffi::c_int;
         log_open(name);
@@ -69,11 +64,10 @@ pub unsafe extern "C" fn log_toggle(mut name: *const ::core::ffi::c_char) {
         log_close();
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn log_close() {
+pub unsafe fn log_close() {
     log_file = None;
 }
-unsafe extern "C" fn log_vwrite(
+unsafe fn log_vwrite(
     mut msg: *const ::core::ffi::c_char,
     mut ap: ::core::ffi::VaList,
     mut prefix: *const ::core::ffi::c_char,
@@ -122,7 +116,6 @@ unsafe extern "C" fn log_vwrite(
         fflush(file);
     }
 }
-#[no_mangle]
 pub unsafe extern "C" fn log_debug(mut msg: *const ::core::ffi::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaList;
     if log_file_ptr().is_null() {
@@ -131,7 +124,6 @@ pub unsafe extern "C" fn log_debug(mut msg: *const ::core::ffi::c_char, mut args
     ap = args.clone();
     log_vwrite(msg, ap, b"\0" as *const u8 as *const ::core::ffi::c_char);
 }
-#[no_mangle]
 pub unsafe extern "C" fn fatal(mut msg: *const ::core::ffi::c_char, mut args: ...) -> ! {
     let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
     let mut ap: ::core::ffi::VaList;
@@ -148,7 +140,6 @@ pub unsafe extern "C" fn fatal(mut msg: *const ::core::ffi::c_char, mut args: ..
     log_vwrite(msg, ap, &raw mut tmp as *mut ::core::ffi::c_char);
     exit(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
 pub unsafe extern "C" fn fatalx(mut msg: *const ::core::ffi::c_char, mut args: ...) -> ! {
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();

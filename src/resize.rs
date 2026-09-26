@@ -40,11 +40,7 @@ use crate::src::shared::window::{
     WINDOW_SIZE_MANUAL,
 };
 
-unsafe extern "C" fn resize_fire_window_resized(
-    mut w: *mut window,
-    mut old_sx: u_int,
-    mut old_sy: u_int,
-) {
+unsafe fn resize_fire_window_resized(mut w: *mut window, mut old_sx: u_int, mut old_sy: u_int) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -88,8 +84,7 @@ unsafe extern "C" fn resize_fire_window_resized(
         ep,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn resize_window(
+pub unsafe fn resize_window(
     mut w: *mut window,
     mut sx: u_int,
     mut sy: u_int,
@@ -144,7 +139,7 @@ pub unsafe extern "C" fn resize_window(
     resize_fire_window_resized(w, old_sx, old_sy);
     (*w).flags &= !WINDOW_RESIZE;
 }
-unsafe extern "C" fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
+unsafe fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     if (*c).session.is_null() {
         return 1 as ::core::ffi::c_int;
@@ -173,7 +168,7 @@ unsafe extern "C" fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_in
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn clients_with_window(mut w: *mut window) -> u_int {
+unsafe fn clients_with_window(mut w: *mut window) -> u_int {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0 as u_int;
     loop_0 = clients.first();
@@ -388,8 +383,7 @@ unsafe fn clients_calculate_size(
     }
     return (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn default_window_size(
+pub unsafe fn default_window_size(
     mut c: *mut client,
     mut s: *mut session,
     mut w: *mut window,
@@ -479,8 +473,7 @@ pub unsafe extern "C" fn default_window_size(
         *sy,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) {
+pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut xpixel: u_int = 0 as u_int;
@@ -566,12 +559,10 @@ pub unsafe extern "C" fn recalculate_size(mut w: *mut window, mut now: ::core::f
         tty_update_window_offset(w);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn recalculate_sizes() {
+pub unsafe fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
+pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();

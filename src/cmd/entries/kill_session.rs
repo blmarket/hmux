@@ -23,8 +23,6 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::{WINDOW_ALERTFLAGS, WINLINK_ALERTFLAGS};
 use crate::src::window::{winlinks_minmax, winlinks_next};
-
-#[no_mangle]
 pub static mut cmd_kill_session_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"kill-session\0" as *const u8 as *const ::core::ffi::c_char,
@@ -99,7 +97,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_kill_session_all(
+unsafe fn cmd_kill_session_all(
     mut item: *mut cmdq_item,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
@@ -122,7 +120,7 @@ unsafe extern "C" fn cmd_kill_session_all(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_kill_session_filter(
+unsafe fn cmd_kill_session_filter(
     mut item: *mut cmdq_item,
     mut s: *mut session,
     mut filter: *const ::core::ffi::c_char,

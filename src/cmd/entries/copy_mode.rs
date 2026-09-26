@@ -19,8 +19,6 @@ use crate::src::window_copy::{
     window_copy_mode, window_copy_pagedown, window_copy_pageup, window_copy_scroll,
     window_copy_set_line_numbers, window_copy_start_drag,
 };
-
-#[no_mangle]
 pub static mut cmd_copy_mode_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"copy-mode\0" as *const u8 as *const ::core::ffi::c_char,
@@ -47,7 +45,6 @@ pub static mut cmd_copy_mode_entry: cmd_entry = unsafe {
         exec: Some(cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-#[no_mangle]
 pub static mut cmd_clock_mode_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"clock-mode\0" as *const u8 as *const ::core::ffi::c_char,

@@ -58,15 +58,13 @@ pub struct cmd_run_shell_data {
     pub flags: ::core::ffi::c_int,
 }
 #[inline]
-unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
         __c
     };
 }
-
-#[no_mangle]
 pub static mut cmd_run_shell_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"run-shell\0" as *const u8 as *const ::core::ffi::c_char,

@@ -12,8 +12,6 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::window::winlink;
 use crate::src::tmux::check_name;
 use crate::src::window::window_set_name;
-
-#[no_mangle]
 pub static mut cmd_rename_window_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"rename-window\0" as *const u8 as *const ::core::ffi::c_char,

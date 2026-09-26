@@ -62,7 +62,7 @@ pub const CONTROL_MAXIMUM_REPLY_BUFFER: ::core::ffi::c_int =
     64 as ::core::ffi::c_int * 1024 as ::core::ffi::c_int * 1024 as ::core::ffi::c_int;
 pub const CONTROL_IGNORE_FLAGS: ::core::ffi::c_int =
     CLIENT_CONTROL_NOOUTPUT | CLIENT_UNATTACHEDFLAGS;
-unsafe extern "C" fn control_pane_cmp(
+unsafe fn control_pane_cmp(
     mut cp1: *mut control_pane,
     mut cp2: *mut control_pane,
 ) -> ::core::ffi::c_int {
@@ -75,7 +75,7 @@ unsafe extern "C" fn control_pane_cmp(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe extern "C" fn control_window_cmp(
+unsafe fn control_window_cmp(
     mut cw1: *mut control_window,
     mut cw2: *mut control_window,
 ) -> ::core::ffi::c_int {
@@ -400,7 +400,7 @@ mod control_queue_tests {
     }
 }
 
-unsafe extern "C" fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_block) {
+unsafe fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_block) {
     let mut size: size_t = 0;
     if (*cb).size == 0 as size_t && !(*cb).line.is_none() {
         size = (*cb)
@@ -417,10 +417,7 @@ unsafe extern "C" fn control_free_block(mut cs: *mut control_state, mut cb: *mut
     }
     (*control_state_owner(cs)).remove_block(cb);
 }
-unsafe extern "C" fn control_get_pane(
-    mut c: *mut client,
-    mut wp: *mut window_pane,
-) -> *mut control_pane {
+unsafe fn control_get_pane(mut c: *mut client, mut wp: *mut window_pane) -> *mut control_pane {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: control_pane = control_pane {
         pane: (*wp).id,
@@ -433,10 +430,7 @@ unsafe extern "C" fn control_get_pane(
     };
     return control_panes_find(&(*cs).panes, &cp);
 }
-unsafe extern "C" fn control_add_pane(
-    mut c: *mut client,
-    mut wp: *mut window_pane,
-) -> *mut control_pane {
+unsafe fn control_add_pane(mut c: *mut client, mut wp: *mut window_pane) -> *mut control_pane {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_get_pane(c, wp);
@@ -469,10 +463,7 @@ unsafe extern "C" fn control_add_pane(
     );
     return cp;
 }
-unsafe extern "C" fn control_get_window(
-    mut c: *mut client,
-    mut window: u_int,
-) -> *mut control_window {
+unsafe fn control_get_window(mut c: *mut client, mut window: u_int) -> *mut control_window {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cw: control_window = control_window {
         window: window,
@@ -485,8 +476,7 @@ unsafe extern "C" fn control_get_window(
     }
     return control_windows_find(&(*cs).windows, &cw);
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_set_window_size(
+pub unsafe fn control_set_window_size(
     mut c: *mut client,
     mut window: u_int,
     mut sx: u_int,
@@ -511,8 +501,7 @@ pub unsafe extern "C" fn control_set_window_size(
     (*cw).sx = sx;
     (*cw).sy = sy;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_get_window_size(
+pub unsafe fn control_get_window_size(
     mut c: *mut client,
     mut window: u_int,
     mut sx: *mut u_int,
@@ -527,8 +516,7 @@ pub unsafe extern "C" fn control_get_window_size(
     *sy = (*cw).sy;
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_clear_window_size(mut c: *mut client, mut window: u_int) {
+pub unsafe fn control_clear_window_size(mut c: *mut client, mut window: u_int) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
     if cs.is_null() {
@@ -540,13 +528,13 @@ pub unsafe extern "C" fn control_clear_window_size(mut c: *mut client, mut windo
         drop(Box::from_raw(cw));
     }
 }
-unsafe extern "C" fn control_discard_pane(mut c: *mut client, mut cp: *mut control_pane) {
+unsafe fn control_discard_pane(mut c: *mut client, mut cp: *mut control_pane) {
     let mut cs: *mut control_state = (*c).control_state;
     while let Some(cb) = (*cp).blocks.pop_front() {
         control_free_block(cs, cb);
     }
 }
-unsafe extern "C" fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut window_pane {
+unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*c).session.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
@@ -565,8 +553,7 @@ unsafe extern "C" fn control_window_pane(mut c: *mut client, mut pane: u_int) ->
     }
     return wp;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_reset_offsets(mut c: *mut client) {
+pub unsafe fn control_reset_offsets(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
@@ -582,8 +569,7 @@ pub unsafe extern "C" fn control_reset_offsets(mut c: *mut client) {
     (*control_state_owner(cs)).pending_panes.clear();
     (*cs).pending_count = 0 as u_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_pane_offset(
+pub unsafe fn control_pane_offset(
     mut c: *mut client,
     mut wp: *mut window_pane,
     mut off: *mut ::core::ffi::c_int,
@@ -607,8 +593,7 @@ pub unsafe extern "C" fn control_pane_offset(
         as ::core::ffi::c_int;
     return &raw mut (*cp).offset;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_set_pane_on(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn control_set_pane_on(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_get_pane(c, wp);
     if !cp.is_null() && (*cp).flags & CONTROL_PANE_OFF != 0 {
@@ -625,8 +610,7 @@ pub unsafe extern "C" fn control_set_pane_on(mut c: *mut client, mut wp: *mut wi
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_set_pane_off(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn control_set_pane_off(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_add_pane(c, wp);
     control_discard_pane(c, cp);
@@ -642,8 +626,7 @@ pub unsafe extern "C" fn control_set_pane_off(mut c: *mut client, mut wp: *mut w
     );
     (*cp).flags |= CONTROL_PANE_OFF;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_continue_pane(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn control_continue_pane(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_get_pane(c, wp);
     if !cp.is_null() && (*cp).flags & CONTROL_PANE_PAUSED != 0 {
@@ -665,8 +648,7 @@ pub unsafe extern "C" fn control_continue_pane(mut c: *mut client, mut wp: *mut 
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_pause_pane(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn control_pause_pane(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_add_pane(c, wp);
     if !(*cp).flags & CONTROL_PANE_PAUSED != 0 {
@@ -679,8 +661,7 @@ pub unsafe extern "C" fn control_pause_pane(mut c: *mut client, mut wp: *mut win
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_reset_pane(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn control_reset_pane(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     if (*c).control_state.is_null() {
         return;
@@ -701,10 +682,7 @@ pub unsafe extern "C" fn control_reset_pane(mut c: *mut client, mut wp: *mut win
         ::core::mem::size_of::<window_pane_offset>() as size_t,
     );
 }
-unsafe extern "C" fn control_check_reply_buffer(
-    mut c: *mut client,
-    mut added: size_t,
-) -> ::core::ffi::c_int {
+unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> ::core::ffi::c_int {
     let mut cs: *mut control_state = (*c).control_state;
     let mut size: size_t = 0;
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_DISCARD != 0 {
@@ -776,13 +754,12 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
     );
     bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
 }
-unsafe extern "C" fn control_flush_deferred(mut c: *mut client) {
+unsafe fn control_flush_deferred(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     while let Some(line) = (*control_state_owner(cs)).deferred.pop_front() {
         control_write_line(c, line);
     }
 }
-#[no_mangle]
 pub unsafe extern "C" fn control_write(
     mut c: *mut client,
     mut fmt: *const ::core::ffi::c_char,
@@ -797,8 +774,7 @@ pub unsafe extern "C" fn control_write(
     let line = xvasprintf_cstring(fmt, ap);
     control_write_line(c, line);
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_write_guard(
+pub unsafe fn control_write_guard(
     mut c: *mut client,
     mut guard: *const ::core::ffi::c_char,
     mut t: ::core::ffi::c_long,
@@ -833,7 +809,6 @@ pub unsafe extern "C" fn control_write_guard(
         control_flush_deferred(c);
     }
 }
-#[no_mangle]
 pub unsafe extern "C" fn control_notify_write(
     mut c: *mut client,
     mut fmt: *const ::core::ffi::c_char,
@@ -860,7 +835,7 @@ pub unsafe extern "C" fn control_notify_write(
     );
     (*control_state_owner(cs)).deferred.push_back(line);
 }
-unsafe extern "C" fn control_check_age(
+unsafe fn control_check_age(
     mut c: *mut client,
     mut wp: *mut window_pane,
     mut cp: *mut control_pane,
@@ -907,8 +882,7 @@ unsafe extern "C" fn control_check_age(
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut window_pane) {
+pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
@@ -1056,8 +1030,7 @@ unsafe fn control_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core:
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_all_done(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn control_all_done(mut c: *mut client) -> ::core::ffi::c_int {
     let mut cs: *mut control_state = (*c).control_state;
     if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
@@ -1065,8 +1038,7 @@ pub unsafe extern "C" fn control_all_done(mut c: *mut client) -> ::core::ffi::c_
     return (evbuffer_get_length(&*((*(*cs).write_event).output)) == 0 as size_t)
         as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
+pub unsafe fn control_wait_exit(mut fd: ::core::ffi::c_int) {
     let mut pfd: pollfd = pollfd {
         fd: 0,
         events: 0,
@@ -1112,7 +1084,7 @@ pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
     }
     evbuffer_free(evb);
 }
-unsafe extern "C" fn control_flush_all_blocks(mut c: *mut client) {
+unsafe fn control_flush_all_blocks(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     loop {
         let cb = control_first_block(cs);
@@ -1149,7 +1121,7 @@ unsafe extern "C" fn control_flush_all_blocks(mut c: *mut client) {
         control_free_block(cs, cb);
     }
 }
-unsafe extern "C" fn control_append_data(
+unsafe fn control_append_data(
     mut c: *mut client,
     mut cp: *mut control_pane,
     mut age: uint64_t,
@@ -1221,7 +1193,7 @@ unsafe extern "C" fn control_append_data(
     window_pane_update_used_data(wp, &raw mut (*cp).offset, size);
     return message;
 }
-unsafe extern "C" fn control_write_data(mut c: *mut client, mut message: *mut evbuffer) {
+unsafe fn control_write_data(mut c: *mut client, mut message: *mut evbuffer) {
     let mut cs: *mut control_state = (*c).control_state;
     log_debug(
         b"%s: %s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1240,7 +1212,7 @@ unsafe extern "C" fn control_write_data(mut c: *mut client, mut message: *mut ev
     bufferevent_write_buffer((*cs).write_event, message);
     evbuffer_free(message);
 }
-unsafe extern "C" fn control_write_pending(
+unsafe fn control_write_pending(
     mut c: *mut client,
     mut cp: *mut control_pane,
     mut limit: size_t,
@@ -1408,8 +1380,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
         );
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_start(mut c: *mut client) {
+pub unsafe fn control_start(mut c: *mut client) {
     let mut cs: *mut control_state = ::core::ptr::null_mut::<control_state>();
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         close((*c).out_fd);
@@ -1474,15 +1445,13 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
         bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_ready(mut c: *mut client) {
+pub unsafe fn control_ready(mut c: *mut client) {
     bufferevent_enable(
         (*(*c).control_state).read_event,
         EV_READ as ::core::ffi::c_short,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_discard(mut c: *mut client) {
+pub unsafe fn control_discard(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_panes_minmax(&(*cs).panes, RB_NEGINF);
@@ -1492,8 +1461,7 @@ pub unsafe extern "C" fn control_discard(mut c: *mut client) {
     }
     bufferevent_disable((*cs).read_event, EV_READ as ::core::ffi::c_short);
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_discard_all(mut c: *mut client) {
+pub unsafe fn control_discard_all(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     control_discard(c);
     loop {
@@ -1506,8 +1474,7 @@ pub unsafe extern "C" fn control_discard_all(mut c: *mut client) {
     (*cs).queued_reply_bytes = 0 as size_t;
     bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_stop(mut c: *mut client) {
+pub unsafe fn control_stop(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
     let mut cw1: *mut control_window = ::core::ptr::null_mut::<control_window>();
@@ -1539,8 +1506,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
     (*c).control_state = ::core::ptr::null_mut::<control_state>();
     control_state_free(cs);
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_add_sub(
+pub unsafe fn control_add_sub(
     mut c: *mut client,
     mut name: *const ::core::ffi::c_char,
     mut type_0: monitor_type,
@@ -1550,11 +1516,7 @@ pub unsafe extern "C" fn control_add_sub(
     let mut cs: *mut control_state = (*c).control_state;
     monitor_add((*cs).subs, name, type_0, id, format, MONITOR_NOTIFY_INITIAL);
 }
-#[no_mangle]
-pub unsafe extern "C" fn control_remove_sub(
-    mut c: *mut client,
-    mut name: *const ::core::ffi::c_char,
-) {
+pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
     let mut cs: *mut control_state = (*c).control_state;
     monitor_remove((*cs).subs, name);
 }

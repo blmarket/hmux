@@ -22,8 +22,6 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::sort::{sort_get_panes_window, sort_order_from_string};
 use crate::src::window::{winlinks_minmax, winlinks_next};
-
-#[no_mangle]
 pub static mut cmd_list_panes_entry: cmd_entry = unsafe {
     cmd_entry {
         name: b"list-panes\0" as *const u8 as *const ::core::ffi::c_char,
@@ -75,7 +73,7 @@ unsafe fn cmd_list_panes_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut cmdq_item) {
+unsafe fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut cmdq_item) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
@@ -83,7 +81,7 @@ unsafe extern "C" fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut 
         s = sessions_next(&*s);
     }
 }
-unsafe extern "C" fn cmd_list_panes_session(
+unsafe fn cmd_list_panes_session(
     mut self_0: *mut cmd,
     mut s: *mut session,
     mut item: *mut cmdq_item,
@@ -96,7 +94,7 @@ unsafe extern "C" fn cmd_list_panes_session(
         wl = winlinks_next(&*wl);
     }
 }
-unsafe extern "C" fn cmd_list_panes_window(
+unsafe fn cmd_list_panes_window(
     mut self_0: *mut cmd,
     mut s: *mut session,
     mut wl: *mut winlink,

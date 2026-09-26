@@ -35,10 +35,7 @@ unsafe fn name_time_callback(
         (*w).id,
     );
 }
-unsafe extern "C" fn name_time_expired(
-    mut w: *mut window,
-    mut tv: *mut timeval,
-) -> ::core::ffi::c_int {
+unsafe fn name_time_expired(mut w: *mut window, mut tv: *mut timeval) -> ::core::ffi::c_int {
     let mut offset: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -54,8 +51,7 @@ unsafe extern "C" fn name_time_expired(
     }
     return (NAME_INTERVAL as __suseconds_t - offset.tv_usec) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
+pub unsafe fn check_window_name(mut w: *mut window) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
