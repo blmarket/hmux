@@ -3,6 +3,7 @@
 // remain in their original order. The
 // facade supplies shared types, logging/state helpers, tree CRUD, callbacks,
 // and job-cache lookup.
+use super::bytes::format_cstring;
 use super::*;
 use std::ffi::{CStr, CString};
 
@@ -1938,21 +1939,21 @@ pub(super) unsafe fn format_loop_clients(
     CString::new(buffer).expect("format loop output contains no NUL")
 }
 
-unsafe fn format_float(value: f64, precision: ::core::ffi::c_int) -> CString {
-    let length = libc::snprintf(std::ptr::null_mut(), 0, c"%.*f".as_ptr(), precision, value);
-    if length < 0 {
-        fatalx(c"format number failed".as_ptr());
+fn format_float(value: f64, precision: ::core::ffi::c_int) -> CString {
+    // Preserve printf's lowercase NaN spelling and sign; Rust prints "NaN".
+    if value.is_nan() {
+        return if value.is_sign_negative() {
+            c"-nan"
+        } else {
+            c"nan"
+        }
+        .to_owned();
     }
-    let mut output = vec![0u8; length as usize + 1];
-    libc::snprintf(
-        output.as_mut_ptr().cast(),
-        output.len(),
-        c"%.*f".as_ptr(),
-        precision,
-        value,
-    );
-    CString::from_vec_with_nul(output).expect("formatted number contains one terminating NUL")
+    // A negative printf precision selects the default of six decimal places.
+    let precision = if precision < 0 { 6 } else { precision as usize };
+    format_cstring(format_args!("{value:.precision$}")).expect("formatted number contains no NUL")
 }
+
 pub(super) unsafe fn format_replace_expression(
     mut mexp: *mut format_modifier,
     mut es: *mut format_expand_state,
@@ -3579,6 +3580,62 @@ pub(crate) unsafe fn format_single_from_target_cstring(
 ) -> CString {
     let tc = cmdq_get_target_client(item);
     format_single_from_state_cstring(item, fmt, tc, cmdq_get_target(item))
+}
+
+#[cfg(test)]
+mod format_float_tests {
+    use super::format_float;
+    use std::ffi::CString;
+
+    #[test]
+    fn matches_printf_for_precision_rounding_and_special_values() {
+        let values = [
+            0.0,
+            -0.0,
+            0.125,
+            -0.125,
+            2.5,
+            3.5,
+            9.999,
+            1.23456789,
+            f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            f64::MAX,
+            -f64::MAX,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+            -f64::NAN,
+        ];
+        for value in values {
+            for precision in [-100, -1, 0, 1, 2, 6, 17, 100] {
+                // The application keeps LC_NUMERIC and the rounding mode at
+                // their defaults. Compare with the formatter being replaced.
+                let expected = unsafe {
+                    let len =
+                        libc::snprintf(std::ptr::null_mut(), 0, c"%.*f".as_ptr(), precision, value);
+                    assert!(len >= 0);
+                    let mut bytes = vec![0u8; len as usize + 1];
+                    assert_eq!(
+                        libc::snprintf(
+                            bytes.as_mut_ptr().cast(),
+                            bytes.len(),
+                            c"%.*f".as_ptr(),
+                            precision,
+                            value,
+                        ),
+                        len
+                    );
+                    CString::from_vec_with_nul(bytes).unwrap()
+                };
+                assert_eq!(
+                    format_float(value, precision),
+                    expected,
+                    "value={value:?}, precision={precision}"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
