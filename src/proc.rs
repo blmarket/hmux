@@ -16,9 +16,9 @@ use crate::src::reactor::{
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
 use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
-use crate::src::shared::message::*;
-use crate::src::shared::message::{imsg, imsgbuf, OwnedIbuf};
-use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{imsg, imsgbuf, OwnedIbuf};
+use crate::src::compat::imsg::{imsg_hdr, PROTOCOL_VERSION};
 use crate::src::shared::process::PeerMessage;
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::signal::ProcessSignal;

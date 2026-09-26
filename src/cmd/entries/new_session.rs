@@ -39,7 +39,7 @@ use crate::src::shared::command::{
 use crate::src::shared::environment::environ;
 use crate::src::shared::layout::layout_cell;
 use crate::src::shared::limits::USHRT_MAX;
-use crate::src::shared::message::*;
+use crate::src::compat::imsg::*;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;

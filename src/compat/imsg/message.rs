@@ -1,7 +1,7 @@
 //! Authoritative client/server message identifiers.
 
-use super::abi::{pid_t, size_t, uint32_t};
-use std::collections::VecDeque;
+use crate::src::shared::abi::{pid_t, size_t, uint32_t};
+use super::imsg_buffer::ibufqueue;
 use std::os::fd::OwnedFd;
 pub type msgtype = ::core::ffi::c_uint;
 
@@ -233,11 +233,6 @@ pub struct imsg {
 }
 
 #[repr(C)]
-pub struct ibufqueue {
-    pub bufs: ibufqueue_bufs,
-}
-
-#[repr(C)]
 pub struct msgbuf {
     pub bufs: ibufqueue,
     pub rbufs: ibufqueue,
@@ -259,76 +254,12 @@ pub struct imsgbuf {
     pub flags: ::core::ffi::c_int,
 }
 
-pub struct ibufqueue_bufs {
-    entries: VecDeque<Box<OwnedIbuf>>,
-}
-
-impl ibufqueue_bufs {
-    pub fn new() -> Self {
-        Self {
-            entries: VecDeque::new(),
-        }
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = *mut OwnedIbuf> + '_ {
-        self.entries
-            .iter()
-            .map(|buf| (&**buf as *const OwnedIbuf).cast_mut())
-    }
-
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    pub(crate) unsafe fn push_back_raw(&mut self, buf: *mut OwnedIbuf) -> bool {
-        let Some(buf) = OwnedIbuf::from_raw_owned(buf) else {
-            return false;
-        };
-        self.entries.push_back(buf);
-        true
-    }
-
-    pub(crate) unsafe fn push_front_raw(&mut self, buf: *mut OwnedIbuf) -> bool {
-        let Some(buf) = OwnedIbuf::from_raw_owned(buf) else {
-            return false;
-        };
-        self.entries.push_front(buf);
-        true
-    }
-
-    pub(crate) fn pop_front_raw(&mut self) -> Option<*mut OwnedIbuf> {
-        self.entries.pop_front().map(Box::into_raw)
-    }
-
-    pub(crate) fn pop_front_owned(&mut self) -> Option<Box<OwnedIbuf>> {
-        self.entries.pop_front()
-    }
-
-    pub(crate) fn front(&self) -> Option<*mut OwnedIbuf> {
-        self.entries
-            .front()
-            .map(|buf| (&**buf as *const OwnedIbuf).cast_mut())
-    }
-
-    pub(crate) fn append(&mut self, other: &mut Self) {
-        self.entries.append(&mut other.entries);
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.entries.clear();
-    }
-}
-
 /// Make a read-only view whose lifetime is tied to the source slice.
 ///
 /// A view cannot outlive its source:
 ///
 /// ```compile_fail
-/// use hmux2::src::shared::message::ibuf_from_buffer;
+/// use hmux2::src::compat::imsg::ibuf_from_buffer;
 /// let bytes = vec![1, 2, 3];
 /// let view = ibuf_from_buffer(&bytes);
 /// drop(bytes);
@@ -348,7 +279,7 @@ pub fn ibuf_from_ibuf<'a>(from: &'a ibuf<'_>) -> ibuf<'a> {
 /// The mutable borrow stays active for as long as the subview exists:
 ///
 /// ```compile_fail
-/// use hmux2::src::shared::message::{ibuf_from_buffer, ibuf_get_ibuf};
+/// use hmux2::src::compat::imsg::{ibuf_from_buffer, ibuf_get_ibuf};
 /// let bytes = [1, 2, 3];
 /// let mut source = ibuf_from_buffer(&bytes);
 /// let view = ibuf_get_ibuf(&mut source, 1).unwrap();
@@ -357,14 +288,6 @@ pub fn ibuf_from_ibuf<'a>(from: &'a ibuf<'_>) -> ibuf<'a> {
 /// ```
 pub fn ibuf_get_ibuf<'a>(from: &'a mut ibuf<'_>, len: usize) -> Option<ibuf<'a>> {
     from.take_view(len)
-}
-
-impl ibufqueue {
-    pub fn new() -> Self {
-        Self {
-            bufs: ibufqueue_bufs::new(),
-        }
-    }
 }
 
 #[derive(Copy, Clone)]

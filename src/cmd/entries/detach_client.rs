@@ -14,7 +14,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_READONLY, CMD_TARGET_CLIENT_USAGE,
 };
-use crate::src::shared::message::*;
+use crate::src::compat::imsg::*;
 use crate::src::shared::session::session;
 pub static mut cmd_detach_client_entry: cmd_entry =  {
     cmd_entry {

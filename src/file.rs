@@ -21,9 +21,9 @@ use crate::src::shared::command::cmdq_item;
 use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_TIMEOUT, EV_WRITE};
-use crate::src::shared::message::imsg;
-use crate::src::shared::message::*;
-use crate::src::shared::message::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
+use crate::src::compat::imsg::imsg;
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::posix_io::{
     O_APPEND, O_CREAT, O_NONBLOCK, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };

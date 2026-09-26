@@ -1,4 +1,21 @@
-use crate::src::compat::imsg_buffer::{
+mod imsg_buffer;
+mod message;
+
+pub use imsg_buffer::ibufqueue;
+pub use message::{
+    ibuf, ibuf_from_buffer, ibuf_from_ibuf, ibuf_get_ibuf, imsg, imsg_hdr, imsgbuf,
+    msg_command, msgbuf, msgtype, OwnedIbuf, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION,
+    MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING,
+    MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE,
+    MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS,
+    MSG_IDENTIFY_OLDCWD, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM,
+    MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_OLDSTDERR, MSG_OLDSTDIN,
+    MSG_OLDSTDOUT, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_READY,
+    MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP,
+    MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY,
+};
+
+use imsg_buffer::{
     ibuf_add, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get, ibuf_fd_set,
     ibuf_free, ibuf_get, ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_free,
     msgbuf_get, msgbuf_new_reader_owned, msgbuf_queuelen, msgbuf_read, msgbuf_write, IbufView,
@@ -7,8 +24,6 @@ use crate::src::ffi::libc::{__errno_location, getpid, memset};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::uint32_t;
 use crate::src::shared::errno::ERANGE;
-pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf, OwnedIbuf};
-use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use std::os::fd::{IntoRawFd, OwnedFd};
 
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;

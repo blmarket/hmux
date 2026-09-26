@@ -27,7 +27,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMDQ_STATE_REPEAT, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY, CMD_STARTSERVER,
 };
-use crate::src::shared::message::*;
+use crate::src::compat::imsg::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};

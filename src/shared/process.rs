@@ -2,7 +2,7 @@
 
 use super::abi::{gid_t, uid_t};
 use super::event::event;
-use super::message::{imsg, imsgbuf};
+use crate::src::compat::imsg::{imsg, imsgbuf};
 
 pub enum PeerMessage<'a> {
     Disconnected,

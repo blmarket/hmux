@@ -62,7 +62,7 @@ use crate::src::server_fn::{
 use crate::src::session::{session_find_by_id, session_theme_changed, session_update_activity};
 use crate::src::shared::command::unpack_argv;
 use crate::src::shared::events::event_payload;
-use crate::src::shared::message::msg_command;
+use crate::src::compat::imsg::msg_command;
 use crate::src::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
@@ -803,9 +803,9 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_event, key_table};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{SIZE_MAX, UINT_MAX};
-use crate::src::shared::message::imsg;
-use crate::src::shared::message::IMSG_HEADER_SIZE;
-use crate::src::shared::message::*;
+use crate::src::compat::imsg::imsg;
+use crate::src::compat::imsg::IMSG_HEADER_SIZE;
+use crate::src::compat::imsg::*;
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
     MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,

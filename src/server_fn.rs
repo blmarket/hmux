@@ -48,8 +48,8 @@ use crate::src::shared::client::{
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::message::*;
-use crate::src::shared::message::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_FLOATOVERZOOM, PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY,

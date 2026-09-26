@@ -9,7 +9,7 @@ use super::environment::environ;
 use super::event::{bufferevent, evbuffer, event};
 use super::format::format_job_tree;
 use super::key::{key_code, key_event, key_table};
-use super::message::msgtype;
+use crate::src::compat::imsg::msgtype;
 use super::mouse::mouse_event;
 use super::process::tmuxpeer;
 use super::prompt::prompt;

@@ -17,7 +17,6 @@ pub mod compat {
     pub mod glob;
     pub mod htonll;
     pub mod imsg;
-    pub mod imsg_buffer;
     pub mod ntohll;
     pub mod setproctitle;
     pub mod stdio;

@@ -34,10 +34,10 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
 use crate::src::shared::event::*;
-use crate::src::shared::message::imsg;
-use crate::src::shared::message::msg_command;
-use crate::src::shared::message::*;
-use crate::src::shared::message::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
+use crate::src::compat::imsg::imsg;
+use crate::src::compat::imsg::msg_command;
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 use crate::src::shared::posix_io::{
     O_CREAT, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG,
 };

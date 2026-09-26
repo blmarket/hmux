@@ -8,15 +8,89 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uint16_t, __uint32_t, ssize_t, uint16_t, uint32_t};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
-use crate::src::shared::message::IbufStorage;
-pub use crate::src::shared::message::{ibuf, ibufqueue, msgbuf, OwnedIbuf};
+use super::message::IbufStorage;
+use super::message::{ibuf, msgbuf, OwnedIbuf};
 use crate::src::shared::socket::SOL_SOCKET;
+use std::collections::VecDeque;
 use std::ffi::CString;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::ptr::slice_from_raw_parts_mut;
 
 pub type __caddr_t = *mut ::core::ffi::c_char;
 pub type caddr_t = __caddr_t;
+
+#[repr(C)]
+pub struct ibufqueue {
+    bufs: ibufqueue_bufs,
+}
+
+struct ibufqueue_bufs {
+    entries: VecDeque<Box<OwnedIbuf>>,
+}
+
+impl ibufqueue_bufs {
+    fn new() -> Self {
+        Self {
+            entries: VecDeque::new(),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = *mut OwnedIbuf> + '_ {
+        self.entries
+            .iter()
+            .map(|buf| (&**buf as *const OwnedIbuf).cast_mut())
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    unsafe fn push_back_raw(&mut self, buf: *mut OwnedIbuf) -> bool {
+        let Some(buf) = OwnedIbuf::from_raw_owned(buf) else {
+            return false;
+        };
+        self.entries.push_back(buf);
+        true
+    }
+
+    unsafe fn push_front_raw(&mut self, buf: *mut OwnedIbuf) -> bool {
+        let Some(buf) = OwnedIbuf::from_raw_owned(buf) else {
+            return false;
+        };
+        self.entries.push_front(buf);
+        true
+    }
+
+    fn pop_front_raw(&mut self) -> Option<*mut OwnedIbuf> {
+        self.entries.pop_front().map(Box::into_raw)
+    }
+
+    fn pop_front_owned(&mut self) -> Option<Box<OwnedIbuf>> {
+        self.entries.pop_front()
+    }
+
+    fn front(&self) -> Option<*mut OwnedIbuf> {
+        self.entries
+            .front()
+            .map(|buf| (&**buf as *const OwnedIbuf).cast_mut())
+    }
+
+    fn append(&mut self, other: &mut Self) {
+        self.entries.append(&mut other.entries);
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+impl ibufqueue {
+    fn new() -> Self {
+        Self {
+            bufs: ibufqueue_bufs::new(),
+        }
+    }
+}
 
 #[derive(Copy, Clone)]
 #[repr(C)]
