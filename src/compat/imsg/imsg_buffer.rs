@@ -1,18 +1,15 @@
-use crate::src::compat::htonll::htonll;
-use crate::src::compat::ntohll::ntohll;
 use crate::src::ffi::libc::msghdr;
 use crate::src::ffi::libc::{
-    __errno_location, abort, close, memcpy, memset, readv, recvmsg, sendmsg, strlcpy, writev,
+    __errno_location, abort, close, memcpy, memset, readv, recvmsg, sendmsg, writev,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__uint16_t, __uint32_t, ssize_t, uint16_t, uint32_t};
+use crate::src::shared::abi::{ssize_t, uint32_t};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 use super::message::IbufStorage;
 use super::message::{ibuf, msgbuf, OwnedIbuf};
 use crate::src::shared::socket::SOL_SOCKET;
 use std::collections::VecDeque;
-use std::ffi::CString;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::ptr::slice_from_raw_parts_mut;
 
@@ -53,14 +50,6 @@ impl ibufqueue_bufs {
         true
     }
 
-    unsafe fn push_front_raw(&mut self, buf: *mut OwnedIbuf) -> bool {
-        let Some(buf) = OwnedIbuf::from_raw_owned(buf) else {
-            return false;
-        };
-        self.entries.push_front(buf);
-        true
-    }
-
     fn pop_front_raw(&mut self) -> Option<*mut OwnedIbuf> {
         self.entries.pop_front().map(Box::into_raw)
     }
@@ -73,10 +62,6 @@ impl ibufqueue_bufs {
         self.entries
             .front()
             .map(|buf| (&**buf as *const OwnedIbuf).cast_mut())
-    }
-
-    fn append(&mut self, other: &mut Self) {
-        self.entries.append(&mut other.entries);
     }
 
     fn clear(&mut self) {
@@ -117,19 +102,6 @@ pub union C2RustUnnamed_2 {
 pub union C2RustUnnamed_3 {
     pub hdr: cmsghdr,
     pub buf: [::core::ffi::c_char; 24],
-}
-#[inline]
-unsafe fn __bswap_16(mut __bsx: __uint16_t) -> __uint16_t {
-    return (__bsx as ::core::ffi::c_int >> 8 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int
-        | (__bsx as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 8 as ::core::ffi::c_int)
-        as __uint16_t;
-}
-#[inline]
-unsafe fn __bswap_32(mut __bsx: __uint32_t) -> __uint32_t {
-    return (__bsx & 0xff000000 as __uint32_t) >> 24 as ::core::ffi::c_int
-        | (__bsx & 0xff0000 as __uint32_t) >> 8 as ::core::ffi::c_int
-        | (__bsx & 0xff00 as __uint32_t) << 8 as ::core::ffi::c_int
-        | (__bsx & 0xff as __uint32_t) << 24 as ::core::ffi::c_int;
 }
 #[inline]
 unsafe fn __cmsg_nxthdr(mut __mhdr: *mut msghdr, mut __cmsg: *mut cmsghdr) -> *mut cmsghdr {
@@ -343,131 +315,6 @@ pub unsafe fn ibuf_add(
     memcpy(b, data, len);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn ibuf_add_ibuf(
-    mut buf: *mut OwnedIbuf,
-    mut from: *const OwnedIbuf,
-) -> ::core::ffi::c_int {
-    return ibuf_add(buf, ibuf_data(from), ibuf_size(from));
-}
-pub unsafe fn ibuf_add_n8(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    let mut v: uint8_t = 0;
-    if value > UINT8_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = value as uint8_t;
-    return ibuf_add(
-        buf,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint8_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_n16(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    let mut v: uint16_t = 0;
-    if value > UINT16_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = __bswap_16(value as __uint16_t) as uint16_t;
-    return ibuf_add(
-        buf,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint16_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_n32(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    let mut v: uint32_t = 0;
-    if value > UINT32_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = __bswap_32(value as __uint32_t) as uint32_t;
-    return ibuf_add(
-        buf,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint32_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_n64(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    value = htonll(value);
-    return ibuf_add(
-        buf,
-        &raw mut value as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint64_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_h16(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    let mut v: uint16_t = 0;
-    if value > UINT16_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = value as uint16_t;
-    return ibuf_add(
-        buf,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint16_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_h32(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    let mut v: uint32_t = 0;
-    if value > UINT32_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = value as uint32_t;
-    return ibuf_add(
-        buf,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint32_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_h64(mut buf: *mut OwnedIbuf, mut value: uint64_t) -> ::core::ffi::c_int {
-    return ibuf_add(
-        buf,
-        &raw mut value as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint64_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_add_zero(mut buf: *mut OwnedIbuf, mut len: size_t) -> ::core::ffi::c_int {
-    let mut b: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    if len == 0 as size_t {
-        return 0 as ::core::ffi::c_int;
-    }
-    b = ibuf_reserve(buf, len);
-    if b.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    memset(b, 0 as ::core::ffi::c_int, len);
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn ibuf_add_strbuf(
-    mut buf: *mut OwnedIbuf,
-    mut str: *const ::core::ffi::c_char,
-    mut len: size_t,
-) -> ::core::ffi::c_int {
-    let mut b: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: size_t = 0;
-    if len == 0 {
-        *__errno_location() = EOVERFLOW;
-        return -(1 as ::core::ffi::c_int);
-    }
-    b = ibuf_reserve(buf, len) as *mut ::core::ffi::c_char;
-    if b.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    n = strlcpy(b, str, len) as size_t;
-    if n >= len {
-        *__errno_location() = EOVERFLOW;
-        return -(1 as ::core::ffi::c_int);
-    }
-    memset(
-        b.offset(n as isize) as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        len.wrapping_sub(n),
-    );
-    return 0 as ::core::ffi::c_int;
-}
 pub unsafe fn ibuf_seek(
     mut buf: *mut OwnedIbuf,
     mut pos: size_t,
@@ -507,91 +354,6 @@ pub unsafe fn ibuf_set(
     memcpy(b, data, len);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn ibuf_set_n8(
-    mut buf: *mut OwnedIbuf,
-    mut pos: size_t,
-    mut value: uint64_t,
-) -> ::core::ffi::c_int {
-    let mut v: uint8_t = 0;
-    if value > UINT8_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = value as uint8_t;
-    return ibuf_set(
-        buf,
-        pos,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint8_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_set_n16(
-    mut buf: *mut OwnedIbuf,
-    mut pos: size_t,
-    mut value: uint64_t,
-) -> ::core::ffi::c_int {
-    let mut v: uint16_t = 0;
-    if value > UINT16_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = __bswap_16(value as __uint16_t) as uint16_t;
-    return ibuf_set(
-        buf,
-        pos,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint16_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_set_n32(
-    mut buf: *mut OwnedIbuf,
-    mut pos: size_t,
-    mut value: uint64_t,
-) -> ::core::ffi::c_int {
-    let mut v: uint32_t = 0;
-    if value > UINT32_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = __bswap_32(value as __uint32_t) as uint32_t;
-    return ibuf_set(
-        buf,
-        pos,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint32_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_set_n64(
-    mut buf: *mut OwnedIbuf,
-    mut pos: size_t,
-    mut value: uint64_t,
-) -> ::core::ffi::c_int {
-    value = htonll(value);
-    return ibuf_set(
-        buf,
-        pos,
-        &raw mut value as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint64_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_set_h16(
-    mut buf: *mut OwnedIbuf,
-    mut pos: size_t,
-    mut value: uint64_t,
-) -> ::core::ffi::c_int {
-    let mut v: uint16_t = 0;
-    if value > UINT16_MAX as uint64_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    v = value as uint16_t;
-    return ibuf_set(
-        buf,
-        pos,
-        &raw mut v as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint16_t>() as size_t,
-    );
-}
 pub unsafe fn ibuf_set_h32(
     mut buf: *mut OwnedIbuf,
     mut pos: size_t,
@@ -609,30 +371,6 @@ pub unsafe fn ibuf_set_h32(
         &raw mut v as *const ::core::ffi::c_void,
         ::core::mem::size_of::<uint32_t>() as size_t,
     );
-}
-pub unsafe fn ibuf_set_h64(
-    mut buf: *mut OwnedIbuf,
-    mut pos: size_t,
-    mut value: uint64_t,
-) -> ::core::ffi::c_int {
-    return ibuf_set(
-        buf,
-        pos,
-        &raw mut value as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<uint64_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_set_maxsize(mut buf: *mut OwnedIbuf, mut max: size_t) -> ::core::ffi::c_int {
-    if !(*buf).is_owned() {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    if max > (*buf).max {
-        *__errno_location() = ERANGE;
-        return -(1 as ::core::ffi::c_int);
-    }
-    (*buf).max = max;
-    return 0 as ::core::ffi::c_int;
 }
 /// Return the unread bytes through the legacy raw-pointer interface.
 ///
@@ -655,51 +393,8 @@ pub unsafe fn ibuf_left(mut buf: *const OwnedIbuf) -> size_t {
     }
     return (*buf).max.wrapping_sub((*buf).wpos);
 }
-pub unsafe fn ibuf_truncate(mut buf: *mut OwnedIbuf, mut len: size_t) -> ::core::ffi::c_int {
-    if ibuf_size(buf) >= len {
-        (*buf).wpos = (*buf).rpos.wrapping_add(len);
-        return 0 as ::core::ffi::c_int;
-    }
-    if !(*buf).is_owned() {
-        *__errno_location() = ERANGE;
-        return -(1 as ::core::ffi::c_int);
-    }
-    return ibuf_add_zero(buf, len.wrapping_sub(ibuf_size(buf)));
-}
-pub unsafe fn ibuf_rewind(mut buf: *mut OwnedIbuf) {
-    (*buf).rpos = 0 as size_t;
-}
 pub unsafe fn ibuf_close(mut msgbuf: *mut msgbuf, mut buf: *mut OwnedIbuf) {
     ibufq_push(&raw mut (*msgbuf).bufs, buf);
-}
-/// Initialize a borrowed, read-only view over a byte span.
-///
-/// # Safety
-/// `buf` must point to uninitialized or previously dropped `ibuf` storage.
-/// `data` must be valid for `len` bytes and remain alive and immutable until
-/// the view is dropped. The view must not be freed with `ibuf_free`, queued,
-/// or used after the source bytes stop being valid.
-pub unsafe fn ibuf_from_buffer(
-    mut buf: *mut OwnedIbuf,
-    mut data: *mut ::core::ffi::c_void,
-    mut len: size_t,
-) {
-    let bytes: &[u8] = if len == 0 {
-        &[]
-    } else {
-        std::slice::from_raw_parts(data.cast::<u8>(), len)
-    };
-    ::core::ptr::write(buf, ibuf::borrowed(bytes));
-}
-/// Initialize a borrowed view over the source's unread bytes.
-///
-/// # Safety
-/// `buf` must point to uninitialized or previously dropped `ibuf` storage.
-/// `from` must remain alive and unmodified while the resulting view is used;
-/// `buf` must not overlap `from`, and the result must not be freed, queued, or
-/// allowed to outlive `from`.
-pub unsafe fn ibuf_from_ibuf(mut buf: *mut OwnedIbuf, mut from: *const OwnedIbuf) {
-    ibuf_from_buffer(buf, ibuf_data(from), ibuf_size(from));
 }
 /// Read bytes from an ibuf through the raw compatibility API.
 ///
@@ -719,156 +414,6 @@ pub unsafe fn ibuf_get(
         return 0;
     }
     memcpy(data, ibuf_data(buf), len);
-    (*buf).rpos = (*buf).rpos.wrapping_add(len);
-    return 0 as ::core::ffi::c_int;
-}
-/// Consume bytes and initialize a borrowed subview over them.
-///
-/// # Safety
-/// `buf` must be live and `new` must point to uninitialized or previously
-/// dropped ibuf storage. `new` must not overlap `buf`. The returned view must
-/// not outlive or overlap a mutation of `buf`, and must not be freed or queued.
-pub unsafe fn ibuf_get_ibuf(
-    mut buf: *mut OwnedIbuf,
-    mut len: size_t,
-    mut new: *mut OwnedIbuf,
-) -> ::core::ffi::c_int {
-    if ibuf_size(buf) < len {
-        *__errno_location() = EBADMSG;
-        return -(1 as ::core::ffi::c_int);
-    }
-    ibuf_from_buffer(new, ibuf_data(buf), len);
-    (*buf).rpos = (*buf).rpos.wrapping_add(len);
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn ibuf_get_h16(
-    mut buf: *mut OwnedIbuf,
-    mut value: *mut uint16_t,
-) -> ::core::ffi::c_int {
-    return ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint16_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_get_h32(
-    mut buf: *mut OwnedIbuf,
-    mut value: *mut uint32_t,
-) -> ::core::ffi::c_int {
-    return ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint32_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_get_h64(
-    mut buf: *mut OwnedIbuf,
-    mut value: *mut uint64_t,
-) -> ::core::ffi::c_int {
-    return ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint64_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_get_n8(mut buf: *mut OwnedIbuf, mut value: *mut uint8_t) -> ::core::ffi::c_int {
-    return ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint8_t>() as size_t,
-    );
-}
-pub unsafe fn ibuf_get_n16(
-    mut buf: *mut OwnedIbuf,
-    mut value: *mut uint16_t,
-) -> ::core::ffi::c_int {
-    let mut rv: ::core::ffi::c_int = 0;
-    rv = ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint16_t>() as size_t,
-    );
-    *value = __bswap_16(*value) as uint16_t;
-    return rv;
-}
-pub unsafe fn ibuf_get_n32(
-    mut buf: *mut OwnedIbuf,
-    mut value: *mut uint32_t,
-) -> ::core::ffi::c_int {
-    let mut rv: ::core::ffi::c_int = 0;
-    rv = ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint32_t>() as size_t,
-    );
-    *value = __bswap_32(*value) as uint32_t;
-    return rv;
-}
-pub unsafe fn ibuf_get_n64(
-    mut buf: *mut OwnedIbuf,
-    mut value: *mut uint64_t,
-) -> ::core::ffi::c_int {
-    let mut rv: ::core::ffi::c_int = 0;
-    rv = ibuf_get(
-        buf,
-        value as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<uint64_t>() as size_t,
-    );
-    *value = ntohll(*value);
-    return rv;
-}
-pub unsafe fn ibuf_get_string(buf: *mut OwnedIbuf, len: size_t) -> Option<CString> {
-    if ibuf_size(buf) < len {
-        *__errno_location() = EBADMSG;
-        return None;
-    }
-    let bytes = if len == 0 {
-        &[]
-    } else {
-        std::slice::from_raw_parts(ibuf_data(buf) as *const u8, len)
-    };
-    let string_len = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(bytes.len());
-    let Some(allocation_len) = string_len.checked_add(1) else {
-        *__errno_location() = ENOMEM;
-        return None;
-    };
-    let mut string_bytes = Vec::new();
-    if string_bytes.try_reserve_exact(allocation_len).is_err() {
-        *__errno_location() = ENOMEM;
-        return None;
-    }
-    string_bytes.extend_from_slice(&bytes[..string_len]);
-    string_bytes.push(0);
-    (*buf).rpos = (*buf).rpos.wrapping_add(len);
-    Some(CString::from_vec_with_nul_unchecked(string_bytes))
-}
-pub unsafe fn ibuf_get_strbuf(
-    mut buf: *mut OwnedIbuf,
-    mut str: *mut ::core::ffi::c_char,
-    mut len: size_t,
-) -> ::core::ffi::c_int {
-    if len == 0 as size_t {
-        *__errno_location() = EINVAL;
-        return -(1 as ::core::ffi::c_int);
-    }
-    if ibuf_get(buf, str as *mut ::core::ffi::c_void, len) == -(1 as ::core::ffi::c_int) {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if *str.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int != '\0' as i32 {
-        *str.offset(len.wrapping_sub(1 as size_t) as isize) = '\0' as i32 as ::core::ffi::c_char;
-        *__errno_location() = EOVERFLOW;
-        return -(1 as ::core::ffi::c_int);
-    }
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn ibuf_skip(mut buf: *mut OwnedIbuf, mut len: size_t) -> ::core::ffi::c_int {
-    if ibuf_size(buf) < len {
-        *__errno_location() = EBADMSG;
-        return -(1 as ::core::ffi::c_int);
-    }
     (*buf).rpos = (*buf).rpos.wrapping_add(len);
     return 0 as ::core::ffi::c_int;
 }
@@ -924,38 +469,6 @@ pub unsafe fn msgbuf_new() -> *mut msgbuf {
         return ::core::ptr::null_mut();
     };
     Box::into_raw(msgbuf)
-}
-/// Create a reader whose header callback may inspect a temporary borrowed view.
-///
-/// # Safety
-/// `readhdr`, when present, must read the header only during the callback and
-/// must not retain or free its ibuf view. It must return null or transfer a
-/// unique heap allocation that can be reclaimed with `Box::from_raw`; the
-/// returned storage must be owned for parsing to continue. Borrowed storage is
-/// rejected. `arg` must remain valid for each callback.
-pub unsafe fn msgbuf_new_reader(
-    mut hdrsz: size_t,
-    mut readhdr: Option<
-        unsafe extern "C" fn(
-            *mut OwnedIbuf,
-            *mut ::core::ffi::c_void,
-            *mut ::core::ffi::c_int,
-        ) -> *mut OwnedIbuf,
-    >,
-    mut arg: *mut ::core::ffi::c_void,
-) -> *mut msgbuf {
-    let reader = readhdr.map(|readhdr| {
-        Box::new(move |header: &[u8], fd: Option<OwnedFd>| {
-            let mut view = IbufView::new(header);
-            let mut raw_fd = fd.map_or(-1, IntoRawFd::into_raw_fd);
-            let message = readhdr(unsafe { view.as_ibuf_ptr() }, arg, &raw mut raw_fd);
-            let remaining_fd = (raw_fd >= 0).then(|| OwnedFd::from_raw_fd(raw_fd));
-            let message = (!message.is_null()).then(|| unsafe { Box::from_raw(message) });
-            (message, remaining_fd)
-        })
-            as Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>)>
-    });
-    msgbuf_new_reader_with(hdrsz, reader)
 }
 
 unsafe fn msgbuf_new_reader_with(
@@ -1018,9 +531,6 @@ pub unsafe fn msgbuf_clear(mut msgbuf: *mut msgbuf) {
 }
 pub unsafe fn msgbuf_get(mut msgbuf: *mut msgbuf) -> *mut OwnedIbuf {
     return ibufq_pop(&raw mut (*msgbuf).rbufs);
-}
-pub unsafe fn msgbuf_concat(mut msgbuf: *mut msgbuf, mut from: *mut ibufqueue) {
-    ibufq_concat(&raw mut (*msgbuf).bufs, from);
 }
 pub unsafe fn ibuf_write(
     mut fd: ::core::ffi::c_int,
@@ -1427,20 +937,6 @@ unsafe fn msgbuf_drain(mut msgbuf: *mut msgbuf, mut n: size_t) {
         }
     }
 }
-pub unsafe fn ibufq_new() -> *mut ibufqueue {
-    let Ok(bufq) = Box::try_new(ibufqueue::new()) else {
-        *__errno_location() = ENOMEM;
-        return ::core::ptr::null_mut();
-    };
-    Box::into_raw(bufq)
-}
-pub unsafe fn ibufq_free(mut bufq: *mut ibufqueue) {
-    if bufq.is_null() {
-        return;
-    }
-    ibufq_flush(bufq);
-    drop(Box::from_raw(bufq));
-}
 pub unsafe fn ibufq_pop(mut bufq: *mut ibufqueue) -> *mut OwnedIbuf {
     return (*bufq)
         .bufs
@@ -1459,12 +955,6 @@ pub unsafe fn ibufq_push(mut bufq: *mut ibufqueue, mut buf: *mut OwnedIbuf) {
 }
 pub unsafe fn ibufq_queuelen(mut bufq: *mut ibufqueue) -> uint32_t {
     return (*bufq).bufs.len() as uint32_t;
-}
-pub unsafe fn ibufq_concat(mut to: *mut ibufqueue, mut from: *mut ibufqueue) {
-    if to == from {
-        return;
-    }
-    (*to).bufs.append(&mut (*from).bufs);
 }
 pub unsafe fn ibufq_flush(mut bufq: *mut ibufqueue) {
     (*bufq).bufs.clear();
