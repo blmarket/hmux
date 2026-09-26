@@ -995,7 +995,7 @@ pub unsafe fn server_client_set_key_table(
     }
     key_bindings_unref_table((*c).keytable as *mut key_table);
     (*c).keytable = key_bindings_get_table(name, 1 as ::core::ffi::c_int) as *mut key_table;
-    (*(*c).keytable).references = (*(*c).keytable).references.wrapping_add(1);
+    crate::src::shared::rc::retain((*c).keytable);
     if gettimeofday(&raw mut (*(*c).keytable).activity_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1080,7 +1080,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
         b"root\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     ) as *mut key_table;
-    (*(*c).keytable).references = (*(*c).keytable).references.wrapping_add(1);
+    crate::src::shared::rc::retain((*c).keytable);
     event_set(
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),
@@ -2940,7 +2940,7 @@ unsafe fn server_client_key_callback(
                                                 as *const ::core::ffi::c_char,
                                             ((*table).name).as_ptr().cast_mut(),
                                         );
-                                        (*table).references = (*table).references.wrapping_add(1);
+                                        crate::src::shared::rc::retain(table);
                                         repeat = server_client_repeat_time(c, bd);
                                         if repeat != 0 as u_int {
                                             (*c).flags |= CLIENT_REPEAT as uint64_t;

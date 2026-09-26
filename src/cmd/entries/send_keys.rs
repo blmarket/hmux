@@ -131,7 +131,7 @@ unsafe fn cmd_send_keys_inject_key(
     );
     bd = key_bindings_get(table, key & !KEYC_MASK_FLAGS);
     if !bd.is_null() {
-        (*table).references = (*table).references.wrapping_add(1);
+        crate::src::shared::rc::retain(table);
         after = key_bindings_dispatch(bd, after, tc, ::core::ptr::null_mut::<key_event>(), target);
         key_bindings_unref_table(table);
     }

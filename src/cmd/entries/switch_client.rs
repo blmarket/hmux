@@ -138,7 +138,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             );
             return CMD_RETURN_ERROR;
         }
-        (*table).references = (*table).references.wrapping_add(1);
+        crate::src::shared::rc::retain(table);
         key_bindings_unref_table((*tc).keytable as *mut key_table);
         (*tc).keytable = table as *mut key_table;
         return CMD_RETURN_NORMAL;

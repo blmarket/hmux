@@ -62,7 +62,6 @@ pub unsafe fn key_bindings_get_table(
         },
         key_bindings: key_bindings::default(),
         default_key_bindings: key_bindings::default(),
-        references: 0,
         entry: key_table_entry { owner: None },
     };
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
@@ -71,15 +70,12 @@ pub unsafe fn key_bindings_get_table(
     if !table.is_null() || create == 0 {
         return table;
     }
-    let mut owner = Box::new(key_table {
+    table = crate::src::shared::rc::new(key_table {
         name: CStr::from_ptr(name).to_owned(),
         ..key_table::empty()
-    });
-
-    table = Box::into_raw(owner).cast();
+    }, key_bindings_destroy_table);
     (*table).key_bindings.storage = None;
     (*table).default_key_bindings.storage = None;
-    (*table).references = 1 as u_int;
     key_tables_insert(&raw mut key_tables, table);
     return table;
 }
@@ -89,13 +85,12 @@ pub unsafe fn key_bindings_first_table() -> *mut key_table {
 pub unsafe fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
     return key_tables_next(&*table);
 }
-pub unsafe fn key_bindings_unref_table(mut table: *mut key_table) {
+pub unsafe fn key_bindings_unref_table(table: *mut key_table) {
+    crate::src::shared::rc::release(table);
+}
+unsafe fn key_bindings_destroy_table(table: *mut key_table) {
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut bd1: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    (*table).references = (*table).references.wrapping_sub(1);
-    if (*table).references != 0 as u_int {
-        return;
-    }
     bd = key_bindings_index_minmax(&(*table).key_bindings);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
@@ -114,7 +109,6 @@ pub unsafe fn key_bindings_unref_table(mut table: *mut key_table) {
         key_bindings_free(bd);
         bd = bd1;
     }
-    drop(Box::from_raw(table));
 }
 pub unsafe fn key_bindings_get(mut table: *mut key_table, mut key: key_code) -> *mut key_binding {
     let mut bd: key_binding = key_binding {

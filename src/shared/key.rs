@@ -1489,7 +1489,6 @@ pub struct key_table {
     pub activity_time: timeval,
     pub key_bindings: key_bindings,
     pub default_key_bindings: key_bindings,
-    pub references: u_int,
     pub entry: key_table_entry,
 }
 
@@ -1500,7 +1499,6 @@ impl key_table {
             activity_time: Default::default(),
             key_bindings: key_bindings::default(),
             default_key_bindings: key_bindings::default(),
-            references: Default::default(),
             entry: key_table_entry { owner: None },
         }
     }
