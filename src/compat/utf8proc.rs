@@ -1,6 +1,6 @@
 use crate::src::ffi::utf8proc::{
     utf8proc_category, utf8proc_charwidth, utf8proc_codepoint_valid, utf8proc_encode_char,
-    };
+};
 use crate::src::ffi::utf8proc::{
     utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t, utf8proc_uint8_t,
 };

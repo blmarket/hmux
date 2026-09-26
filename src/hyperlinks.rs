@@ -352,7 +352,10 @@ mod hyperlink_index_tests {
             assert!(hyperlinks_by_inner_tree_remove(&mut (*other).by_inner, first).is_null());
             assert!((*first).by_inner_entry.owner.is_some());
             assert_eq!(hyperlinks_by_inner_tree_next(&*first), second);
-            assert_eq!(hyperlinks_by_uri_tree_find(&(*table).by_uri, &*second), second);
+            assert_eq!(
+                hyperlinks_by_uri_tree_find(&(*table).by_uri, &*second),
+                second
+            );
 
             hyperlinks_free(table);
             assert!(matches!(

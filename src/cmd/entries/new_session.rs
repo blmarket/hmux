@@ -9,6 +9,7 @@ use crate::src::cmd::queue::{
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::compat::imsg::*;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
@@ -39,7 +40,6 @@ use crate::src::shared::command::{
 use crate::src::shared::environment::environ;
 use crate::src::shared::layout::layout_cell;
 use crate::src::shared::limits::USHRT_MAX;
-use crate::src::compat::imsg::*;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
@@ -58,7 +58,7 @@ use std::ffi::{CStr, CString};
 pub const NEW_SESSION_TEMPLATE: [::core::ffi::c_char; 17] = unsafe {
     ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"#{session_name}:\0")
 };
-pub static mut cmd_new_session_entry: cmd_entry =  {
+pub static mut cmd_new_session_entry: cmd_entry = {
     cmd_entry {
         name: c"new-session",
         alias: Some(c"new"),
@@ -87,7 +87,7 @@ pub static mut cmd_new_session_entry: cmd_entry =  {
         ),
     }
 };
-pub static mut cmd_has_session_entry: cmd_entry =  {
+pub static mut cmd_has_session_entry: cmd_entry = {
     cmd_entry {
         name: c"has-session",
         alias: Some(c"has"),

@@ -5,9 +5,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
-use crate::src::environ::{
-    environ_clear, environ_find, environ_iter, environ_set, environ_unset,
-};
+use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, __ctype_toupper_loc, memcpy, strchr, strcmp, strcspn, strlcat, strlen,
     strncmp,
@@ -5057,7 +5055,7 @@ mod item_owner_tests {
             let data = crate::src::shared::rc::new(window_customize_modedata {
                 wp: ::core::ptr::null_mut(),
                 dead: 0,
-                        data: ::core::ptr::null_mut(),
+                data: ::core::ptr::null_mut(),
                 editor: ::core::ptr::null_mut(),
                 edit: ::core::ptr::null_mut(),
                 format: CString::new(Vec::new()).unwrap(),

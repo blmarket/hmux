@@ -3,6 +3,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_source, cmdq_get_target_client,
 };
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::compat::imsg::*;
 use crate::src::server::clients;
 use crate::src::server_client::{server_client_detach, server_client_exec, server_client_suspend};
 use crate::src::shared::abi::*;
@@ -14,9 +15,8 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_READONLY, CMD_TARGET_CLIENT_USAGE,
 };
-use crate::src::compat::imsg::*;
 use crate::src::shared::session::session;
-pub static mut cmd_detach_client_entry: cmd_entry =  {
+pub static mut cmd_detach_client_entry: cmd_entry = {
     cmd_entry {
         name: c"detach-client",
         alias: Some(c"detach"),
@@ -41,7 +41,7 @@ pub static mut cmd_detach_client_entry: cmd_entry =  {
         exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_suspend_client_entry: cmd_entry =  {
+pub static mut cmd_suspend_client_entry: cmd_entry = {
     cmd_entry {
         name: c"suspend-client",
         alias: Some(c"suspendc"),

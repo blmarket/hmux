@@ -86,7 +86,7 @@ fn cmd_command_prompt_rows(
         })
         .collect()
 }
-pub static mut cmd_command_prompt_entry: cmd_entry =  {
+pub static mut cmd_command_prompt_entry: cmd_entry = {
     cmd_entry {
         name: c"command-prompt",
         alias: None,
@@ -94,11 +94,10 @@ pub static mut cmd_command_prompt_entry: cmd_entry =  {
             template: b"1CbeFiklI:NPp:t:T:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_command_prompt_args_parse
-            ),
+            cb: Some(cmd_command_prompt_args_parse),
         },
-        usage: c"[-1CbeFiklNP] [-I inputs] [-p prompts] [-t target-client] [-T prompt-type] [template]",
+        usage:
+            c"[-1CbeFiklNP] [-I inputs] [-p prompts] [-t target-client] [-T prompt-type] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -110,10 +109,7 @@ pub static mut cmd_command_prompt_entry: cmd_entry =  {
             flags: 0,
         },
         flags: CMD_CLIENT_TFLAG,
-        exec: Some(
-            cmd_command_prompt_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_command_prompt_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 fn cmd_command_prompt_args_parse(

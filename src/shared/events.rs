@@ -163,7 +163,6 @@ impl EventPayloadPointer {
             Self::Raw(ptr) => *ptr,
         }
     }
-
 }
 
 pub type event_payload_type = ::core::ffi::c_uint;

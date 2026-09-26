@@ -1087,10 +1087,7 @@ pub unsafe fn window_create(
     return w;
 }
 unsafe fn window_destroy(mut w: *mut window) {
-    log_debug(
-        c"window @%u destroyed".as_ptr(),
-        (*w).id,
-    );
+    log_debug(c"window @%u destroyed".as_ptr(), (*w).id);
     window_unzoom(w, 0 as ::core::ffi::c_int);
     if (*w).entry.owner.is_some() {
         windows_remove(&raw mut windows, w);
@@ -2374,7 +2371,9 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
     wp.id = id;
     return window_pane_tree_find(&*std::ptr::addr_of!(all_window_panes), &wp);
 }
-pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
+pub(crate) unsafe fn window_pane_weak(
+    wp: *mut window_pane,
+) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
     crate::src::shared::rc::downgrade(wp)
 }
 
@@ -2892,10 +2891,7 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     );
 }
 unsafe fn window_pane_free(mut wp: *mut window_pane) {
-    log_debug(
-        c"pane %%%u freed".as_ptr(),
-        (*wp).id,
-    );
+    log_debug(c"pane %%%u freed".as_ptr(), (*wp).id);
     window_pane_set_searchstr(&mut *wp, None);
     if !(*wp).status_screen.grid.is_null() {
         screen_free(&raw mut (*wp).status_screen);
@@ -4444,7 +4440,10 @@ mod collection_index_tests {
             let retained = weak.upgrade().expect("callback keeps the pane alive");
             assert_eq!(crate::src::shared::rc::as_ptr(&retained), wp);
             window_pane_remove_ref(wp, c"callback complete".as_ptr());
-            assert!(weak.upgrade().is_some(), "upgraded Rc independently owns the pane");
+            assert!(
+                weak.upgrade().is_some(),
+                "upgraded Rc independently owns the pane"
+            );
             drop(retained);
             assert!(weak.upgrade().is_none());
         }
@@ -4492,13 +4491,16 @@ mod collection_index_tests {
         unsafe {
             let mut head = window_pane_tree { storage: None };
             let mut other = window_pane_tree { storage: None };
-            let first_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
+            let first_owner =
+                crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
             let first = crate::src::shared::rc::as_ptr(&first_owner);
             (*first).id = 1;
-            let second_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
+            let second_owner =
+                crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
             let second = crate::src::shared::rc::as_ptr(&second_owner);
             (*second).id = 2;
-            let duplicate_owner = crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
+            let duplicate_owner =
+                crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
             let duplicate = crate::src::shared::rc::as_ptr(&duplicate_owner);
             (*duplicate).id = 1;
 

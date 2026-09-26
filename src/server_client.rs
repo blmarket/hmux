@@ -155,7 +155,10 @@ impl ClientRegistry {
             .unwrap_or(::core::ptr::null_mut())
     }
 
-    pub(crate) fn push_back(&mut self, owner: std::rc::Rc<std::cell::UnsafeCell<client>>) -> *mut client {
+    pub(crate) fn push_back(
+        &mut self,
+        owner: std::rc::Rc<std::cell::UnsafeCell<client>>,
+    ) -> *mut client {
         let value = crate::src::shared::rc::as_ptr(&owner);
         let key = value as usize;
         assert!(!self.indices.contains_key(&key), "client registered twice");
@@ -197,7 +200,11 @@ impl ClientRegistry {
     pub(crate) fn release(&mut self, value: *mut client) {
         self.remove(value);
         self.successors.remove(&(value as usize));
-        if let Some(index) = self.observers.iter().position(|owner| owner.as_ptr().cast::<client>() == value) {
+        if let Some(index) = self
+            .observers
+            .iter()
+            .position(|owner| owner.as_ptr().cast::<client>() == value)
+        {
             self.observers.remove(index);
         }
     }
@@ -1470,7 +1477,10 @@ unsafe fn server_client_free(c: *mut client) {
     if !(*c).queue.is_null() {
         cmdq_free((*c).queue);
     }
-    assert!((*c).files.storage.is_none(), "client file index still contains live records at client teardown");
+    assert!(
+        (*c).files.storage.is_none(),
+        "client file index still contains live records at client teardown"
+    );
     // Server-created clients have a queue before joining the global registry.
     // Empty standalone records must not touch that registry on drop.
     if !(*c).queue.is_null() {
@@ -5204,7 +5214,9 @@ mod client_registry_tests {
             registry.release(first);
             registry.release(last);
             registry.release(extra);
-            for c in [first, middle, last, extra] { super::server_client_unref(c); }
+            for c in [first, middle, last, extra] {
+                super::server_client_unref(c);
+            }
             crate::src::reactor::event_loop();
         }
     }

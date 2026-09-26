@@ -19,7 +19,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 use crate::src::window::{window_pane_first, window_pane_next, window_remove_pane};
-pub static mut cmd_kill_pane_entry: cmd_entry =  {
+pub static mut cmd_kill_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-pane",
         alias: Some(c"killp"),

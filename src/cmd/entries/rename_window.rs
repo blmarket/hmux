@@ -12,7 +12,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::window::winlink;
 use crate::src::tmux::check_name;
 use crate::src::window::window_set_name;
-pub static mut cmd_rename_window_entry: cmd_entry =  {
+pub static mut cmd_rename_window_entry: cmd_entry = {
     cmd_entry {
         name: c"rename-window",
         alias: Some(c"renamew"),

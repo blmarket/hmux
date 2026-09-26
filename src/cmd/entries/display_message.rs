@@ -40,7 +40,7 @@ pub const DISPLAY_MESSAGE_TEMPLATE: [::core::ffi::c_char; 96] = unsafe {
         *b"[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)\0",
     )
 };
-pub static mut cmd_display_message_entry: cmd_entry =  {
+pub static mut cmd_display_message_entry: cmd_entry = {
     cmd_entry {
         name: c"display-message",
         alias: Some(c"display"),

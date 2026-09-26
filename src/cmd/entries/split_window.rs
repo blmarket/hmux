@@ -63,7 +63,7 @@ pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
-pub static mut cmd_new_pane_entry: cmd_entry =  {
+pub static mut cmd_new_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"new-pane",
         alias: Some(c"newp"),
@@ -92,7 +92,7 @@ pub static mut cmd_new_pane_entry: cmd_entry =  {
         ),
     }
 };
-pub static mut cmd_split_window_entry: cmd_entry =  {
+pub static mut cmd_split_window_entry: cmd_entry = {
     cmd_entry {
         name: c"split-window",
         alias: Some(c"splitw"),

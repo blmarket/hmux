@@ -1245,6 +1245,4 @@ mod json_fields_tests {
             assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: ab");
         }
     }
-
-
-    }
+}

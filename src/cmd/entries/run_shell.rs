@@ -32,8 +32,8 @@ use crate::src::shared::command::{
     cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item, cmdq_state,
 };
 use crate::src::shared::environment::environ;
+use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_TIMEOUT};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::src::shared::pane::window_pane;

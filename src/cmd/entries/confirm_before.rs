@@ -27,7 +27,7 @@ pub struct cmd_confirm_before_data {
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
 }
-pub static mut cmd_confirm_before_entry: cmd_entry =  {
+pub static mut cmd_confirm_before_entry: cmd_entry = {
     cmd_entry {
         name: c"confirm-before",
         alias: Some(c"confirm"),
@@ -108,7 +108,9 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = (*cmd_get_entry(cmd_list_first(cdata.cmdlist))).name.as_ptr();
+        cmd = (*cmd_get_entry(cmd_list_first(cdata.cmdlist)))
+            .name
+            .as_ptr();
         let mut bytes = b"Confirm '".to_vec();
         bytes.extend_from_slice(CStr::from_ptr(cmd).to_bytes());
         bytes.extend_from_slice(b"'? (");

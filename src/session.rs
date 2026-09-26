@@ -410,7 +410,11 @@ pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi:
     );
 }
 pub unsafe fn session_remove_ref(s: *mut session, from: *const ::core::ffi::c_char) {
-    log_debug(c"release session %s (%s)".as_ptr(), (*s).name.as_ptr(), from);
+    log_debug(
+        c"release session %s (%s)".as_ptr(),
+        (*s).name.as_ptr(),
+        from,
+    );
     crate::src::shared::rc::release_later(crate::src::shared::rc::take(s));
 }
 unsafe fn session_free(s: *mut session) {
@@ -639,7 +643,8 @@ pub unsafe fn session_is_linked(mut s: *mut session, mut w: *mut window) -> ::co
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if !sg.is_null() {
-        return (crate::src::shared::rc::strong_count(w) != session_group_count(sg) as usize) as ::core::ffi::c_int;
+        return (crate::src::shared::rc::strong_count(w) != session_group_count(sg) as usize)
+            as ::core::ffi::c_int;
     }
     return (crate::src::shared::rc::strong_count(w) != 1) as ::core::ffi::c_int;
 }
@@ -1136,7 +1141,6 @@ pub unsafe fn session_update_history(mut s: *mut session) {
 #[cfg(test)]
 mod session_index_tests {
     use super::*;
-
 
     #[test]
     fn session_group_index_drops_nodes_after_releasing_the_map_borrow() {

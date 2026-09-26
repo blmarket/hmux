@@ -275,19 +275,25 @@ pub unsafe extern "C" fn format_add(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut ap: ::core::ffi::VaList;
-    fe = format_entry_new(CStr::from_ptr(key));
-    fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
+    let value = xvasprintf_cstring(fmt, args.clone());
+    format_add_value(ft, CStr::from_ptr(key), value);
+}
+
+/// Insert literal text, copying the value into the format tree.
+pub unsafe fn format_add_cstr(ft: *mut format_tree, key: &CStr, value: &CStr) {
+    format_add_value(ft, key, value.to_owned());
+}
+
+unsafe fn format_add_value(ft: *mut format_tree, key: &CStr, value: CString) {
+    let mut fe = format_entry_new(key);
+    let fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
-        drop(Box::from_raw(fe as *mut format_entry));
+        drop(Box::from_raw(fe));
         fe = fe_now;
     }
-    (*(fe as *mut format_entry)).owned_cb = None;
-    (*fe).time = 0 as time_t;
-    ap = args.clone();
-    format_entry_set_value(&mut *fe, Some(xvasprintf_cstring(fmt, ap)));
+    (*fe).owned_cb = None;
+    (*fe).time = 0;
+    format_entry_set_value(&mut *fe, Some(value));
 }
 pub unsafe fn format_add_tv(
     mut ft: *mut format_tree,
@@ -522,6 +528,4 @@ mod tests {
             format_free(ft);
         }
     }
-
-
-    }
+}

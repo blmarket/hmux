@@ -23,7 +23,7 @@ use crate::src::window::{
     window_pane_next, window_pane_previous, window_pane_stack_remove, window_pane_swap_order,
     window_pane_z_swap_order, window_pop_zoom, window_push_zoom, window_set_active_pane,
 };
-pub static mut cmd_swap_pane_entry: cmd_entry =  {
+pub static mut cmd_swap_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"swap-pane",
         alias: Some(c"swapp"),

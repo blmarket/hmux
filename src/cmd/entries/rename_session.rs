@@ -23,7 +23,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{check_name, clean_name_cstring};
 use std::ffi::CStr;
-pub static mut cmd_rename_session_entry: cmd_entry =  {
+pub static mut cmd_rename_session_entry: cmd_entry = {
     cmd_entry {
         name: c"rename-session",
         alias: Some(c"rename"),

@@ -6,24 +6,22 @@ pub use message::{
     MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD,
     MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_LONGFLAGS,
     MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
-    MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN,
-    MSG_READY, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION,
+    MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READ, MSG_READY, MSG_READ_CANCEL, MSG_READ_DONE,
+    MSG_READ_OPEN, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION,
     MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY,
 };
-pub(crate) use message::{
-    imsgbuf, msg_command, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION,
-};
+pub(crate) use message::{imsgbuf, msg_command, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 use message::{msgbuf, OwnedIbuf};
 
+use crate::src::ffi::libc::getpid;
+use crate::src::shared::abi::uint32_t;
+use crate::src::shared::abi::*;
+use crate::src::shared::errno::{EBADMSG, EINVAL, ENOMEM, ERANGE};
 use imsg_buffer::{
     ibuf_add, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get, ibuf_fd_set,
-    ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_get,
-    msgbuf_new_reader_owned, msgbuf_queuelen, msgbuf_read, msgbuf_write,
+    ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_get, msgbuf_new_reader_owned,
+    msgbuf_queuelen, msgbuf_read, msgbuf_write,
 };
-use crate::src::ffi::libc::getpid;
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::uint32_t;
-use crate::src::shared::errno::{EBADMSG, EINVAL, ENOMEM, ERANGE};
 use std::os::fd::OwnedFd;
 
 const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -46,7 +44,9 @@ pub(crate) fn imsgbuf_init(
 pub(crate) fn imsgbuf_allow_fdpass(imsgbuf: &mut imsgbuf) {
     imsgbuf.flags |= IMSG_ALLOW_FDPASS;
 }
-pub(crate) fn imsgbuf_read(imsgbuf: &mut imsgbuf) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
+pub(crate) fn imsgbuf_read(
+    imsgbuf: &mut imsgbuf,
+) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
         return Err(EINVAL);
     };
@@ -144,10 +144,7 @@ fn imsg_create(
     ibuf_add(&mut wbuf, &encode_imsg_hdr(hdr))?;
     Ok(wbuf)
 }
-fn imsg_close(
-    imsgbuf: &mut imsgbuf,
-    mut msg: Box<OwnedIbuf>,
-) -> Result<(), ::core::ffi::c_int> {
+fn imsg_close(imsgbuf: &mut imsgbuf, mut msg: Box<OwnedIbuf>) -> Result<(), ::core::ffi::c_int> {
     let mut len = ibuf_size(&msg) as uint32_t;
     if ibuf_fd_avail(&msg) {
         len |= IMSG_FD_MARK;

@@ -133,7 +133,6 @@ impl EnvironOwner {
         unsafe { environ_unset(self.as_ptr(), name.as_ptr()) }
     }
 
-
     /// Copy entries from another borrowed environment view.
     pub fn copy_from(&mut self, source: EnvironView<'_>) {
         unsafe { environ_copy(source.as_ptr(), self.as_ptr()) }
@@ -189,8 +188,6 @@ impl<'a> EnvironView<'a> {
             _owner: PhantomData,
         })
     }
-
-
 
     /// Iterate entries in bytewise name order.
     pub fn entries(self) -> impl Iterator<Item = EnvironEntry<'a>> + 'a {
@@ -264,9 +261,9 @@ unsafe fn environ_insert(
 ) {
     let key = name.as_bytes().to_vec();
     // Updating an existing entry must preserve its address.
-    env.entries.entry(key).or_insert_with(|| {
-        Box::new(environ_entry { name, value, flags })
-    });
+    env.entries
+        .entry(key)
+        .or_insert_with(|| Box::new(environ_entry { name, value, flags }));
 }
 
 pub unsafe fn environ_create() -> *mut environ {

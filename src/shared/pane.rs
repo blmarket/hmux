@@ -263,8 +263,12 @@ pub struct window_panes {
     pub storage: Option<Box<Vec<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>>>,
 }
 
-fn checked_window_pane_ptr(weak: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> *mut window_pane {
-    let owner = weak.upgrade().expect("window pane collection contains an expired owner");
+fn checked_window_pane_ptr(
+    weak: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+) -> *mut window_pane {
+    let owner = weak
+        .upgrade()
+        .expect("window pane collection contains an expired owner");
     super::rc::as_ptr(&owner)
 }
 
@@ -392,7 +396,10 @@ impl window_panes {
             .swap(first_position, second_position);
     }
 
-    pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
+    pub unsafe fn remove_at(
+        &mut self,
+        pane: *mut window_pane,
+    ) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
         let position = self.position(pane).expect("pane is not in collection");
         self.storage
             .as_mut()
@@ -400,7 +407,11 @@ impl window_panes {
             .remove(position)
     }
 
-    pub unsafe fn insert_at(&mut self, position: usize, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
+    pub unsafe fn insert_at(
+        &mut self,
+        position: usize,
+        pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    ) {
         self.storage
             .as_mut()
             .expect("pane collection is present")

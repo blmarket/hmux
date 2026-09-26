@@ -36,7 +36,7 @@ use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::window_pane_reset_mode_all;
 use std::ffi::{CStr, CString};
 use std::io::Write;
-pub static mut cmd_capture_pane_entry: cmd_entry =  {
+pub static mut cmd_capture_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"capture-pane",
         alias: Some(c"capturep"),
@@ -46,7 +46,8 @@ pub static mut cmd_capture_pane_entry: cmd_entry =  {
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-aCeFHIJLMNpPqRT] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]",
+        usage:
+            c"[-aCeFHIJLMNpPqRT] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -61,7 +62,7 @@ pub static mut cmd_capture_pane_entry: cmd_entry =  {
         exec: Some(cmd_capture_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_clear_history_entry: cmd_entry =  {
+pub static mut cmd_clear_history_entry: cmd_entry = {
     cmd_entry {
         name: c"clear-history",
         alias: Some(c"clearhist"),

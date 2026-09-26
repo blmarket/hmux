@@ -620,9 +620,9 @@ unsafe fn format_expand_modifier_arg(
 }
 pub(super) unsafe fn format_build_modifiers(
     mut es: *mut format_expand_state,
-    mut s: *mut *const ::core::ffi::c_char,
+    s: &mut &CStr,
 ) -> Vec<format_modifier> {
-    let mut cp: *const ::core::ffi::c_char = *s;
+    let mut cp = s.as_ptr();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut list: Vec<format_modifier> = Vec::new();
     let mut c: ::core::ffi::c_char = 0;
@@ -766,7 +766,9 @@ pub(super) unsafe fn format_build_modifiers(
         drop(list);
         return Vec::new();
     }
-    *s = cp.offset(1 as ::core::ffi::c_int as isize);
+    *s = CStr::from_bytes_with_nul_unchecked(
+        &s.to_bytes_with_nul()[cp.offset_from(s.as_ptr()) as usize + 1..],
+    );
     return list;
 }
 pub(super) unsafe fn format_match_fuzzy(
@@ -1133,12 +1135,7 @@ pub(super) unsafe fn format_add_window_neighbour(
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 1 as ::core::ffi::c_int,
             );
-            format_add(
-                nft,
-                prefixed.as_ptr(),
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                oval.as_ptr(),
-            );
+            format_add_cstr(nft, &prefixed, &oval);
         }
         o = options_next(o);
     }
@@ -2361,8 +2358,9 @@ pub(super) unsafe fn format_replace(
     let key_end = libc::strnlen(key, keylen);
     let copy0 = CString::new(std::slice::from_raw_parts(key.cast::<u8>(), key_end))
         .expect("format key contains no NUL");
-    copy = copy0.as_ptr();
-    list = format_build_modifiers(es, &raw mut copy);
+    let mut remaining = copy0.as_c_str();
+    list = format_build_modifiers(es, &mut remaining);
+    copy = remaining.as_ptr();
     // No more entries are pushed after parsing. Pointers saved in cmp, search,
     // sub, and other modifier selections stay valid until cleanup.
     i = 0 as u_int;

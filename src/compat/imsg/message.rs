@@ -1,7 +1,7 @@
 //! Authoritative client/server message identifiers.
 
-use crate::src::shared::abi::{pid_t, size_t, uint32_t};
 use super::imsg_buffer::ibufqueue;
+use crate::src::shared::abi::{pid_t, size_t, uint32_t};
 use std::os::fd::OwnedFd;
 pub type msgtype = ::core::ffi::c_uint;
 
@@ -126,10 +126,14 @@ pub(super) struct msgbuf {
     pub(super) rbufs: ibufqueue,
     pub(super) rbuf: Vec<u8>,
     pub(super) rpmsg: Option<Box<OwnedIbuf>>,
-    pub(super) readhdr:
-        Option<
-            Box<dyn FnMut(&[u8], Option<OwnedFd>) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>>,
+    pub(super) readhdr: Option<
+        Box<
+            dyn FnMut(
+                &[u8],
+                Option<OwnedFd>,
+            ) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>,
         >,
+    >,
     pub(super) roff: size_t,
     pub(super) hdrsize: size_t,
 }

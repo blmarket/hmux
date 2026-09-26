@@ -15,7 +15,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
-pub static mut cmd_select_window_entry: cmd_entry =  {
+pub static mut cmd_select_window_entry: cmd_entry = {
     cmd_entry {
         name: c"select-window",
         alias: Some(c"selectw"),
@@ -40,7 +40,7 @@ pub static mut cmd_select_window_entry: cmd_entry =  {
         exec: Some(cmd_select_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_next_window_entry: cmd_entry =  {
+pub static mut cmd_next_window_entry: cmd_entry = {
     cmd_entry {
         name: c"next-window",
         alias: Some(c"next"),
@@ -65,7 +65,7 @@ pub static mut cmd_next_window_entry: cmd_entry =  {
         exec: Some(cmd_select_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_previous_window_entry: cmd_entry =  {
+pub static mut cmd_previous_window_entry: cmd_entry = {
     cmd_entry {
         name: c"previous-window",
         alias: Some(c"prev"),
@@ -90,7 +90,7 @@ pub static mut cmd_previous_window_entry: cmd_entry =  {
         exec: Some(cmd_select_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_last_window_entry: cmd_entry =  {
+pub static mut cmd_last_window_entry: cmd_entry = {
     cmd_entry {
         name: c"last-window",
         alias: Some(c"last"),

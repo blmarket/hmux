@@ -3,6 +3,7 @@ use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
+use crate::src::compat::imsg::*;
 use crate::src::environ::environ_update;
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{getuid, strcspn};
@@ -27,12 +28,11 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMDQ_STATE_REPEAT, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY, CMD_STARTSERVER,
 };
-use crate::src::compat::imsg::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
-pub static mut cmd_attach_session_entry: cmd_entry =  {
+pub static mut cmd_attach_session_entry: cmd_entry = {
     cmd_entry {
         name: c"attach-session",
         alias: Some(c"attach"),

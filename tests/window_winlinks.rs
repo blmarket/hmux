@@ -20,8 +20,10 @@ unsafe fn window_indices(w: *mut window) -> Vec<i32> {
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let mut owner = Box::new(session::empty());
-        let first_owner = hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
-        let second_owner = hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
+        let first_owner =
+            hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
+        let second_owner =
+            hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
         let first_window = hmux2::src::shared::rc::as_ptr(&first_owner);
         let second_window = hmux2::src::shared::rc::as_ptr(&second_owner);
         (*first_window).entry.owner = None;
@@ -108,10 +110,13 @@ fn close_notification_can_retain_the_last_window_reference() {
         let weak = rc::downgrade(w);
         let notified = Rc::new(Cell::new(false));
         let observed = notified.clone();
-        let sink = events_add_sink(c"window-closed", Rc::new(move |_, _| {
-            observed.set(true);
-            window_add_ref(w, c"close callback".as_ptr());
-        }));
+        let sink = events_add_sink(
+            c"window-closed",
+            Rc::new(move |_, _| {
+                observed.set(true);
+                window_add_ref(w, c"close callback".as_ptr());
+            }),
+        );
         window_remove_ref(w, c"original owner".as_ptr());
         assert!(notified.get());
         assert!(weak.upgrade().is_some());

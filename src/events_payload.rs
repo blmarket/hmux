@@ -550,11 +550,7 @@ unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut
             );
         }
         8 => {
-            evbuffer_add_printf(
-                evb,
-                c"%p".as_ptr(),
-                (*epi).value.pointer().ptr(),
-            );
+            evbuffer_add_printf(evb, c"%p".as_ptr(), (*epi).value.pointer().ptr());
         }
         _ => {}
     };

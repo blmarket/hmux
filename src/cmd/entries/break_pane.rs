@@ -49,7 +49,7 @@ pub const BREAK_PANE_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
-pub static mut cmd_break_pane_entry: cmd_entry =  {
+pub static mut cmd_break_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"break-pane",
         alias: Some(c"breakp"),

@@ -23,5 +23,5 @@ extern "C" {
         codepoint: utf8proc_int32_t,
         dst: *mut utf8proc_uint8_t,
     ) -> utf8proc_ssize_t;
-        pub fn utf8proc_version() -> *const ::core::ffi::c_char;
+    pub fn utf8proc_version() -> *const ::core::ffi::c_char;
 }

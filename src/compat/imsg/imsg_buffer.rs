@@ -1,11 +1,11 @@
+use super::message::{msgbuf, OwnedIbuf};
 use crate::src::ffi::libc::{__errno_location, readv, recvmsg, sendmsg, writev};
-use crate::src::shared::abi::*;
 use crate::src::shared::abi::uint32_t;
-use ::libc::{cmsghdr, msghdr};
+use crate::src::shared::abi::*;
 use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
-use super::message::{msgbuf, OwnedIbuf};
 use crate::src::shared::socket::SOL_SOCKET;
+use ::libc::{cmsghdr, msghdr};
 use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
@@ -49,7 +49,6 @@ impl ibufqueue_bufs {
     fn front_mut(&mut self) -> Option<&mut OwnedIbuf> {
         self.entries.front_mut().map(Box::as_mut)
     }
-
 }
 
 impl ibufqueue {
@@ -144,10 +143,7 @@ pub(super) fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, :
 }
 /// Reserve writable space at the end of an owned ibuf.
 ///
-fn ibuf_reserve(
-    buf: &mut OwnedIbuf,
-    len: size_t,
-) -> Result<&mut [u8], ::core::ffi::c_int> {
+fn ibuf_reserve(buf: &mut OwnedIbuf, len: size_t) -> Result<&mut [u8], ::core::ffi::c_int> {
     let Some(new_wpos) = buf.wpos.checked_add(len) else {
         return Err(ERANGE);
     };
@@ -197,16 +193,9 @@ fn ibuf_seek(
     let Some(end) = buf.rpos.checked_add(end) else {
         return Err(ERANGE);
     };
-    buf.storage
-        .as_mut_slice()
-        .get_mut(start..end)
-        .ok_or(ERANGE)
+    buf.storage.as_mut_slice().get_mut(start..end).ok_or(ERANGE)
 }
-fn ibuf_set(
-    buf: &mut OwnedIbuf,
-    pos: size_t,
-    data: &[u8],
-) -> Result<(), ::core::ffi::c_int> {
+fn ibuf_set(buf: &mut OwnedIbuf, pos: size_t, data: &[u8]) -> Result<(), ::core::ffi::c_int> {
     let target = ibuf_seek(buf, pos, data.len())?;
     target.copy_from_slice(data);
     Ok(())
@@ -388,9 +377,9 @@ pub(super) fn msgbuf_write(
             return Err(EINVAL);
         }
         unsafe {
-            (*cmsg).cmsg_len = ::libc::CMSG_LEN(
-                ::core::mem::size_of::<::core::ffi::c_int>() as ::libc::c_uint,
-            ) as size_t;
+            (*cmsg).cmsg_len =
+                ::libc::CMSG_LEN(::core::mem::size_of::<::core::ffi::c_int>() as ::libc::c_uint)
+                    as size_t;
             (*cmsg).cmsg_level = SOL_SOCKET;
             (*cmsg).cmsg_type = SCM_RIGHTS as ::core::ffi::c_int;
             ::libc::CMSG_DATA(cmsg)
@@ -433,10 +422,11 @@ fn ibuf_read_process(
             }
             let header_end = cursor + msgbuf.hdrsize;
             let header = &msgbuf.rbuf[cursor..header_end];
-            let (message, remaining_fd) = msgbuf
-                .readhdr
-                .as_mut()
-                .expect("reader has a header callback")(header, fd.take())?;
+            let (message, remaining_fd) =
+                msgbuf
+                    .readhdr
+                    .as_mut()
+                    .expect("reader has a header callback")(header, fd.take())?;
             fd = remaining_fd;
             msgbuf.rpmsg = Some(message);
         }
@@ -544,8 +534,8 @@ pub(super) fn msgbuf_read(
         unsafe {
             if (*cmsg).cmsg_level == SOL_SOCKET && (*cmsg).cmsg_type == SCM_RIGHTS as i32 {
                 let data = ::libc::CMSG_DATA(cmsg).cast::<i32>();
-                let data_bytes = ((*cmsg).cmsg_len as usize)
-                    .saturating_sub(::libc::CMSG_LEN(0) as usize);
+                let data_bytes =
+                    ((*cmsg).cmsg_len as usize).saturating_sub(::libc::CMSG_LEN(0) as usize);
                 let count = data_bytes / ::core::mem::size_of::<i32>();
                 for index in 0..count {
                     let raw_fd = *data.add(index);
@@ -586,10 +576,7 @@ fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<OwnedIbuf>> {
     bufq.bufs.pop_front_owned()
 }
 
-fn ibufq_push(
-    bufq: &mut ibufqueue,
-    buf: Box<OwnedIbuf>,
-) -> Result<(), ::core::ffi::c_int> {
+fn ibufq_push(bufq: &mut ibufqueue, buf: Box<OwnedIbuf>) -> Result<(), ::core::ffi::c_int> {
     bufq.bufs.push_back_owned(buf)
 }
 

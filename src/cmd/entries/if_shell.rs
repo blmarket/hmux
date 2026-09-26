@@ -34,7 +34,7 @@ pub struct cmd_if_shell_data {
     pub client: *mut client,
     pub item: *mut cmdq_item,
 }
-pub static mut cmd_if_shell_entry: cmd_entry =  {
+pub static mut cmd_if_shell_entry: cmd_entry = {
     cmd_entry {
         name: c"if-shell",
         alias: Some(c"if"),
