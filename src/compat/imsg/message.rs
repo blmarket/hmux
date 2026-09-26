@@ -195,25 +195,25 @@ pub struct imsg {
 }
 
 pub(crate) struct msgbuf {
-    pub(crate) bufs: ibufqueue,
-    pub(crate) rbufs: ibufqueue,
-    pub(crate) rbuf: Vec<u8>,
-    pub(crate) rpmsg: Option<Box<OwnedIbuf>>,
-    pub(crate) readhdr:
+    pub(super) bufs: ibufqueue,
+    pub(super) rbufs: ibufqueue,
+    pub(super) rbuf: Vec<u8>,
+    pub(super) rpmsg: Option<Box<OwnedIbuf>>,
+    pub(super) readhdr:
         Option<
             Box<dyn FnMut(&[u8], Option<OwnedFd>) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>>,
         >,
-    pub(crate) roff: size_t,
-    pub(crate) hdrsize: size_t,
+    pub(super) roff: size_t,
+    pub(super) hdrsize: size_t,
 }
 
 #[derive(Default)]
 pub(crate) struct imsgbuf {
-    pub(crate) w: Option<Box<msgbuf>>,
-    pub(crate) pid: pid_t,
-    pub(crate) maxsize: uint32_t,
+    pub(super) w: Option<Box<msgbuf>>,
+    pub(super) pid: pid_t,
+    pub(super) maxsize: uint32_t,
     pub(crate) fd: ::core::ffi::c_int,
-    pub(crate) flags: ::core::ffi::c_int,
+    pub(super) flags: ::core::ffi::c_int,
 }
 
 /// Make a read-only view whose lifetime is tied to the source slice.
