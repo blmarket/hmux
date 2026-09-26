@@ -23,7 +23,6 @@ use crate::src::shared::ctype::{_ISalnum, _ISalpha};
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -726,36 +725,20 @@ pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
     }
     argv
 }
-unsafe extern "C" fn args_print_add(
-    buf: &mut Vec<u8>,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let formatted = xvasprintf_cstring(fmt, ap);
-    buf.extend_from_slice(formatted.as_bytes());
-}
 unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     if !buf.is_empty() {
-        args_print_add(buf, b" \0" as *const u8 as *const ::core::ffi::c_char);
+        buf.push(b' ');
     }
     match value.type_0() as ::core::ffi::c_uint {
         2 => {
             let expanded = cmd_list_print_cstring(&*value.cmdlist(), 0);
-            args_print_add(
-                buf,
-                b"{ %s }\0" as *const u8 as *const ::core::ffi::c_char,
-                expanded.as_ptr(),
-            );
+            buf.extend_from_slice(b"{ ");
+            buf.extend_from_slice(expanded.as_bytes());
+            buf.extend_from_slice(b" }");
         }
         1 => {
             let expanded = args_escape_cstring(CStr::from_ptr(value.string_ptr()));
-            args_print_add(
-                buf,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                expanded.as_ptr(),
-            );
+            buf.extend_from_slice(expanded.as_bytes());
         }
         0 | _ => {}
     }
@@ -776,15 +759,14 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
         if !((*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0) {
             if args_value_count(entry) == 0 {
                 if buf.is_empty() {
-                    args_print_add(&mut buf, b"-\0" as *const u8 as *const ::core::ffi::c_char);
+                    buf.push(b'-');
                 }
                 j = 0 as u_int;
                 while j < (*entry).count {
-                    args_print_add(
-                        &mut buf,
-                        b"%c\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*entry).flag as ::core::ffi::c_int,
-                    );
+                    // The old C-string formatter omitted a zero flag byte.
+                    if (*entry).flag != 0 {
+                        buf.push((*entry).flag);
+                    }
                     j = j.wrapping_add(1);
                 }
             }
@@ -795,34 +777,22 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
     while !entry.is_null() {
         if (*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
             if !buf.is_empty() {
-                args_print_add(
-                    &mut buf,
-                    b" -%c\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*entry).flag as ::core::ffi::c_int,
-                );
-            } else {
-                args_print_add(
-                    &mut buf,
-                    b"-%c\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*entry).flag as ::core::ffi::c_int,
-                );
+                buf.push(b' ');
+            }
+            buf.push(b'-');
+            if (*entry).flag != 0 {
+                buf.push((*entry).flag);
             }
             last = entry;
         } else if args_value_count(entry) != 0 {
             value = args_value_at(entry);
             while !value.is_null() {
                 if !buf.is_empty() {
-                    args_print_add(
-                        &mut buf,
-                        b" -%c\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*entry).flag as ::core::ffi::c_int,
-                    );
-                } else {
-                    args_print_add(
-                        &mut buf,
-                        b"-%c\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*entry).flag as ::core::ffi::c_int,
-                    );
+                    buf.push(b' ');
+                }
+                buf.push(b'-');
+                if (*entry).flag != 0 {
+                    buf.push((*entry).flag);
                 }
                 args_print_add_value(&mut buf, &*value);
                 value = args_next_value(value);
@@ -832,10 +802,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
         entry = args_tree_next(&raw mut (*args).tree, entry);
     }
     if !last.is_null() && (*last).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
-        args_print_add(
-            &mut buf,
-            b" --\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        buf.extend_from_slice(b" --");
     }
     i = 0 as u_int;
     while i < (*args).count {

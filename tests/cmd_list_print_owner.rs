@@ -1,5 +1,6 @@
 use hmux2::src::arguments::{
-    args_create, args_free, args_print, args_push_positional_commands, args_to_vector,
+    args_create, args_free, args_print, args_push_positional_commands, args_set_flag,
+    args_set_owned_commands, args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
 };
 use hmux2::src::cmd::{
     cmd, cmd_free, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_first,
@@ -7,6 +8,46 @@ use hmux2::src::cmd::{
     cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::args_value;
+use std::ffi::CString;
+
+#[test]
+fn argument_printer_preserves_flag_groups_values_and_optional_separator() {
+    unsafe {
+        let args = args_create();
+        args_set_flag(args, b'a', 0);
+        args_set_flag(args, b'a', 0);
+        args_set_owned_string(args, CString::new("two words").unwrap());
+        args_set_owned_string(args, CString::new("").unwrap());
+        args_set_flag(args, b'z', ARGS_ENTRY_OPTIONAL_VALUE);
+        assert_eq!(
+            args_print(args).as_bytes(),
+            b"-aa -f \"two words\" -f '' -z --"
+        );
+        args_free(args);
+    }
+}
+
+#[test]
+fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
+    unsafe {
+        for (flag, expected) in [(0, b"-".as_slice()), (0xff, b"-\xff".as_slice())] {
+            let args = args_create();
+            args_set_flag(args, flag, 0);
+            assert_eq!(args_print(args).as_bytes(), expected);
+            args_free(args);
+        }
+
+        let args = args_create();
+        args_set_flag(args, 0, ARGS_ENTRY_OPTIONAL_VALUE);
+        assert_eq!(args_print(args).as_bytes(), b"- --");
+        args_free(args);
+
+        let args = args_create();
+        args_set_owned_commands(args, 0, cmd_list_new(), 0);
+        assert_eq!(args_print(args).as_bytes(), b"- {  }");
+        args_free(args);
+    }
+}
 
 unsafe fn display_message_command() -> *mut cmd {
     let mut value = args_value::borrowed_string(c"display-message".as_ptr());
