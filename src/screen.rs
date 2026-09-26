@@ -1009,11 +1009,3 @@ pub unsafe fn screen_print(
     *buf.offset(last as isize) = '\0' as i32 as ::core::ffi::c_char;
     return buf;
 }
-
-#[cfg(test)]
-mod text_owner_tests {
-    use super::*;
-    use crate::src::options::{options_create, options_default, options_free};
-    use crate::src::options_table::options_table;
-    use std::ffi::CStr;
-}

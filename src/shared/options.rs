@@ -108,7 +108,6 @@ pub enum options_value {
     Empty,
     String(CString),
     Number(::core::ffi::c_longlong),
-    Style(style),
     Array(options_array_storage),
     Command(OptionCommand),
 }

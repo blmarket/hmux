@@ -45,9 +45,7 @@ use crate::src::tmux::{
 use std::ffi::{CStr, CString};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const SHUT_RDWR: C2RustUnnamed = 2;
 pub const SHUT_WR: C2RustUnnamed = 1;
-pub const SHUT_RD: C2RustUnnamed = 0;
 
 pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
@@ -412,39 +410,6 @@ pub unsafe fn job_run(
     drop(argv0);
     return ::core::ptr::null_mut::<job>();
 }
-pub unsafe fn job_transfer(
-    mut job: *mut job,
-    mut pid: *mut pid_t,
-    mut tty: *mut ::core::ffi::c_char,
-    mut ttylen: size_t,
-) -> ::core::ffi::c_int {
-    let mut fd: ::core::ffi::c_int = (*job).fd;
-    log_debug(
-        b"transfer job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        job,
-        ((*job).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
-    if !pid.is_null() {
-        *pid = (*job).pid;
-    }
-    if !tty.is_null() {
-        strlcpy(tty, &raw mut (*job).tty as *mut ::core::ffi::c_char, ttylen);
-    }
-    if !(*job).entry.le_next.is_null() {
-        (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
-    }
-    *(*job).entry.le_prev = (*job).entry.le_next;
-    if let Some(callback) = (*job).freecb.take() {
-        callback();
-    }
-    if !(*job).event.is_null() {
-        bufferevent_free((*job).event);
-    }
-    drop(Box::from_raw(job));
-    return fd;
-}
 pub unsafe fn job_free(mut job: *mut job) {
     log_debug(
         b"free job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -593,9 +558,6 @@ pub unsafe fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
         (*job).pid = -(1 as ::core::ffi::c_int) as pid_t;
         (*job).state = JOB_DEAD;
     };
-}
-pub unsafe fn job_get_status(mut job: *mut job) -> ::core::ffi::c_int {
-    return (*job).status;
 }
 pub unsafe fn job_get_event(mut job: *mut job) -> *mut bufferevent {
     return (*job).event;

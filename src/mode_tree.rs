@@ -98,14 +98,6 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
         __c
     };
 }
-#[inline]
-unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
-}
 pub const UINT64_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
 static mut mode_tree_menu_items: [menu_item; 5] = [
     menu_item {
@@ -407,21 +399,10 @@ pub unsafe fn mode_tree_get_current_name(
         .as_ptr()
         .cast_mut();
 }
-pub unsafe fn mode_tree_select_top(mut mtd: *mut mode_tree_data) {
-    (*mtd).current = 0 as u_int;
-    (*mtd).offset = 0 as u_int;
-}
 pub unsafe fn mode_tree_expand_current(mut mtd: *mut mode_tree_data) {
     if (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).expanded == 0 {
         (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).expanded =
             1 as ::core::ffi::c_int;
-        mode_tree_build(mtd);
-    }
-}
-pub unsafe fn mode_tree_collapse_current(mut mtd: *mut mode_tree_data) {
-    if (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).expanded != 0 {
-        (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).expanded =
-            0 as ::core::ffi::c_int;
         mode_tree_build(mtd);
     }
 }
@@ -1386,9 +1367,6 @@ pub unsafe fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
         prompt_free(prompt);
         (*mtd).screen.mode &= !MODE_CURSOR;
     }
-}
-pub unsafe fn mode_tree_has_prompt(mut mtd: *mut mode_tree_data) -> ::core::ffi::c_int {
-    return ((*mtd).prompt != NULL as *mut prompt) as ::core::ffi::c_int;
 }
 unsafe fn mode_tree_prompt_accept(
     mut item: *mut cmdq_item,

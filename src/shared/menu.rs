@@ -39,16 +39,6 @@ pub struct menu {
     pub width: u_int,
 }
 
-impl menu {
-    pub fn empty() -> Self {
-        Self {
-            title: Default::default(),
-            items: Default::default(),
-            count: Default::default(),
-            width: Default::default(),
-        }
-    }
-}
 pub const MENU_NOMOUSE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const MENU_STAYOPEN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const MENU_TAB: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;

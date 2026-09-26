@@ -29,17 +29,6 @@ pub struct wait_channel {
     pub(crate) lockers: Vec<Box<wait_item>>,
 }
 
-impl wait_channel {
-    pub fn empty() -> Self {
-        Self {
-            name: Default::default(),
-            locked: Default::default(),
-            woken: Default::default(),
-            waiters: Default::default(),
-            lockers: Default::default(),
-        }
-    }
-}
 pub struct wait_channels {
     entries: std::collections::BTreeMap<Vec<u8>, Box<wait_channel>>,
 }
@@ -55,17 +44,6 @@ pub struct wait_event_item {
     pub verbose: ::core::ffi::c_int,
 }
 
-impl wait_event_item {
-    pub fn empty() -> Self {
-        Self {
-            item: Default::default(),
-            sink: Default::default(),
-            name: Default::default(),
-            filter: Default::default(),
-            verbose: Default::default(),
-        }
-    }
-}
 pub static mut cmd_wait_for_entry: cmd_entry = {
     cmd_entry {
         name: c"wait-for",

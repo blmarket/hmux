@@ -23,7 +23,6 @@ pub type client_exit_type = ::core::ffi::c_uint;
 
 pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
 pub const CLIENT_EXIT_SHUTDOWN: client_exit_type = 1;
-pub const CLIENT_EXIT_RETURN: client_exit_type = 0;
 
 pub type client_exit_reason = ::core::ffi::c_uint;
 
@@ -128,7 +127,6 @@ pub struct client {
     pub pid: pid_t,
     pub fd: ::core::ffi::c_int,
     pub out_fd: ::core::ffi::c_int,
-    pub event: event,
     pub retval: ::core::ffi::c_int,
     pub creation_time: timeval,
     pub activity_time: timeval,
@@ -204,7 +202,6 @@ impl client {
             pid: Default::default(),
             fd: Default::default(),
             out_fd: Default::default(),
-            event: Default::default(),
             retval: Default::default(),
             creation_time: Default::default(),
             activity_time: Default::default(),

@@ -1206,10 +1206,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const CHILD_CASE: &str = "HMUX2_EDITOR_FD_OWNER_CASE";
-    const FAILURE_CASE: &str = "failure";
-    const SUCCESS_CASE: &str = "success";
-    const FAILURE_TEST: &str = "src::spawn::tests::editor_fdopen_failure_closes_descriptor";
-    const SUCCESS_TEST: &str = "src::spawn::tests::editor_completion_reads_and_unlinks";
+        const SUCCESS_CASE: &str = "success";
+        const SUCCESS_TEST: &str = "src::spawn::tests::editor_completion_reads_and_unlinks";
 
     fn run_isolated(test_name: &str, case: &str) {
         let test_exe = std::env::current_exe().expect("test executable");

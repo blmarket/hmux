@@ -36,9 +36,6 @@ pub const EVENT_PAYLOAD_PANE: event_payload_type = 7;
 pub const EVENT_PAYLOAD_WINDOW: event_payload_type = 6;
 pub const EVENT_PAYLOAD_SESSION: event_payload_type = 5;
 pub const EVENT_PAYLOAD_CLIENT: event_payload_type = 4;
-pub const EVENT_PAYLOAD_UINT: event_payload_type = 3;
-pub const EVENT_PAYLOAD_INT: event_payload_type = 2;
-pub const EVENT_PAYLOAD_TIME: event_payload_type = 1;
 pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
 fn event_payload_name_key(name: &CStr) -> Vec<u8> {
@@ -553,18 +550,11 @@ unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut
             );
         }
         8 => {
-            let pointer = (*epi).value.pointer_mut();
-            if let Some(bytes) = pointer.print() {
-                if !bytes.is_empty() {
-                    evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len());
-                }
-            } else {
-                evbuffer_add_printf(
-                    evb,
-                    b"%p\0" as *const u8 as *const ::core::ffi::c_char,
-                    pointer.ptr(),
-                );
-            }
+            evbuffer_add_printf(
+                evb,
+                c"%p".as_ptr(),
+                (*epi).value.pointer().ptr(),
+            );
         }
         _ => {}
     };
@@ -661,9 +651,6 @@ pub unsafe fn event_payload_item_name(
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
-pub unsafe fn event_payload_item_type(mut epi: *mut event_payload_item) -> event_payload_type {
-    return (*epi).type_0();
-}
 pub unsafe extern "C" fn event_payload_log(
     mut ep: *mut event_payload,
     mut fmt: *const ::core::ffi::c_char,
@@ -702,52 +689,6 @@ pub unsafe extern "C" fn event_payload_log(
         evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char,
     );
     evbuffer_free(evb);
-}
-pub unsafe fn event_payload_get_time(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-) -> time_t {
-    let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = event_payload_find(ep, name);
-    if epi.is_null()
-        || (*epi).type_0() as ::core::ffi::c_uint
-            != EVENT_PAYLOAD_TIME as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return 0 as time_t;
-    }
-    return (*epi).value.time();
-}
-pub unsafe fn event_payload_get_int(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut value: *mut ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = event_payload_find(ep, name);
-    if epi.is_null()
-        || (*epi).type_0() as ::core::ffi::c_uint
-            != EVENT_PAYLOAD_INT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *value = (*epi).value.number();
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn event_payload_get_uint(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut value: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = event_payload_find(ep, name);
-    if epi.is_null()
-        || (*epi).type_0() as ::core::ffi::c_uint
-            != EVENT_PAYLOAD_UINT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *value = (*epi).value.unsigned_number();
-    return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn event_payload_get_client(mut ep: *mut event_payload) -> *mut client {
     let mut name: *const ::core::ffi::c_char =
@@ -821,30 +762,6 @@ mod tests {
     use super::*;
     use crate::src::reactor::evbuffer_add;
     use std::ffi::{CStr, CString};
-
-    struct TestEventPayload {
-        ptr: *mut ::core::ffi::c_void,
-        bytes: Vec<u8>,
-        released: Option<std::rc::Rc<std::cell::Cell<usize>>>,
-    }
-
-    impl crate::src::shared::events::EventPayloadPointerValue for TestEventPayload {
-        fn as_ptr(&self) -> *mut ::core::ffi::c_void {
-            self.ptr
-        }
-
-        fn print(&mut self) -> Option<Vec<u8>> {
-            Some(self.bytes.clone())
-        }
-    }
-
-    impl Drop for TestEventPayload {
-        fn drop(&mut self) {
-            if let Some(released) = self.released.as_ref() {
-                released.set(released.get() + 1);
-            }
-        }
-    }
 
     #[test]
     fn replacement_accepts_the_previous_items_borrowed_name() {

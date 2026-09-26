@@ -70,16 +70,6 @@ pub struct window_buffer_itemdata {
     pub size: size_t,
 }
 
-impl window_buffer_itemdata {
-    pub fn empty() -> Self {
-        Self {
-            name: Default::default(),
-            order: Default::default(),
-            size: Default::default(),
-        }
-    }
-}
-
 // The mode tree borrows `item` during callbacks. The box keeps its address
 // stable as the list grows, and owns the edit name for the callback lifetime.
 

@@ -46,16 +46,6 @@ pub struct control_block {
     pub t: uint64_t,
 }
 
-impl control_block {
-    pub fn empty() -> Self {
-        Self {
-            size: Default::default(),
-            line: Default::default(),
-            t: Default::default(),
-        }
-    }
-}
-
 #[repr(C)]
 /// Owned by the pane-ID index until `control_reset_offsets` removes it.
 /// The pending queue borrows its stable address.

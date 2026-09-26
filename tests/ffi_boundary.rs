@@ -1,9 +1,5 @@
 //! Parse Rust syntax so comments, wrapping, visibility, and symbol aliases cannot
 //! hide a Rust definition behind a foreign declaration.
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
 use syn::{
     visit::{self, Visit},
     Attribute, Expr, ForeignItem, Item, Lit, Meta,
@@ -92,16 +88,6 @@ fn scan(source: &str) -> Symbols {
     let mut symbols = Symbols::default();
     symbols.visit_file(&syn::parse_file(source).expect("parse Rust source"));
     symbols
-}
-fn source_files(dir: &Path, paths: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).unwrap() {
-        let p = entry.unwrap().path();
-        if p.is_dir() {
-            source_files(&p, paths);
-        } else if p.extension().is_some_and(|ext| ext == "rs") {
-            paths.push(p);
-        }
-    }
 }
 
 #[test]

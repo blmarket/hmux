@@ -9,5 +9,4 @@ pub struct __va_list_tag {
     pub overflow_arg_area: *mut ::core::ffi::c_void,
     pub reg_save_area: *mut ::core::ffi::c_void,
 }
-pub type va_list = __builtin_va_list;
 pub type __gnuc_va_list = __builtin_va_list;

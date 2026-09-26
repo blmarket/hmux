@@ -1067,32 +1067,6 @@ pub(crate) fn stravis_cstring(src: &std::ffi::CStr, flag: ::core::ffi::c_int) ->
     buffer.truncate(escaped_len + 1);
     std::ffi::CString::from_vec_with_nul(buffer).expect("vis output contains no interior NUL")
 }
-pub unsafe fn strvisx(
-    mut dst: *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut c: ::core::ffi::c_char = 0;
-    let mut start: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    start = dst;
-    while len > 1 as size_t {
-        c = *src;
-        src = src.offset(1);
-        dst = vis(
-            dst,
-            c as ::core::ffi::c_int,
-            flag,
-            *src as ::core::ffi::c_int,
-        );
-        len = len.wrapping_sub(1);
-    }
-    if len != 0 {
-        dst = vis(dst, *src as ::core::ffi::c_int, flag, '\0' as i32);
-    }
-    *dst = '\0' as i32 as ::core::ffi::c_char;
-    return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
-}
 
 #[cfg(test)]
 mod owned_vis_tests {

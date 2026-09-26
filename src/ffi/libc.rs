@@ -60,8 +60,7 @@ extern "C" {
     ) -> __ssize_t;
     pub fn __xpg_basename(__path: *mut ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
     pub fn _exit(__status: ::core::ffi::c_int) -> !;
-    pub fn abort() -> !;
-    pub fn abs(__x: ::core::ffi::c_int) -> ::core::ffi::c_int;
+        pub fn abs(__x: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn accept(
         __fd: ::core::ffi::c_int,
         __addr: __SOCKADDR_ARG,
@@ -117,8 +116,7 @@ extern "C" {
         __argv: *const *mut ::core::ffi::c_char,
     ) -> ::core::ffi::c_int;
     pub fn exit(__status: ::core::ffi::c_int) -> !;
-    pub fn explicit_bzero(__s: *mut ::core::ffi::c_void, __n: size_t);
-    pub fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
+        pub fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
     pub fn fcntl(__fd: ::core::ffi::c_int, __cmd: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
     pub fn fdopen(__fd: ::core::ffi::c_int, __modes: *const ::core::ffi::c_char) -> *mut FILE;
     pub fn ferror(__stream: *mut FILE) -> ::core::ffi::c_int;
@@ -167,8 +165,7 @@ extern "C" {
     pub fn getgrgid(__gid: __gid_t) -> *mut group;
     pub fn getgrnam(__name: *const ::core::ffi::c_char) -> *mut group;
     pub fn gethostname(__name: *mut ::core::ffi::c_char, __len: size_t) -> ::core::ffi::c_int;
-    pub fn getpagesize() -> ::core::ffi::c_int;
-    pub fn getpid() -> __pid_t;
+        pub fn getpid() -> __pid_t;
     pub fn getppid() -> __pid_t;
     pub fn getpwnam(__name: *const ::core::ffi::c_char) -> *mut passwd;
     pub fn getpwuid(__uid: __uid_t) -> *mut passwd;
@@ -212,14 +209,8 @@ extern "C" {
     pub fn localtime(__timer: *const time_t) -> *mut tm;
     pub fn localtime_r(__timer: *const time_t, __tp: *mut tm) -> *mut tm;
     pub fn lstat(__file: *const ::core::ffi::c_char, __buf: *mut stat) -> ::core::ffi::c_int;
-    pub fn malloc(__size: size_t) -> *mut ::core::ffi::c_void;
-    pub fn malloc_trim(__pad: size_t) -> ::core::ffi::c_int;
-    pub fn mbtowc(
-        __pwc: *mut wchar_t,
-        __s: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    pub fn memchr(
+        pub fn malloc_trim(__pad: size_t) -> ::core::ffi::c_int;
+        pub fn memchr(
         __s: *const ::core::ffi::c_void,
         __c: ::core::ffi::c_int,
         __n: size_t,
@@ -260,13 +251,7 @@ extern "C" {
     pub fn prctl(__option: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
     pub fn printf(__format: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
     pub static mut program_invocation_short_name: *mut ::core::ffi::c_char;
-    pub fn qsort(
-        __base: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-        __compar: __compar_fn_t,
-    );
-    pub type re_dfa_t;
+        pub type re_dfa_t;
     pub fn readlink(
         __path: *const ::core::ffi::c_char,
         __buf: *mut ::core::ffi::c_char,
@@ -277,13 +262,7 @@ extern "C" {
         __iovec: *const ::libc::iovec,
         __count: ::core::ffi::c_int,
     ) -> ssize_t;
-    pub fn realloc(__ptr: *mut ::core::ffi::c_void, __size: size_t) -> *mut ::core::ffi::c_void;
-    pub fn reallocarray(
-        __ptr: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    pub fn realpath(
+            pub fn realpath(
         __name: *const ::core::ffi::c_char,
         __resolved: *mut ::core::ffi::c_char,
     ) -> *mut ::core::ffi::c_char;
@@ -393,8 +372,7 @@ extern "C" {
         __s: *const ::core::ffi::c_char,
         __reject: *const ::core::ffi::c_char,
     ) -> ::core::ffi::c_ulong;
-    pub fn strdup(__s: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    pub fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
+        pub fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
     pub fn strftime(
         __s: *mut ::core::ffi::c_char,
         __maxsize: size_t,
@@ -422,8 +400,7 @@ extern "C" {
         __s2: *const ::core::ffi::c_char,
         __n: size_t,
     ) -> ::core::ffi::c_int;
-    pub fn strndup(__string: *const ::core::ffi::c_char, __n: size_t) -> *mut ::core::ffi::c_char;
-    pub fn strpbrk(
+        pub fn strpbrk(
         __s: *const ::core::ffi::c_char,
         __accept: *const ::core::ffi::c_char,
     ) -> *mut ::core::ffi::c_char;

@@ -13,10 +13,6 @@ pub enum DecodeResult {
     Invalid { consumed: usize },
 }
 
-/// Compatibility spelling for callers that want the result type named after
-/// the operation rather than the module.
-pub type Utf8DecodeResult = DecodeResult;
-
 const MAX_CODEPOINT: u32 = 0x10ffff;
 
 fn is_continuation(byte: u8) -> bool {

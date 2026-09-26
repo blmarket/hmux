@@ -12,23 +12,13 @@ pub const LAYOUT_V1_MAX_DEPTH: ::core::ffi::c_int = 1000 as ::core::ffi::c_int;
 
 pub type box_lines = ::core::ffi::c_int;
 pub const BOX_LINES_DEFAULT: box_lines = -1;
-pub const BOX_LINES_DOUBLE: box_lines = 1;
-pub const BOX_LINES_HEAVY: box_lines = 2;
 pub const BOX_LINES_NONE: box_lines = 6;
-pub const BOX_LINES_PADDED: box_lines = 5;
-pub const BOX_LINES_ROUNDED: box_lines = 4;
-pub const BOX_LINES_SIMPLE: box_lines = 3;
 pub const BOX_LINES_SINGLE: box_lines = 0;
 
 pub type pane_lines = ::core::ffi::c_uint;
-pub const PANE_LINES_DOUBLE: pane_lines = 1;
-pub const PANE_LINES_HEAVY: pane_lines = 2;
 pub const PANE_LINES_NONE: pane_lines = 6;
-pub const PANE_LINES_NUMBER: pane_lines = 4;
 pub const PANE_LINES_ROUNDED: pane_lines = 7;
-pub const PANE_LINES_SIMPLE: pane_lines = 3;
 pub const PANE_LINES_SINGLE: pane_lines = 0;
-pub const PANE_LINES_SPACES: pane_lines = 5;
 
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
@@ -73,10 +63,6 @@ pub struct layout_cell {
     pub wp: *mut window_pane,
     pub cells: layout_cells,
 }
-
-/// Compatibility marker kept for existing module re-exports. Layout cells no
-/// longer embed an intrusive TAILQ entry.
-pub struct layout_cell_entry;
 
 pub struct layout_cells {
     pub children: Vec<Box<layout_cell>>,

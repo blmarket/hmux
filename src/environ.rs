@@ -133,12 +133,6 @@ impl EnvironOwner {
         unsafe { environ_unset(self.as_ptr(), name.as_ptr()) }
     }
 
-    /// Remove an entry named by arbitrary bytes.
-    pub fn unset(&mut self, name: &[u8]) -> Result<(), NulError> {
-        let name = CString::new(name)?;
-        self.unset_cstr(&name);
-        Ok(())
-    }
 
     /// Copy entries from another borrowed environment view.
     pub fn copy_from(&mut self, source: EnvironView<'_>) {
@@ -196,16 +190,7 @@ impl<'a> EnvironView<'a> {
         })
     }
 
-    /// Find an entry by arbitrary bytes, rejecting embedded NUL.
-    pub fn find_bytes(self, name: &[u8]) -> Result<Option<EnvironEntry<'a>>, NulError> {
-        let name = CString::new(name)?;
-        Ok(self.find(&name))
-    }
 
-    /// Return the first entry in the tree's existing bytewise order.
-    pub fn first(self) -> Option<EnvironEntry<'a>> {
-        self.entries().next()
-    }
 
     /// Iterate entries in bytewise name order.
     pub fn entries(self) -> impl Iterator<Item = EnvironEntry<'a>> + 'a {
@@ -265,12 +250,6 @@ pub fn environ_iter(env: &environ) -> impl Iterator<Item = EnvironEntry<'_>> + '
     })
 }
 
-/// Compatibility name for callers that prefer the domain term.
-pub type Environment = EnvironOwner;
-/// Compatibility name for a borrowed environment view.
-pub type EnvironmentView<'a> = EnvironView<'a>;
-/// Compatibility name for a borrowed environment entry.
-pub type EnvironmentEntry<'a> = EnvironEntry<'a>;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
@@ -558,4 +537,3 @@ pub unsafe fn environ_for_session(
     );
     return env;
 }
-

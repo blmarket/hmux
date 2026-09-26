@@ -21,8 +21,6 @@ pub static mut BSDoptarg: *mut ::core::ffi::c_char =
 pub const FLAG_PERMUTE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const FLAG_ALLARGS: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const FLAG_LONGONLY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const BADCH: ::core::ffi::c_int = '?' as i32;
-pub const INORDER: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const EMSG: *mut ::core::ffi::c_char =
     b"\0" as *const u8 as *const ::core::ffi::c_char as *mut ::core::ffi::c_char;
 static mut place: *mut ::core::ffi::c_char = EMSG;

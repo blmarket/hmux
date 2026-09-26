@@ -66,15 +66,6 @@ pub struct input_request {
     pub data: Option<CString>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_requests {
-    /// Points at the observer collection held by the client owner.
-    pub collection: *mut ::core::ffi::c_void,
-    /// Retained to preserve the translated record's size and alignment.
-    pub reserved: *mut ::core::ffi::c_void,
-}
-
 pub type input_end_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]

@@ -217,7 +217,6 @@ pub struct format_expand_state {
     pub time: time_t,
     pub tm: tm,
 }
-pub type format_table_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -672,14 +671,6 @@ pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -
     }
     return s;
 }
-pub unsafe fn format_grid_hyperlink(
-    gd: *mut grid,
-    x: u_int,
-    y: u_int,
-    s: *mut screen,
-) -> Option<CString> {
-    format_grid_hyperlink_cstring(gd, x, y, s)
-}
 pub(crate) unsafe fn format_grid_hyperlink_cstring(
     mut gd: *mut grid,
     mut x: u_int,
@@ -734,7 +725,3 @@ pub const FORMAT_TYPE_WINDOW: format_type = 2;
 pub const FORMAT_TYPE_SESSION: format_type = 1;
 
 pub const FORMAT_TYPE_UNKNOWN: format_type = 0;
-
-pub const FORMAT_TABLE_TIME: format_table_type = 1;
-
-pub const FORMAT_TABLE_STRING: format_table_type = 0;

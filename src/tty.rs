@@ -2171,26 +2171,6 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     (*tty).cy = UINT_MAX as u_int;
     (*tty).cx = (*tty).cy;
 }
-pub unsafe fn tty_cmd_clearline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
-    tty_clear_pane_line(tty, ctx, (*ctx).ocy, 0 as u_int, (*ctx).sx, (*ctx).bg);
-}
-pub unsafe fn tty_cmd_clearendofline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
-    let mut nx: u_int = (*ctx).sx.wrapping_sub((*ctx).ocx);
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
-    tty_clear_pane_line(tty, ctx, (*ctx).ocy, (*ctx).ocx, nx, (*ctx).bg);
-}
-pub unsafe fn tty_cmd_clearstartofline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
-    tty_clear_pane_line(
-        tty,
-        ctx,
-        (*ctx).ocy,
-        0 as u_int,
-        (*ctx).ocx.wrapping_add(1 as u_int),
-        (*ctx).bg,
-    );
-}
 pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     let mut c: *mut client = (*tty).client;
     if (*ctx).ocy != (*ctx).orupper {
@@ -2218,45 +2198,6 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     } else {
         tty_putcode_i(tty, TTYC_RIN, 1 as ::core::ffi::c_int);
     };
-}
-pub unsafe fn tty_cmd_linefeed(mut tty: *mut tty, mut ctx: *const tty_ctx) {
-    let mut c: *mut client = (*tty).client;
-    if (*ctx).ocy != (*ctx).orlower {
-        return;
-    }
-    if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
-        || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
-            && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, 8 as u_int) != 0
-        || tty_term_has((*tty).term, TTYC_CSR) == 0
-        || (*ctx).sx == 1 as u_int
-        || (*ctx).sy == 1 as u_int
-        || (*c).overlay_check.is_some()
-    {
-        tty_redraw_region(tty, ctx);
-        return;
-    }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
-    tty_region_pane(tty, ctx, (*ctx).orupper, (*ctx).orlower);
-    tty_margin_pane(tty, ctx);
-    if ((*ctx).xoff as u_int).wrapping_add((*ctx).ocx) > (*tty).rright {
-        if (*(*tty).term).flags & TERM_DECSLRM == 0 {
-            tty_cursor(
-                tty,
-                0 as u_int,
-                ((*ctx).yoff as u_int).wrapping_add((*ctx).ocy),
-            );
-        } else {
-            tty_cursor(
-                tty,
-                (*tty).rright,
-                ((*ctx).yoff as u_int).wrapping_add((*ctx).ocy),
-            );
-        }
-    } else {
-        tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).ocy);
-    }
-    tty_putc(tty, '\n' as i32 as u_char);
 }
 pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     let mut c: *mut client = (*tty).client;

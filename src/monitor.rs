@@ -80,53 +80,6 @@ unsafe fn monitor_create_formats(
     format_defaults(ft, c, s, wl, wp);
     return ft;
 }
-unsafe fn monitor_item_cmp(
-    mut m1: *mut monitor_item,
-    mut m2: *mut monitor_item,
-) -> ::core::ffi::c_int {
-    return strcmp(
-        ((*m1).name).as_ptr().cast_mut(),
-        ((*m2).name).as_ptr().cast_mut(),
-    );
-}
-
-unsafe fn monitor_pane_cmp(
-    mut mp1: *mut monitor_pane,
-    mut mp2: *mut monitor_pane,
-) -> ::core::ffi::c_int {
-    if (*mp1).pane < (*mp2).pane {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*mp1).pane > (*mp2).pane {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*mp1).idx < (*mp2).idx {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*mp1).idx > (*mp2).idx {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
-
-unsafe fn monitor_window_cmp(
-    mut mw1: *mut monitor_window,
-    mut mw2: *mut monitor_window,
-) -> ::core::ffi::c_int {
-    if (*mw1).window < (*mw2).window {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*mw1).window > (*mw2).window {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*mw1).idx < (*mw2).idx {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*mw1).idx > (*mw2).idx {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 
 unsafe fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
@@ -871,18 +824,6 @@ pub unsafe fn monitor_items_find(head: &monitor_items, elm: &monitor_item) -> *m
     let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn monitor_items_nfind(head: &monitor_items, elm: &monitor_item) -> *mut monitor_item {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("monitor item index already borrowed");
-    let key = elm.name.as_c_str().to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 pub unsafe fn monitor_items_insert(
     head: *mut monitor_items,
     elm: *mut monitor_item,
@@ -953,20 +894,6 @@ pub unsafe fn monitor_items_next(elm: &monitor_item) -> *mut monitor_item {
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn monitor_items_prev(elm: &monitor_item) -> *mut monitor_item {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("monitor item index already borrowed"),
-    };
-    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 
 fn monitor_panes_key(elm: &monitor_pane) -> (u32, u32) {
     (elm.pane, elm.idx)
@@ -980,18 +907,6 @@ pub unsafe fn monitor_panes_find(head: &monitor_panes, elm: &monitor_pane) -> *m
         .expect("monitor pane index already borrowed");
     let key = monitor_panes_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn monitor_panes_nfind(head: &monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("monitor pane index already borrowed");
-    let key = monitor_panes_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_panes_insert(
     head: *mut monitor_panes,
@@ -1063,20 +978,6 @@ pub unsafe fn monitor_panes_next(elm: &monitor_pane) -> *mut monitor_pane {
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn monitor_panes_prev(elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("monitor pane index already borrowed"),
-    };
-    let key = monitor_panes_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 
 fn monitor_windows_key(elm: &monitor_window) -> (u32, u32) {
     (elm.window, elm.idx)
@@ -1093,21 +994,6 @@ pub unsafe fn monitor_windows_find(
         .expect("monitor window index already borrowed");
     let key = monitor_windows_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn monitor_windows_nfind(
-    head: &monitor_windows,
-    elm: &monitor_window,
-) -> *mut monitor_window {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("monitor window index already borrowed");
-    let key = monitor_windows_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_windows_insert(
     head: *mut monitor_windows,
@@ -1177,20 +1063,6 @@ pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window 
     let key = monitor_windows_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn monitor_windows_prev(elm: &monitor_window) -> *mut monitor_window {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("monitor window index already borrowed"),
-    };
-    let key = monitor_windows_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 

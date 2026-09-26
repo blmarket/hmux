@@ -10,8 +10,6 @@ pub struct progress_bar {
 pub type progress_bar_state = ::core::ffi::c_uint;
 pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
 pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
 pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
 
 pub type screen_cursor_style = ::core::ffi::c_uint;

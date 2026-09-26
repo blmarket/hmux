@@ -211,7 +211,6 @@ impl ClientRegistry {
     }
 }
 
-pub type clients = ClientRegistry;
 pub static mut clients: ClientRegistry = ClientRegistry::new();
 
 pub(crate) fn server_client_set_message(c: &mut client, message: Option<CString>) {
@@ -785,7 +784,7 @@ use crate::src::shared::display::*;
 use crate::src::shared::environment::environ_entry;
 use crate::src::shared::errno::EINTR;
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EVBUFFER_EOL_LF, EV_READ, EV_TIMEOUT};
+use crate::src::shared::event::{EV_READ, EV_TIMEOUT};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::KEY_BINDING_REPEAT;

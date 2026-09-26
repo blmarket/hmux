@@ -178,19 +178,3 @@ pub struct format_job {
     pub job: *mut job,
     pub status: ::core::ffi::c_int,
 }
-
-impl format_job {
-    pub fn empty() -> Self {
-        Self {
-            client: Default::default(),
-            tag: Default::default(),
-            cmd: Default::default(),
-            expanded: Default::default(),
-            last: Default::default(),
-            out: Default::default(),
-            updated: Default::default(),
-            job: Default::default(),
-            status: Default::default(),
-        }
-    }
-}

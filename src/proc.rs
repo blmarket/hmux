@@ -38,7 +38,6 @@ pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
 pub const NCURSES_VERSION_PATCH: ::core::ffi::c_int = 20251230 as ::core::ffi::c_int;
 pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"6.6\0") };
-pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe fn proc_dispatch(peer: *mut tmuxpeer, message: PeerMessage<'_>) -> bool {

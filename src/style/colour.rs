@@ -3849,13 +3849,6 @@ pub fn colour_parse_name_cstr(input: &std::ffi::CStr) -> Option<i32> {
     (value != -1).then_some(value)
 }
 
-/// C ABI compatibility shim.
-/// # Safety
-/// Input must point to a readable NUL-terminated string for this call.
-pub unsafe fn colour_byname(input: *const libc::c_char) -> i32 {
-    colour_parse_name_cstr(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
-}
-
 /// Parse an entire byte slice with the existing C locale grammar.
 /// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
 pub fn colour_parse_x11(input: &[u8]) -> Option<i32> {

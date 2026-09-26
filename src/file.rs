@@ -167,15 +167,6 @@ unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
     };
     CString::new(full_path).expect("C string path fragments contain no NUL")
 }
-pub unsafe fn file_cmp(mut cf1: *mut client_file, mut cf2: *mut client_file) -> ::core::ffi::c_int {
-    if (*cf1).stream < (*cf2).stream {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*cf1).stream > (*cf2).stream {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 pub unsafe fn file_create_with_peer(
     mut peer: *mut tmuxpeer,
     mut files: *mut client_files,
@@ -472,16 +463,6 @@ pub unsafe extern "C" fn file_error(
         file_push(cf);
     };
 }
-pub unsafe fn file_write(
-    c: *mut client,
-    path: *const ::core::ffi::c_char,
-    flags: ::core::ffi::c_int,
-    bdata: *const ::core::ffi::c_void,
-    bsize: size_t,
-    cb: client_file_cb,
-) {
-    file_write_impl(c, path, flags, bdata, bsize, cb, None);
-}
 
 pub(crate) unsafe fn file_write_with_cmdq_wait(
     c: *mut client,
@@ -615,13 +596,6 @@ unsafe fn file_write_impl(
         _ => {}
     }
     file_fire_done(cf);
-}
-pub unsafe fn file_read(
-    mut c: *mut client,
-    mut path: *const ::core::ffi::c_char,
-    mut cb: client_file_cb,
-) -> *mut client_file {
-    file_read_impl(c, path, cb, None)
 }
 
 pub(crate) unsafe fn file_read_with_cmdq_wait(
@@ -1538,18 +1512,6 @@ pub fn client_files_find(head: &client_files, elm: &client_file) -> *mut client_
     let key = client_files_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub fn client_files_nfind(head: &client_files, elm: &client_file) -> *mut client_file {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("client file index already borrowed");
-    let key = client_files_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 pub unsafe fn client_files_insert(
     head: *mut client_files,
     elm: *mut client_file,
@@ -1619,29 +1581,4 @@ pub unsafe fn client_files_next(elm: &client_file) -> *mut client_file {
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn client_files_prev(elm: &client_file) -> *mut client_file {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
-    };
-    let key = client_files_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-
-#[cfg(test)]
-mod client_files_index_tests {
-    use super::*;
-
-    fn file(stream: i32) -> *mut client_file {
-        let mut file = Box::new(client_file::empty());
-        file.stream = stream;
-        Box::into_raw(file)
-    }
 }

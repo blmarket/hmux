@@ -249,8 +249,3 @@ pub unsafe fn server_acl_join(mut c: *mut client) -> ::core::ffi::c_int {
     }
     return 1 as ::core::ffi::c_int;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}

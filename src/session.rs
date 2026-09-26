@@ -58,12 +58,6 @@ pub(crate) fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
 pub(crate) fn session_replace_name(s: &mut session, name: CString) -> CString {
     std::mem::replace(&mut s.name, name)
 }
-pub unsafe fn session_cmp(mut s1: *mut session, mut s2: *mut session) -> ::core::ffi::c_int {
-    return strcmp(
-        ((*s1).name).as_ptr().cast_mut(),
-        ((*s2).name).as_ptr().cast_mut(),
-    );
-}
 pub(crate) fn sessions_key(elm: &session) -> Vec<u8> {
     elm.name.as_bytes().to_vec()
 }
@@ -76,18 +70,6 @@ pub fn sessions_find(head: &sessions, elm: &session) -> *mut session {
         .expect("session index already borrowed");
     let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub fn sessions_nfind(head: &sessions, elm: &session) -> *mut session {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    let key = elm.name.as_c_str().to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut session {
     let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
@@ -168,30 +150,6 @@ pub unsafe fn sessions_next(elm: &session) -> *mut session {
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-/// The session must still belong to its index.
-pub unsafe fn sessions_prev(elm: &session) -> *mut session {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("session index already borrowed"),
-    };
-    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn session_group_cmp(
-    mut s1: *mut session_group,
-    mut s2: *mut session_group,
-) -> ::core::ffi::c_int {
-    return strcmp(
-        ((*s1).name).as_ptr().cast_mut(),
-        ((*s2).name).as_ptr().cast_mut(),
-    );
-}
 pub fn session_groups_find(head: &session_groups, elm: &session_group) -> *mut session_group {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
@@ -202,18 +160,6 @@ pub fn session_groups_find(head: &session_groups, elm: &session_group) -> *mut s
     let key = elm.name.as_c_str().to_bytes();
     map.get(key)
         .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
-}
-pub fn session_groups_nfind(head: &session_groups, elm: &session_group) -> *mut session_group {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("session group index already borrowed");
-    let key = elm.name.as_c_str().to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
 impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
@@ -305,20 +251,6 @@ pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
     let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
-}
-pub unsafe fn session_groups_prev(elm: &session_group) -> *mut session_group {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("session group index already borrowed"),
-    };
-    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
-        .next_back()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
 pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
@@ -1225,11 +1157,6 @@ pub unsafe fn session_update_history(mut s: *mut session) {
 mod session_index_tests {
     use super::*;
 
-    fn session(name: &str) -> *mut session {
-        let mut session = Box::new(session::empty());
-        session.name = std::ffi::CString::new(name).unwrap();
-        Box::into_raw(session)
-    }
 
     #[test]
     fn session_group_index_drops_nodes_after_releasing_the_map_borrow() {

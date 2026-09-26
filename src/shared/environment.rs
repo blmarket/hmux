@@ -18,13 +18,3 @@ pub struct environ_entry {
     pub value: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
 }
-
-impl environ_entry {
-    pub fn empty() -> Self {
-        Self {
-            name: Default::default(),
-            value: Default::default(),
-            flags: Default::default(),
-        }
-    }
-}

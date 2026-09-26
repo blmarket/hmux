@@ -44,41 +44,6 @@ static mut hyperlinks_next_external_id: ::core::ffi::c_longlong = 1 as ::core::f
 // This queue owns the records and their insertion order. Boxes keep each node
 // at a stable address for the per-table URI and inner-ID indexes.
 static mut GLOBAL_HYPERLINKS: VecDeque<Box<hyperlinks_uri>> = VecDeque::new();
-unsafe fn hyperlinks_by_uri_cmp(
-    mut left: *mut hyperlinks_uri,
-    mut right: *mut hyperlinks_uri,
-) -> ::core::ffi::c_int {
-    let mut r: ::core::ffi::c_int = 0;
-    if *(*left).internal_id.as_ptr() as ::core::ffi::c_int == '\0' as i32
-        || *(*right).internal_id.as_ptr() as ::core::ffi::c_int == '\0' as i32
-    {
-        if *(*left).internal_id.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
-            return -(1 as ::core::ffi::c_int);
-        }
-        if *(*right).internal_id.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
-            return 1 as ::core::ffi::c_int;
-        }
-        return (*left).inner.wrapping_sub((*right).inner) as ::core::ffi::c_int;
-    }
-    r = strcmp(
-        ((*left).internal_id).as_ptr().cast_mut(),
-        ((*right).internal_id).as_ptr().cast_mut(),
-    );
-    if r != 0 as ::core::ffi::c_int {
-        return r;
-    }
-    return strcmp(
-        ((*left).uri).as_ptr().cast_mut(),
-        ((*right).uri).as_ptr().cast_mut(),
-    );
-}
-
-unsafe fn hyperlinks_by_inner_cmp(
-    mut left: *mut hyperlinks_uri,
-    mut right: *mut hyperlinks_uri,
-) -> ::core::ffi::c_int {
-    return (*left).inner.wrapping_sub((*right).inner) as ::core::ffi::c_int;
-}
 
 unsafe fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
@@ -231,21 +196,6 @@ pub unsafe fn hyperlinks_by_inner_tree_find(
     let key = hyperlinks_by_inner_tree_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn hyperlinks_by_inner_tree_nfind(
-    head: &hyperlinks_by_inner_tree,
-    elm: &hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("hyperlink inner index already borrowed");
-    let key = hyperlinks_by_inner_tree_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 pub unsafe fn hyperlinks_by_inner_tree_insert(
     head: *mut hyperlinks_by_inner_tree,
     elm: *mut hyperlinks_uri,
@@ -318,20 +268,6 @@ pub unsafe fn hyperlinks_by_inner_tree_next(elm: &hyperlinks_uri) -> *mut hyperl
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn hyperlinks_by_inner_tree_prev(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(owner) = elm.by_inner_entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink inner index already borrowed"),
-    };
-    let key = hyperlinks_by_inner_tree_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 
 fn hyperlinks_by_uri_tree_key(elm: &hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, u32) {
     {
@@ -355,21 +291,6 @@ pub unsafe fn hyperlinks_by_uri_tree_find(
         .expect("hyperlink URI index already borrowed");
     let key = hyperlinks_by_uri_tree_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn hyperlinks_by_uri_tree_nfind(
-    head: &hyperlinks_by_uri_tree,
-    elm: &hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("hyperlink URI index already borrowed");
-    let key = hyperlinks_by_uri_tree_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_uri_tree_insert(
     head: *mut hyperlinks_by_uri_tree,
@@ -417,51 +338,6 @@ pub unsafe fn hyperlinks_by_uri_tree_remove(
     }
     elm
 }
-pub unsafe fn hyperlinks_by_uri_tree_minmax(
-    head: &hyperlinks_by_uri_tree,
-    direction: ::core::ffi::c_int,
-) -> *mut hyperlinks_uri {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("hyperlink URI index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn hyperlinks_by_uri_tree_next(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(owner) = elm.by_uri_entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink URI index already borrowed"),
-    };
-    let key = hyperlinks_by_uri_tree_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn hyperlinks_by_uri_tree_prev(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(owner) = elm.by_uri_entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink URI index already borrowed"),
-    };
-    let key = hyperlinks_by_uri_tree_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 
 #[cfg(test)]
 mod hyperlink_index_tests {
@@ -493,7 +369,7 @@ mod hyperlink_index_tests {
             assert!(hyperlinks_by_inner_tree_remove(&mut (*other).by_inner, first).is_null());
             assert!((*first).by_inner_entry.owner.is_some());
             assert_eq!(hyperlinks_by_inner_tree_next(&*first), second);
-            assert_eq!(hyperlinks_by_uri_tree_next(&*first), second);
+            assert_eq!(hyperlinks_by_uri_tree_find(&(*table).by_uri, &*second), second);
 
             hyperlinks_free(table);
             assert!(matches!(

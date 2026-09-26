@@ -95,7 +95,6 @@ static mut parse_state: cmd_parse_state = cmd_parse_state {
     escapes: 0,
     error: None,
 };
-pub const ERROR: ::core::ffi::c_int = 258 as ::core::ffi::c_int;
 pub const HIDDEN: ::core::ffi::c_int = 259 as ::core::ffi::c_int;
 pub const IF: ::core::ffi::c_int = 260 as ::core::ffi::c_int;
 pub const ELSE: ::core::ffi::c_int = 261 as ::core::ffi::c_int;
@@ -215,9 +214,6 @@ unsafe fn cmd_parse_argument_at(
     (&mut (*args).items)
         .get_mut(index)
         .map_or(::core::ptr::null_mut(), |arg| &mut **arg)
-}
-unsafe fn cmd_parse_arguments_append(dst: *mut cmd_parse_arguments, src: *mut cmd_parse_arguments) {
-    (*dst).items.append(&mut (*src).items);
 }
 unsafe fn cmd_parse_commands_push(cmds: *mut cmd_parse_commands, cmd: *mut cmd_parse_command) {
     (*cmds).items.push(Box::from_raw(cmd));
@@ -726,22 +722,6 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
         s.to_bytes().len() as size_t,
         pi,
     );
-}
-pub unsafe fn cmd_parse_and_insert(
-    s: &CStr,
-    mut pi: *mut cmd_parse_input,
-    mut after: *mut cmdq_item,
-    mut state: *mut cmdq_state,
-) -> Result<cmd_parse_status, Option<CString>> {
-    let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut pr = cmd_parse_from_string(s, pi);
-    if pr.status == CMD_PARSE_ERROR {
-        return Err(pr.error.take());
-    }
-    item = cmdq_get_command(pr.cmdlist, state);
-    cmdq_insert_after(after, item);
-    cmd_list_free(pr.cmdlist);
-    Ok(pr.status)
 }
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,

@@ -113,9 +113,7 @@ pub const _NL_NUMERIC_CODESET: C2RustUnnamed = 65541;
 pub const _NL_NUMERIC_THOUSANDS_SEP_WC: C2RustUnnamed = 65540;
 pub const _NL_NUMERIC_DECIMAL_POINT_WC: C2RustUnnamed = 65539;
 pub const __GROUPING: C2RustUnnamed = 65538;
-pub const THOUSEP: C2RustUnnamed = 65537;
 pub const __THOUSANDS_SEP: C2RustUnnamed = 65537;
-pub const RADIXCHAR: C2RustUnnamed = 65536;
 pub const __DECIMAL_POINT: C2RustUnnamed = 65536;
 pub const _NL_NUM_LC_MONETARY: C2RustUnnamed = 262190;
 pub const _NL_MONETARY_CODESET: C2RustUnnamed = 262189;
@@ -382,56 +380,7 @@ pub const _NL_WABDAY_2: C2RustUnnamed = 131125;
 pub const _NL_WABDAY_1: C2RustUnnamed = 131124;
 pub const _NL_TIME_ERA_ENTRIES: C2RustUnnamed = 131123;
 pub const _NL_TIME_ERA_NUM_ENTRIES: C2RustUnnamed = 131122;
-pub const ERA_T_FMT: C2RustUnnamed = 131121;
-pub const ERA_D_T_FMT: C2RustUnnamed = 131120;
-pub const ALT_DIGITS: C2RustUnnamed = 131119;
-pub const ERA_D_FMT: C2RustUnnamed = 131118;
 pub const __ERA_YEAR: C2RustUnnamed = 131117;
-pub const ERA: C2RustUnnamed = 131116;
-pub const T_FMT_AMPM: C2RustUnnamed = 131115;
-pub const T_FMT: C2RustUnnamed = 131114;
-pub const D_FMT: C2RustUnnamed = 131113;
-pub const D_T_FMT: C2RustUnnamed = 131112;
-pub const PM_STR: C2RustUnnamed = 131111;
-pub const AM_STR: C2RustUnnamed = 131110;
-pub const MON_12: C2RustUnnamed = 131109;
-pub const MON_11: C2RustUnnamed = 131108;
-pub const MON_10: C2RustUnnamed = 131107;
-pub const MON_9: C2RustUnnamed = 131106;
-pub const MON_8: C2RustUnnamed = 131105;
-pub const MON_7: C2RustUnnamed = 131104;
-pub const MON_6: C2RustUnnamed = 131103;
-pub const MON_5: C2RustUnnamed = 131102;
-pub const MON_4: C2RustUnnamed = 131101;
-pub const MON_3: C2RustUnnamed = 131100;
-pub const MON_2: C2RustUnnamed = 131099;
-pub const MON_1: C2RustUnnamed = 131098;
-pub const ABMON_12: C2RustUnnamed = 131097;
-pub const ABMON_11: C2RustUnnamed = 131096;
-pub const ABMON_10: C2RustUnnamed = 131095;
-pub const ABMON_9: C2RustUnnamed = 131094;
-pub const ABMON_8: C2RustUnnamed = 131093;
-pub const ABMON_7: C2RustUnnamed = 131092;
-pub const ABMON_6: C2RustUnnamed = 131091;
-pub const ABMON_5: C2RustUnnamed = 131090;
-pub const ABMON_4: C2RustUnnamed = 131089;
-pub const ABMON_3: C2RustUnnamed = 131088;
-pub const ABMON_2: C2RustUnnamed = 131087;
-pub const ABMON_1: C2RustUnnamed = 131086;
-pub const DAY_7: C2RustUnnamed = 131085;
-pub const DAY_6: C2RustUnnamed = 131084;
-pub const DAY_5: C2RustUnnamed = 131083;
-pub const DAY_4: C2RustUnnamed = 131082;
-pub const DAY_3: C2RustUnnamed = 131081;
-pub const DAY_2: C2RustUnnamed = 131080;
-pub const DAY_1: C2RustUnnamed = 131079;
-pub const ABDAY_7: C2RustUnnamed = 131078;
-pub const ABDAY_6: C2RustUnnamed = 131077;
-pub const ABDAY_5: C2RustUnnamed = 131076;
-pub const ABDAY_4: C2RustUnnamed = 131075;
-pub const ABDAY_3: C2RustUnnamed = 131074;
-pub const ABDAY_2: C2RustUnnamed = 131073;
-pub const ABDAY_1: C2RustUnnamed = 131072;
 
 pub const __S_IFMT: ::core::ffi::c_int = 0o170000 as ::core::ffi::c_int;
 
@@ -825,10 +774,6 @@ pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
     HOME.get().map(CString::as_c_str)
 }
 
-/// Compatibility adapter for the original C-facing contract.
-pub unsafe fn find_home() -> *const ::core::ffi::c_char {
-    find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr)
-}
 pub unsafe fn getversion() -> *const ::core::ffi::c_char {
     return b"next-3.9\0" as *const u8 as *const ::core::ffi::c_char;
 }
@@ -1117,8 +1062,6 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     osdep_event_init();
     exit(client_main(&command_argv, flags, feat));
 }
-pub const TMUX_VERSION: [::core::ffi::c_char; 9] =
-    unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"next-3.9\0") };
 pub const TMUX_CONF: [::core::ffi::c_char; 85] = unsafe {
     ::core::mem::transmute::<[u8; 85], [::core::ffi::c_char; 85]>(
         *b"/etc/tmux.conf:~/.tmux.conf:$XDG_CONFIG_HOME/tmux/tmux.conf:~/.config/tmux/tmux.conf\0",

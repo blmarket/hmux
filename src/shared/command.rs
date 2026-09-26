@@ -183,8 +183,6 @@ impl cmdq_item {
     }
 }
 
-pub type cmds = Vec<*mut cmd>;
-
 #[repr(C)]
 /// Box-owned by a client until `cmdq_free`; the lazy global queue lives for
 /// the process. The deque owns stable command item allocations.

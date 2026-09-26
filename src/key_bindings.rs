@@ -46,27 +46,6 @@ pub(crate) unsafe fn key_bindings_set_note(bd: *mut key_binding, note: Option<&C
     owner.note = Default::default();
     owner.note = next;
 }
-unsafe fn key_table_cmp(
-    mut table1: *mut key_table,
-    mut table2: *mut key_table,
-) -> ::core::ffi::c_int {
-    return strcmp(
-        ((*table1).name).as_ptr().cast_mut(),
-        ((*table2).name).as_ptr().cast_mut(),
-    );
-}
-unsafe fn key_bindings_cmp(
-    mut bd1: *mut key_binding,
-    mut bd2: *mut key_binding,
-) -> ::core::ffi::c_int {
-    if (*bd1).key < (*bd2).key {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*bd1).key > (*bd2).key {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 unsafe fn key_bindings_free(mut bd: *mut key_binding) {
     cmd_list_free((*bd).cmdlist);
     drop(Box::from_raw(bd));
@@ -279,27 +258,6 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
             c = clients.next(c);
         }
         key_bindings_unref_table(table);
-    }
-}
-pub unsafe fn key_bindings_reset_table(mut name: *const ::core::ffi::c_char) {
-    let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut bd1: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    table = key_bindings_get_table(name, 0 as ::core::ffi::c_int);
-    if table.is_null() {
-        return;
-    }
-    if (*table).default_key_bindings.storage.is_none() {
-        key_bindings_remove_table(name);
-        return;
-    }
-    bd = key_bindings_index_minmax(&(*table).key_bindings);
-    while !bd.is_null() && {
-        bd1 = key_bindings_index_next(&*bd);
-        1 as ::core::ffi::c_int != 0
-    } {
-        key_bindings_reset(name, (*bd).key);
-        bd = bd1;
     }
 }
 
@@ -1075,18 +1033,6 @@ pub unsafe fn key_bindings_index_find(head: &key_bindings, elm: &key_binding) ->
     let key = key_bindings_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn key_bindings_index_nfind(head: &key_bindings, elm: &key_binding) -> *mut key_binding {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("key binding index already borrowed");
-    let key = key_bindings_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 pub unsafe fn key_bindings_index_insert(
     head: *mut key_bindings,
     elm: *mut key_binding,
@@ -1157,20 +1103,6 @@ pub unsafe fn key_bindings_index_next(elm: &key_binding) -> *mut key_binding {
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn key_bindings_index_prev(elm: &key_binding) -> *mut key_binding {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("key binding index already borrowed"),
-    };
-    let key = key_bindings_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 
 pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_table {
     let Some(owner) = head.storage.as_ref() else {
@@ -1181,18 +1113,6 @@ pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_ta
         .expect("key table index already borrowed");
     let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn key_tables_nfind(head: &key_tables, elm: &key_table) -> *mut key_table {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    let key = elm.name.as_c_str().to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
     let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
@@ -1257,35 +1177,4 @@ pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn key_tables_prev(elm: &key_table) -> *mut key_table {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("key table index already borrowed"),
-    };
-    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-
-#[cfg(test)]
-mod key_index_tests {
-    use super::*;
-
-    fn binding(key: key_code) -> *mut key_binding {
-        let mut binding = Box::new(key_binding::empty());
-        binding.key = key;
-        Box::into_raw(binding)
-    }
-
-    fn table(name: &str) -> *mut key_table {
-        let mut table = Box::new(key_table::empty());
-        table.name = std::ffi::CString::new(name).unwrap();
-        Box::into_raw(table)
-    }
 }

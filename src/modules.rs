@@ -9,14 +9,11 @@ pub mod cmd;
 pub mod ffi;
 pub mod compat {
     pub mod fdforkpty;
-    pub mod getdtablecount;
     pub mod getopt_long;
     pub mod getpeereid;
     pub mod getprogname;
     pub mod glob;
-    pub mod htonll;
     pub mod imsg;
-    pub mod ntohll;
     pub mod setproctitle;
     pub mod stdio;
     pub mod strtonum;

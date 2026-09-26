@@ -277,14 +277,6 @@ fn checked_window_pane_ptr(weak: &refbox::Weak<window_pane>) -> *mut window_pane
 }
 
 impl window_panes {
-    pub fn is_empty(&self) -> bool {
-        self.storage.as_deref().is_none_or(Vec::is_empty)
-    }
-
-    pub fn len(&self) -> usize {
-        self.storage.as_deref().map_or(0, Vec::len)
-    }
-
     pub unsafe fn first(&self) -> *mut window_pane {
         self.storage
             .as_deref()
@@ -393,10 +385,6 @@ impl window_panes {
             self.storage = None;
         }
         true
-    }
-
-    pub unsafe fn contains(&self, pane: *mut window_pane) -> bool {
-        self.position(pane).is_some()
     }
 
     pub unsafe fn swap_ptrs(&mut self, first: *mut window_pane, second: *mut window_pane) {

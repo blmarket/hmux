@@ -139,24 +139,6 @@ pub struct window_customize_itemdata {
 }
 
 impl window_customize_itemdata {
-    pub fn empty() -> Self {
-        Self {
-            data: Default::default(),
-            type_0: Default::default(),
-            option_type: Default::default(),
-            scope: Default::default(),
-            table: Default::default(),
-            key: Default::default(),
-            oo: Default::default(),
-            environ: Default::default(),
-            environ_flags: Default::default(),
-            name: Default::default(),
-            array_key: Default::default(),
-        }
-    }
-}
-
-impl window_customize_itemdata {
     fn new() -> Self {
         window_customize_itemdata {
             data: ::core::ptr::null_mut(),
@@ -226,14 +208,6 @@ pub const WINDOW_CUSTOMIZE_EDIT_OPTION: window_customize_edit_type = 0;
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
-}
-#[inline]
-unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
         __c
     };

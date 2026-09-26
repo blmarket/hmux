@@ -340,11 +340,6 @@ fn args_push_positional_owned(args: &mut args, value: args_value) {
     args.count = args.values.len() as u_int;
 }
 
-/// Append a positional string and transfer its storage into `args`.
-pub unsafe fn args_push_positional_string(args: *mut args, value: CString) {
-    args_push_positional_owned(&mut *args, args_value::string(value));
-}
-
 /// Append a positional command list and transfer its reference into `args`.
 pub unsafe fn args_push_positional_commands(args: *mut args, cmdlist: *mut cmd_list) {
     args_push_positional_owned(&mut *args, args_value::commands(cmdlist));
@@ -903,9 +898,6 @@ pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
     CString::new(result).expect("utf8_strvis output has no interior NUL")
 }
 
-pub fn args_escape(s: &CStr) -> CString {
-    unsafe { args_escape_cstring(s) }
-}
 pub unsafe fn args_has(mut args: *mut args, mut flag: u_char) -> ::core::ffi::c_int {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     entry = args_find(args, flag);
@@ -1194,9 +1186,6 @@ pub unsafe fn args_make_commands_free(mut state: *mut args_command_state) {
     }
     drop(Box::from_raw(state));
 }
-pub unsafe fn args_make_commands_get_command(state: *mut args_command_state) -> CString {
-    args_make_commands_get_command_cstring(state)
-}
 
 pub(crate) unsafe fn args_make_commands_get_command_cstring(
     state: *mut args_command_state,
@@ -1441,25 +1430,5 @@ pub fn args_string_percentage_result(
         minval,
         maxval,
         curval,
-    )
-}
-
-/// Converts an optional C string after format expansion as an integer or percentage.
-///
-/// # Safety
-/// `item` must be valid for format expansion.
-pub unsafe fn args_string_percentage_and_expand_result(
-    value: Option<&CStr>,
-    minval: ::core::ffi::c_longlong,
-    maxval: ::core::ffi::c_longlong,
-    curval: ::core::ffi::c_longlong,
-    item: *mut cmdq_item,
-) -> Result<i64, ArgumentValueError> {
-    parse_percentage_and_expand(
-        value.ok_or(ArgumentValueError::Missing)?,
-        minval,
-        maxval,
-        curval,
-        item,
     )
 }

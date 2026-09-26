@@ -35,7 +35,6 @@ use std::ffi::{CStr, CString};
 pub const TTYCODE_FLAG: tty_code_type = 3;
 pub const TTYCODE_NUMBER: tty_code_type = 2;
 pub const TTYCODE_STRING: tty_code_type = 1;
-pub const TTYCODE_NONE: tty_code_type = 0;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

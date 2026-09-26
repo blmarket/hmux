@@ -33,7 +33,7 @@ use crate::src::shared::command::{
 };
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EVBUFFER_EOL_LF, EV_TIMEOUT};
+use crate::src::shared::event::{EV_TIMEOUT};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::src::shared::pane::window_pane;
@@ -56,14 +56,6 @@ pub struct cmd_run_shell_data {
     pub wp_id: ::core::ffi::c_int,
     pub timer: event,
     pub flags: ::core::ffi::c_int,
-}
-#[inline]
-unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
 }
 pub static mut cmd_run_shell_entry: cmd_entry = {
     cmd_entry {

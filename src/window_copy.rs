@@ -237,7 +237,6 @@ pub const CURSORDRAG_NONE: C2RustUnnamed_45 = 0;
 pub const WINDOW_COPY_LINE_NUMBERS_OFF: window_copy_line_numbers = 0;
 pub const WINDOW_COPY_LINE_NUMBERS_DEFAULT: window_copy_line_numbers = 1;
 pub const WINDOW_COPY_LINE_NUMBERS_HYBRID: window_copy_line_numbers = 4;
-pub const WINDOW_COPY_LINE_NUMBERS_RELATIVE: window_copy_line_numbers = 3;
 pub const WINDOW_COPY_LINE_NUMBERS_ABSOLUTE: window_copy_line_numbers = 2;
 pub const WINDOW_COPY_CMD_MOVE: window_copy_cmd_action = 1;
 pub type window_copy_cmd_action = ::core::ffi::c_uint;

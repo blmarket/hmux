@@ -22,9 +22,6 @@ pub struct screen_sel {
     pub clipx: u_int,
     pub cell: grid_cell,
 }
-/// Kept as a compatibility name for translated modules that import the old
-/// history type. Screen history is now stored inline as owned C strings.
-pub type screen_titles = VecDeque<CString>;
 #[derive(Default)]
 #[repr(C)]
 pub struct screen {

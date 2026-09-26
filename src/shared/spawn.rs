@@ -28,16 +28,6 @@ pub struct spawn_editor_state {
     pub cb: spawn_finish_edit_cb,
 }
 
-impl spawn_editor_state {
-    pub fn empty() -> Self {
-        Self {
-            path: Default::default(),
-            pid: Default::default(),
-            cb: Default::default(),
-        }
-    }
-}
-
 /// Rust-only callback so the editor result can move as owned binary bytes.
 pub type spawn_finish_edit_cb = Option<Box<dyn FnOnce(Option<Vec<u8>>)>>;
 

@@ -19,9 +19,6 @@ pub const MSG_EXEC: msgtype = 217;
 pub const MSG_WAKEUP: msgtype = 216;
 pub const MSG_UNLOCK: msgtype = 215;
 pub const MSG_SUSPEND: msgtype = 214;
-const MSG_OLDSTDOUT: msgtype = 213;
-const MSG_OLDSTDIN: msgtype = 212;
-const MSG_OLDSTDERR: msgtype = 211;
 pub const MSG_SHUTDOWN: msgtype = 210;
 pub const MSG_SHELL: msgtype = 209;
 pub const MSG_RESIZE: msgtype = 208;
@@ -42,7 +39,6 @@ pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
 pub const MSG_IDENTIFY_DONE: msgtype = 106;
 pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
 pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-const MSG_IDENTIFY_OLDCWD: msgtype = 103;
 pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
 pub const MSG_IDENTIFY_TERM: msgtype = 101;
 const MSG_IDENTIFY_FLAGS: msgtype = 100;
@@ -79,83 +75,24 @@ pub(crate) const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 
 pub(crate) const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
-pub(super) enum IbufStorage<'a> {
-    Owned(Vec<u8>),
-    Borrowed(&'a [u8]),
-}
-
-impl IbufStorage<'_> {
-    pub(super) fn as_slice(&self) -> &[u8] {
-        match self {
-            Self::Owned(bytes) => bytes,
-            Self::Borrowed(bytes) => bytes,
-        }
-    }
-
-    pub(super) fn is_owned(&self) -> bool {
-        matches!(self, Self::Owned(_))
-    }
-
-    pub(super) fn as_mut_slice(&mut self) -> Option<&mut [u8]> {
-        match self {
-            Self::Owned(bytes) => Some(bytes),
-            Self::Borrowed(_) => None,
-        }
-    }
-}
-
-/// An opaque ibuf record. Use the accessors rather than relying on a C layout.
-/// The lifetime parameter keeps borrowed byte storage tied to its source.
-pub(super) struct ibuf<'a> {
-    pub(super) storage: IbufStorage<'a>,
+/// An owned message buffer. Its file descriptor closes with the buffer.
+pub(super) struct OwnedIbuf {
+    pub(super) storage: Vec<u8>,
     pub(super) max: size_t,
     pub(super) wpos: size_t,
     pub(super) rpos: size_t,
     pub(super) fd: Option<OwnedFd>,
 }
 
-impl<'a> ibuf<'a> {
-    pub(super) fn borrowed(bytes: &'a [u8]) -> Self {
-        Self {
-            storage: IbufStorage::Borrowed(bytes),
-            max: 0,
-            wpos: bytes.len(),
-            rpos: 0,
-            fd: None,
-        }
-    }
-
-    pub(super) fn from_ibuf(from: &'a ibuf<'_>) -> Self {
-        let start = from.rpos;
-        let end = from.wpos;
-        let bytes = from.storage.as_slice().get(start..end).unwrap_or(&[]);
-        Self::borrowed(bytes)
-    }
-
-    pub(super) fn take_view(&mut self, len: usize) -> Option<ibuf<'_>> {
-        let start = self.rpos;
-        let end = start.checked_add(len)?;
-        if end > self.wpos || end > self.storage_len() {
-            return None;
-        }
-        self.rpos = end;
-        let bytes = self.storage.as_slice().get(start..end)?;
-        Some(ibuf::borrowed(bytes))
-    }
-
-    pub(super) fn is_owned(&self) -> bool {
-        self.storage.is_owned()
-    }
-
+impl OwnedIbuf {
     pub(super) fn size(&self) -> usize {
         self.wpos.saturating_sub(self.rpos)
     }
 
     pub(super) fn unread(&self) -> &[u8] {
-        let bytes = self.storage.as_slice();
-        let end = self.wpos.min(bytes.len());
+        let end = self.wpos.min(self.storage.len());
         let start = self.rpos.min(end);
-        &bytes[start..end]
+        &self.storage[start..end]
     }
 
     pub(super) fn skip(&mut self, len: usize) -> bool {
@@ -169,24 +106,14 @@ impl<'a> ibuf<'a> {
         true
     }
 
-    pub(super) fn rewind(&mut self) {
-        self.rpos = 0;
-    }
-
     pub(super) fn storage_len(&self) -> usize {
-        self.storage.as_slice().len()
+        self.storage.len()
     }
 
     pub(super) fn replace_owned(&mut self, bytes: Vec<u8>) {
-        self.storage = IbufStorage::Owned(bytes);
+        self.storage = bytes;
     }
 }
-
-/// A buffer whose borrowed storage, if any, must be `'static`.
-///
-/// Queue insertion still checks `is_owned`; a static lifetime alone does not
-/// establish ownership of the bytes.
-pub(super) type OwnedIbuf = ibuf<'static>;
 
 pub struct imsg {
     pub hdr: imsg_hdr,
@@ -214,21 +141,6 @@ pub(crate) struct imsgbuf {
     pub(super) maxsize: uint32_t,
     pub(crate) fd: ::core::ffi::c_int,
     pub(super) flags: ::core::ffi::c_int,
-}
-
-/// Make a read-only view whose lifetime is tied to the source slice.
-fn ibuf_from_buffer(data: &[u8]) -> ibuf<'_> {
-    ibuf::borrowed(data)
-}
-
-/// Make a read-only view whose lifetime is tied to the source buffer borrow.
-fn ibuf_from_ibuf<'a>(from: &'a ibuf<'_>) -> ibuf<'a> {
-    ibuf::from_ibuf(from)
-}
-
-/// Advance the source cursor and return a view of the consumed bytes.
-fn ibuf_get_ibuf<'a>(from: &'a mut ibuf<'_>, len: usize) -> Option<ibuf<'a>> {
-    from.take_view(len)
 }
 
 #[derive(Copy, Clone)]

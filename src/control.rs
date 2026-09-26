@@ -31,7 +31,7 @@ use crate::src::shared::control::{
 };
 use crate::src::shared::errno::{EAGAIN, EINTR};
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EVBUFFER_EOL_LF, EV_READ, EV_WRITE};
+use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
@@ -63,31 +63,6 @@ pub const CONTROL_MAXIMUM_REPLY_BUFFER: ::core::ffi::c_int =
     64 as ::core::ffi::c_int * 1024 as ::core::ffi::c_int * 1024 as ::core::ffi::c_int;
 pub const CONTROL_IGNORE_FLAGS: ::core::ffi::c_int =
     CLIENT_CONTROL_NOOUTPUT | CLIENT_UNATTACHEDFLAGS;
-unsafe fn control_pane_cmp(
-    mut cp1: *mut control_pane,
-    mut cp2: *mut control_pane,
-) -> ::core::ffi::c_int {
-    if (*cp1).pane < (*cp2).pane {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*cp1).pane > (*cp2).pane {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
-
-unsafe fn control_window_cmp(
-    mut cw1: *mut control_window,
-    mut cw2: *mut control_window,
-) -> ::core::ffi::c_int {
-    if (*cw1).window < (*cw2).window {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*cw1).window > (*cw2).window {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 
 impl control_block {
     fn new(line: Option<CString>, size: size_t) -> Box<Self> {
@@ -343,7 +318,6 @@ mod control_queue_tests {
             assert!((*first).entry.owner.is_some());
             assert_eq!(control_panes_find(&index, &*first), first);
             assert_eq!(control_panes_next(&*first), second);
-            assert_eq!(control_panes_prev(&*second), first);
 
             let removed = control_panes_remove(&raw mut index, first).unwrap();
             assert!(removed.entry.owner.is_none());
@@ -1525,20 +1499,6 @@ pub unsafe fn control_panes_find(head: &control_panes, elm: &control_pane) -> *m
         &**node as *const control_pane as *mut control_pane
     })
 }
-pub unsafe fn control_panes_nfind(head: &control_panes, elm: &control_pane) -> *mut control_pane {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("control pane index already borrowed");
-    let key = control_panes_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| {
-            &**node as *const control_pane as *mut control_pane
-        })
-}
 pub unsafe fn control_panes_insert(
     head: *mut control_panes,
     elm: *mut control_pane,
@@ -1624,22 +1584,6 @@ pub unsafe fn control_panes_next(elm: &control_pane) -> *mut control_pane {
             &**node as *const control_pane as *mut control_pane
         })
 }
-pub unsafe fn control_panes_prev(elm: &control_pane) -> *mut control_pane {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("control pane index already borrowed"),
-    };
-    let key = control_panes_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| {
-            &**node as *const control_pane as *mut control_pane
-        })
-}
 
 fn control_windows_key(elm: &control_window) -> u32 {
     elm.window
@@ -1656,21 +1600,6 @@ pub unsafe fn control_windows_find(
         .expect("control window index already borrowed");
     let key = control_windows_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn control_windows_nfind(
-    head: &control_windows,
-    elm: &control_window,
-) -> *mut control_window {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("control window index already borrowed");
-    let key = control_windows_key(elm);
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_windows_insert(
     head: *mut control_windows,
@@ -1740,19 +1669,5 @@ pub unsafe fn control_windows_next(elm: &control_window) -> *mut control_window 
     let key = control_windows_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn control_windows_prev(elm: &control_window) -> *mut control_window {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("control window index already borrowed"),
-    };
-    let key = control_windows_key(elm);
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }

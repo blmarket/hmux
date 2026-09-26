@@ -210,18 +210,6 @@ pub unsafe fn json_array_next(mut member: *mut json_node) -> *mut json_node {
     }
     return json_members_next((*(*member).parent).value.members(), &*member);
 }
-pub unsafe fn json_get_string(
-    mut jn: *mut json_node,
-    mut s: *mut *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *s = (*jn).value.string_ptr();
-    return 0 as ::core::ffi::c_int;
-}
 pub unsafe fn json_get_number(mut jn: *mut json_node, mut i: *mut int64_t) -> ::core::ffi::c_int {
     if (*jn).type_0() as ::core::ffi::c_uint
         != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -229,18 +217,6 @@ pub unsafe fn json_get_number(mut jn: *mut json_node, mut i: *mut int64_t) -> ::
         return -(1 as ::core::ffi::c_int);
     }
     *i = (*jn).value.number();
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_get_boolean(
-    mut jn: *mut json_node,
-    mut b: *mut ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_BOOLEAN as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *b = (*jn).value.boolean();
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_get_object(
@@ -253,18 +229,6 @@ pub unsafe fn json_get_object(
         return -(1 as ::core::ffi::c_int);
     }
     *o = jn;
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_get_array(
-    mut jn: *mut json_node,
-    mut a: *mut *mut json_node,
-) -> ::core::ffi::c_int {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *a = jn;
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn json_find_string(
@@ -1282,27 +1246,5 @@ mod json_fields_tests {
         }
     }
 
-    unsafe fn new_node(key: &CString) -> *mut json_node {
-        json_create_node(
-            ::core::ptr::null_mut(),
-            NODE_STRING,
-            key.as_ptr(),
-            ::core::ptr::null_mut(),
-        )
-    }
 
-    unsafe fn free_tree(head: &mut json_fields) {
-        let mut item = json_fields_minmax(head);
-        while !item.is_null() {
-            let next = json_fields_next(head, &*item);
-            assert_eq!(json_fields_remove(head, &*item), item);
-            json_destroy_node(item);
-            item = next;
-        }
     }
-}
-
-#[cfg(test)]
-mod json_string_owner_tests {
-    use super::*;
-}

@@ -7,22 +7,6 @@ pub use crate::src::ffi::libc::{
 
 pub type __socket_type = ::core::ffi::c_uint;
 
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-
-pub const SOCK_PACKET: __socket_type = 10;
-
-pub const SOCK_DCCP: __socket_type = 6;
-
-pub const SOCK_SEQPACKET: __socket_type = 5;
-
-pub const SOCK_RDM: __socket_type = 4;
-
-pub const SOCK_RAW: __socket_type = 3;
-
-pub const SOCK_DGRAM: __socket_type = 2;
-
 pub const SOCK_STREAM: __socket_type = 1;
 
 pub type sa_family_t = ::core::ffi::c_ushort;

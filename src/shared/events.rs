@@ -44,17 +44,6 @@ pub struct events_sink {
     pub generation: u_int,
 }
 
-impl events_sink {
-    pub fn empty() -> Self {
-        Self {
-            name: Default::default(),
-            cb: events_callback(|_, _| {}),
-            dead: Default::default(),
-            generation: Default::default(),
-        }
-    }
-}
-
 pub type events_cb = std::rc::Rc<dyn Fn(&std::ffi::CStr, &mut event_payload)>;
 
 pub fn events_callback(
@@ -162,39 +151,19 @@ impl EventPayloadValue {
         };
         value
     }
-    pub fn pointer_mut(&mut self) -> &mut EventPayloadPointer {
-        let Self::Pointer(value) = self else {
-            panic!("incorrect event payload type")
-        };
-        value
-    }
-}
-
-pub trait EventPayloadPointerValue {
-    fn as_ptr(&self) -> *mut ::core::ffi::c_void;
-
-    fn print(&mut self) -> Option<Vec<u8>>;
 }
 
 pub enum EventPayloadPointer {
     Raw(*mut ::core::ffi::c_void),
-    Owned(Box<dyn EventPayloadPointerValue>),
 }
 
 impl EventPayloadPointer {
     pub fn ptr(&self) -> *mut ::core::ffi::c_void {
         match self {
             Self::Raw(ptr) => *ptr,
-            Self::Owned(value) => value.as_ptr(),
         }
     }
 
-    pub fn print(&mut self) -> Option<Vec<u8>> {
-        match self {
-            Self::Raw(_) => None,
-            Self::Owned(value) => value.print(),
-        }
-    }
 }
 
 pub type event_payload_type = ::core::ffi::c_uint;

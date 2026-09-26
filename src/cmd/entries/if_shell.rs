@@ -34,14 +34,6 @@ pub struct cmd_if_shell_data {
     pub client: *mut client,
     pub item: *mut cmdq_item,
 }
-#[inline]
-unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
-}
 pub static mut cmd_if_shell_entry: cmd_entry =  {
     cmd_entry {
         name: c"if-shell",

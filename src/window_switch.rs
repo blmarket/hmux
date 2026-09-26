@@ -86,14 +86,6 @@ pub struct window_switch_itemdata {
 pub type window_switch_type = ::core::ffi::c_uint;
 pub const WINDOW_SWITCH_TYPE_WINDOW: window_switch_type = 1;
 pub const WINDOW_SWITCH_TYPE_SESSION: window_switch_type = 0;
-#[inline]
-unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
-}
 
 pub const WINDOW_SWITCH_DEFAULT_COMMAND: [::core::ffi::c_char; 23] = unsafe {
     ::core::mem::transmute::<[u8; 23], [::core::ffi::c_char; 23]>(*b"switch-client -Zt '%%'\0")

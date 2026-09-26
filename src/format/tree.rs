@@ -523,22 +523,5 @@ mod tests {
         }
     }
 
-    unsafe fn new_entry(key: &CString) -> *mut format_entry {
-        Box::into_raw(Box::new(format_entry {
-            owned_cb: None,
-            key: ::std::ffi::CStr::from_ptr(key.as_ptr() as *mut ::core::ffi::c_char).to_owned(),
-            value: Default::default(),
-            time: 0,
-        }))
-    }
 
-    unsafe fn free_tree(head: &mut format_entry_tree) {
-        let mut item = format_entry_tree_minmax(head);
-        while !item.is_null() {
-            let next = format_entry_tree_next(head, item);
-            assert_eq!(format_entry_tree_remove(head, item), item);
-            drop(Box::from_raw(item));
-            item = next;
-        }
     }
-}

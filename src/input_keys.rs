@@ -43,7 +43,7 @@ pub struct input_key_tree {
 // for its lifetime, so growing the owner vector does not move entry pointers.
 struct InputKeyGenerated {
     entry: input_key_entry,
-    data: CString,
+    _data: CString,
 }
 pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUSE_ALL;
 
@@ -93,7 +93,7 @@ fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<InputKey
             key,
             data: data.as_ptr(),
         },
-        data,
+        _data: data,
     })
 }
 

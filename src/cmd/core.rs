@@ -254,9 +254,6 @@ pub unsafe fn cmd_pack_argv(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_stringify_argv(argv: &Vec<CString>) -> Option<CString> {
-    cmd_stringify_argv_cstring(argv)
-}
 
 pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<CString> {
     let mut bytes = Vec::new();

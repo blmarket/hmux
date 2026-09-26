@@ -86,10 +86,3 @@ pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const EV_SIGNAL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const EV_PERSIST: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-
-pub type evbuffer_eol_style = ::core::ffi::c_uint;
-pub const EVBUFFER_EOL_NUL: evbuffer_eol_style = 4;
-pub const EVBUFFER_EOL_LF: evbuffer_eol_style = 3;
-pub const EVBUFFER_EOL_CRLF_STRICT: evbuffer_eol_style = 2;
-pub const EVBUFFER_EOL_CRLF: evbuffer_eol_style = 1;
-pub const EVBUFFER_EOL_ANY: evbuffer_eol_style = 0;

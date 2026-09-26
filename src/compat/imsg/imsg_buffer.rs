@@ -4,7 +4,7 @@ use crate::src::shared::abi::uint32_t;
 use ::libc::{cmsghdr, msghdr};
 use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
-use super::message::{ibuf, msgbuf, OwnedIbuf, IbufStorage};
+use super::message::{msgbuf, OwnedIbuf};
 use crate::src::shared::socket::SOL_SOCKET;
 use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -33,9 +33,6 @@ impl ibufqueue_bufs {
     }
 
     fn push_back_owned(&mut self, buf: Box<OwnedIbuf>) -> Result<(), ::core::ffi::c_int> {
-        if !buf.is_owned() {
-            return Err(EINVAL);
-        }
         self.entries.try_reserve(1).map_err(|_| ENOMEM)?;
         self.entries.push_back(buf);
         Ok(())
@@ -53,9 +50,6 @@ impl ibufqueue_bufs {
         self.entries.front_mut().map(Box::as_mut)
     }
 
-    fn clear(&mut self) {
-        self.entries.clear();
-    }
 }
 
 impl ibufqueue {
@@ -67,9 +61,6 @@ impl ibufqueue {
 }
 
 type C2RustUnnamed = ::core::ffi::c_uint;
-const SCM_PIDFD: C2RustUnnamed = 4;
-const SCM_SECURITY: C2RustUnnamed = 3;
-const SCM_CREDENTIALS: C2RustUnnamed = 2;
 const SCM_RIGHTS: C2RustUnnamed = 1;
 
 const IMSG_CMSG_FD_BUFFER_SIZE: usize = unsafe {
@@ -92,11 +83,8 @@ union C2RustUnnamed_3 {
 const __IOV_MAX: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
 const IOV_MAX: ::core::ffi::c_int = __IOV_MAX;
 
-const EOVERFLOW: ::core::ffi::c_int = 75 as ::core::ffi::c_int;
 const EMSGSIZE: ::core::ffi::c_int = 90 as ::core::ffi::c_int;
 const ENOBUFS: ::core::ffi::c_int = 105 as ::core::ffi::c_int;
-const UINT8_MAX: ::core::ffi::c_int = 255 as ::core::ffi::c_int;
-const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
 const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
@@ -108,8 +96,8 @@ fn try_zeroed_vec(len: usize) -> Result<Vec<u8>, std::collections::TryReserveErr
 }
 
 pub(super) fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
-    let Ok(mut buf) = Box::try_new(ibuf {
-        storage: IbufStorage::Owned(Vec::new()),
+    let Ok(mut buf) = Box::try_new(OwnedIbuf {
+        storage: Vec::new(),
         max: len,
         wpos: 0,
         rpos: 0,
@@ -120,7 +108,7 @@ pub(super) fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_in
     if len > 0 as size_t {
         match try_zeroed_vec(len) {
             Ok(bytes) => {
-                buf.storage = IbufStorage::Owned(bytes);
+                buf.storage = bytes;
             }
             Err(_) => {
                 return Err(ENOMEM);
@@ -133,8 +121,8 @@ pub(super) fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, :
     if max == 0 as size_t || max < len {
         return Err(EINVAL);
     }
-    let Ok(mut buf) = Box::try_new(ibuf {
-        storage: IbufStorage::Owned(Vec::new()),
+    let Ok(mut buf) = Box::try_new(OwnedIbuf {
+        storage: Vec::new(),
         max,
         wpos: 0,
         rpos: 0,
@@ -145,7 +133,7 @@ pub(super) fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, :
     if len > 0 as size_t {
         match try_zeroed_vec(len) {
             Ok(bytes) => {
-                buf.storage = IbufStorage::Owned(bytes);
+                buf.storage = bytes;
             }
             Err(_) => {
                 return Err(ENOMEM);
@@ -166,9 +154,6 @@ fn ibuf_reserve(
     if new_wpos > SIZE_MAX as usize {
         return Err(ERANGE);
     }
-    if !buf.is_owned() {
-        return Err(EINVAL);
-    }
     if new_wpos > buf.storage_len() {
         if new_wpos > buf.max {
             return Err(ERANGE);
@@ -184,14 +169,10 @@ fn ibuf_reserve(
     buf.wpos = new_wpos;
     buf.storage
         .as_mut_slice()
-        .ok_or(EINVAL)?
         .get_mut(start..new_wpos)
         .ok_or(ERANGE)
 }
 pub(super) fn ibuf_add(buf: &mut OwnedIbuf, data: &[u8]) -> Result<(), ::core::ffi::c_int> {
-    if !buf.is_owned() {
-        return Err(EINVAL);
-    }
     if data.is_empty() {
         return Ok(());
     }
@@ -204,9 +185,6 @@ fn ibuf_seek(
     pos: size_t,
     len: size_t,
 ) -> Result<&mut [u8], ::core::ffi::c_int> {
-    if !buf.is_owned() {
-        return Err(EINVAL);
-    }
     let Some(end) = pos.checked_add(len) else {
         return Err(ERANGE);
     };
@@ -221,7 +199,6 @@ fn ibuf_seek(
     };
     buf.storage
         .as_mut_slice()
-        .ok_or(EINVAL)?
         .get_mut(start..end)
         .ok_or(ERANGE)
 }
@@ -252,9 +229,6 @@ pub(super) fn ibuf_size(buf: &OwnedIbuf) -> size_t {
     buf.size()
 }
 fn ibuf_left(buf: &OwnedIbuf) -> size_t {
-    if !buf.is_owned() {
-        return 0 as size_t;
-    }
     buf.max.saturating_sub(buf.wpos)
 }
 pub(super) fn ibuf_close(
@@ -262,20 +236,6 @@ pub(super) fn ibuf_close(
     buf: Box<OwnedIbuf>,
 ) -> Result<(), ::core::ffi::c_int> {
     msgbuf.bufs.bufs.push_back_owned(buf)
-}
-fn ibuf_get(buf: &mut OwnedIbuf, data: &mut [u8]) -> Result<(), ::core::ffi::c_int> {
-    if ibuf_size(buf) < data.len() {
-        return Err(EBADMSG);
-    }
-    if data.is_empty() {
-        return Ok(());
-    }
-    let len = data.len();
-    data.copy_from_slice(&ibuf_data(buf)[..len]);
-    if !buf.skip(len) {
-        return Err(EBADMSG);
-    }
-    Ok(())
 }
 pub(super) fn ibuf_fd_avail(buf: &OwnedIbuf) -> bool {
     buf.fd.is_some()
@@ -287,9 +247,6 @@ pub(super) fn ibuf_fd_set(
     buf: &mut OwnedIbuf,
     fd: Option<OwnedFd>,
 ) -> Result<(), ::core::ffi::c_int> {
-    if !buf.is_owned() {
-        return Err(EINVAL);
-    }
     buf.fd = fd;
     Ok(())
 }
@@ -343,13 +300,6 @@ pub(super) fn msgbuf_new_reader_owned(
 
 pub(super) fn msgbuf_queuelen(msgbuf: &msgbuf) -> uint32_t {
     ibufq_queuelen(&msgbuf.bufs) as uint32_t
-}
-
-fn msgbuf_clear(msgbuf: &mut msgbuf) {
-    ibufq_flush(&mut msgbuf.bufs);
-    ibufq_flush(&mut msgbuf.rbufs);
-    msgbuf.roff = 0;
-    msgbuf.rpmsg = None;
 }
 
 pub(super) fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<OwnedIbuf>> {
@@ -488,9 +438,6 @@ fn ibuf_read_process(
                 .as_mut()
                 .expect("reader has a header callback")(header, fd.take())?;
             fd = remaining_fd;
-            if !message.is_owned() {
-                return Err(EINVAL);
-            }
             msgbuf.rpmsg = Some(message);
         }
 
@@ -648,8 +595,4 @@ fn ibufq_push(
 
 fn ibufq_queuelen(bufq: &ibufqueue) -> usize {
     bufq.bufs.len()
-}
-
-fn ibufq_flush(bufq: &mut ibufqueue) {
-    bufq.bufs.clear();
 }

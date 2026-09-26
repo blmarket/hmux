@@ -58,9 +58,6 @@ use std::ffi::{CStr, CString};
 struct hooks_event {
     // The registry owns this C string for as long as its event is registered.
     name: CString,
-    // events_add_sink owns the sink; this pointer records the registered sink
-    // and is retained for the same lifetime as the registry entry.
-    sink: *mut events_sink,
 }
 
 #[derive(Default)]
@@ -76,11 +73,11 @@ impl HooksEvents {
             .any(|event| event.name.as_bytes() == name.to_bytes())
     }
 
-    fn insert(&mut self, name: CString, sink: *mut events_sink) -> bool {
+    fn insert(&mut self, name: CString) -> bool {
         if self.contains(name.as_c_str()) {
             return false;
         }
-        self.events.push(Box::new(hooks_event { name, sink }));
+        self.events.push(Box::new(hooks_event { name }));
         true
     }
 }
@@ -376,12 +373,12 @@ pub unsafe fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
         return;
     }
 
-    let sink = events_add_sink(
+    events_add_sink(
         event_name,
         events_callback(|name, payload| unsafe { hooks_event_cb(name, payload) }),
     );
     let events = &raw mut hooks_events;
-    (*events).insert(event_name.to_owned(), sink);
+    (*events).insert(event_name.to_owned());
 }
 pub unsafe fn hooks_is_event(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let events = &raw const hooks_events;
@@ -690,28 +687,25 @@ mod hooks_events_tests {
     fn registry_owns_stable_c_names_and_deduplicates_by_bytes() {
         let mut registry = HooksEvents::default();
         let name = CString::new(vec![b'@', 0xff]).unwrap();
-        let sink = 1usize as *mut events_sink;
-        assert!(registry.insert(name, sink));
+        assert!(registry.insert(name));
 
         let event_address = &*registry.events[0] as *const hooks_event;
         let name_address = registry.events[0].name.as_ptr();
-        assert_eq!(registry.events[0].sink, sink);
 
         for i in 0..128 {
             let other = CString::new(format!("event-{i}")).unwrap();
-            assert!(registry.insert(other, ::core::ptr::null_mut()));
+            assert!(registry.insert(other));
         }
 
         // The first owner and its C string stay at stable addresses as the
         // collection grows, and arbitrary non-UTF-8 event names are preserved.
         assert_eq!(&*registry.events[0] as *const hooks_event, event_address);
         assert_eq!(registry.events[0].name.as_ptr(), name_address);
-        assert_eq!(registry.events[0].sink, sink);
         assert_eq!(
             unsafe { CStr::from_ptr(name_address) }.to_bytes(),
             [b'@', 0xff]
         );
         assert!(registry.contains(CStr::from_bytes_with_nul(b"@\xff\0").unwrap()));
-        assert!(!registry.insert(CString::new(vec![b'@', 0xff]).unwrap(), sink));
+        assert!(!registry.insert(CString::new(vec![b'@', 0xff]).unwrap()));
     }
 }

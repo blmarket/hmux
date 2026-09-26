@@ -140,8 +140,6 @@ pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
-pub const WINDOW_PANE_COPY_MODE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const WINDOW_PANE_VIEW_MODE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const WINDOW_WASZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub static mut windows: windows = windows { storage: None };
 pub static mut all_window_panes: window_pane_tree = window_pane_tree { storage: None };
@@ -163,18 +161,6 @@ pub fn windows_find(head: &windows, elm: &window) -> *mut window {
         .expect("window index already borrowed");
     let key = elm.id;
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub fn windows_nfind(head: &windows, elm: &window) -> *mut window {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("window index already borrowed");
-    let key = elm.id;
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_insert(head: *mut windows, elm: *mut window) -> *mut window {
     let key = (*elm).id;
@@ -238,20 +224,6 @@ pub unsafe fn windows_next(elm: &window) -> *mut window {
     let key = elm.id;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn windows_prev(elm: &window) -> *mut window {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("window index already borrowed"),
-    };
-    let key = elm.id;
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
@@ -400,16 +372,6 @@ pub fn window_pane_tree_find(head: &window_pane_tree, elm: &window_pane) -> *mut
     let key = elm.id;
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub fn window_pane_tree_nfind(head: &window_pane_tree, elm: &window_pane) -> *mut window_pane {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner.try_borrow_mut().expect("pane index already borrowed");
-    let key = elm.id;
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
 pub unsafe fn window_pane_tree_insert(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
@@ -473,23 +435,6 @@ pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn window_pane_tree_prev(elm: &window_pane) -> *mut window_pane {
-    let Some(owner) = elm.tree_entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("pane index already borrowed"),
-    };
-    let key = elm.id;
-    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
-        .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn window_cmp(mut w1: *mut window, mut w2: *mut window) -> ::core::ffi::c_int {
-    return (*w1).id.wrapping_sub((*w2).id) as ::core::ffi::c_int;
 }
 unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::ffi::c_char) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
@@ -709,15 +654,6 @@ unsafe fn window_fire_pane_prompt(
         type_string,
     );
     events_fire(name, ep);
-}
-pub unsafe fn winlink_cmp(mut wl1: *mut winlink, mut wl2: *mut winlink) -> ::core::ffi::c_int {
-    return (*wl1).idx - (*wl2).idx;
-}
-pub unsafe fn window_pane_cmp(
-    mut wp1: *mut window_pane,
-    mut wp2: *mut window_pane,
-) -> ::core::ffi::c_int {
-    return (*wp1).id.wrapping_sub((*wp2).id) as ::core::ffi::c_int;
 }
 pub unsafe fn winlink_find_by_window(mut wwl: *mut winlinks, mut w: *mut window) -> *mut winlink {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -1346,17 +1282,6 @@ pub unsafe fn window_pane_send_resize(mut wp: *mut window_pane, mut sx: u_int, m
     {
         fatal(b"ioctl failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
-}
-pub unsafe fn window_has_floating_panes(mut w: *mut window) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = window_pane_first(w);
-    while !wp.is_null() {
-        if window_pane_is_floating(wp) != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-        wp = window_pane_next(wp);
-    }
-    return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn window_has_pane(mut w: *mut window, mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut wp1: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -4555,21 +4480,6 @@ pub unsafe fn window_pane_is_floating(mut wp: *mut window_pane) -> ::core::ffi::
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
-}
-
-#[cfg(test)]
-mod name_tests {
-    use super::*;
-    use crate::src::events::{events_add_sink, events_remove_sink};
-    use crate::src::events_payload::event_payload_get_string;
-    use crate::src::shared::events::{event_payload, events_callback};
-    use std::ffi::CStr;
-
-    struct RenameState {
-        window: *mut window,
-        events: Vec<(Vec<u8>, Vec<u8>)>,
-        reenter: bool,
-    }
 }
 
 #[cfg(test)]
