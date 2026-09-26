@@ -210,7 +210,7 @@ unsafe fn file_create_with_client(
         (*cf).peer = (*(*cf).c).peer;
         (*cf).tree = &raw mut (*(*cf).c).files as *mut client_files;
         client_files_insert(&raw mut (*(*cf).c).files, cf);
-        (*(*cf).c).references += 1;
+        crate::src::shared::rc::retain((*cf).c);
     }
     return cf;
 }

@@ -992,7 +992,7 @@ pub unsafe fn popup_display(
     (*pd).item = item;
     (*pd).flags = flags;
     (*pd).c = c;
-    (*(*pd).c).references += 1;
+    crate::src::shared::rc::retain((*pd).c);
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
     memcpy(

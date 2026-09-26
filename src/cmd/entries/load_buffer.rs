@@ -135,7 +135,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
         cdata.client = tc;
-        (*tc).references += 1;
+        crate::src::shared::rc::retain(tc);
     }
     let path = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     file_read_with_cmdq_wait(

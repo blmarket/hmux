@@ -4058,7 +4058,7 @@ pub unsafe fn window_pane_start_input(
         wp: (*wp).id,
         file: std::ptr::null_mut(),
     }));
-    (*c).references += 1;
+    crate::src::shared::rc::retain(c);
     let file = file_read_with_cmdq_wait(
         c,
         b"-\0" as *const u8 as *const ::core::ffi::c_char,

@@ -128,7 +128,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         cdata.client = tc;
     }
     if !cdata.client.is_null() {
-        (*cdata.client).references += 1;
+        crate::src::shared::rc::retain(cdata.client);
     }
     // The job owns this pointer on success; its free callback drops the box.
     // job_run leaves data untouched on failure, so reclaim it below.

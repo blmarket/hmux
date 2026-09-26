@@ -419,7 +419,7 @@ pub unsafe fn event_payload_set_client(mut ep: *mut event_payload, mut c: *mut c
     let mut name: *const ::core::ffi::c_char =
         b"client\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    (*c).references += 1;
+    crate::src::shared::rc::retain(c);
     epi = event_payload_new_item();
     (*epi).value = EventPayloadValue::Client(c);
     event_payload_set_item(ep, name, epi);

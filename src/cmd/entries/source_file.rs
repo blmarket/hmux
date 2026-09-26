@@ -276,7 +276,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         files: Vec::new(),
     }));
     if !c.is_null() {
-        (*c).references += 1;
+        crate::src::shared::rc::retain(c);
     }
     if args_has(args, 'q' as i32 as u_char) != 0 {
         (*cdata).flags |= CMD_PARSE_QUIET;

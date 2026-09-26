@@ -263,7 +263,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         (*cdata).flags |= JOB_NOWAIT;
     }
     if !(*cdata).client.is_null() {
-        (*(*cdata).client).references += 1;
+        crate::src::shared::rc::retain((*cdata).client);
     }
     if args_has(args, 'E' as i32 as u_char) != 0 {
         (*cdata).flags |= JOB_SHOWSTDERR;

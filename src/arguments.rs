@@ -1118,7 +1118,7 @@ pub unsafe fn args_make_commands_prepare(
     }
     (*state).pi.c = tc;
     if !(*state).pi.c.is_null() {
-        (*(*state).pi.c).references += 1;
+        crate::src::shared::rc::retain((*state).pi.c);
     }
     cmd_find_copy_state(&raw mut (*state).pi.fs, target);
     return state;

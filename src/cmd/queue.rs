@@ -339,7 +339,7 @@ pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut 
         next = (*item).next;
         (*item).next = ::core::ptr::null_mut::<cmdq_item>();
         if !c.is_null() {
-            (*c).references += 1;
+            crate::src::shared::rc::retain(c);
         }
         (*item).client = c;
         (*item).queue = queue;
@@ -373,7 +373,7 @@ pub unsafe fn cmdq_insert_after(
         (*item).next = (*after).next;
         (*after).next = item;
         if !c.is_null() {
-            (*c).references += 1;
+            crate::src::shared::rc::retain(c);
         }
         (*item).client = c;
         (*item).queue = queue;

@@ -111,22 +111,24 @@ pub use crate::src::shared::client::{
 };
 
 impl client {
-    unsafe fn new() -> Box<Self> {
-        Box::new(client::empty())
+    /// Allocate a client on the server thread. Final drop touches its registry.
+    ///
+    /// # Safety
+    /// The caller must serialize access to the global server model and perform
+    /// client-loss cleanup before releasing a fully initialized client.
+    pub unsafe fn new() -> std::rc::Rc<crate::src::shared::rc::Allocation<Self>> {
+        unsafe { crate::src::shared::rc::take(crate::src::shared::rc::new(client::empty(), server_client_free)) }
     }
 }
 
-/// Owns every client record and stores the current active-client order.
-///
-/// A client can leave active iteration before its references reach zero, so
-/// its Box stays in `owners` until `server_client_free`. The central successor
-/// index preserves queue traversal semantics for callers that cached a client
-/// pointer before it was removed, without putting links on `client` itself.
+/// Non-owning active-client index. Weak allocation observers and successor
+/// entries survive active removal until final Rc cleanup. Each registration
+/// transfers one strong reference to the client-loss path.
 pub struct ClientRegistry {
     ordered: Vec<*mut client>,
     indices: std::collections::BTreeMap<usize, usize>,
     successors: std::collections::BTreeMap<usize, *mut client>,
-    owners: Vec<Box<client>>,
+    observers: Vec<std::rc::Weak<crate::src::shared::rc::Allocation<client>>>,
 }
 
 impl ClientRegistry {
@@ -135,7 +137,7 @@ impl ClientRegistry {
             ordered: Vec::new(),
             indices: std::collections::BTreeMap::new(),
             successors: std::collections::BTreeMap::new(),
-            owners: Vec::new(),
+            observers: Vec::new(),
         }
     }
 
@@ -153,8 +155,8 @@ impl ClientRegistry {
             .unwrap_or(::core::ptr::null_mut())
     }
 
-    pub(crate) fn push_back(&mut self, mut owner: Box<client>) -> *mut client {
-        let value = &raw mut *owner;
+    pub(crate) fn push_back(&mut self, owner: std::rc::Rc<crate::src::shared::rc::Allocation<client>>) -> *mut client {
+        let value = crate::src::shared::rc::as_ptr(&owner);
         let key = value as usize;
         assert!(!self.indices.contains_key(&key), "client registered twice");
 
@@ -164,7 +166,8 @@ impl ClientRegistry {
         self.indices.insert(key, self.ordered.len());
         self.successors.insert(key, ::core::ptr::null_mut());
         self.ordered.push(value);
-        self.owners.push(owner);
+        self.observers.push(std::rc::Rc::downgrade(&owner));
+        let _ = std::rc::Rc::into_raw(owner);
         value
     }
 
@@ -190,16 +193,13 @@ impl ClientRegistry {
         true
     }
 
-    /// Drop a client owner once all external references have been released.
+    /// Forget the non-owning entry during final Rc cleanup.
     pub(crate) fn release(&mut self, value: *mut client) {
         self.remove(value);
         self.successors.remove(&(value as usize));
-        let index = self
-            .owners
-            .iter()
-            .position(|owner| std::ptr::eq(&**owner, value))
-            .expect("client owner missing at final release");
-        self.owners.remove(index);
+        if let Some(index) = self.observers.iter().position(|owner| owner.as_ptr().cast::<client>() == value) {
+            self.observers.remove(index);
+        }
     }
 
     /// Reset active membership while retaining records owned by outstanding
@@ -1047,8 +1047,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
     let mut owner = client::new();
-    c = &raw mut *owner;
-    (*c).references = 1 as ::core::ffi::c_int;
+    c = crate::src::shared::rc::as_ptr(&owner);
     (*c).peer = proc_add_peer(
         server_proc,
         fd,
@@ -1461,35 +1460,18 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     server_check_unattached();
     server_update_socket();
 }
-pub unsafe fn server_client_unref(mut c: *mut client) {
-    log_debug(
-        b"unref client %p (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-        (*c).references,
-    );
-    (*c).references -= 1;
-    if (*c).references == 0 as ::core::ffi::c_int {
-        event_once(move |_, _| unsafe { server_client_free(c as *mut ::core::ffi::c_void) });
-    }
+pub unsafe fn server_client_unref(c: *mut client) {
+    log_debug(c"unref client %p".as_ptr(), c);
+    crate::src::shared::rc::release_later(crate::src::shared::rc::take(c));
 }
-unsafe fn server_client_free(mut arg: *mut ::core::ffi::c_void) {
-    let mut c: *mut client = arg as *mut client;
-    log_debug(
-        b"free client %p (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-        (*c).references,
-    );
+unsafe fn server_client_free(c: *mut client) {
+    log_debug(c"free client %p".as_ptr(), c);
     redraw_free_scene((*c).redraw_scene);
-    cmdq_free((*c).queue);
-    if (*c).references == 0 as ::core::ffi::c_int {
-        server_client_set_name(&mut *c, None);
-        server_client_set_user(&mut *c, None);
-        assert!(
-            (*c).files.storage.is_none(),
-            "client file index still contains live records at client teardown"
-        );
-        clients.release(c);
+    if !(*c).queue.is_null() {
+        cmdq_free((*c).queue);
     }
+    assert!((*c).files.storage.is_none(), "client file index still contains live records at client teardown");
+    clients.release(c);
 }
 pub unsafe fn server_client_suspend(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
@@ -3258,7 +3240,7 @@ unsafe fn server_client_handle_key0(
     );
     if !after.is_null() {
         (*event).client = c;
-        (*c).references += 1;
+        crate::src::shared::rc::retain(c);
         item = cmdq_insert_after(after, item);
         if !next.is_null() {
             *next = item;
@@ -5182,7 +5164,7 @@ mod client_registry_tests {
     use super::{client, ClientRegistry};
 
     #[test]
-    fn owns_stable_clients_and_preserves_order_after_removal() {
+    fn client_index_preserves_order_after_removal() {
         unsafe {
             let mut registry = ClientRegistry::new();
             let first = registry.push_back(client::new());
@@ -5193,30 +5175,33 @@ mod client_registry_tests {
             assert_eq!(registry.next(first), middle);
             assert_eq!(registry.next(middle), last);
 
-            registry.push_back(client::new());
+            let extra = registry.push_back(client::new());
             assert_eq!(registry.next(first), middle);
             assert!(registry
-                .owners
+                .observers
                 .iter()
-                .any(|owner| std::ptr::eq(&**owner, first)));
+                .any(|owner| owner.as_ptr().cast::<client>() == first));
             assert!(registry.remove(middle));
             assert_eq!(registry.next(first), last);
             assert_eq!(registry.next(middle), last);
             assert_eq!(registry.first(), first);
             assert!(registry
-                .owners
+                .observers
                 .iter()
-                .any(|owner| std::ptr::eq(&**owner, middle)));
+                .any(|owner| owner.as_ptr().cast::<client>() == middle));
 
             registry.release(middle);
             assert!(registry.next(middle).is_null());
             assert_eq!(registry.first(), first);
             assert!(!registry
-                .owners
+                .observers
                 .iter()
-                .any(|owner| std::ptr::eq(&**owner, middle)));
+                .any(|owner| owner.as_ptr().cast::<client>() == middle));
             registry.release(first);
             registry.release(last);
+            registry.release(extra);
+            for c in [first, middle, last, extra] { super::server_client_unref(c); }
+            crate::src::reactor::event_loop();
         }
     }
 }
@@ -5240,19 +5225,21 @@ mod key_event_owner_tests {
     #[test]
     fn early_return_and_cancellation_release_owned_events() {
         unsafe {
-            let mut client = Box::new(client::empty());
-            let pointer = &raw mut *client;
+            let owner = client::new();
+            let pointer = crate::src::shared::rc::as_ptr(&owner);
             let mouse = Default::default();
             assert_eq!(
                 server_client_handle_key(pointer, key_event::new(1, mouse, Some(vec![1]))),
                 0
             );
 
-            client.references = 2;
+            crate::src::shared::rc::retain(pointer);
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
             queued.client = pointer;
             drop(QueuedKeyEvent(queued));
-            assert_eq!(client.references, 1);
+            assert_eq!(crate::src::shared::rc::strong_count(pointer), 2);
+            crate::src::reactor::event_loop();
+            assert_eq!(crate::src::shared::rc::strong_count(pointer), 1);
         }
     }
 }

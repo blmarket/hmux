@@ -239,7 +239,7 @@ unsafe fn window_client_add_item(data: *mut window_client_modedata, c: *mut clie
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ),
     ));
-    (*c).references += 1;
+    crate::src::shared::rc::retain(c);
     (*data).items.push(item);
 }
 

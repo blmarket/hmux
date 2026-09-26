@@ -182,7 +182,7 @@ pub unsafe fn format_create(
     ft = Box::into_raw(Box::new(format_tree::default()));
     if !c.is_null() {
         (*ft).client = c;
-        (*(*ft).client).references += 1;
+        crate::src::shared::rc::retain((*ft).client);
     }
     (*ft).item = item;
     (*ft).tag = tag as u_int;
