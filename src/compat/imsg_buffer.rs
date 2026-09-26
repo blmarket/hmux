@@ -8,7 +8,8 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uint16_t, __uint32_t, ssize_t, uint16_t, uint32_t};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
-pub use crate::src::shared::message::{ibuf, ibufqueue, msgbuf};
+use crate::src::shared::message::IbufStorage;
+pub use crate::src::shared::message::{ibuf, ibufqueue, msgbuf, OwnedIbuf};
 use crate::src::shared::posix_io::iovec;
 use crate::src::shared::socket::SOL_SOCKET;
 use std::ffi::CString;
@@ -107,7 +108,6 @@ pub const UINT8_MAX: ::core::ffi::c_int = 255 as ::core::ffi::c_int;
 pub const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
 pub const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
-pub const IBUF_FD_MARK_ON_STACK: ::core::ffi::c_int = -(2 as ::core::ffi::c_int);
 
 fn try_zeroed_boxed_slice(len: usize) -> Result<Box<[u8]>, std::collections::TryReserveError> {
     let mut bytes = Vec::new();
@@ -122,103 +122,101 @@ unsafe fn raw_boxed_bytes(buf: *mut u8, len: size_t) -> Box<[u8]> {
 
 /// A temporary ibuf-compatible view over a borrowed header span.
 pub(crate) struct IbufView<'a> {
-    bytes: &'a [u8],
-    cursor: usize,
-    record: ibuf,
+    record: ibuf<'a>,
 }
 
 impl<'a> IbufView<'a> {
     pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self {
-            bytes,
-            cursor: 0,
-            record: ibuf {
-                buf: bytes.as_ptr().cast_mut(),
-                size: bytes.len(),
-                max: 0,
-                wpos: bytes.len(),
-                rpos: 0,
-                fd: IBUF_FD_MARK_ON_STACK,
-                storage: None,
-            },
+            record: ibuf::borrowed(bytes),
         }
     }
 
-    pub(crate) fn as_ibuf_ptr(&mut self) -> *mut ibuf {
-        &raw mut self.record
+    /// Adapt this borrow to the legacy callback ABI.
+    ///
+    /// # Safety
+    /// The pointer must not be retained after the callback returns. The
+    /// callback must treat borrowed storage as read-only and must not free the
+    /// view.
+    pub(crate) unsafe fn as_ibuf_ptr(&mut self) -> *mut OwnedIbuf {
+        (&raw mut self.record).cast::<OwnedIbuf>()
     }
 
     fn take(&mut self, len: usize) -> Option<&'a [u8]> {
-        let end = self.cursor.checked_add(len)?;
-        let bytes = self.bytes.get(self.cursor..end)?;
-        self.cursor = end;
+        let start = self.record.rpos;
+        let end = start.checked_add(len)?;
+        let IbufStorage::Borrowed(bytes) = &self.record.storage else {
+            return None;
+        };
+        let bytes = bytes.get(start..end)?;
+        self.record.rpos = end;
         Some(bytes)
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_open(mut len: size_t) -> *mut ibuf {
+pub unsafe extern "C" fn ibuf_open(mut len: size_t) -> *mut OwnedIbuf {
     let Ok(mut buf) = Box::try_new(ibuf {
-        buf: ::core::ptr::null_mut(),
-        size: len,
+        storage: IbufStorage::Owned(Vec::new().into_boxed_slice()),
         max: len,
         wpos: 0,
         rpos: 0,
         fd: -(1 as ::core::ffi::c_int),
-        storage: None,
     }) else {
         *__errno_location() = ENOMEM;
-        return ::core::ptr::null_mut::<ibuf>();
+        return ::core::ptr::null_mut::<OwnedIbuf>();
     };
     if len > 0 as size_t {
         match try_zeroed_boxed_slice(len) {
-            Ok(mut bytes) => {
-                buf.buf = bytes.as_mut_ptr();
-                buf.storage = Some(bytes);
+            Ok(bytes) => {
+                buf.storage = IbufStorage::Owned(bytes);
             }
             Err(_) => {
                 *__errno_location() = ENOMEM;
-                return ::core::ptr::null_mut::<ibuf>();
+                return ::core::ptr::null_mut::<OwnedIbuf>();
             }
         }
     }
     return Box::into_raw(buf);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut ibuf {
+pub unsafe extern "C" fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut OwnedIbuf {
     if max == 0 as size_t || max < len {
         *__errno_location() = EINVAL;
-        return ::core::ptr::null_mut::<ibuf>();
+        return ::core::ptr::null_mut::<OwnedIbuf>();
     }
     let Ok(mut buf) = Box::try_new(ibuf {
-        buf: ::core::ptr::null_mut(),
-        size: len,
+        storage: IbufStorage::Owned(Vec::new().into_boxed_slice()),
         max,
         wpos: 0,
         rpos: 0,
         fd: -(1 as ::core::ffi::c_int),
-        storage: None,
     }) else {
         *__errno_location() = ENOMEM;
-        return ::core::ptr::null_mut::<ibuf>();
+        return ::core::ptr::null_mut::<OwnedIbuf>();
     };
     if len > 0 as size_t {
         match try_zeroed_boxed_slice(len) {
-            Ok(mut bytes) => {
-                buf.buf = bytes.as_mut_ptr();
-                buf.storage = Some(bytes);
+            Ok(bytes) => {
+                buf.storage = IbufStorage::Owned(bytes);
             }
             Err(_) => {
                 *__errno_location() = ENOMEM;
-                return ::core::ptr::null_mut::<ibuf>();
+                return ::core::ptr::null_mut::<OwnedIbuf>();
             }
         }
     }
     return Box::into_raw(buf);
 }
 #[no_mangle]
+/// Reserve writable space at the end of an owned ibuf.
+///
+/// # Safety
+/// `buf` must point to a live, exclusively accessed owned ibuf. The returned
+/// pointer is writable for the reserved length and remains valid only until
+/// the next ibuf mutation or drop.
 pub unsafe extern "C" fn ibuf_reserve(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut len: size_t,
 ) -> *mut ::core::ffi::c_void {
     let mut b: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
@@ -226,17 +224,17 @@ pub unsafe extern "C" fn ibuf_reserve(
         *__errno_location() = ERANGE;
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+    if !(*buf).is_owned() {
         *__errno_location() = EINVAL;
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    if (*buf).wpos.wrapping_add(len) > (*buf).size {
+    if (*buf).wpos.wrapping_add(len) > (*buf).storage_len() {
         let new_size = (*buf).wpos.wrapping_add(len);
         if (*buf).wpos.wrapping_add(len) > (*buf).max {
             *__errno_location() = ERANGE;
             return ::core::ptr::null_mut::<::core::ffi::c_void>();
         }
-        let old_size = (*buf).size;
+        let old_size = (*buf).storage_len();
         let mut bytes = match try_zeroed_boxed_slice(new_size) {
             Ok(bytes) => bytes,
             Err(_) => {
@@ -245,26 +243,30 @@ pub unsafe extern "C" fn ibuf_reserve(
             }
         };
         if old_size > 0 {
-            ::core::ptr::copy_nonoverlapping((*buf).buf, bytes.as_mut_ptr(), old_size);
-            if let Some(mut old) = (*buf).storage.take() {
-                old.fill(0);
-            }
+            ::core::ptr::copy_nonoverlapping(
+                (*buf).storage.as_slice().as_ptr(),
+                bytes.as_mut_ptr(),
+                old_size,
+            );
         }
-        (*buf).buf = bytes.as_mut_ptr();
-        (*buf).storage = Some(bytes);
-        (*buf).size = new_size;
+        (*buf).replace_owned(bytes);
     }
-    b = if (*buf).buf.is_null() {
+    b = if (*buf).storage_len() == 0 {
         ::core::ptr::null_mut()
     } else {
-        (*buf).buf.add((*buf).wpos) as *mut ::core::ffi::c_void
+        (*buf)
+            .storage
+            .as_mut_slice()
+            .unwrap()
+            .as_mut_ptr()
+            .add((*buf).wpos) as *mut ::core::ffi::c_void
     };
     (*buf).wpos = (*buf).wpos.wrapping_add(len);
     return b;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut data: *const ::core::ffi::c_void,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
@@ -281,14 +283,14 @@ pub unsafe extern "C" fn ibuf_add(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_ibuf(
-    mut buf: *mut ibuf,
-    mut from: *const ibuf,
+    mut buf: *mut OwnedIbuf,
+    mut from: *const OwnedIbuf,
 ) -> ::core::ffi::c_int {
     return ibuf_add(buf, ibuf_data(from), ibuf_size(from));
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_n8(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     let mut v: uint8_t = 0;
@@ -305,7 +307,7 @@ pub unsafe extern "C" fn ibuf_add_n8(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_n16(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     let mut v: uint16_t = 0;
@@ -322,7 +324,7 @@ pub unsafe extern "C" fn ibuf_add_n16(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_n32(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     let mut v: uint32_t = 0;
@@ -339,7 +341,7 @@ pub unsafe extern "C" fn ibuf_add_n32(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_n64(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     value = htonll(value);
@@ -351,7 +353,7 @@ pub unsafe extern "C" fn ibuf_add_n64(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_h16(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     let mut v: uint16_t = 0;
@@ -368,7 +370,7 @@ pub unsafe extern "C" fn ibuf_add_h16(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_h32(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     let mut v: uint32_t = 0;
@@ -385,7 +387,7 @@ pub unsafe extern "C" fn ibuf_add_h32(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_h64(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
     return ibuf_add(
@@ -395,7 +397,10 @@ pub unsafe extern "C" fn ibuf_add_h64(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_add_zero(mut buf: *mut ibuf, mut len: size_t) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn ibuf_add_zero(
+    mut buf: *mut OwnedIbuf,
+    mut len: size_t,
+) -> ::core::ffi::c_int {
     let mut b: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     if len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
@@ -409,7 +414,7 @@ pub unsafe extern "C" fn ibuf_add_zero(mut buf: *mut ibuf, mut len: size_t) -> :
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_add_strbuf(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut str: *const ::core::ffi::c_char,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
@@ -437,10 +442,14 @@ pub unsafe extern "C" fn ibuf_add_strbuf(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_seek(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut len: size_t,
 ) -> *mut ::core::ffi::c_void {
+    if !(*buf).is_owned() {
+        *__errno_location() = EINVAL;
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    }
     if ibuf_size(buf) < pos
         || (SIZE_MAX as size_t).wrapping_sub(pos) < len
         || ibuf_size(buf) < pos.wrapping_add(len)
@@ -448,15 +457,15 @@ pub unsafe extern "C" fn ibuf_seek(
         *__errno_location() = ERANGE;
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    let data = ibuf_data(buf as *const ibuf) as *mut u8;
-    if data.is_null() {
+    let Some(bytes) = (*buf).storage.as_mut_slice() else {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
-    }
+    };
+    let data = bytes.as_mut_ptr().add((*buf).rpos);
     return data.add(pos) as *mut ::core::ffi::c_void;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut data: *const ::core::ffi::c_void,
     mut len: size_t,
@@ -474,7 +483,7 @@ pub unsafe extern "C" fn ibuf_set(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_n8(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -493,7 +502,7 @@ pub unsafe extern "C" fn ibuf_set_n8(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_n16(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -512,7 +521,7 @@ pub unsafe extern "C" fn ibuf_set_n16(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_n32(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -531,7 +540,7 @@ pub unsafe extern "C" fn ibuf_set_n32(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_n64(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -545,7 +554,7 @@ pub unsafe extern "C" fn ibuf_set_n64(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_h16(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -564,7 +573,7 @@ pub unsafe extern "C" fn ibuf_set_h16(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_h32(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -583,7 +592,7 @@ pub unsafe extern "C" fn ibuf_set_h32(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_h64(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut pos: size_t,
     mut value: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -596,10 +605,10 @@ pub unsafe extern "C" fn ibuf_set_h64(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set_maxsize(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut max: size_t,
 ) -> ::core::ffi::c_int {
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+    if !(*buf).is_owned() {
         *__errno_location() = EINVAL;
         return -(1 as ::core::ffi::c_int);
     }
@@ -611,69 +620,91 @@ pub unsafe extern "C" fn ibuf_set_maxsize(
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_data(mut buf: *const ibuf) -> *mut ::core::ffi::c_void {
-    if (*buf).buf.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+/// Return the unread bytes through the legacy raw-pointer interface.
+///
+/// # Safety
+/// `buf` must point to a live ibuf. The pointer remains valid only while its
+/// backing storage does; for borrowed storage it must be used read-only and
+/// must not outlive the source borrow.
+pub unsafe extern "C" fn ibuf_data(mut buf: *const OwnedIbuf) -> *mut ::core::ffi::c_void {
+    if (*buf).storage_len() == 0 {
+        return ::core::ptr::null_mut();
     }
-    return (*buf).buf.add((*buf).rpos) as *mut ::core::ffi::c_void;
+    return (*buf).storage.as_slice().as_ptr().add((*buf).rpos) as *mut ::core::ffi::c_void;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_size(mut buf: *const ibuf) -> size_t {
+pub unsafe extern "C" fn ibuf_size(mut buf: *const OwnedIbuf) -> size_t {
     return (*buf).wpos.wrapping_sub((*buf).rpos);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_left(mut buf: *const ibuf) -> size_t {
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+pub unsafe extern "C" fn ibuf_left(mut buf: *const OwnedIbuf) -> size_t {
+    if !(*buf).is_owned() {
         return 0 as size_t;
     }
     return (*buf).max.wrapping_sub((*buf).wpos);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_truncate(mut buf: *mut ibuf, mut len: size_t) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn ibuf_truncate(
+    mut buf: *mut OwnedIbuf,
+    mut len: size_t,
+) -> ::core::ffi::c_int {
     if ibuf_size(buf) >= len {
         (*buf).wpos = (*buf).rpos.wrapping_add(len);
         return 0 as ::core::ffi::c_int;
     }
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+    if !(*buf).is_owned() {
         *__errno_location() = ERANGE;
         return -(1 as ::core::ffi::c_int);
     }
     return ibuf_add_zero(buf, len.wrapping_sub(ibuf_size(buf)));
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_rewind(mut buf: *mut ibuf) {
+pub unsafe extern "C" fn ibuf_rewind(mut buf: *mut OwnedIbuf) {
     (*buf).rpos = 0 as size_t;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_close(mut msgbuf: *mut msgbuf, mut buf: *mut ibuf) {
+pub unsafe extern "C" fn ibuf_close(mut msgbuf: *mut msgbuf, mut buf: *mut OwnedIbuf) {
     ibufq_push(&raw mut (*msgbuf).bufs, buf);
 }
 #[no_mangle]
+/// Initialize a borrowed, read-only view over a byte span.
+///
+/// # Safety
+/// `buf` must point to uninitialized or previously dropped `ibuf` storage.
+/// `data` must be valid for `len` bytes and remain alive and immutable until
+/// the view is dropped. The view must not be freed with `ibuf_free`, queued,
+/// or used after the source bytes stop being valid.
 pub unsafe extern "C" fn ibuf_from_buffer(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut data: *mut ::core::ffi::c_void,
     mut len: size_t,
 ) {
-    ::core::ptr::write(
-        buf,
-        ibuf {
-            buf: data as *mut ::core::ffi::c_uchar,
-            size: len,
-            max: 0,
-            wpos: len,
-            rpos: 0,
-            fd: IBUF_FD_MARK_ON_STACK,
-            storage: None,
-        },
-    );
+    let bytes: &[u8] = if len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(data.cast::<u8>(), len)
+    };
+    ::core::ptr::write(buf, ibuf::borrowed(bytes));
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_from_ibuf(mut buf: *mut ibuf, mut from: *const ibuf) {
+/// Initialize a borrowed view over the source's unread bytes.
+///
+/// # Safety
+/// `buf` must point to uninitialized or previously dropped `ibuf` storage.
+/// `from` must remain alive and unmodified while the resulting view is used;
+/// `buf` must not overlap `from`, and the result must not be freed, queued, or
+/// allowed to outlive `from`.
+pub unsafe extern "C" fn ibuf_from_ibuf(mut buf: *mut OwnedIbuf, mut from: *const OwnedIbuf) {
     ibuf_from_buffer(buf, ibuf_data(from), ibuf_size(from));
 }
 #[no_mangle]
+/// Read bytes from an ibuf through the raw compatibility API.
+///
+/// # Safety
+/// `buf` must point to a live, exclusively accessed ibuf and `data` must be
+/// writable for `len` bytes. Its unread bytes must remain valid for the call.
 pub unsafe extern "C" fn ibuf_get(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut data: *mut ::core::ffi::c_void,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
@@ -689,10 +720,16 @@ pub unsafe extern "C" fn ibuf_get(
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
+/// Consume bytes and initialize a borrowed subview over them.
+///
+/// # Safety
+/// `buf` must be live and `new` must point to uninitialized or previously
+/// dropped ibuf storage. `new` must not overlap `buf`. The returned view must
+/// not outlive or overlap a mutation of `buf`, and must not be freed or queued.
 pub unsafe extern "C" fn ibuf_get_ibuf(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut len: size_t,
-    mut new: *mut ibuf,
+    mut new: *mut OwnedIbuf,
 ) -> ::core::ffi::c_int {
     if ibuf_size(buf) < len {
         *__errno_location() = EBADMSG;
@@ -704,7 +741,7 @@ pub unsafe extern "C" fn ibuf_get_ibuf(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_h16(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint16_t,
 ) -> ::core::ffi::c_int {
     return ibuf_get(
@@ -715,7 +752,7 @@ pub unsafe extern "C" fn ibuf_get_h16(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_h32(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint32_t,
 ) -> ::core::ffi::c_int {
     return ibuf_get(
@@ -726,7 +763,7 @@ pub unsafe extern "C" fn ibuf_get_h32(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_h64(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint64_t,
 ) -> ::core::ffi::c_int {
     return ibuf_get(
@@ -737,7 +774,7 @@ pub unsafe extern "C" fn ibuf_get_h64(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_n8(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint8_t,
 ) -> ::core::ffi::c_int {
     return ibuf_get(
@@ -748,7 +785,7 @@ pub unsafe extern "C" fn ibuf_get_n8(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_n16(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint16_t,
 ) -> ::core::ffi::c_int {
     let mut rv: ::core::ffi::c_int = 0;
@@ -762,7 +799,7 @@ pub unsafe extern "C" fn ibuf_get_n16(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_n32(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint32_t,
 ) -> ::core::ffi::c_int {
     let mut rv: ::core::ffi::c_int = 0;
@@ -776,7 +813,7 @@ pub unsafe extern "C" fn ibuf_get_n32(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_n64(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut value: *mut uint64_t,
 ) -> ::core::ffi::c_int {
     let mut rv: ::core::ffi::c_int = 0;
@@ -788,7 +825,7 @@ pub unsafe extern "C" fn ibuf_get_n64(
     *value = ntohll(*value);
     return rv;
 }
-pub unsafe fn ibuf_get_string(buf: *mut ibuf, len: size_t) -> Option<CString> {
+pub unsafe fn ibuf_get_string(buf: *mut OwnedIbuf, len: size_t) -> Option<CString> {
     if ibuf_size(buf) < len {
         *__errno_location() = EBADMSG;
         return None;
@@ -818,7 +855,7 @@ pub unsafe fn ibuf_get_string(buf: *mut ibuf, len: size_t) -> Option<CString> {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_strbuf(
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
     mut str: *mut ::core::ffi::c_char,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
@@ -837,7 +874,7 @@ pub unsafe extern "C" fn ibuf_get_strbuf(
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_skip(mut buf: *mut ibuf, mut len: size_t) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn ibuf_skip(mut buf: *mut OwnedIbuf, mut len: size_t) -> ::core::ffi::c_int {
     if ibuf_size(buf) < len {
         *__errno_location() = EBADMSG;
         return -(1 as ::core::ffi::c_int);
@@ -846,21 +883,26 @@ pub unsafe extern "C" fn ibuf_skip(mut buf: *mut ibuf, mut len: size_t) -> ::cor
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_free(mut buf: *mut ibuf) {
+/// Release an ibuf allocated by `ibuf_open` or `ibuf_dynamic`.
+///
+/// # Safety
+/// `buf` must be null or a live owned ibuf pointer that has not been freed or
+/// transferred to another owner.
+pub unsafe extern "C" fn ibuf_free(mut buf: *mut OwnedIbuf) {
     if buf.is_null() {
         return;
     }
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+    if !(*buf).is_owned() {
         abort();
     }
     drop(Box::from_raw(buf));
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_fd_avail(mut buf: *mut ibuf) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn ibuf_fd_avail(mut buf: *mut OwnedIbuf) -> ::core::ffi::c_int {
     return ((*buf).fd >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_fd_get(mut buf: *mut ibuf) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn ibuf_fd_get(mut buf: *mut OwnedIbuf) -> ::core::ffi::c_int {
     let mut fd: ::core::ffi::c_int = 0;
     if (*buf).fd < 0 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
@@ -870,8 +912,8 @@ pub unsafe extern "C" fn ibuf_fd_get(mut buf: *mut ibuf) -> ::core::ffi::c_int {
     return fd;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibuf_fd_set(mut buf: *mut ibuf, mut fd: ::core::ffi::c_int) {
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+pub unsafe extern "C" fn ibuf_fd_set(mut buf: *mut OwnedIbuf, mut fd: ::core::ffi::c_int) {
+    if !(*buf).is_owned() {
         abort();
     }
     if (*buf).fd >= 0 as ::core::ffi::c_int {
@@ -899,14 +941,22 @@ pub unsafe extern "C" fn msgbuf_new() -> *mut msgbuf {
     Box::into_raw(msgbuf)
 }
 #[no_mangle]
+/// Create a reader whose header callback may inspect a temporary borrowed view.
+///
+/// # Safety
+/// `readhdr`, when present, must read the header only during the callback and
+/// must not retain or free its ibuf view. It must return null or transfer a
+/// unique heap allocation that can be reclaimed with `Box::from_raw`; the
+/// returned storage must be owned for parsing to continue. Borrowed storage is
+/// rejected. `arg` must remain valid for each callback.
 pub unsafe extern "C" fn msgbuf_new_reader(
     mut hdrsz: size_t,
     mut readhdr: Option<
         unsafe extern "C" fn(
-            *mut ibuf,
+            *mut OwnedIbuf,
             *mut ::core::ffi::c_void,
             *mut ::core::ffi::c_int,
-        ) -> *mut ibuf,
+        ) -> *mut OwnedIbuf,
     >,
     mut arg: *mut ::core::ffi::c_void,
 ) -> *mut msgbuf {
@@ -914,7 +964,7 @@ pub unsafe extern "C" fn msgbuf_new_reader(
         Box::new(move |header: &[u8], fd: Option<OwnedFd>| {
             let mut view = IbufView::new(header);
             let mut raw_fd = fd.map_or(-1, IntoRawFd::into_raw_fd);
-            let message = readhdr(view.as_ibuf_ptr(), arg, &raw mut raw_fd);
+            let message = readhdr(unsafe { view.as_ibuf_ptr() }, arg, &raw mut raw_fd);
             let remaining_fd = (raw_fd >= 0).then(|| OwnedFd::from_raw_fd(raw_fd));
             (std::ptr::NonNull::new(message), remaining_fd)
         })
@@ -922,7 +972,8 @@ pub unsafe extern "C" fn msgbuf_new_reader(
                 dyn FnMut(
                     &[u8],
                     Option<OwnedFd>,
-                ) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>),
+                )
+                    -> (Option<std::ptr::NonNull<OwnedIbuf>>, Option<OwnedFd>),
             >
     });
     msgbuf_new_reader_with(hdrsz, reader)
@@ -932,7 +983,10 @@ unsafe fn msgbuf_new_reader_with(
     hdrsz: size_t,
     readhdr: Option<
         Box<
-            dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>),
+            dyn FnMut(
+                &[u8],
+                Option<OwnedFd>,
+            ) -> (Option<std::ptr::NonNull<OwnedIbuf>>, Option<OwnedFd>),
         >,
     >,
 ) -> *mut msgbuf {
@@ -961,7 +1015,7 @@ unsafe fn msgbuf_new_reader_with(
 
 pub(crate) unsafe fn msgbuf_new_reader_owned(
     hdrsz: size_t,
-    callback: impl FnMut(&[u8], Option<OwnedFd>) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>)
+    callback: impl FnMut(&[u8], Option<OwnedFd>) -> (Option<std::ptr::NonNull<OwnedIbuf>>, Option<OwnedFd>)
         + 'static,
 ) -> *mut msgbuf {
     msgbuf_new_reader_with(hdrsz, Some(Box::new(callback)))
@@ -991,10 +1045,10 @@ pub unsafe extern "C" fn msgbuf_clear(mut msgbuf: *mut msgbuf) {
     ibufq_flush(&raw mut (*msgbuf).rbufs);
     (*msgbuf).roff = 0 as size_t;
     ibuf_free((*msgbuf).rpmsg);
-    (*msgbuf).rpmsg = ::core::ptr::null_mut::<ibuf>();
+    (*msgbuf).rpmsg = ::core::ptr::null_mut::<OwnedIbuf>();
 }
 #[no_mangle]
-pub unsafe extern "C" fn msgbuf_get(mut msgbuf: *mut msgbuf) -> *mut ibuf {
+pub unsafe extern "C" fn msgbuf_get(mut msgbuf: *mut msgbuf) -> *mut OwnedIbuf {
     return ibufq_pop(&raw mut (*msgbuf).rbufs);
 }
 #[no_mangle]
@@ -1010,7 +1064,7 @@ pub unsafe extern "C" fn ibuf_write(
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
     }; 1024];
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut buf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut i: ::core::ffi::c_uint = 0 as ::core::ffi::c_uint;
     let mut n: ssize_t = 0;
     memset(
@@ -1058,8 +1112,8 @@ pub unsafe extern "C" fn msgbuf_write(
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
     }; 1024];
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
-    let mut buf0: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut buf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
+    let mut buf0: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut i: ::core::ffi::c_uint = 0 as ::core::ffi::c_uint;
     let mut n: ssize_t = 0;
     let mut msg: msghdr = msghdr {
@@ -1184,11 +1238,17 @@ unsafe extern "C" fn ibuf_read_process(
                     .as_mut()
                     .expect("non-null header callback")(header, input_fd);
             fd = remaining_fd.map_or(-1, IntoRawFd::into_raw_fd);
-            (*msgbuf).rpmsg = message.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr);
-            if (*msgbuf).rpmsg.is_null() {
+            let Some(message) = message else {
+                failed = true;
+                break;
+            };
+            let message = message.as_ptr();
+            if !(*message).is_owned() {
+                drop(Box::from_raw(message));
                 failed = true;
                 break;
             }
+            (*msgbuf).rpmsg = message;
         }
         let available = read_len.wrapping_sub(cursor);
         if ibuf_left((*msgbuf).rpmsg) <= available {
@@ -1220,7 +1280,7 @@ unsafe extern "C" fn ibuf_read_process(
         cursor = cursor.wrapping_add(copy_len);
         if ibuf_left((*msgbuf).rpmsg) == 0 as size_t {
             ibufq_push(&raw mut (*msgbuf).rbufs, (*msgbuf).rpmsg);
-            (*msgbuf).rpmsg = ::core::ptr::null_mut::<ibuf>();
+            (*msgbuf).rpmsg = ::core::ptr::null_mut::<OwnedIbuf>();
         }
         if cursor >= read_len {
             break;
@@ -1389,7 +1449,7 @@ pub unsafe extern "C" fn msgbuf_read(
     }
 }
 unsafe extern "C" fn msgbuf_drain(mut msgbuf: *mut msgbuf, mut n: size_t) {
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut buf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     loop {
         buf = match (*msgbuf).bufs.bufs.front() {
             Some(buf) => buf,
@@ -1421,18 +1481,22 @@ pub unsafe extern "C" fn ibufq_free(mut bufq: *mut ibufqueue) {
     drop(Box::from_raw(bufq));
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibufq_pop(mut bufq: *mut ibufqueue) -> *mut ibuf {
+pub unsafe extern "C" fn ibufq_pop(mut bufq: *mut ibufqueue) -> *mut OwnedIbuf {
     return (*bufq)
         .bufs
         .pop_front_raw()
         .unwrap_or(::core::ptr::null_mut());
 }
 #[no_mangle]
-pub unsafe extern "C" fn ibufq_push(mut bufq: *mut ibufqueue, mut buf: *mut ibuf) {
-    if (*buf).fd == IBUF_FD_MARK_ON_STACK {
+/// Transfer an owned ibuf allocation into a queue.
+///
+/// # Safety
+/// `bufq` must be live and `buf` must point to a uniquely owned heap ibuf
+/// allocation that has not already been queued or freed.
+pub unsafe extern "C" fn ibufq_push(mut bufq: *mut ibufqueue, mut buf: *mut OwnedIbuf) {
+    if !(*bufq).bufs.push_back_raw(buf) {
         abort();
     }
-    (*bufq).bufs.push_back_raw(buf);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_queuelen(mut bufq: *mut ibufqueue) -> uint32_t {

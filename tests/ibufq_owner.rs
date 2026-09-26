@@ -1,10 +1,10 @@
 use hmux2::src::compat::imsg::{imsgbuf_clear, imsgbuf_init};
 use hmux2::src::compat::imsg_buffer::{
     ibuf_add, ibuf_data, ibuf_dynamic, ibuf_fd_get, ibuf_fd_set, ibuf_free, ibuf_from_buffer,
-    ibuf_from_ibuf, ibuf_get, ibuf_get_string, ibuf_open, ibuf_read, ibuf_reserve, ibuf_size,
-    ibuf_write, ibufq_concat, ibufq_flush, ibufq_free, ibufq_new, ibufq_pop, ibufq_push,
-    ibufq_queuelen, ibufqueue, msgbuf_clear, msgbuf_free, msgbuf_new, msgbuf_new_reader,
-    msgbuf_write, EINVAL,
+    ibuf_get_string, ibuf_open, ibuf_read, ibuf_reserve, ibuf_set_h32, ibuf_set_maxsize, ibuf_size,
+    ibuf_truncate, ibuf_write, ibufq_concat, ibufq_flush, ibufq_free, ibufq_new, ibufq_pop,
+    ibufq_push, ibufq_queuelen, ibufqueue, msgbuf_clear, msgbuf_free, msgbuf_new,
+    msgbuf_new_reader, msgbuf_write, EINVAL,
 };
 use std::io::Read;
 use std::mem::MaybeUninit;
@@ -12,7 +12,9 @@ use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::ptr::null_mut;
 
-unsafe fn entries(queue: *mut ibufqueue) -> Vec<*mut hmux2::src::compat::imsg_buffer::ibuf> {
+unsafe fn entries(
+    queue: *mut ibufqueue,
+) -> Vec<*mut hmux2::src::compat::imsg_buffer::ibuf<'static>> {
     (*queue).bufs.iter().collect()
 }
 
@@ -22,11 +24,29 @@ unsafe fn assert_empty(queue: *mut ibufqueue) {
 }
 
 unsafe extern "C" fn read_two_byte_message(
-    _header: *mut hmux2::src::compat::imsg_buffer::ibuf,
+    _header: *mut hmux2::src::compat::imsg_buffer::ibuf<'static>,
     _arg: *mut std::ffi::c_void,
     _fd: *mut std::ffi::c_int,
-) -> *mut hmux2::src::compat::imsg_buffer::ibuf {
+) -> *mut hmux2::src::compat::imsg_buffer::ibuf<'static> {
     ibuf_open(2)
+}
+
+unsafe extern "C" fn read_three_byte_message(
+    _header: *mut hmux2::src::compat::imsg_buffer::ibuf<'static>,
+    _arg: *mut std::ffi::c_void,
+    _fd: *mut std::ffi::c_int,
+) -> *mut hmux2::src::compat::imsg_buffer::ibuf<'static> {
+    ibuf_open(3)
+}
+
+unsafe extern "C" fn return_borrowed_message(
+    _header: *mut hmux2::src::compat::imsg_buffer::ibuf<'static>,
+    _arg: *mut std::ffi::c_void,
+    _fd: *mut std::ffi::c_int,
+) -> *mut hmux2::src::compat::imsg_buffer::ibuf<'static> {
+    Box::into_raw(Box::new(hmux2::src::shared::message::ibuf::borrowed(
+        b"borrowed",
+    )))
 }
 
 #[test]
@@ -147,6 +167,60 @@ fn message_writers_preserve_owned_queue_order_and_drain_buffers() {
 }
 
 #[test]
+fn message_writer_drains_partial_nonblocking_writes_without_losing_bytes() {
+    unsafe {
+        let (writer, mut reader) = UnixStream::pair().unwrap();
+        let send_buffer: libc::c_int = 4096;
+        assert_eq!(
+            libc::setsockopt(
+                writer.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                (&send_buffer as *const libc::c_int).cast(),
+                std::mem::size_of_val(&send_buffer) as libc::socklen_t,
+            ),
+            0
+        );
+        writer.set_nonblocking(true).unwrap();
+
+        let owner = msgbuf_new();
+        let payload = vec![b'p'; 128 * 1024];
+        queue_payload(&raw mut (*owner).bufs, &payload);
+        let queued = (*owner).bufs.bufs.iter().next().unwrap();
+        let before = ibuf_size(queued);
+        assert_eq!(ibuf_write(writer.as_raw_fd(), owner), 0);
+        let after = ibuf_size(queued);
+        let first_write = before - after;
+        assert!(first_write > 0 && after > 0);
+
+        let mut output = Vec::with_capacity(payload.len());
+        let mut first = vec![0; first_write];
+        reader.read_exact(&mut first).unwrap();
+        output.extend_from_slice(&first);
+
+        while ibufq_queuelen(&raw mut (*owner).bufs) > 0 {
+            let queued = (*owner).bufs.bufs.iter().next().unwrap();
+            let before = ibuf_size(queued);
+            assert_eq!(ibuf_write(writer.as_raw_fd(), owner), 0);
+            let after = if ibufq_queuelen(&raw mut (*owner).bufs) == 0 {
+                0
+            } else {
+                ibuf_size(queued)
+            };
+            let sent = before - after;
+            assert!(sent > 0 || ibufq_queuelen(&raw mut (*owner).bufs) == 0);
+            if sent > 0 {
+                let mut chunk = vec![0; sent];
+                reader.read_exact(&mut chunk).unwrap();
+                output.extend_from_slice(&chunk);
+            }
+        }
+        assert_eq!(output, payload);
+        msgbuf_free(owner);
+    }
+}
+
+#[test]
 fn boxed_payload_growth_preserves_bytes_and_zeroes_new_capacity() {
     unsafe {
         let buf = ibuf_dynamic(1, 4);
@@ -242,37 +316,139 @@ fn reader_scratch_parses_and_queues_complete_messages() {
 }
 
 #[test]
-fn borrowed_views_keep_source_bytes_and_cursor_separate() {
+fn reader_holds_partial_messages_until_the_body_arrives() {
     unsafe {
-        let mut bytes = *b"abcd";
-        let mut view = MaybeUninit::uninit();
-        ibuf_from_buffer(view.as_mut_ptr(), bytes.as_mut_ptr().cast(), bytes.len());
-        let mut view = view.assume_init();
-        let mut read = [0u8; 2];
-        assert_eq!(ibuf_get(&raw mut view, read.as_mut_ptr().cast(), 2), 0);
-        assert_eq!(&read, b"ab");
-        assert_eq!(ibuf_size(&raw mut view), 2);
+        let (mut writer, reader) = UnixStream::pair().unwrap();
+        let owner = msgbuf_new_reader(1, Some(read_three_byte_message), null_mut());
+        use std::io::Write;
+        writer.write_all(b"h").unwrap();
+        assert_eq!(ibuf_read(reader.as_raw_fd(), owner), 1);
+        assert_eq!(ibufq_queuelen(&raw mut (*owner).rbufs), 0);
 
-        let owner = ibuf_open(3);
-        ibuf_add(owner, b"xyz".as_ptr().cast(), 3);
-        let mut subview = MaybeUninit::uninit();
-        ibuf_from_ibuf(subview.as_mut_ptr(), owner);
-        let mut subview = subview.assume_init();
-        assert_eq!(ibuf_size(&raw mut subview), 3);
+        writer.write_all(b"xy").unwrap();
+        assert_eq!(ibuf_read(reader.as_raw_fd(), owner), 1);
+        assert_eq!(ibufq_queuelen(&raw mut (*owner).rbufs), 1);
+        let message = hmux2::src::compat::imsg_buffer::msgbuf_get(owner);
+        assert_eq!(ibuf_size(message), 3);
+        assert_eq!(
+            std::slice::from_raw_parts(ibuf_data(message) as *const u8, 3),
+            b"hxy"
+        );
+        ibuf_free(message);
+        msgbuf_free(owner);
+    }
+}
+
+#[test]
+fn reader_rejects_borrowed_buffers_at_the_ownership_boundary() {
+    unsafe {
+        let (mut writer, reader) = UnixStream::pair().unwrap();
+        let owner = msgbuf_new_reader(1, Some(return_borrowed_message), null_mut());
+        use std::io::Write;
+        writer.write_all(b"h").unwrap();
+        assert_eq!(ibuf_read(reader.as_raw_fd(), owner), -1);
+        assert_eq!(ibufq_queuelen(&raw mut (*owner).rbufs), 0);
+        msgbuf_free(owner);
+    }
+}
+
+#[test]
+fn borrowed_views_keep_source_bytes_and_cursor_separate() {
+    let bytes = *b"abcd";
+    let mut view = hmux2::src::shared::message::ibuf_from_buffer(&bytes);
+    assert!(!view.is_owned());
+    assert_eq!(view.unread(), b"abcd");
+    assert!(view.skip(2));
+    assert_eq!(view.unread(), b"cd");
+    view.rewind();
+    assert_eq!(view.unread(), b"abcd");
+    assert_eq!(&bytes, b"abcd");
+
+    unsafe {
+        let mut owner = Box::from_raw(ibuf_open(3));
+        assert_eq!(
+            ibuf_add(&mut *owner as *mut _, b"xyz".as_ptr().cast(), 3),
+            0
+        );
+        let subview = hmux2::src::shared::message::ibuf_from_ibuf(&owner);
+        assert!(!subview.is_owned());
+        assert_eq!(subview.unread(), b"xyz");
         drop(subview);
-        ibuf_free(owner);
-        drop(view);
-        assert_eq!(&bytes, b"abcd");
+
+        let subview = hmux2::src::shared::message::ibuf_get_ibuf(&mut owner, 2).unwrap();
+        assert_eq!(subview.unread(), b"xy");
+        drop(subview);
+        assert_eq!(owner.unread(), b"z");
+        owner.rewind();
+        assert_eq!(owner.unread(), b"xyz");
+    }
+}
+
+#[test]
+fn borrowed_storage_is_read_only_and_owned_patches_truncation_and_limits_work() {
+    unsafe {
+        let bytes = *b"head";
+        let mut raw_view = MaybeUninit::<hmux2::src::shared::message::OwnedIbuf>::uninit();
+        ibuf_from_buffer(
+            raw_view.as_mut_ptr().cast(),
+            bytes.as_ptr().cast_mut().cast(),
+            bytes.len(),
+        );
+        let mut raw_view = raw_view.assume_init();
+        let errno = hmux2::src::ffi::libc::__errno_location();
+        *errno = 0;
+        assert_eq!(ibuf_set_h32(&raw mut raw_view, 0, 0x1234), -1);
+        assert_eq!(*errno, EINVAL);
+        assert_eq!(
+            std::slice::from_raw_parts(ibuf_data(&raw_view as *const _) as *const u8, 4),
+            b"head"
+        );
+        std::ptr::drop_in_place(&raw mut raw_view);
+
+        let buf = ibuf_open(4);
+        assert_eq!(ibuf_add(buf, [0u8; 4].as_ptr().cast(), 4), 0);
+        assert_eq!(ibuf_set_h32(buf, 0, 0x1234_5678), 0);
+        let expected = 0x1234_5678u32.to_ne_bytes();
+        assert_eq!(
+            std::slice::from_raw_parts(ibuf_data(buf) as *const u8, 4),
+            expected
+        );
+        assert_eq!(ibuf_truncate(buf, 2), 0);
+        assert_eq!(ibuf_size(buf), 2);
+        assert_eq!(ibuf_truncate(buf, 4), 0);
+        assert_eq!(ibuf_size(buf), 4);
+        assert_eq!(
+            std::slice::from_raw_parts(ibuf_data(buf) as *const u8, 4),
+            &[expected[0], expected[1], 0, 0]
+        );
+        assert_eq!(ibuf_set_maxsize(buf, 3), 0);
+        *errno = 0;
+        assert!(ibuf_reserve(buf, 1).is_null());
+        assert_eq!(*errno, hmux2::src::compat::imsg_buffer::ERANGE);
+        ibuf_free(buf);
+
+        let limited = ibuf_dynamic(0, 2);
+        *errno = 0;
+        assert_eq!(ibuf_add(limited, b"abc".as_ptr().cast(), 3), -1);
+        assert_eq!(*errno, hmux2::src::compat::imsg_buffer::ERANGE);
+        ibuf_free(limited);
+
+        let overflow = ibuf_dynamic(1, usize::MAX);
+        assert_eq!(ibuf_add(overflow, b"x".as_ptr().cast(), 1), 0);
+        *errno = 0;
+        assert!(ibuf_reserve(overflow, usize::MAX).is_null());
+        assert_eq!(*errno, hmux2::src::compat::imsg_buffer::ERANGE);
+        ibuf_free(overflow);
     }
 }
 
 #[test]
 fn read_header_failure_drops_borrowed_view_without_queueing() {
     unsafe extern "C" fn reject_header(
-        header: *mut hmux2::src::compat::imsg_buffer::ibuf,
+        header: *mut hmux2::src::compat::imsg_buffer::ibuf<'static>,
         arg: *mut std::ffi::c_void,
         _: *mut std::ffi::c_int,
-    ) -> *mut hmux2::src::compat::imsg_buffer::ibuf {
+    ) -> *mut hmux2::src::compat::imsg_buffer::ibuf<'static> {
         *(arg as *mut bool) = ibuf_size(header) == 1 && *(ibuf_data(header) as *const u8) == b'x';
         null_mut()
     }

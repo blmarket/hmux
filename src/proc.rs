@@ -17,7 +17,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
 use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
-use crate::src::shared::message::{ibuf, imsg, imsgbuf};
+use crate::src::shared::message::{imsg, imsgbuf, OwnedIbuf};
 use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::process::PeerMessage;
@@ -72,7 +72,7 @@ unsafe fn proc_event_cb(
             pid: 0,
         },
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        buf: ::core::ptr::null_mut::<ibuf>(),
+        buf: ::core::ptr::null_mut::<OwnedIbuf>(),
     };
     if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
         if imsgbuf_read(&raw mut (*peer).ibuf) != 1 as ::core::ffi::c_int {
@@ -93,15 +93,18 @@ unsafe fn proc_event_cb(
                 peer,
                 imsg.hdr.type_0,
             );
-            let owned_buf = Box::from_raw(imsg.buf);
+            let Some(owned_buf) = OwnedIbuf::from_raw_owned(imsg.buf) else {
+                proc_dispatch(peer, PeerMessage::Disconnected);
+                return;
+            };
             if peer_check_version(peer, &raw mut imsg) != 0 as ::core::ffi::c_int {
                 drop(owned_buf);
-                imsg.buf = ::core::ptr::null_mut::<ibuf>();
+                imsg.buf = ::core::ptr::null_mut::<OwnedIbuf>();
                 break;
             } else {
                 let peer_alive = proc_dispatch(peer, PeerMessage::Message(&mut imsg));
                 drop(owned_buf);
-                imsg.buf = ::core::ptr::null_mut::<ibuf>();
+                imsg.buf = ::core::ptr::null_mut::<OwnedIbuf>();
                 if !peer_alive {
                     return;
                 }

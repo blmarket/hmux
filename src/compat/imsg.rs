@@ -10,7 +10,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{ssize_t, uint32_t};
 use crate::src::shared::errno::{EBADMSG, EINVAL, ERANGE};
 use crate::src::shared::limits::UINT32_MAX;
-pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf};
+pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf, OwnedIbuf};
 use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::posix_io::iovec;
 use std::os::fd::{IntoRawFd, OwnedFd};
@@ -105,9 +105,9 @@ pub unsafe extern "C" fn imsgbuf_get(
             pid: 0,
         },
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        buf: ::core::ptr::null_mut::<ibuf>(),
+        buf: ::core::ptr::null_mut::<OwnedIbuf>(),
     };
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut buf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     buf = msgbuf_get((*imsgbuf).w);
     if buf.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -153,9 +153,9 @@ pub unsafe extern "C" fn imsg_ibufq_pop(
             pid: 0,
         },
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        buf: ::core::ptr::null_mut::<ibuf>(),
+        buf: ::core::ptr::null_mut::<OwnedIbuf>(),
     };
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut buf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     buf = ibufq_pop(bufq);
     if buf.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn imsg_ibufq_push(mut bufq: *mut ibufqueue, mut imsg: *mu
 #[no_mangle]
 pub unsafe extern "C" fn imsg_get_ibuf(
     mut imsg: *mut imsg,
-    mut ibuf: *mut ibuf,
+    mut ibuf: *mut OwnedIbuf,
 ) -> ::core::ffi::c_int {
     if ibuf_size((*imsg).buf) == 0 as size_t {
         *__errno_location() = EBADMSG;
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn imsg_compose(
     mut data: *const ::core::ffi::c_void,
     mut datalen: size_t,
 ) -> ::core::ffi::c_int {
-    let mut wbuf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut wbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     wbuf = imsg_create(imsgbuf, type_0, id, pid, datalen);
     if !wbuf.is_null() {
         if !(ibuf_add(wbuf, data, datalen) == -(1 as ::core::ffi::c_int)) {
@@ -285,7 +285,7 @@ pub unsafe extern "C" fn imsg_composev(
     mut iovcnt: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
-    let mut wbuf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut wbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut i: ::core::ffi::c_int = 0;
     let mut datalen: size_t = 0 as size_t;
     i = 0 as ::core::ffi::c_int;
@@ -325,20 +325,30 @@ pub unsafe extern "C" fn imsg_composev(
     return -(1 as ::core::ffi::c_int);
 }
 #[no_mangle]
+/// Compose a message by consuming an owned ibuf.
+///
+/// # Safety
+/// `imsgbuf` must be initialized. `buf` must be null or a uniquely owned heap
+/// allocation containing owned storage; successful calls transfer it to the
+/// outgoing queue, while a rejected owned buffer is freed.
 pub unsafe extern "C" fn imsg_compose_ibuf(
     mut imsgbuf: *mut imsgbuf,
     mut type_0: uint32_t,
     mut id: uint32_t,
     mut pid: pid_t,
-    mut buf: *mut ibuf,
+    mut buf: *mut OwnedIbuf,
 ) -> ::core::ffi::c_int {
-    let mut hdrbuf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut hdrbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
         len: 0,
         peerid: 0,
         pid: 0,
     };
+    if buf.is_null() || !(*buf).is_owned() {
+        *__errno_location() = EINVAL;
+        return -(1 as ::core::ffi::c_int);
+    }
     if ibuf_size(buf).wrapping_add(IMSG_HEADER_SIZE) > (*imsgbuf).maxsize as size_t {
         *__errno_location() = ERANGE;
     } else {
@@ -372,7 +382,7 @@ pub unsafe extern "C" fn imsg_forward(
     mut imsgbuf: *mut imsgbuf,
     mut msg: *mut imsg,
 ) -> ::core::ffi::c_int {
-    let mut wbuf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut wbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut len: size_t = 0;
     ibuf_rewind((*msg).buf);
     ibuf_skip((*msg).buf, ::core::mem::size_of::<imsg_hdr>() as size_t);
@@ -403,8 +413,8 @@ pub unsafe extern "C" fn imsg_create(
     mut id: uint32_t,
     mut pid: pid_t,
     mut datalen: size_t,
-) -> *mut ibuf {
-    let mut wbuf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+) -> *mut OwnedIbuf {
+    let mut wbuf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
         len: 0,
@@ -415,7 +425,7 @@ pub unsafe extern "C" fn imsg_create(
         .wrapping_add(IMSG_HEADER_SIZE as ::core::ffi::c_ulong) as size_t as size_t;
     if datalen > (*imsgbuf).maxsize as size_t {
         *__errno_location() = ERANGE;
-        return ::core::ptr::null_mut::<ibuf>();
+        return ::core::ptr::null_mut::<OwnedIbuf>();
     }
     hdr.len = 0 as uint32_t;
     hdr.type_0 = type_0;
@@ -436,11 +446,11 @@ pub unsafe extern "C" fn imsg_create(
         }
     }
     ibuf_free(wbuf);
-    return ::core::ptr::null_mut::<ibuf>();
+    return ::core::ptr::null_mut::<OwnedIbuf>();
 }
 #[no_mangle]
 pub unsafe extern "C" fn imsg_add(
-    mut msg: *mut ibuf,
+    mut msg: *mut OwnedIbuf,
     mut data: *const ::core::ffi::c_void,
     mut datalen: size_t,
 ) -> ::core::ffi::c_int {
@@ -453,7 +463,7 @@ pub unsafe extern "C" fn imsg_add(
     return datalen as ::core::ffi::c_int;
 }
 #[no_mangle]
-pub unsafe extern "C" fn imsg_close(mut imsgbuf: *mut imsgbuf, mut msg: *mut ibuf) {
+pub unsafe extern "C" fn imsg_close(mut imsgbuf: *mut imsgbuf, mut msg: *mut OwnedIbuf) {
     let mut len: uint32_t = 0;
     len = ibuf_size(msg) as uint32_t;
     if ibuf_fd_avail(msg) != 0 {
@@ -468,7 +478,7 @@ pub unsafe extern "C" fn imsg_free(mut imsg: *mut imsg) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn imsg_set_maxsize(
-    mut msg: *mut ibuf,
+    mut msg: *mut OwnedIbuf,
     mut max: size_t,
 ) -> ::core::ffi::c_int {
     if max > (UINT32_MAX as usize).wrapping_sub(IMSG_HEADER_SIZE) {
@@ -481,7 +491,7 @@ unsafe fn imsg_parse_hdr(
     header: &[u8],
     maxsize: uint32_t,
     mut fd: Option<OwnedFd>,
-) -> (Option<NonNull<ibuf>>, Option<OwnedFd>) {
+) -> (Option<NonNull<OwnedIbuf>>, Option<OwnedFd>) {
     let mut view = IbufView::new(header);
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
@@ -489,10 +499,11 @@ unsafe fn imsg_parse_hdr(
         peerid: 0,
         pid: 0,
     };
-    let mut b: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
+    let mut b: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
     let mut len: uint32_t = 0;
+    let header_view = unsafe { view.as_ibuf_ptr() };
     if ibuf_get(
-        view.as_ibuf_ptr(),
+        header_view,
         &raw mut hdr as *mut ::core::ffi::c_void,
         ::core::mem::size_of::<imsg_hdr>() as size_t,
     ) == -(1 as ::core::ffi::c_int)
