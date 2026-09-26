@@ -911,7 +911,7 @@ pub unsafe fn layout_resize_pane_to(
     } else {
         change = new_size.wrapping_sub(size as u_int) as ::core::ffi::c_int;
     }
-    layout_resize_pane(wp, type_0, change, 1 as ::core::ffi::c_int);
+    layout_resize_pane(wp, type_0, change);
 }
 
 #[cfg(test)]
@@ -1072,8 +1072,8 @@ pub unsafe fn layout_resize_pane(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut change: ::core::ffi::c_int,
-    mut opposite: ::core::ffi::c_int,
 ) {
+    let mut opposite: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut lcparent: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     lcparent = (*lc).parent;

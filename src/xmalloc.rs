@@ -1,24 +1,17 @@
 use crate::src::ffi::libc::{calloc, free, vasprintf, vsnprintf};
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
-use crate::src::shared::limits::{INT_MAX, SIZE_MAX};
+use crate::src::shared::limits::INT_MAX;
 use std::ffi::{CStr, CString};
-pub unsafe fn xcalloc(mut nmemb: size_t, mut size: size_t) -> *mut ::core::ffi::c_void {
-    let mut ptr: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    if size == 0 as size_t || nmemb == 0 as size_t {
-        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+pub unsafe fn xcalloc(size: size_t) -> *mut ::core::ffi::c_void {
+    if size == 0 {
+        fatalx(c"xcalloc: zero size".as_ptr());
     }
-    if (SIZE_MAX as size_t).wrapping_div(nmemb) < size {
-        fatalx(b"xcalloc: nmemb * size > SIZE_MAX\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    ptr = calloc(nmemb, size);
+    let ptr = calloc(1, size);
     if ptr.is_null() {
-        fatal(
-            b"xcalloc: allocating %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-            size.wrapping_mul(nmemb),
-        );
+        fatal(c"xcalloc: allocating %zu bytes".as_ptr(), size);
     }
-    return ptr;
+    ptr
 }
 pub unsafe fn xvasprintf(
     mut ret: *mut *mut ::core::ffi::c_char,

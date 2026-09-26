@@ -108,11 +108,7 @@ unsafe fn screen_write_recycle_items(items: &mut screen_write_items) {
         screen_write_free_citem(item);
     }
 }
-unsafe fn screen_write_offset_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn screen_write_offset_timer(mut data: *mut ::core::ffi::c_void) {
     let mut w: *mut window = data as *mut window;
     tty_update_window_offset(w);
 }
@@ -156,9 +152,7 @@ unsafe fn screen_write_set_cursor(
             &raw mut (*w).offset_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                screen_write_offset_timer(fd, flags, w as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { screen_write_offset_timer(w as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(
@@ -929,7 +923,6 @@ pub unsafe fn screen_write_fast_copy(
             (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
             (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
             nx,
-            ::core::ptr::null_mut::<visible_ranges>(),
         );
         xx = px;
         while xx < px.wrapping_add(nx) {
@@ -1069,8 +1062,6 @@ pub unsafe fn screen_write_hline(
 pub unsafe fn screen_write_vline(
     mut ctx: *mut screen_write_ctx,
     mut ny: u_int,
-    mut top: ::core::ffi::c_int,
-    mut bottom: ::core::ffi::c_int,
     mut gcp: *const grid_cell,
 ) {
     let mut s: *mut screen = (*ctx).s;
@@ -1107,11 +1098,7 @@ pub unsafe fn screen_write_vline(
         );
     }
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-    screen_write_putc(
-        ctx,
-        &raw mut gc,
-        (if top != 0 { 'w' as i32 } else { 'x' as i32 }) as u_char,
-    );
+    screen_write_putc(ctx, &raw mut gc, ('x' as i32) as u_char);
     i = 1 as u_int;
     while i < ny.wrapping_sub(1 as u_int) {
         screen_write_set_cursor(
@@ -1127,11 +1114,7 @@ pub unsafe fn screen_write_vline(
         cx as ::core::ffi::c_int,
         cy.wrapping_add(ny).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
     );
-    screen_write_putc(
-        ctx,
-        &raw mut gc,
-        (if bottom != 0 { 'v' as i32 } else { 'x' as i32 }) as u_char,
-    );
+    screen_write_putc(ctx, &raw mut gc, ('x' as i32) as u_char);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_menu(
@@ -1450,11 +1433,7 @@ pub unsafe fn screen_write_mode_clear(
         );
     }
 }
-unsafe fn screen_write_sync_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn screen_write_sync_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = arg as *mut window_pane;
     log_debug(
         b"%s: %%%u sync timer expired\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1481,9 +1460,7 @@ pub unsafe fn screen_write_start_sync(mut wp: *mut window_pane) {
             &raw mut (*wp).sync_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                screen_write_sync_callback(fd, flags, wp as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { screen_write_sync_callback(wp as *mut ::core::ffi::c_void) },
         );
     }
     event_add(&raw mut (*wp).sync_timer, &raw mut tv);
@@ -1690,7 +1667,6 @@ unsafe fn screen_write_redraw_line(
         xoff,
         (yoff as u_int).wrapping_add(yy) as ::core::ffi::c_int,
         sx,
-        ::core::ptr::null_mut::<visible_ranges>(),
     );
     i = 0 as u_int;
     while i < (*r).used {
@@ -3014,7 +2990,6 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
             xoff.wrapping_add((*s).cx) as ::core::ffi::c_int,
             yoff.wrapping_add((*s).cy) as ::core::ffi::c_int,
             sx.wrapping_sub((*s).cx),
-            ::core::ptr::null_mut::<visible_ranges>(),
         );
         i = 0 as u_int;
         while i < (*r).used {
@@ -3033,7 +3008,6 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
-            ::core::ptr::null_mut::<visible_ranges>(),
         );
         i = 0 as u_int;
         while i < (*r).used {
@@ -3156,7 +3130,6 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
-            ::core::ptr::null_mut::<visible_ranges>(),
         );
         i = 0 as u_int;
         while i < (*r).used {
@@ -3174,7 +3147,6 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
         xoff as ::core::ffi::c_int,
         yoff.wrapping_add(ocy) as ::core::ffi::c_int,
         (*s).cx.wrapping_add(1 as u_int),
-        ::core::ptr::null_mut::<visible_ranges>(),
     );
     i = 0 as u_int;
     while i < (*r).used {
@@ -3287,7 +3259,6 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
-            ::core::ptr::null_mut::<visible_ranges>(),
         );
         i = 0 as u_int;
         while i < (*r).used {
@@ -3645,7 +3616,6 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
         0 as ::core::ffi::c_int,
         y.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         wsx,
-        ::core::ptr::null_mut::<visible_ranges>(),
     );
     let mut index = 0;
     loop {
@@ -4334,7 +4304,6 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
         (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         width,
-        ::core::ptr::null_mut::<visible_ranges>(),
     );
     not_wrap = ((*s).mode & MODE_WRAP == 0) as ::core::ffi::c_int as u_int;
     if (*s).cx <= sx.wrapping_sub(not_wrap).wrapping_sub(width) {
@@ -4600,7 +4569,6 @@ unsafe fn screen_write_combine(
         (xoff as u_int).wrapping_add(cx).wrapping_sub(n) as ::core::ffi::c_int,
         cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         n,
-        ::core::ptr::null_mut::<visible_ranges>(),
     );
     i = 0 as u_int;
     vis = 0 as u_int;

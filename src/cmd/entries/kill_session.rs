@@ -23,7 +23,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::{WINDOW_ALERTFLAGS, WINLINK_ALERTFLAGS};
 use crate::src::window::{winlinks_minmax, winlinks_next};
-pub static mut cmd_kill_session_entry: cmd_entry =  {
+pub static mut cmd_kill_session_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-session",
         alias: None,
@@ -102,7 +102,7 @@ unsafe fn cmd_kill_session_all(
 ) -> cmd_retval {
     let mut s: *mut session = (*cmdq_get_target(item)).s;
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
-    sloop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    sloop = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
         if !(sloop == s) {

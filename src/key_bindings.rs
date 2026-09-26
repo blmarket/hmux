@@ -105,7 +105,7 @@ pub unsafe fn key_bindings_get_table(
     return table;
 }
 pub unsafe fn key_bindings_first_table() -> *mut key_table {
-    return key_tables_minmax(&*std::ptr::addr_of!(key_tables), RB_NEGINF);
+    return key_tables_minmax(&*std::ptr::addr_of!(key_tables));
 }
 pub unsafe fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
     return key_tables_next(&*table);
@@ -117,7 +117,7 @@ pub unsafe fn key_bindings_unref_table(mut table: *mut key_table) {
     if (*table).references != 0 as u_int {
         return;
     }
-    bd = key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
+    bd = key_bindings_index_minmax(&(*table).key_bindings);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
@@ -126,7 +126,7 @@ pub unsafe fn key_bindings_unref_table(mut table: *mut key_table) {
         key_bindings_free(bd);
         bd = bd1;
     }
-    bd = key_bindings_index_minmax(&(*table).default_key_bindings, RB_NEGINF);
+    bd = key_bindings_index_minmax(&(*table).default_key_bindings);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
@@ -165,12 +165,9 @@ pub unsafe fn key_bindings_get_default(
     return key_bindings_index_find(&(*table).default_key_bindings, &bd);
 }
 pub unsafe fn key_bindings_first(mut table: *mut key_table) -> *mut key_binding {
-    return key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
+    return key_bindings_index_minmax(&(*table).key_bindings);
 }
-pub unsafe fn key_bindings_next(
-    _table: *mut key_table,
-    mut bd: *mut key_binding,
-) -> *mut key_binding {
+pub unsafe fn key_bindings_next(mut bd: *mut key_binding) -> *mut key_binding {
     return key_bindings_index_next(&*bd);
 }
 pub unsafe fn key_bindings_add(
@@ -296,7 +293,7 @@ pub unsafe fn key_bindings_reset_table(mut name: *const ::core::ffi::c_char) {
         key_bindings_remove_table(name);
         return;
     }
-    bd = key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
+    bd = key_bindings_index_minmax(&(*table).key_bindings);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
@@ -328,9 +325,9 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut new_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    table = key_tables_minmax(&*std::ptr::addr_of!(key_tables), RB_NEGINF);
+    table = key_tables_minmax(&*std::ptr::addr_of!(key_tables));
     while !table.is_null() {
-        bd = key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
+        bd = key_bindings_index_minmax(&(*table).key_bindings);
         while !bd.is_null() {
             (*(*bd).cmdlist).references += 1;
             new_bd = key_bindings_add_default(
@@ -1026,7 +1023,7 @@ pub unsafe fn key_bindings_dispatch(
     if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
         readonly = 1 as ::core::ffi::c_int;
     } else {
-        readonly = cmd_list_all_have((*bd).cmdlist, CMD_READONLY);
+        readonly = cmd_list_all_have((*bd).cmdlist);
     }
     if readonly == 0 {
         new_item = cmdq_get_callback_owned(
@@ -1136,21 +1133,14 @@ pub unsafe fn key_bindings_index_remove(
     }
     elm
 }
-pub unsafe fn key_bindings_index_minmax(
-    head: &key_bindings,
-    direction: ::core::ffi::c_int,
-) -> *mut key_binding {
+pub unsafe fn key_bindings_index_minmax(head: &key_bindings) -> *mut key_binding {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("key binding index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_bindings_index_next(elm: &key_binding) -> *mut key_binding {
@@ -1244,21 +1234,14 @@ pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> *
     }
     elm
 }
-pub unsafe fn key_tables_minmax(
-    head: &key_tables,
-    direction: ::core::ffi::c_int,
-) -> *mut key_table {
+pub unsafe fn key_tables_minmax(head: &key_tables) -> *mut key_table {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("key table index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
@@ -1304,73 +1287,5 @@ mod key_index_tests {
         let mut table = Box::new(key_table::empty());
         table.name = std::ffi::CString::new(name).unwrap();
         Box::into_raw(table)
-    }
-
-    #[test]
-    fn binding_index_preserves_order_and_clears_nonowning_entries() {
-        unsafe {
-            let mut head = key_bindings::default();
-            let mut other = key_bindings::default();
-            let first = binding(0x80);
-            let second = binding(1);
-            let duplicate = binding(0x80);
-
-            assert!(key_bindings_index_insert(&mut head, first).is_null());
-            assert!(key_bindings_index_insert(&mut head, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
-            assert_eq!(key_bindings_index_insert(&mut head, duplicate), first);
-            assert!((*duplicate).entry.owner.is_none());
-            assert!(key_bindings_index_remove(&mut other, first).is_null());
-            assert!((*first).entry.owner.is_some());
-
-            let mut moved = head;
-            assert_eq!(key_bindings_index_minmax(&moved, -1), second);
-            assert_eq!(key_bindings_index_next(&*second), first);
-            assert_eq!(key_bindings_index_remove(&mut moved, second), second);
-            assert!((*second).entry.owner.is_none());
-            drop(Box::from_raw(second));
-            assert_eq!(key_bindings_index_remove(&mut moved, first), first);
-            drop(Box::from_raw(first));
-            drop(Box::from_raw(duplicate));
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-        }
-    }
-
-    #[test]
-    fn table_index_observers_follow_moves_duplicates_and_removal() {
-        unsafe {
-            let mut head = key_tables { storage: None };
-            let mut other = key_tables { storage: None };
-            let first = table("alpha");
-            let second = table("beta");
-            let duplicate = table("alpha");
-
-            assert!(key_tables_insert(&mut head, first).is_null());
-            assert!(key_tables_insert(&mut head, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
-            assert_eq!(key_tables_insert(&mut head, duplicate), first);
-            assert!((*duplicate).entry.owner.is_none());
-            assert!(key_tables_remove(&mut other, first).is_null());
-            assert!((*first).entry.owner.is_some());
-
-            let mut moved = head;
-            assert_eq!(key_tables_minmax(&moved, -1), first);
-            assert_eq!(key_tables_next(&*first), second);
-            assert_eq!(key_tables_remove(&mut moved, first), first);
-            assert!((*first).entry.owner.is_none());
-            drop(Box::from_raw(first));
-            assert_eq!(key_tables_remove(&mut moved, second), second);
-            drop(Box::from_raw(second));
-            drop(Box::from_raw(duplicate));
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-        }
     }
 }

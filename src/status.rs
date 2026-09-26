@@ -65,11 +65,7 @@ use crate::src::shared::tty::tty;
 use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
 use crate::src::shared::window::winlink;
 
-unsafe fn status_timer_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut c: *mut client = arg as *mut client;
     let mut s: *mut session = (*c).session;
     let mut tv: timeval = timeval {
@@ -107,9 +103,7 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
             &raw mut (*c).status.timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                status_timer_callback(fd, flags, c as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { status_timer_callback(c as *mut ::core::ffi::c_void) },
         );
     }
     if !s.is_null()
@@ -118,11 +112,7 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
             b"status\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
-        status_timer_callback(
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_short,
-            c as *mut ::core::ffi::c_void,
-        );
+        status_timer_callback(c as *mut ::core::ffi::c_void);
     }
 }
 pub unsafe fn status_timer_start_all() {
@@ -513,9 +503,7 @@ pub unsafe extern "C" fn status_message_set(
             &raw mut (*c).message_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                status_message_callback(fd, flags, c as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { status_message_callback(c as *mut ::core::ffi::c_void) },
         );
         event_add(&raw mut (*c).message_timer, &raw mut tv);
     }
@@ -582,11 +570,7 @@ unsafe fn status_message_area(mut c: *mut client, mut area_x: *mut u_int, mut ar
     }
     *area_w = w;
 }
-unsafe fn status_message_callback(
-    _fd: ::core::ffi::c_int,
-    _event: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn status_message_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     status_message_clear(c);
 }

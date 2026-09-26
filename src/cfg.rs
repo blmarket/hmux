@@ -89,14 +89,7 @@ pub unsafe fn start_cfg() {
         flags = CMD_PARSE_QUIET;
     }
     for path in cfg_files() {
-        load_cfg(
-            path.as_ptr(),
-            c,
-            ::core::ptr::null_mut::<cmdq_item>(),
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            flags,
-            ::core::ptr::null_mut::<*mut cmdq_item>(),
-        );
+        load_cfg(path.as_ptr(), c, flags);
     }
     cmdq_append(
         ::core::ptr::null_mut::<client>(),
@@ -109,11 +102,10 @@ pub unsafe fn start_cfg() {
 pub unsafe fn load_cfg(
     mut path: *const ::core::ffi::c_char,
     mut c: *mut client,
-    mut item: *mut cmdq_item,
-    mut current: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
-    mut new_item: *mut *mut cmdq_item,
 ) -> ::core::ffi::c_int {
+    let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
@@ -134,9 +126,7 @@ pub unsafe fn load_cfg(
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    if !new_item.is_null() {
-        *new_item = ::core::ptr::null_mut::<cmdq_item>();
-    }
+
     log_debug(
         b"loading %s\0" as *const u8 as *const ::core::ffi::c_char,
         path,
@@ -176,15 +166,13 @@ pub unsafe fn load_cfg(
         cmd_list_free(pr.cmdlist);
         return 0 as ::core::ffi::c_int;
     }
-    if !item.is_null() {
-        state = cmdq_copy_state(cmdq_get_state(item), current);
-    } else {
-        state = cmdq_new_state(
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            ::core::ptr::null_mut::<key_event>(),
-            0 as ::core::ffi::c_int,
-        );
-    }
+
+    state = cmdq_new_state(
+        ::core::ptr::null_mut::<cmd_find_state>(),
+        ::core::ptr::null_mut::<key_event>(),
+        0 as ::core::ffi::c_int,
+    );
+
     cmdq_add_format(
         state,
         b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
@@ -194,16 +182,12 @@ pub unsafe fn load_cfg(
             .map_or(::core::ptr::null(), |file| file.as_ptr()),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
-    if !item.is_null() {
-        new_item0 = cmdq_insert_after(item, new_item0);
-    } else {
-        new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
-    }
+
+    new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
+
     cmd_list_free(pr.cmdlist);
     cmdq_free_state(state);
-    if !new_item.is_null() {
-        *new_item = new_item0;
-    }
+
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn load_cfg_from_buffer(
@@ -354,7 +338,7 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
             if !c.is_null() && !(*c).session.is_null() {
                 s = (*c).session;
             } else {
-                s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+                s = sessions_minmax(&*std::ptr::addr_of!(sessions));
             }
         }
         if s.is_null() || (*s).attached == 0 as u_int {

@@ -29,8 +29,8 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         winlink_stack_push(&raw mut stack, first);
         winlink_stack_push(&raw mut stack, second);
         assert_eq!(winlink_stack_indices(&stack), [2, 1]);
-        assert_eq!(winlink_stack_first(&stack, &raw mut links), second);
-        assert_eq!(winlink_stack_next(&stack, &raw mut links, second), first);
+        assert_eq!(winlink_stack_first(&stack), second);
+        assert_eq!(winlink_stack_next(&stack, second), first);
 
         winlink_stack_remove(&raw mut stack, second);
         winlink_remove(&raw mut links, second);
@@ -38,11 +38,11 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
             old_second.try_borrow_mut().err(),
             Some(BorrowError::Dropped)
         );
-        assert_eq!(winlink_stack_first(&stack, &raw mut links), first);
+        assert_eq!(winlink_stack_first(&stack), first);
 
         winlinks_reindex(&raw mut links, first, 3);
         assert_eq!(winlink_stack_indices(&stack), [3]);
-        assert_eq!(winlink_stack_first(&stack, &raw mut links), first);
+        assert_eq!(winlink_stack_first(&stack), first);
 
         winlink_stack_remove(&raw mut stack, first);
         winlink_remove(&raw mut links, first);
@@ -64,7 +64,7 @@ fn history_entry_is_removed_before_its_owner() {
         winlink_stack_remove(&raw mut stack, link);
         winlink_remove(&raw mut links, link);
 
-        assert!(winlink_stack_first(&stack, &raw mut links).is_null());
+        assert!(winlink_stack_first(&stack).is_null());
         assert!(winlink_stack_indices(&stack).is_empty());
         winlink_stack_clear(&mut stack);
     }

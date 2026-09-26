@@ -38,7 +38,7 @@ use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
 use crate::src::window::{window_pane_destroy_ready, window_pane_exited};
-pub static mut cmd_pipe_pane_entry: cmd_entry =  {
+pub static mut cmd_pipe_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"pipe-pane",
         alias: Some(c"pipep"),
@@ -215,18 +215,14 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             setblocking((*wp).pipe_fd, 0 as ::core::ffi::c_int);
             (*wp).pipe_event = bufferevent_new(
                 (*wp).pipe_fd,
-                bufferevent_data_callback(move |stream| unsafe {
-                    cmd_pipe_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void)
+                bufferevent_data_callback(move |_| unsafe {
+                    cmd_pipe_pane_read_callback(wp as *mut ::core::ffi::c_void)
                 }),
-                bufferevent_data_callback(move |stream| unsafe {
-                    cmd_pipe_pane_write_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void)
+                bufferevent_data_callback(move |_| unsafe {
+                    cmd_pipe_pane_write_callback(wp as *mut ::core::ffi::c_void)
                 }),
-                bufferevent_event_callback(move |stream, flags| unsafe {
-                    cmd_pipe_pane_error_callback(
-                        stream.as_ptr(),
-                        flags,
-                        wp as *mut ::core::ffi::c_void,
-                    )
+                bufferevent_event_callback(move |_, _| unsafe {
+                    cmd_pipe_pane_error_callback(wp as *mut ::core::ffi::c_void)
                 }),
             );
             if (*wp).pipe_event.is_null() {
@@ -242,10 +238,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
     };
 }
-unsafe fn cmd_pipe_pane_read_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut available: size_t = 0;
@@ -269,10 +262,7 @@ unsafe fn cmd_pipe_pane_read_callback(
         server_destroy_pane(wp, 1 as ::core::ffi::c_int);
     }
 }
-unsafe fn cmd_pipe_pane_write_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn cmd_pipe_pane_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     log_debug(
         b"%%%u pipe empty\0" as *const u8 as *const ::core::ffi::c_char,
@@ -282,11 +272,7 @@ unsafe fn cmd_pipe_pane_write_callback(
         server_destroy_pane(wp, 1 as ::core::ffi::c_int);
     }
 }
-unsafe fn cmd_pipe_pane_error_callback(
-    _bufev: *mut bufferevent,
-    _what: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn cmd_pipe_pane_error_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     log_debug(
         b"%%%u pipe error\0" as *const u8 as *const ::core::ffi::c_char,

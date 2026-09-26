@@ -745,10 +745,10 @@ pub unsafe fn cmd_parse_and_insert(
 }
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,
-    mut pi: *mut cmd_parse_input,
     mut c: *mut client,
     mut state: *mut cmdq_state,
 ) -> Result<cmd_parse_status, Option<CString>> {
+    let mut pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut pr = cmd_parse_from_string(s, pi);
     if pr.status == CMD_PARSE_ERROR {
@@ -802,7 +802,8 @@ pub unsafe fn cmd_parse_from_buffer(
     return pr;
 }
 /// Parse argv while borrowing its strings for the duration of the parser call.
-pub unsafe fn cmd_parse_from_argv(argv: &[CString], pi: *mut cmd_parse_input) -> cmd_parse_result {
+pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
+    let pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
     let mut values: Vec<args_value> = argv
         .iter()
         .map(|string| args_value::borrowed_string(string.as_ptr()))
@@ -1017,7 +1018,8 @@ unsafe fn yylex_getc() -> ::core::ffi::c_int {
         }
     }
 }
-unsafe fn yylex_get_word(mut ch: ::core::ffi::c_int) -> CString {
+unsafe fn yylex_get_word() -> CString {
+    let mut ch: ::core::ffi::c_int = '%' as i32;
     let mut buf = LexerBuffer::new();
     loop {
         buf.push(ch as ::core::ffi::c_char);
@@ -1095,7 +1097,7 @@ unsafe fn yylex(lexed: &mut Option<CString>) -> ::core::ffi::c_int {
                 }
             } else {
                 if ch == '%' as i32 {
-                    *lexed = Some(yylex_get_word('%' as i32));
+                    *lexed = Some(yylex_get_word());
                     cp = lexed
                         .as_mut()
                         .expect("percent token owns its text")

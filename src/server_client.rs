@@ -840,16 +840,8 @@ pub unsafe fn server_client_how_many() -> u_int {
     }
     return n;
 }
-unsafe fn server_client_overlay_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
-    server_client_clear_overlay(data as *mut client);
-}
 pub unsafe fn server_client_set_overlay(
     mut c: *mut client,
-    mut delay: u_int,
     mut checkcb: overlay_check_cb,
     mut modecb: overlay_mode_cb,
     mut drawcb: overlay_draw_cb,
@@ -858,29 +850,8 @@ pub unsafe fn server_client_set_overlay(
     mut resizecb: overlay_resize_cb,
     data: Box<dyn std::any::Any>,
 ) {
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     if (*c).overlay_draw.is_some() {
         server_client_clear_overlay(c);
-    }
-    tv.tv_sec = delay.wrapping_div(1000 as u_int) as __time_t;
-    tv.tv_usec = (delay.wrapping_rem(1000 as u_int) as ::core::ffi::c_long
-        * 1000 as ::core::ffi::c_long) as __suseconds_t;
-    if event_initialized(&(*c).overlay_timer) != 0 {
-        event_del(&raw mut (*c).overlay_timer);
-    }
-    event_set(
-        &raw mut (*c).overlay_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            server_client_overlay_timer(fd, flags, c as *mut ::core::ffi::c_void)
-        },
-    );
-    if delay != 0 as u_int {
-        event_add(&raw mut (*c).overlay_timer, &raw mut tv);
     }
     (*c).overlay_check = checkcb;
     (*c).overlay_mode = modecb;
@@ -901,9 +872,6 @@ pub unsafe fn server_client_set_overlay(
 pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
     if (*c).overlay_draw.is_none() {
         return;
-    }
-    if event_initialized(&(*c).overlay_timer) != 0 {
-        event_del(&raw mut (*c).overlay_timer);
     }
     let overlay_check = (*c).overlay_check.take();
     let overlay_mode = (*c).overlay_mode.take();
@@ -1004,7 +972,7 @@ pub unsafe fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_i
     {
         return 0 as ::core::ffi::c_int;
     }
-    wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+    wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
     while !wp.is_null() {
         if strcmp(
             &raw mut (*wp).tty as *mut ::core::ffi::c_char,
@@ -1119,25 +1087,19 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            server_client_repeat_timer(fd, flags, c as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { server_client_repeat_timer(c as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*c).click_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            server_client_click_timer(fd, flags, c as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { server_client_click_timer(c as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*c).exit_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            server_client_exit_timer(fd, flags, c as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { server_client_exit_timer(c as *mut ::core::ffi::c_void) },
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
     clients.push_back(owner);
@@ -1216,7 +1178,7 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
         b"lost attached client %p\0" as *const u8 as *const ::core::ffi::c_char,
         c,
     );
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         if !((*w).latest != c as *mut ::core::ffi::c_void) {
             found = ::core::ptr::null_mut::<client>();
@@ -1259,11 +1221,7 @@ unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut s
     ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
     event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_client(
-        ep,
-        b"client\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-    );
+    event_payload_set_client(ep, c);
     if !fs.s.is_null() {
         event_payload_set_session(
             ep,
@@ -1329,11 +1287,7 @@ unsafe fn server_client_fire_resized(mut c: *mut client, mut old_sx: u_int, mut 
     ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
     event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_client(
-        ep,
-        b"client\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-    );
+    event_payload_set_client(ep, c);
     if !fs.s.is_null() {
         event_payload_set_session(
             ep,
@@ -1433,7 +1387,7 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     status_prompt_clear(c);
     status_message_clear(c);
     cmdq_abort_file_wait(c);
-    cf = client_files_minmax(&(*c).files, RB_NEGINF);
+    cf = client_files_minmax(&(*c).files);
     while !cf.is_null() && {
         cf1 = client_files_next(&*cf);
         1 as ::core::ffi::c_int != 0
@@ -1516,21 +1470,10 @@ pub unsafe fn server_client_unref(mut c: *mut client) {
     );
     (*c).references -= 1;
     if (*c).references == 0 as ::core::ffi::c_int {
-        event_once(
-            -(1 as ::core::ffi::c_int),
-            EV_TIMEOUT as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                server_client_free(fd, flags, c as *mut ::core::ffi::c_void)
-            },
-            ::core::ptr::null::<timeval>(),
-        );
+        event_once(move |_, _| unsafe { server_client_free(c as *mut ::core::ffi::c_void) });
     }
 }
-unsafe fn server_client_free(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_free(mut arg: *mut ::core::ffi::c_void) {
     let mut c: *mut client = arg as *mut client;
     log_debug(
         b"free client %p (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1658,7 +1601,7 @@ unsafe fn server_client_update_scrollbar_hover(
         if !(window_pane_is_visible(wp) == 0) {
             if server_client_in_scrollbar_area(wp, px, py) != 0 {
                 (*wp).sb_auto_hover = 1 as ::core::ffi::c_int;
-                window_pane_scrollbar_show(wp, 1 as ::core::ffi::c_int);
+                window_pane_scrollbar_show(wp);
             } else {
                 (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
                 window_pane_scrollbar_start_timer(wp);
@@ -2777,8 +2720,7 @@ unsafe fn server_client_key_callback(
                             <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int)
-                    || cmd_find_from_mouse(&raw mut fs, m, 0 as ::core::ffi::c_int)
-                        != 0 as ::core::ffi::c_int
+                    || cmd_find_from_mouse(&raw mut fs, m) != 0 as ::core::ffi::c_int
                 {
                     cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
                 }
@@ -3351,12 +3293,12 @@ pub unsafe fn server_client_loop() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         server_client_check_window_resize(w);
         w = windows_next(&*w);
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
@@ -3382,7 +3324,7 @@ pub unsafe fn server_client_loop() {
         }
         c = clients.next(c);
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
@@ -3396,7 +3338,7 @@ pub unsafe fn server_client_loop() {
         check_window_name(w);
         w = windows_next(&*w);
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
@@ -3434,11 +3376,7 @@ unsafe fn server_client_check_window_resize(mut w: *mut window) {
         (*w).new_ypixel as ::core::ffi::c_int,
     );
 }
-unsafe fn server_client_resize_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_resize_timer(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     log_debug(
         b"%s: %%%u resize timer expired\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3460,9 +3398,7 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
             &raw mut (*wp).resize_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                server_client_resize_timer(fd, flags, wp as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { server_client_resize_timer(wp as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(
@@ -3677,7 +3613,6 @@ unsafe fn server_client_prompt_cursor(
         *cx as ::core::ffi::c_int,
         *cy as ::core::ffi::c_int,
         1 as u_int,
-        ::core::ptr::null_mut::<visible_ranges>(),
     );
     if window_position_is_visible(r, *cx) != 0 {
         if status_at_line(c) == 0 as ::core::ffi::c_int {
@@ -3788,7 +3723,6 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                     cx as ::core::ffi::c_int,
                     cy as ::core::ffi::c_int,
                     1 as u_int,
-                    ::core::ptr::null_mut::<visible_ranges>(),
                 );
                 if window_position_is_visible(r, cx) == 0 {
                     cursor = 0 as ::core::ffi::c_int;
@@ -3861,11 +3795,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     tty_sync_end(tty);
     (*tty).flags |= flags;
 }
-unsafe fn server_client_repeat_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_repeat_timer(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
         server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
@@ -3873,11 +3803,7 @@ unsafe fn server_client_repeat_timer(
         server_status_client(c);
     }
 }
-unsafe fn server_client_click_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_click_timer(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     log_debug(b"click timer expired\0" as *const u8 as *const ::core::ffi::c_char);
     if (*c).flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
@@ -3904,11 +3830,7 @@ unsafe fn server_client_start_exit_timer(mut c: *mut client) {
         event_add(&raw mut (*c).exit_timer, &raw mut tv);
     }
 }
-unsafe fn server_client_exit_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_exit_timer(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     if (*c).flags & (CLIENT_DEAD | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;
@@ -3956,7 +3878,7 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
         }
     }
     if force == 0 {
-        cf = client_files_minmax(&(*c).files, RB_NEGINF);
+        cf = client_files_minmax(&(*c).files);
         while !cf.is_null() {
             if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
                 server_client_start_exit_timer(c);
@@ -4010,11 +3932,7 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
         _ => {}
     };
 }
-unsafe fn server_client_redraw_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    _data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_redraw_timer() {
     log_debug(b"redraw timer fired\0" as *const u8 as *const ::core::ffi::c_char);
 }
 unsafe fn server_client_check_modes(mut c: *mut client) {
@@ -4138,13 +4056,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
                 &raw mut ev,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                move |fd, flags| unsafe {
-                    server_client_redraw_timer(
-                        fd,
-                        flags,
-                        ::core::ptr::null_mut::<::core::ffi::c_void>(),
-                    )
-                },
+                move |_, _| unsafe { server_client_redraw_timer() },
             );
         }
         if event_pending(
@@ -4468,13 +4380,8 @@ unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval 
     let mut c: *mut client = cmdq_get_client(item);
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    cmdlist = options_get_command(
-        global_options,
-        b"default-client-command\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if (*c).flags & CLIENT_READONLY as uint64_t != 0
-        && cmd_list_all_have(cmdlist, CMD_READONLY) == 0
-    {
+    cmdlist = options_get_command(global_options);
+    if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(cmdlist) == 0 {
         new_item = cmdq_get_callback_owned(
             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|item| unsafe {
@@ -4543,7 +4450,7 @@ unsafe fn server_client_dispatch_command(
             current_block = 13472856163611868459;
         } else {
             cmd_log_argv(&argv, c"cmd_unpack_argv");
-            let pr = cmd_parse_from_argv(&argv, ::core::ptr::null_mut::<cmd_parse_input>());
+            let pr = cmd_parse_from_argv(&argv);
             match pr.status as ::core::ffi::c_uint {
                 0 => {
                     cause = pr.error;
@@ -4551,7 +4458,7 @@ unsafe fn server_client_dispatch_command(
                 }
                 1 | _ => {
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
-                        && cmd_list_all_have(pr.cmdlist, CMD_READONLY) == 0
+                        && cmd_list_all_have(pr.cmdlist) == 0
                     {
                         new_item = cmdq_get_callback_owned(
                             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5213,9 +5120,7 @@ pub unsafe fn server_client_print(
             }
             if parse != 0 {
                 loop {
-                    let Some(line) =
-                        evbuffer_readln(evb, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
-                    else {
+                    let Some(line) = evbuffer_readln(evb) else {
                         break;
                     };
                     window_copy_add(

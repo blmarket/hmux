@@ -279,7 +279,6 @@ mod tests {
 unsafe fn window_client_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
-    _tag: *mut uint64_t,
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
@@ -349,7 +348,6 @@ unsafe fn window_client_build(
     }
 }
 unsafe fn window_client_draw_info(
-    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
@@ -446,13 +444,7 @@ unsafe fn window_client_draw_info(
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(
-            ctx,
-            sy.wrapping_sub(i),
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            &raw mut gc,
-        );
+        screen_write_vline(ctx, sy.wrapping_sub(i), &raw mut gc);
     }
     format_free(ft);
 }
@@ -492,7 +484,7 @@ unsafe fn window_client_draw(
         return;
     }
     if (*data).preview_is_info != 0 {
-        window_client_draw_info(modedata, itemdata, ctx, sx, sy);
+        window_client_draw_info(itemdata, ctx, sx, sy);
         return;
     }
     w = (*(*session).curw).window;
@@ -718,7 +710,6 @@ unsafe fn window_client_init(
             window_client_build(
                 data_handle.as_ptr().cast(),
                 sort as *mut sort_criteria,
-                &mut selected,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
@@ -788,7 +779,6 @@ unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
 unsafe fn window_client_do_detach(
     mut data: *mut window_client_modedata,
     mut item: *mut window_client_itemdata,
-    _c: *mut client,
     mut key: key_code,
 ) {
     if item == mode_tree_get_current((*data).data) as *mut window_client_itemdata {
@@ -826,15 +816,13 @@ unsafe fn window_client_key(
     match key {
         100 | 120 | 122 => {
             item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
-            window_client_do_detach(data, item, c, key);
+            window_client_do_detach(data, item, key);
             mode_tree_build(mtd);
         }
         68 | 88 | 90 => {
             mode_tree_each_tagged(
                 mtd,
-                |row, c, key| unsafe {
-                    window_client_do_detach(data, (*row).itemdata.cast(), c, key)
-                },
+                |row, _, key| unsafe { window_client_do_detach(data, (*row).itemdata.cast(), key) },
                 c,
                 key,
                 0 as ::core::ffi::c_int,

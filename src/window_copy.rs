@@ -386,11 +386,7 @@ pub const WINDOW_COPY_SEARCH_ALL_TIMEOUT: ::core::ffi::c_int = 200 as ::core::ff
 pub const WINDOW_COPY_SEARCH_MAX_LINE: ::core::ffi::c_int = 2000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_DRAG_REPEAT_TIME: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_REFRESH_INTERVAL: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
-unsafe fn window_copy_scroll_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_copy_scroll_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
@@ -581,17 +577,13 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
         &raw mut (*data).dragtimer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            window_copy_scroll_timer(fd, flags, wme as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { window_copy_scroll_timer(wme as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*data).refresh_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            window_copy_refresh_timer(fd, flags, wme as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { window_copy_refresh_timer(wme as *mut ::core::ffi::c_void) },
     );
     return data;
 }
@@ -919,11 +911,12 @@ unsafe fn window_copy_scroll1(
             1 as ::core::ffi::c_int,
         );
     }
-    window_copy_update_selection_view(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show(wp, 1 as ::core::ffi::c_int);
+    window_copy_update_selection_view(wme, 1 as ::core::ffi::c_int);
+    window_pane_scrollbar_show(wp);
     window_copy_redraw_screen(wme);
 }
-pub unsafe fn window_copy_pageup(mut wp: *mut window_pane, mut half_page: ::core::ffi::c_int) {
+pub unsafe fn window_copy_pageup(mut wp: *mut window_pane) {
+    let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     window_copy_pageup1((*wp).modes.active, half_page);
 }
 unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::core::ffi::c_int) {
@@ -981,14 +974,11 @@ unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::
         );
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show((*wme).wp, 1 as ::core::ffi::c_int);
+    window_pane_scrollbar_show((*wme).wp);
     window_copy_redraw_screen(wme);
 }
-pub unsafe fn window_copy_pagedown(
-    mut wp: *mut window_pane,
-    mut half_page: ::core::ffi::c_int,
-    mut scroll_exit: ::core::ffi::c_int,
-) {
+pub unsafe fn window_copy_pagedown(mut wp: *mut window_pane, mut scroll_exit: ::core::ffi::c_int) {
+    let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if window_copy_pagedown1((*wp).modes.active, half_page, scroll_exit) != 0 {
         window_pane_reset_mode(wp);
         return;
@@ -1056,7 +1046,7 @@ unsafe fn window_copy_pagedown1(
         );
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show((*wme).wp, 1 as ::core::ffi::c_int);
+    window_pane_scrollbar_show((*wme).wp);
     window_copy_redraw_screen(wme);
     return 0 as ::core::ffi::c_int;
 }
@@ -1919,7 +1909,7 @@ unsafe fn window_copy_cmd_scroll_to(
         window_copy_scroll_down(wme, delta);
         (*data).cy = (*data).cy.wrapping_add(delta);
     }
-    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
+    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
 unsafe fn window_copy_cmd_scroll_bottom(
@@ -2081,7 +2071,7 @@ unsafe fn window_copy_cmd_history_bottom(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show((*wme).wp, 1 as ::core::ffi::c_int);
+        window_pane_scrollbar_show((*wme).wp);
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -2115,7 +2105,7 @@ unsafe fn window_copy_cmd_history_top(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show((*wme).wp, 1 as ::core::ffi::c_int);
+        window_pane_scrollbar_show((*wme).wp);
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -3534,11 +3524,7 @@ unsafe fn window_copy_refresh_allowed(mut wme: *mut window_mode_entry) -> ::core
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn window_copy_refresh_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_copy_refresh_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
@@ -3667,7 +3653,7 @@ unsafe fn window_copy_cmd_recentre_top_bottom(
         }
         _ => {}
     }
-    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
+    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
 unsafe fn window_copy_cmd_line_numbers_on(
@@ -5257,7 +5243,7 @@ unsafe fn window_copy_scroll_to(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show((*wme).wp, 1 as ::core::ffi::c_int);
+        window_pane_scrollbar_show((*wme).wp);
     }
     if no_redraw == 0 {
         window_copy_redraw_screen(wme);
@@ -5423,10 +5409,10 @@ unsafe fn window_copy_search_rl(
     mut sgd: *mut grid,
     mut ppx: *mut u_int,
     mut py: u_int,
-    mut first: u_int,
     mut last: u_int,
     mut cis: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut first: u_int = 0 as u_int;
     let mut ax: u_int = 0;
     let mut bx: u_int = 0;
     let mut px: u_int = 0;
@@ -5578,19 +5564,17 @@ unsafe fn window_copy_search_rl_regex(
     mut ppx: *mut u_int,
     mut psx: *mut u_int,
     mut py: u_int,
-    mut first: u_int,
     mut last: u_int,
     mut reg: *mut regex_t,
 ) -> ::core::ffi::c_int {
+    let mut first: u_int = 0 as u_int;
     let mut eflags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut endline: u_int = 0;
     let mut len: u_int = 0;
     let mut pywrap: u_int = 0;
     let mut buf = vec![0u8];
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    if first != 0 as u_int {
-        eflags |= REG_NOTBOL;
-    }
+
     window_copy_stringify(gd, py, first, (*gd).sx, &mut buf);
     len = (*gd).sx.wrapping_sub(first);
     endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
@@ -5966,7 +5950,6 @@ unsafe fn window_copy_search_back_overlap(
             &raw mut px,
             &raw mut sx,
             py.wrapping_sub(1 as u_int),
-            0 as u_int,
             (*gd).sx,
             preg,
         );
@@ -6058,7 +6041,6 @@ unsafe fn window_copy_search_jump(
                     &raw mut px,
                     &raw mut sx,
                     i.wrapping_sub(1 as u_int),
-                    0 as u_int,
                     fx.wrapping_add(1 as u_int),
                     &raw mut reg,
                 );
@@ -6078,7 +6060,6 @@ unsafe fn window_copy_search_jump(
                     sgd,
                     &raw mut px,
                     i.wrapping_sub(1 as u_int),
-                    0 as u_int,
                     fx.wrapping_add(1 as u_int),
                     cis,
                 );
@@ -7829,8 +7810,8 @@ unsafe fn window_copy_update_selection(
 unsafe fn window_copy_update_selection_view(
     mut wme: *mut window_mode_entry,
     mut may_redraw: ::core::ffi::c_int,
-    mut no_reset: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut no_reset: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut selx: u_int = 0;
     let mut sely: u_int = 0;
@@ -9180,7 +9161,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         return;
     }
     (*data).oy = (*data).oy.wrapping_sub(ny);
-    window_pane_scrollbar_show(wp, 1 as ::core::ffi::c_int);
+    window_pane_scrollbar_show(wp);
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
@@ -9189,7 +9170,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
             1 as ::core::ffi::c_int,
         );
     }
-    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
+    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int);
     if window_copy_cursor_line_active(wme) != 0 {
         window_copy_redraw_screen(wme);
         return;
@@ -9293,7 +9274,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         return;
     }
     (*data).oy = (*data).oy.wrapping_add(ny);
-    window_pane_scrollbar_show(wp, 1 as ::core::ffi::c_int);
+    window_pane_scrollbar_show(wp);
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
@@ -9302,7 +9283,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
             1 as ::core::ffi::c_int,
         );
     }
-    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
+    window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int);
     if window_copy_cursor_line_active(wme) != 0 {
         window_copy_redraw_screen(wme);
         return;

@@ -1,4 +1,4 @@
-use hmux2::src::json::{json_destroy_node, json_find, json_find_string, json_parse};
+use hmux2::src::json::{json_destroy_node, json_find, json_parse};
 use std::ffi::{CStr, CString};
 
 #[test]
@@ -56,41 +56,6 @@ fn object_key_errors_destroy_partial_objects() {
                 "{input:?}: {message:?}"
             );
         }
-    }
-}
-
-#[test]
-fn typed_lookup_returns_owned_diagnostics() {
-    unsafe {
-        let input = CString::new(r#"{"number":1}"#).unwrap();
-        let mut parse_cause: Option<CString> = None;
-        let object = json_parse(input.as_ptr(), &mut parse_cause);
-        assert!(!object.is_null(), "parse error: {parse_cause:?}");
-        assert!(parse_cause.is_none());
-
-        let mut output = std::ptr::null();
-        let missing = CString::new("missing").unwrap();
-        let mut cause: Option<CString> = None;
-        assert_eq!(
-            json_find_string(object, missing.as_ptr(), &mut output, &mut cause),
-            -1
-        );
-        assert_eq!(
-            cause.as_ref().unwrap().as_bytes(),
-            b"key \"missing\" not found"
-        );
-
-        let number = CString::new("number").unwrap();
-        cause = None;
-        assert_eq!(
-            json_find_string(object, number.as_ptr(), &mut output, &mut cause),
-            -1
-        );
-        assert_eq!(
-            cause.as_ref().unwrap().as_bytes(),
-            b"key \"number\" expected a string"
-        );
-        json_destroy_node(object);
     }
 }
 

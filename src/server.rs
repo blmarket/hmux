@@ -4,7 +4,7 @@ use crate::src::cmd::queue::cmdq_next;
 use crate::src::compat::systemd::systemd_create_socket;
 use crate::src::control_notify::control_build_events;
 use crate::src::ffi::libc::{
-    __errno_location, accept, bind, chmod, close, exit, fprintf, free, gettimeofday, kill, killpg,
+    __errno_location, accept, bind, chmod, close, exit, fprintf, gettimeofday, kill, killpg,
     listen, malloc_trim, memset, sigfillset, sigprocmask, socket, stat, stderr, strerror, strlcpy,
     strsignal, time, umask, unlink, waitpid,
 };
@@ -229,11 +229,7 @@ pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c
     message.push(b')');
     Err(CString::new(message).expect("C strings contain no interior NUL"))
 }
-unsafe fn server_tidy_event(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    _data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_tidy_event() {
     let mut tv: timeval = timeval {
         tv_sec: 3600 as __time_t,
         tv_usec: 0,
@@ -248,57 +244,11 @@ unsafe fn server_tidy_event(
     );
     event_add(&raw mut server_ev_tidy, &raw mut tv);
 }
-pub unsafe fn server_start(
+pub(crate) unsafe fn server_start(
     mut client: *mut tmuxproc,
     mut flags: uint64_t,
-    mut base: *mut event_base,
     mut lockfd: ::core::ffi::c_int,
-    mut lockfile: *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    server_start_inner(client, flags, base, lockfd, ServerLockfile::Raw(lockfile))
-}
-
-enum ServerLockfile<'a> {
-    // Retain the exported C entry point's libc allocation contract.
-    Raw(*mut ::core::ffi::c_char),
-    // The client owns one independent copy in each process after fork.
-    Owned(&'a mut Option<CString>),
-}
-
-impl ServerLockfile<'_> {
-    fn as_ptr(&self) -> *const ::core::ffi::c_char {
-        match self {
-            Self::Raw(ptr) => *ptr,
-            Self::Owned(owner) => owner.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
-        }
-    }
-
-    unsafe fn release(self) {
-        match self {
-            Self::Raw(ptr) => free(ptr as *mut ::core::ffi::c_void),
-            Self::Owned(owner) => {
-                owner.take();
-            }
-        }
-    }
-}
-
-pub(crate) unsafe fn server_start_owned(
-    client: *mut tmuxproc,
-    flags: uint64_t,
-    base: *mut event_base,
-    lockfd: ::core::ffi::c_int,
     lockfile: &mut Option<CString>,
-) -> ::core::ffi::c_int {
-    server_start_inner(client, flags, base, lockfd, ServerLockfile::Owned(lockfile))
-}
-
-unsafe fn server_start_inner(
-    mut client: *mut tmuxproc,
-    mut flags: uint64_t,
-    mut base: *mut event_base,
-    mut lockfd: ::core::ffi::c_int,
-    lockfile: ServerLockfile<'_>,
 ) -> ::core::ffi::c_int {
     let mut fd: ::core::ffi::c_int = 0;
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
@@ -323,7 +273,7 @@ unsafe fn server_start_inner(
     }
     proc_clear_signals(client, 0 as ::core::ffi::c_int);
     server_client_flags = flags;
-    if event_reinit(base) != 0 as ::core::ffi::c_int {
+    if event_reinit() != 0 as ::core::ffi::c_int {
         fatalx(b"event_reinit failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
     server_proc = proc_start(b"server\0" as *const u8 as *const ::core::ffi::c_char);
@@ -373,8 +323,9 @@ unsafe fn server_start_inner(
         );
     }
     if lockfd >= 0 as ::core::ffi::c_int {
-        unlink(lockfile.as_ptr());
-        lockfile.release();
+        if let Some(path) = lockfile.take() {
+            unlink(path.as_ptr());
+        }
         close(lockfd);
     }
     if let Some(cause) = cause {
@@ -395,9 +346,7 @@ unsafe fn server_start_inner(
         &raw mut server_ev_tidy,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            server_tidy_event(fd, flags, ::core::ptr::null_mut::<::core::ffi::c_void>())
-        },
+        move |_, _| unsafe { server_tidy_event() },
     );
     event_add(&raw mut server_ev_tidy, &raw mut tv);
     server_acl_init();
@@ -479,7 +428,7 @@ unsafe fn server_send_exit() {
         (*c).session = ::core::ptr::null_mut::<session>();
         c = c1;
     }
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         let name = sessions_key(&*s);
         session_destroy(
@@ -522,7 +471,7 @@ pub unsafe fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if (*s).attached != 0 as u_int {
             n += 1;
@@ -553,11 +502,7 @@ pub unsafe fn server_update_socket() {
         chmod(socket_path, mode as __mode_t);
     }
 }
-unsafe fn server_accept(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
-    _data: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_short) {
     let mut sa: sockaddr_storage = sockaddr_storage {
         ss_family: 0,
         __ss_padding: [0; 118],
@@ -617,7 +562,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             &raw mut server_ev_accept,
             server_fd,
             EV_READ as ::core::ffi::c_short,
-            move |fd, flags| unsafe { server_accept(fd, flags, NULL) },
+            move |fd, flags| unsafe { server_accept(fd, flags) },
         );
         event_add(&raw mut server_ev_accept, ::core::ptr::null::<timeval>());
     } else {
@@ -625,7 +570,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             &raw mut server_ev_accept,
             server_fd,
             EV_TIMEOUT as ::core::ffi::c_short,
-            move |fd, flags| unsafe { server_accept(fd, flags, NULL) },
+            move |fd, flags| unsafe { server_accept(fd, flags) },
         );
         event_add(&raw mut server_ev_accept, &raw mut tv);
     };
@@ -691,7 +636,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut w1: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() && {
         w1 = windows_next(&*w);
         1 as ::core::ffi::c_int != 0
@@ -728,7 +673,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     {
         return;
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {

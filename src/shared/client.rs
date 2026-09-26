@@ -9,7 +9,6 @@ use super::environment::environ;
 use super::event::{bufferevent, evbuffer, event};
 use super::format::format_job_tree;
 use super::key::{key_code, key_event, key_table};
-use crate::src::compat::imsg::msgtype;
 use super::mouse::mouse_event;
 use super::process::tmuxpeer;
 use super::prompt::prompt;
@@ -18,6 +17,7 @@ use super::screen::screen;
 use super::session::session;
 use super::status::status_line;
 use super::tty::tty;
+use crate::src::compat::imsg::msgtype;
 use std::ffi::CStr;
 pub type client_exit_type = ::core::ffi::c_uint;
 
@@ -188,7 +188,6 @@ pub struct client {
     pub overlay_free: overlay_free_cb,
     pub overlay_resize: overlay_resize_cb,
     pub overlay_data: Option<Box<dyn std::any::Any>>,
-    pub overlay_timer: event,
     pub files: client_files,
     pub source_file_depth: u_int,
 }
@@ -265,7 +264,6 @@ impl client {
             overlay_free: Default::default(),
             overlay_resize: Default::default(),
             overlay_data: None,
-            overlay_timer: Default::default(),
             files: Default::default(),
             source_file_depth: Default::default(),
         }

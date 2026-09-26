@@ -184,7 +184,6 @@ unsafe fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> u_short {
     return csum;
 }
 pub(crate) unsafe fn layout_dump_owned(
-    _w: *mut window,
     lcroot: *mut layout_cell,
     flags: ::core::ffi::c_int,
 ) -> Option<CString> {
@@ -930,13 +929,7 @@ unsafe fn layout_parse_json(
     ) != 0 as ::core::ffi::c_int)
     {
         (*pctx).version = num;
-        if !(json_find_object(
-            jn,
-            b"L\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut object,
-            cause,
-        ) != 0 as ::core::ffi::c_int)
-        {
+        if !(json_find_object(jn, &raw mut object, cause) != 0 as ::core::ffi::c_int) {
             (*pctx).root =
                 layout_parse_json_layout(object, ::core::ptr::null_mut::<layout_cell>(), pctx);
             if !(*pctx).root.is_null() {
@@ -970,13 +963,7 @@ unsafe fn layout_parse_json_layout(
     let mut zindex: ::core::ffi::c_int = 0;
     let mut active: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    if !(json_find_string(
-        node,
-        b"t\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut str,
-        cause,
-    ) != 0 as ::core::ffi::c_int)
-    {
+    if !(json_find_string(node, &raw mut str, cause) != 0 as ::core::ffi::c_int) {
         if strcmp(str, b"p\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
         {
             (*lc).type_0 = LAYOUT_WINDOWPANE;
@@ -1114,8 +1101,6 @@ unsafe fn layout_parse_json_layout(
                                                         {
                                                             if json_find_boolean(
                                                                 node,
-                                                                b"a\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
                                                                 &raw mut boolean,
                                                                 cause,
                                                             ) != 0 as ::core::ffi::c_int
@@ -1214,8 +1199,6 @@ unsafe fn layout_parse_json_layout(
                                                     }
                                                 } else if json_find_array(
                                                     node,
-                                                    b"c\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
                                                     &raw mut array,
                                                     cause,
                                                 ) != 0 as ::core::ffi::c_int

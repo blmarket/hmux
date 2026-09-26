@@ -65,7 +65,7 @@ unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
         __c
     };
 }
-pub static mut cmd_run_shell_entry: cmd_entry =  {
+pub static mut cmd_run_shell_entry: cmd_entry = {
     cmd_entry {
         name: c"run-shell",
         alias: Some(c"run"),
@@ -287,9 +287,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         &raw mut (*cdata).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            cmd_run_shell_timer(fd, flags, cdata as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { cmd_run_shell_timer(cdata as *mut ::core::ffi::c_void) },
     );
     if !delay.is_null() {
         tv.tv_usec = 0 as __suseconds_t;
@@ -300,22 +298,14 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             as __suseconds_t;
         event_add(&raw mut (*cdata).timer, &raw mut tv);
     } else {
-        event_active(
-            &raw mut (*cdata).timer,
-            EV_TIMEOUT,
-            1 as ::core::ffi::c_short,
-        );
+        event_active(&raw mut (*cdata).timer);
     }
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
     return CMD_RETURN_WAIT;
 }
-unsafe fn cmd_run_shell_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut cdata: *mut cmd_run_shell_data = arg as *mut cmd_run_shell_data;
     let mut c: *mut client = (*cdata).client;
     let cmd = (*cdata).cmd.as_deref();
@@ -429,8 +419,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     loop {
-        let Some(line) = evbuffer_readln(event, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
-        else {
+        let Some(line) = evbuffer_readln(event) else {
             break;
         };
         cmd_run_shell_print(cdata, line.as_ptr().cast());

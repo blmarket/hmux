@@ -58,13 +58,9 @@ impl menu {
         index
     }
 }
-pub unsafe fn menu_add_items(
-    mut menu: *mut menu,
-    mut items: *const menu_item,
-    mut qitem: *mut cmdq_item,
-    mut c: *mut client,
-    mut fs: *mut cmd_find_state,
-) {
+pub unsafe fn menu_add_items(mut menu: *mut menu, mut items: *const menu_item, mut c: *mut client) {
+    let mut qitem: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let mut fs: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut loop_0: *const menu_item = ::core::ptr::null::<menu_item>();
     loop_0 = items;
     while !(*loop_0).name.is_null() {
@@ -2127,7 +2123,6 @@ pub unsafe fn menu_key(
             .command
             .as_deref()
             .expect("menu command row has a command"),
-        ::core::ptr::null_mut::<cmd_parse_input>(),
         c,
         state,
     ) {

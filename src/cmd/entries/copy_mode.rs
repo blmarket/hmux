@@ -19,7 +19,7 @@ use crate::src::window_copy::{
     window_copy_mode, window_copy_pagedown, window_copy_pageup, window_copy_scroll,
     window_copy_set_line_numbers, window_copy_start_drag,
 };
-pub static mut cmd_copy_mode_entry: cmd_entry =  {
+pub static mut cmd_copy_mode_entry: cmd_entry = {
     cmd_entry {
         name: c"copy-mode",
         alias: None,
@@ -44,7 +44,7 @@ pub static mut cmd_copy_mode_entry: cmd_entry =  {
         exec: Some(cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_clock_mode_entry: cmd_entry =  {
+pub static mut cmd_clock_mode_entry: cmd_entry = {
     cmd_entry {
         name: c"clock-mode",
         alias: None,
@@ -146,14 +146,10 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_copy_set_line_numbers(wp, line_numbers);
     }
     if args_has(args, 'u' as i32 as u_char) != 0 {
-        window_copy_pageup(wp, 0 as ::core::ffi::c_int);
+        window_copy_pageup(wp);
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        window_copy_pagedown(
-            wp,
-            0 as ::core::ffi::c_int,
-            args_has(args, 'e' as i32 as u_char),
-        );
+        window_copy_pagedown(wp, args_has(args, 'e' as i32 as u_char));
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         tty_window_offset(

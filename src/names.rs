@@ -24,11 +24,7 @@ use std::ffi::{CStr, CString};
 
 pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 
-unsafe fn name_time_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn name_time_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut w: *mut window = arg as *mut window;
     log_debug(
         b"@%u name timer expired\0" as *const u8 as *const ::core::ffi::c_char,
@@ -90,9 +86,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
                 &raw mut (*w).name_event,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                move |fd, flags| unsafe {
-                    name_time_callback(fd, flags, w as *mut ::core::ffi::c_void)
-                },
+                move |_, _| unsafe { name_time_callback(w as *mut ::core::ffi::c_void) },
             );
         }
         if event_pending(

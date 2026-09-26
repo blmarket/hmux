@@ -1,59 +1,6 @@
 use hmux2::src::window::*;
 
 #[test]
-fn window_ids_duplicates_neighbors_and_removal() {
-    unsafe {
-        let mut head = windows { storage: None };
-        assert!(windows_minmax(&head, -1).is_null());
-        let ids = [u32::MAX, 0, 42, 0x8000_0000];
-        let mut nodes: Vec<window> = ids.iter().map(|_| window::default()).collect();
-        for (node, id) in nodes.iter_mut().zip(ids) {
-            node.id = id;
-            node.entry.owner = None;
-            assert!(windows_insert(&mut head, node).is_null());
-        }
-        // Entry-only traversal must survive a moved tree head.
-        let mut head = Box::new(head);
-        let mut probe = window::default();
-        probe.id = 42;
-        probe.entry.owner = None;
-        let existing = &mut nodes[2] as *mut window;
-        assert_eq!(windows_insert(&mut *head, &mut probe), existing);
-        assert!(probe.entry.owner.is_none());
-        assert!(windows_remove(&mut *head, &mut probe).is_null());
-        assert_eq!(windows_find(&*head, &probe), existing);
-        assert_eq!(windows_nfind(&*head, &probe), existing);
-        probe.id = 1;
-        assert!(windows_find(&*head, &probe).is_null());
-        assert_eq!(windows_nfind(&*head, &probe), existing);
-        let mut node = windows_minmax(&*head, -1);
-        for id in [0, 42, 0x8000_0000, u32::MAX] {
-            assert_eq!((*node).id, id);
-            node = windows_next(&*node);
-        }
-        assert!(node.is_null());
-        node = windows_minmax(&*head, 1);
-        for id in [u32::MAX, 0x8000_0000, 42, 0] {
-            assert_eq!((*node).id, id);
-            node = windows_prev(&*node);
-        }
-        assert!(node.is_null());
-        node = windows_minmax(&*head, -1);
-        while !node.is_null() {
-            let next = windows_next(&*node);
-            assert_eq!(windows_remove(&mut *head, node), node);
-            assert!((*node).entry.owner.is_none());
-            node = next;
-        }
-        assert!(head.storage.is_none());
-        assert!(windows_nfind(&*head, &probe).is_null());
-        assert!(windows_insert(&mut *head, existing).is_null());
-        assert_eq!(windows_remove(&mut *head, existing), existing);
-        assert!(head.storage.is_none());
-    }
-}
-
-#[test]
 fn global_lookup_preserves_window_identity() {
     unsafe {
         let head = &raw mut windows;

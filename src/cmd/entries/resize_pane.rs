@@ -36,7 +36,7 @@ use crate::src::window::{
     window_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
     window_redraw_active_switch, window_set_active_pane, window_unzoom, window_zoom,
 };
-pub static mut cmd_resize_pane_entry: cmd_entry =  {
+pub static mut cmd_resize_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"resize-pane",
         alias: Some(c"resizep"),
@@ -106,7 +106,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
-        return cmd_resize_pane_mouse_update(self_0, item);
+        return cmd_resize_pane_mouse_update(item);
     }
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         if (*w).flags & WINDOW_ZOOMED != 0 {
@@ -253,7 +253,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     // Preserve tmux's signed adjustment at the i32 boundary.
                     adjust = adjust.wrapping_neg();
                 }
-                layout_resize_pane(wp, type_0, adjust, 1 as ::core::ffi::c_int);
+                layout_resize_pane(wp, type_0, adjust);
             }
         }
         i = i.wrapping_add(1);
@@ -269,7 +269,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     server_redraw_window(w);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_resize_pane_mouse_update(_self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut wp: *mut window_pane = (*target).wp;

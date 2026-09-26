@@ -173,7 +173,7 @@ static mut grid_cleared_entry: grid_cell_entry = grid_cell_entry {
     },
     flags: GRID_FLAG_CLEARED as u_char,
 };
-pub unsafe fn grid_check_is_clear(_gd: *mut grid) {}
+pub unsafe fn grid_check_is_clear() {}
 unsafe fn grid_store_cell(mut gce: *mut grid_cell_entry, mut gc: *const grid_cell, mut c: u_char) {
     (*gce).flags = ((*gc).flags as ::core::ffi::c_int & !GRID_FLAG_CLEARED) as u_char;
     (*gce).c2rust_unnamed.data.fg = ((*gc).fg & 0xff as ::core::ffi::c_int) as u_char;
@@ -465,7 +465,7 @@ pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box
     }
     owner.hlimit = hlimit;
     owner.linedata.resize_with(sy as usize, grid_line::default);
-    grid_check_is_clear(&raw mut *owner);
+    grid_check_is_clear();
     owner
 }
 pub unsafe fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> *mut grid {

@@ -117,11 +117,7 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, mut c: *m
     ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
     event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_client(
-        ep,
-        b"client\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-    );
+    event_payload_set_client(ep, c);
     if !fs.s.is_null() {
         event_payload_set_session(
             ep,

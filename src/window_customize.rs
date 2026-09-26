@@ -309,7 +309,7 @@ static mut window_customize_menu_items: [menu_item; 12] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_customize_mode: window_mode =  {
+pub static mut window_customize_mode: window_mode = {
     window_mode {
         name: c"options-mode",
         default_format: WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr(),
@@ -510,7 +510,7 @@ unsafe fn window_customize_write_hook_fire(
         fire_time = options_get_fire_time(o);
     }
     if fire_time != 0 as time_t {
-        let fire_time_string = format_pretty_time_cstring(fire_time, 0);
+        let fire_time_string = format_pretty_time_cstring(fire_time);
         if screen_write_text(
             ctx,
             cx,
@@ -1421,7 +1421,7 @@ unsafe fn window_customize_build_keys(
     bd = key_bindings_first(kt);
     while !bd.is_null() {
         if (*data).hide_default != 0 && window_customize_key_is_changed(kt, bd) == 0 {
-            bd = key_bindings_next(kt, bd);
+            bd = key_bindings_next(bd);
         } else {
             let key_string = key_string_format((*bd).key, false);
             format_add(
@@ -1443,7 +1443,7 @@ unsafe fn window_customize_build_keys(
             if !filter.is_null() {
                 let expanded = format_expand_cstring(ft, filter);
                 if format_true(expanded.as_ptr()) == 0 {
-                    bd = key_bindings_next(kt, bd);
+                    bd = key_bindings_next(bd);
                     continue;
                 }
             }
@@ -1521,7 +1521,7 @@ unsafe fn window_customize_build_keys(
             mode_tree_no_tag(mti);
             drop(text);
             count = count.wrapping_add(1);
-            bd = key_bindings_next(kt, bd);
+            bd = key_bindings_next(bd);
         }
     }
     format_free(ft);
@@ -1669,8 +1669,6 @@ unsafe fn window_customize_build_environment(
 }
 unsafe fn window_customize_build(
     mut modedata: *mut ::core::ffi::c_void,
-    _sort_crit: *mut sort_criteria,
-    _tag: *mut uint64_t,
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
@@ -1829,7 +1827,6 @@ unsafe fn window_customize_build(
     format_free(ft);
 }
 unsafe fn window_customize_draw_key(
-    _data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
@@ -2258,11 +2255,7 @@ unsafe fn window_customize_draw_option(
                                         0 as ::core::ffi::c_int,
                                     );
                                     if !((*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
-                                        value_owner = Some(options_to_string(
-                                            o,
-                                            array_key,
-                                            0 as ::core::ffi::c_int,
-                                        ));
+                                        value_owner = Some(options_to_string(o, array_key));
                                         value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                         if !oe.is_null() && array_key.is_null() {
                                             let rendered = options_default_to_cstring(&*oe);
@@ -2613,7 +2606,6 @@ unsafe fn window_customize_draw_option(
                                                                                                             value_owner = Some(options_to_string(
                                                                                                                 parent,
                                                                                                                 ::core::ptr::null::<::core::ffi::c_char>(),
-                                                                                                                0 as ::core::ffi::c_int,
                                                                                                             ));
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                             xsnprintf(
@@ -2656,7 +2648,6 @@ unsafe fn window_customize_draw_option(
                                                                                                                     value_owner = Some(options_to_string(
                                                                                                                        parent,
                                                                                                                        ::core::ptr::null::<::core::ffi::c_char>(),
-                                                                                                                       0 as ::core::ffi::c_int,
                                                                                                                     ));
                                                                                                                     value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                                     window_customize_write_value(
@@ -2866,7 +2857,7 @@ unsafe fn window_customize_draw(
     if (*item).type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        window_customize_draw_key(data, item, ctx, sx, sy);
+        window_customize_draw_key(item, ctx, sx, sy);
     } else if (*item).type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -2896,7 +2887,7 @@ unsafe fn window_customize_menu(
         ::core::ptr::null_mut::<mouse_event>(),
     );
 }
-unsafe fn window_customize_height(_modedata: *mut ::core::ffi::c_void, _height: u_int) -> u_int {
+unsafe fn window_customize_height() -> u_int {
     return 12 as u_int;
 }
 static window_customize_help_lines: &[&'static CStr] = &[
@@ -2958,12 +2949,10 @@ unsafe fn window_customize_init(
     (*data).data = mode_tree_start(
         wp,
         args,
-        Some(Box::new(move |sort, tag, filter| {
+        Some(Box::new(move |_, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             window_customize_build(
                 data_handle.as_ptr().cast(),
-                sort as *mut sort_criteria,
-                &mut selected,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
@@ -2985,9 +2974,7 @@ unsafe fn window_customize_init(
                 key,
             )
         })),
-        Some(Box::new(move |height| {
-            window_customize_height(data_handle.as_ptr().cast(), height)
-        })),
+        Some(Box::new(move |_| window_customize_height())),
         None,
         None,
         None,
@@ -4434,8 +4421,6 @@ unsafe fn window_customize_reset_key(
 unsafe fn window_customize_change_each(
     mut data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
-    _c: *mut client,
-    _key: key_code,
 ) {
     let mut type_0: window_customize_item_type = (*item).type_0;
     let name = if type_0 as ::core::ffi::c_uint
@@ -4620,7 +4605,7 @@ unsafe fn window_customize_change_tagged_callback(
     }
     mode_tree_each_tagged(
         (*data).data,
-        |row, c, key| unsafe { window_customize_change_each(data, (*row).itemdata.cast(), c, key) },
+        |row, _, _| unsafe { window_customize_change_each(data, (*row).itemdata.cast()) },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         0 as ::core::ffi::c_int,

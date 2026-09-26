@@ -1114,7 +1114,8 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     let command_argv: Vec<CString> = (0..argc)
         .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())
         .collect();
-    exit(client_main(osdep_event_init(), &command_argv, flags, feat));
+    osdep_event_init();
+    exit(client_main(&command_argv, flags, feat));
 }
 pub const TMUX_VERSION: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"next-3.9\0") };

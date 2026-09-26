@@ -1053,7 +1053,8 @@ pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
 /// failure, `FILE` never owns the descriptor and `OwnedFd::drop` closes it
 /// exactly once. On success, `into_raw_fd` relinquishes the Rust owner before
 /// the caller can `fclose` the stream, making `FILE` the sole closer.
-unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd, mode: &CStr) -> *mut FILE {
+unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> *mut FILE {
+    let mode: &CStr = c"w";
     let file = fdopen(fd_owner.as_raw_fd(), mode.as_ptr());
     if file.is_null() {
         // Keep the fdopen errno available to the caller while the Rust owner
@@ -1118,7 +1119,7 @@ pub unsafe fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     let fd_owner = OwnedFd::from_raw_fd(fd);
-    f = spawn_editor_fdopen(fd_owner, c"w");
+    f = spawn_editor_fdopen(fd_owner);
     if f.is_null() {
         unlink(&raw mut path as *mut ::core::ffi::c_char);
         return ::core::ptr::null_mut::<spawn_editor_state>();
@@ -1248,28 +1249,6 @@ mod tests {
         )
     }
 
-    #[test]
-    fn editor_fdopen_failure_closes_descriptor() {
-        if std::env::var(CHILD_CASE).as_deref() == Ok(FAILURE_CASE) {
-            unsafe {
-                let (fd_owner, path) = create_temp_file();
-                let fd = fd_owner.as_raw_fd();
-                assert_eq!(
-                    ::libc::fcntl(fd, ::libc::F_GETFL) & ::libc::O_ACCMODE,
-                    ::libc::O_RDWR
-                );
-                let file = spawn_editor_fdopen(fd_owner, c"not-a-stdio-mode");
-                assert!(file.is_null(), "invalid fdopen mode unexpectedly succeeded");
-                assert_eq!(*__errno_location(), ::libc::EINVAL);
-                assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
-                assert_eq!(unlink(path.as_ptr()), 0);
-                assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
-            }
-            return;
-        }
-        run_isolated(FAILURE_TEST, FAILURE_CASE);
-    }
-
     fn capture_editor_result(result: *mut Option<Vec<u8>>) -> spawn_finish_edit_cb {
         Some(Box::new(move |value| unsafe {
             *result = value;
@@ -1286,7 +1265,7 @@ mod tests {
                 assert!(flags >= 0);
                 assert_eq!(flags & ::libc::O_ACCMODE, ::libc::O_RDWR);
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
-                let file = spawn_editor_fdopen(fd_owner, c"w");
+                let file = spawn_editor_fdopen(fd_owner);
                 assert!(!file.is_null());
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFL), flags);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);

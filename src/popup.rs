@@ -447,7 +447,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     }
     screen_free(&raw mut s);
     let pd = std::ptr::NonNull::new(pd).expect("live popup");
-    (*c).overlay_check = Some(Box::new(move |_c, px, py, nx| unsafe {
+    (*c).overlay_check = Some(Box::new(move |_, px, py, nx| unsafe {
         popup_check(pd.as_ptr(), px, py, nx)
     }));
 }
@@ -749,7 +749,7 @@ unsafe fn popup_job_update_cb(job: &mut job, mut pd: *mut popup_data) {
         size,
     );
     let pd = std::ptr::NonNull::new(pd).expect("live popup");
-    (*c).overlay_check = Some(Box::new(move |_c, px, py, nx| unsafe {
+    (*c).overlay_check = Some(Box::new(move |_, px, py, nx| unsafe {
         popup_check(pd.as_ptr(), px, py, nx)
     }));
     evbuffer_drain(evb, size);
@@ -1088,12 +1088,11 @@ pub unsafe fn popup_display(
     );
     let pd_handle = std::ptr::NonNull::new(pd).expect("live popup");
     let overlay_state = Box::from_raw(pd);
-    let check_cb: overlay_check_cb = Some(Box::new(move |_c, px, py, nx| unsafe {
+    let check_cb: overlay_check_cb = Some(Box::new(move |_, px, py, nx| unsafe {
         popup_check(pd_handle.as_ptr(), px, py, nx)
     }));
-    let mode_cb: overlay_mode_cb = Some(Box::new(move |_c| unsafe {
-        popup_mode(pd_handle.as_ptr())
-    }));
+    let mode_cb: overlay_mode_cb =
+        Some(Box::new(move |_| unsafe { popup_mode(pd_handle.as_ptr()) }));
     let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
         popup_draw(c as *mut client, pd_handle.as_ptr())
     }));
@@ -1112,7 +1111,6 @@ pub unsafe fn popup_display(
     }));
     server_client_set_overlay(
         c,
-        0 as u_int,
         check_cb,
         mode_cb,
         draw_cb,

@@ -89,6 +89,7 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_value};
 pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list, cmdq_item};
 pub use crate::src::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
+use crate::src::shared::command::{CMD_READONLY, CMD_STARTSERVER};
 pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 pub use crate::src::shared::key::key_event;
@@ -118,7 +119,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static mut cmd_table: [*const cmd_entry; 93] =  {
+pub static mut cmd_table: [*const cmd_entry; 93] = {
     [
         &raw const cmd_attach_session_entry,
         &raw const cmd_bind_key_entry,
@@ -639,10 +640,8 @@ pub unsafe fn cmd_list_next(mut cmd: *mut cmd) -> *mut cmd {
     }
     return ::core::ptr::null_mut();
 }
-pub unsafe fn cmd_list_all_have(
-    mut cmdlist: *mut cmd_list,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+pub unsafe fn cmd_list_all_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
+    let mut flag: ::core::ffi::c_int = CMD_READONLY;
     for &cmd in &(*cmdlist).list {
         if !(*(*cmd).entry).flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
@@ -650,10 +649,8 @@ pub unsafe fn cmd_list_all_have(
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_list_any_have(
-    mut cmdlist: *mut cmd_list,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+pub unsafe fn cmd_list_any_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
+    let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
     for &cmd in &(*cmdlist).list {
         if (*(*cmd).entry).flags & flag != 0 {
             return 1 as ::core::ffi::c_int;

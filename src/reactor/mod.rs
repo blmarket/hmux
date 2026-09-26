@@ -14,7 +14,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
-use std::time::Duration;
 pub use streams::*;
 
 #[repr(C)]
@@ -61,16 +60,10 @@ fn descriptor(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Descriptor>> {
     });
     Ok(source)
 }
-fn run_once(nonblocking: bool) {
+fn run_once() {
     ensure_runtime();
     let mut runtime = HOST.with(|h| h.borrow_mut().take().expect("recursive runtime dispatch"));
-    runtime
-        .poll(if nonblocking {
-            Some(Duration::ZERO)
-        } else {
-            None
-        })
-        .expect("hmux-rt poll");
+    runtime.poll(None).expect("hmux-rt poll");
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
 pub fn shutdown_runtime() {

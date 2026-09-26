@@ -567,7 +567,6 @@ unsafe fn redraw_mark_border_cell(
 unsafe fn redraw_mark_border_status(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
-    _left: ::core::ffi::c_int,
     mut right: ::core::ffi::c_int,
     mut top: ::core::ffi::c_int,
     mut bottom: ::core::ffi::c_int,
@@ -833,7 +832,7 @@ unsafe fn redraw_mark_pane_borders(
             wy += 1;
         }
     }
-    redraw_mark_border_status(bctx, wp, left, right, top, bottom);
+    redraw_mark_border_status(bctx, wp, right, top, bottom);
     redraw_mark_border_arrows(bctx, wp, left, right, top, bottom);
 }
 unsafe fn redraw_mark_pane(mut bctx: *mut redraw_build_ctx, mut wp: *mut window_pane) {
@@ -1197,7 +1196,7 @@ pub unsafe fn redraw_invalidate_scene(mut w: *mut window) {
 }
 pub unsafe fn redraw_invalidate_all_scenes() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         redraw_invalidate_scene(w);
         w = windows_next(&*w);

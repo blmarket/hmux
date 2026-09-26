@@ -393,7 +393,7 @@ unsafe fn window_tree_build_pane(
         text.as_ptr(),
         -(1 as ::core::ffi::c_int),
     ) as *mut mode_tree_item;
-    mode_tree_align(mti, 1 as ::core::ffi::c_int);
+    mode_tree_align(mti);
 }
 unsafe fn window_tree_filter_pane(
     mut s: *mut session,
@@ -474,7 +474,7 @@ unsafe fn window_tree_build_window(
         text.as_ptr(),
         expanded,
     ) as *mut mode_tree_item;
-    mode_tree_align(mti, 1 as ::core::ffi::c_int);
+    mode_tree_align(mti);
     let l = sort_get_panes_window((*wl).window, sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
     found = 0 as u_int;
@@ -857,13 +857,7 @@ unsafe fn window_tree_draw_session(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(
-            ctx,
-            sy,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            &raw mut gc,
-        );
+        screen_write_vline(ctx, sy, &raw mut gc);
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
@@ -886,13 +880,7 @@ unsafe fn window_tree_draw_session(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(
-            ctx,
-            sy,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            &raw mut gc,
-        );
+        screen_write_vline(ctx, sy, &raw mut gc);
         screen_write_cursormove(
             ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
@@ -992,13 +980,7 @@ unsafe fn window_tree_draw_session(
                     cy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_vline(
-                    ctx,
-                    sy,
-                    0 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    &raw mut gc,
-                );
+                screen_write_vline(ctx, sy, &raw mut gc);
             }
             loop_0 = loop_0.wrapping_add(1);
             i = i.wrapping_add(1);
@@ -1143,13 +1125,7 @@ unsafe fn window_tree_draw_window(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(
-            ctx,
-            sy,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            &raw mut gc,
-        );
+        screen_write_vline(ctx, sy, &raw mut gc);
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
@@ -1172,13 +1148,7 @@ unsafe fn window_tree_draw_window(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(
-            ctx,
-            sy,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            &raw mut gc,
-        );
+        screen_write_vline(ctx, sy, &raw mut gc);
         screen_write_cursormove(
             ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
@@ -1272,13 +1242,7 @@ unsafe fn window_tree_draw_window(
                         cy as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_vline(
-                        ctx,
-                        sy,
-                        0 as ::core::ffi::c_int,
-                        0 as ::core::ffi::c_int,
-                        &raw mut gc,
-                    );
+                    screen_write_vline(ctx, sy, &raw mut gc);
                 }
                 loop_0 = loop_0.wrapping_add(1);
                 i = i.wrapping_add(1);
@@ -1443,13 +1407,7 @@ unsafe fn window_tree_draw_info(
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(
-            ctx,
-            sy.wrapping_sub(i),
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            &raw mut gc,
-        );
+        screen_write_vline(ctx, sy.wrapping_sub(i), &raw mut gc);
     }
     format_free(ft);
 }
@@ -1489,7 +1447,6 @@ unsafe fn window_tree_draw(
     };
 }
 unsafe fn window_tree_search(
-    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ss: *const ::core::ffi::c_char,
     mut icase: ::core::ffi::c_int,
@@ -1528,10 +1485,7 @@ unsafe fn window_tree_search(
         }
         3 => {
             if !(s.is_null() || wl.is_null() || wp.is_null()) {
-                let Some(cmd) = osdep_get_name_cstring(
-                    (*wp).fd,
-                    &raw mut (*wp).tty as *mut ::core::ffi::c_char,
-                ) else {
+                let Some(cmd) = osdep_get_name_cstring((*wp).fd) else {
                     return 0 as ::core::ffi::c_int;
                 };
                 if icase != 0 {
@@ -1810,12 +1764,7 @@ unsafe fn window_tree_init(
             )
         })),
         Some(Box::new(move |itemdata, search, icase| {
-            window_tree_search(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                search.as_ptr(),
-                icase as ::core::ffi::c_int,
-            ) != 0
+            window_tree_search(itemdata, search.as_ptr(), icase as ::core::ffi::c_int) != 0
         })),
         Some(Box::new(move |client, key| {
             window_tree_menu(
@@ -1917,7 +1866,6 @@ unsafe fn window_tree_command_each(
     mut data: *mut window_tree_modedata,
     mut item: *mut window_tree_itemdata,
     mut c: *mut client,
-    _key: key_code,
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -1979,7 +1927,7 @@ unsafe fn window_tree_command_callback(
     (*data).entered = Some(s.to_owned());
     mode_tree_each_tagged(
         (*data).data,
-        |row, c, key| unsafe { window_tree_command_each(data, (*row).itemdata.cast(), c, key) },
+        |row, c, _| unsafe { window_tree_command_each(data, (*row).itemdata.cast(), c) },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
@@ -1991,11 +1939,7 @@ unsafe fn window_tree_command_callback(
 unsafe fn window_tree_command_free(mut data: *mut window_tree_modedata) {
     window_tree_destroy(data);
 }
-unsafe fn window_tree_kill_each(
-    mut item: *mut window_tree_itemdata,
-    _c: *mut client,
-    _key: key_code,
-) {
+unsafe fn window_tree_kill_each(mut item: *mut window_tree_itemdata) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2065,11 +2009,7 @@ unsafe fn window_tree_kill_current_callback(
     {
         return PROMPT_CLOSE;
     }
-    window_tree_kill_each(
-        mode_tree_get_current(mtd) as *mut window_tree_itemdata,
-        c,
-        KEYC_NONE as ::core::ffi::c_ulong as key_code,
-    );
+    window_tree_kill_each(mode_tree_get_current(mtd) as *mut window_tree_itemdata);
     server_renumber_all();
     window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
@@ -2117,7 +2057,7 @@ unsafe fn window_tree_kill_tagged_callback(
     }
     mode_tree_each_tagged(
         mtd,
-        |row, c, key| unsafe { window_tree_kill_each((*row).itemdata.cast(), c, key) },
+        |row, _, _| unsafe { window_tree_kill_each((*row).itemdata.cast()) },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,

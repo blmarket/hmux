@@ -878,12 +878,8 @@ unsafe fn format_leading_hashes(
         .offset(*n as isize)
         .offset(-(1 as ::core::ffi::c_int as isize));
 }
-unsafe fn format_draw_many(
-    mut ctx: *mut screen_write_ctx,
-    mut sy: *mut style,
-    mut ch: ::core::ffi::c_char,
-    mut n: u_int,
-) {
+unsafe fn format_draw_many(mut ctx: *mut screen_write_ctx, mut sy: *mut style, mut n: u_int) {
+    let mut ch: ::core::ffi::c_char = '#' as i32 as ::core::ffi::c_char;
     let mut i: u_int = 0;
     utf8_set(&raw mut (*sy).gc.data, ch as u_char);
     i = 0 as u_int;
@@ -1116,7 +1112,6 @@ pub unsafe fn format_draw(
                     (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
                         as *mut screen_write_ctx,
                     &raw mut sy,
-                    '#' as i32 as ::core::ffi::c_char,
                     n,
                 );
             } else {
@@ -1132,7 +1127,6 @@ pub unsafe fn format_draw(
                     (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
                         as *mut screen_write_ctx,
                     &raw mut sy,
-                    '#' as i32 as ::core::ffi::c_char,
                     n.wrapping_div(2 as u_int),
                 );
                 width[current as usize] =
@@ -1189,10 +1183,7 @@ pub unsafe fn format_draw(
             );
             width[current as usize] = width[current as usize].wrapping_add((*ud).width as u_int);
         } else {
-            end = format_skip(
-                cp.offset(2 as ::core::ffi::c_int as isize),
-                b"]\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
             if end.is_null() {
                 log_debug(
                     b"%s: no terminating ] at '%s'\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1711,10 +1702,7 @@ pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
             width = width.wrapping_add(leading_width);
             cp = end;
             if *cp as ::core::ffi::c_int == '#' as i32 {
-                end = format_skip(
-                    cp.offset(2 as ::core::ffi::c_int as isize),
-                    b"]\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
                 if end.is_null() {
                     return 0 as u_int;
                 }
@@ -1786,10 +1774,7 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
             if !(*cp as ::core::ffi::c_int == '#' as i32) {
                 continue;
             }
-            end = format_skip(
-                cp.offset(2 as ::core::ffi::c_int as isize),
-                b"]\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
             if end.is_null() {
                 break;
             }
@@ -1881,10 +1866,7 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
             if !(*cp as ::core::ffi::c_int == '#' as i32) {
                 continue;
             }
-            end = format_skip(
-                cp.offset(2 as ::core::ffi::c_int as isize),
-                b"]\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
             if end.is_null() {
                 break;
             }

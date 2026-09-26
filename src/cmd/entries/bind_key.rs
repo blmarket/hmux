@@ -13,7 +13,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::key::*;
-pub static mut cmd_bind_key_entry: cmd_entry =  {
+pub static mut cmd_bind_key_entry: cmd_entry = {
     cmd_entry {
         name: c"bind-key",
         alias: Some(c"bind"),
@@ -83,7 +83,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         );
         return CMD_RETURN_NORMAL;
     }
-    value = args_value(args, 1 as u_int);
+    value = args_value(args);
     if count == 2 as u_int
         && (*value).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint

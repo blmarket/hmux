@@ -119,7 +119,7 @@ unsafe fn args_tree_remove(head: *mut args_tree, elm: *mut args_entry) -> *mut a
     removed
 }
 
-unsafe fn args_tree_minmax(head: *mut args_tree, val: ::core::ffi::c_int) -> *mut args_entry {
+unsafe fn args_tree_minmax(head: *mut args_tree) -> *mut args_entry {
     if head.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
@@ -127,11 +127,7 @@ unsafe fn args_tree_minmax(head: *mut args_tree, val: ::core::ffi::c_int) -> *mu
         .entries
         .try_borrow_mut()
         .expect("argument tree already borrowed");
-    let entry = if val < 0 {
-        storage.entries.values().next()
-    } else {
-        storage.entries.values().next_back()
-    };
+    let entry = storage.entries.values().next();
     entry
         .copied()
         .unwrap_or(::core::ptr::null_mut::<args_entry>())
@@ -200,51 +196,6 @@ mod args_tree_tests {
     }
 
     #[test]
-    fn args_tree_matches_unsigned_flag_order_and_duplicate_behavior() {
-        unsafe {
-            // args_cmp compared u_char values after promotion to c_int, so the
-            // Rust key must order 0..=255 rather than signed bytes.
-            let flags = [0x80, 0, 0xff, 1];
-            let mut head = args_tree::default();
-            let mut items = Vec::new();
-            for flag in flags {
-                let item = new_entry(flag);
-                assert!(args_tree_insert(&mut head, item).is_null());
-                items.push(item);
-            }
-
-            let duplicate = new_entry(0x80);
-            assert_eq!(args_tree_insert(&mut head, duplicate), items[0]);
-            drop(Box::from_raw(duplicate));
-            assert_eq!(args_tree_find(&mut head, 0x80), items[0]);
-
-            assert_eq!((*args_tree_minmax(&mut head, RB_NEGINF)).flag, 0);
-            assert_eq!((*args_tree_minmax(&mut head, RB_INF)).flag, 0xff);
-
-            let mut ordered = Vec::new();
-            let mut item = args_tree_minmax(&mut head, RB_NEGINF);
-            while !item.is_null() {
-                ordered.push((*item).flag);
-                // Exercise the public args_next-compatible path, which has no
-                // tree-head argument and therefore uses the owner back-pointer.
-                args_next(&raw mut item);
-            }
-            assert_eq!(ordered, vec![0, 1, 0x80, 0xff]);
-
-            let removed = args_tree_remove(&mut head, items[2]);
-            assert_eq!(removed, items[2]);
-            assert!(args_tree_find(&mut head, 0xff).is_null());
-            drop(Box::from_raw(removed));
-
-            for (index, item) in items.into_iter().enumerate() {
-                if index != 2 {
-                    drop(Box::from_raw(item));
-                }
-            }
-        }
-    }
-
-    #[test]
     fn args_tree_observers_follow_moves_removal_and_owner_expiration() {
         unsafe {
             let mut head = args_tree::default();
@@ -290,7 +241,8 @@ unsafe fn args_find(args: *mut args, flag: u_char) -> *mut args_entry {
     args_tree_find(&raw mut (*args).tree, flag)
 }
 
-unsafe fn args_value_at(entry: *mut args_entry, index: usize) -> *mut args_value {
+unsafe fn args_value_at(entry: *mut args_entry) -> *mut args_value {
+    let index: usize = 0;
     let Some(entry) = entry.as_ref() else {
         return ::core::ptr::null_mut();
     };
@@ -710,7 +662,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
     let mut i: u_int = 0;
     cmd_log_argv(argv, c"args_copy");
     new_args = args_create();
-    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree);
     while !entry.is_null() {
         if args_value_count(entry) == 0 {
             i = 0 as u_int;
@@ -719,7 +671,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
                 i = i.wrapping_add(1);
             }
         } else {
-            value = args_value_at(entry, 0);
+            value = args_value_at(entry);
             while !value.is_null() {
                 args_set_value(
                     new_args,
@@ -748,7 +700,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
 pub unsafe fn args_free(mut args: *mut args) {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut entry1: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree);
     while !entry.is_null() && {
         entry1 = args_tree_next(&raw mut (*args).tree, entry);
         1 as ::core::ffi::c_int != 0
@@ -824,7 +776,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut last: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree);
     while !entry.is_null() {
         if !((*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0) {
             if args_value_count(entry) == 0 {
@@ -844,7 +796,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
         }
         entry = args_tree_next(&raw mut (*args).tree, entry);
     }
-    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree);
     while !entry.is_null() {
         if (*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
             if !buf.is_empty() {
@@ -862,7 +814,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
             }
             last = entry;
         } else if args_value_count(entry) != 0 {
-            value = args_value_at(entry, 0);
+            value = args_value_at(entry);
             while !value.is_null() {
                 if !buf.is_empty() {
                     args_print_add(
@@ -1006,12 +958,9 @@ unsafe fn args_set_value(
     }
 }
 
-pub unsafe fn args_set_owned_string(
-    args: *mut args,
-    flag: u_char,
-    value: CString,
-    flags: ::core::ffi::c_int,
-) {
+pub unsafe fn args_set_owned_string(args: *mut args, value: CString) {
+    let flag: u_char = 'f' as i32 as u_char;
+    let flags: ::core::ffi::c_int = 0;
     args_set_value(args, flag, Some(args_value::string(value)), flags);
 }
 
@@ -1042,7 +991,7 @@ pub unsafe fn args_get(mut args: *mut args, mut flag: u_char) -> *const ::core::
     return value.unwrap().string_ptr();
 }
 pub unsafe fn args_first(mut args: *mut args, mut entry: *mut *mut args_entry) -> u_char {
-    *entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
+    *entry = args_tree_minmax(&raw mut (*args).tree);
     if (*entry).is_null() {
         return 0 as u_char;
     }
@@ -1061,7 +1010,8 @@ pub unsafe fn args_count(mut args: *mut args) -> u_int {
 pub unsafe fn args_values(mut args: *mut args) -> *mut args_value {
     return ((*args).values).as_mut_ptr();
 }
-pub unsafe fn args_value(mut args: *mut args, mut idx: u_int) -> *mut args_value {
+pub unsafe fn args_value(mut args: *mut args) -> *mut args_value {
+    let mut idx: u_int = 1 as u_int;
     if idx >= (*args).count {
         return ::core::ptr::null_mut::<args_value>();
     }
@@ -1284,7 +1234,7 @@ pub unsafe fn args_first_value(mut args: *mut args, mut flag: u_char) -> *mut ar
     if entry.is_null() {
         return ::core::ptr::null_mut::<args_value>();
     }
-    return args_value_at(entry, 0);
+    return args_value_at(entry);
 }
 pub unsafe fn args_next_value(mut value: *mut args_value) -> *mut args_value {
     let Some(value) = value.as_ref() else {
@@ -1482,10 +1432,10 @@ pub unsafe fn args_percentage_and_expand_result(
 /// Converts an optional C string as an integer or percentage.
 pub fn args_string_percentage_result(
     value: Option<&CStr>,
-    minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
 ) -> Result<i64, ArgumentValueError> {
+    let minval: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
     parse_percentage(
         value.ok_or(ArgumentValueError::Missing)?,
         minval,

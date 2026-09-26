@@ -234,7 +234,6 @@ fn window_buffer_clear_items(items: &mut Vec<Box<window_buffer_itemdata>>) {
 unsafe fn window_buffer_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
-    _tag: *mut uint64_t,
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
@@ -307,7 +306,6 @@ unsafe fn window_buffer_build(
     }
 }
 unsafe fn window_buffer_draw(
-    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
@@ -452,7 +450,6 @@ unsafe fn window_buffer_find(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_buffer_search(
-    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ss: *const ::core::ffi::c_char,
     mut icase: ::core::ffi::c_int,
@@ -633,27 +630,15 @@ unsafe fn window_buffer_init(
             window_buffer_build(
                 data_handle.as_ptr().cast(),
                 sort as *mut sort_criteria,
-                &mut selected,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
-            window_buffer_draw(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                ctx as *mut screen_write_ctx,
-                sx,
-                sy,
-            )
+            window_buffer_draw(itemdata, ctx as *mut screen_write_ctx, sx, sy)
         })),
         Some(Box::new(move |itemdata, search, icase| {
-            window_buffer_search(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                search.as_ptr(),
-                icase as ::core::ffi::c_int,
-            ) != 0
+            window_buffer_search(itemdata, search.as_ptr(), icase as ::core::ffi::c_int) != 0
         })),
         Some(Box::new(move |client, key| {
             window_buffer_menu(
@@ -704,8 +689,6 @@ unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
 unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     mut item: *mut window_buffer_itemdata,
-    _c: *mut client,
-    _key: key_code,
 ) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if item == mode_tree_get_current((*data).data) as *mut window_buffer_itemdata
@@ -722,7 +705,6 @@ unsafe fn window_buffer_do_paste(
     mut data: *mut window_buffer_modedata,
     mut item: *mut window_buffer_itemdata,
     mut c: *mut client,
-    _key: key_code,
 ) {
     if !paste_get_name(((*item).name).as_ptr().cast_mut()).is_null() {
         mode_tree_run_command(
@@ -990,15 +972,13 @@ unsafe fn window_buffer_key(
             }
             100 => {
                 item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
-                window_buffer_do_delete(data, item, c, key);
+                window_buffer_do_delete(data, item);
                 mode_tree_build(mtd);
             }
             68 => {
                 mode_tree_each_tagged(
                     mtd,
-                    |row, c, key| unsafe {
-                        window_buffer_do_delete(data, (*row).itemdata.cast(), c, key)
-                    },
+                    |row, _, _| unsafe { window_buffer_do_delete(data, (*row).itemdata.cast()) },
                     c,
                     key,
                     0 as ::core::ffi::c_int,
@@ -1008,9 +988,7 @@ unsafe fn window_buffer_key(
             80 => {
                 mode_tree_each_tagged(
                     mtd,
-                    |row, c, key| unsafe {
-                        window_buffer_do_paste(data, (*row).itemdata.cast(), c, key)
-                    },
+                    |row, c, _| unsafe { window_buffer_do_paste(data, (*row).itemdata.cast(), c) },
                     c,
                     key,
                     0 as ::core::ffi::c_int,
@@ -1019,7 +997,7 @@ unsafe fn window_buffer_key(
             }
             112 | 13 => {
                 item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
-                window_buffer_do_paste(data, item, c, key);
+                window_buffer_do_paste(data, item, c);
                 finished = 1 as ::core::ffi::c_int;
             }
             _ => {}

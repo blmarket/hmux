@@ -759,7 +759,7 @@ unsafe fn input_table_find<'a>(
         .ok()
         .map(|index| &table[index])
 }
-static mut input_state_ground: input_state =  {
+static mut input_state_ground: input_state = {
     input_state {
         name: c"ground",
         enter: Some(input_ground),
@@ -767,7 +767,7 @@ static mut input_state_ground: input_state =  {
         transitions: &raw const input_state_ground_table as *const input_transition,
     }
 };
-static mut input_state_esc_enter: input_state =  {
+static mut input_state_esc_enter: input_state = {
     input_state {
         name: c"esc_enter",
         enter: Some(input_clear),
@@ -775,7 +775,7 @@ static mut input_state_esc_enter: input_state =  {
         transitions: &raw const input_state_esc_enter_table as *const input_transition,
     }
 };
-static mut input_state_esc_intermediate: input_state =  {
+static mut input_state_esc_intermediate: input_state = {
     input_state {
         name: c"esc_intermediate",
         enter: None,
@@ -783,7 +783,7 @@ static mut input_state_esc_intermediate: input_state =  {
         transitions: &raw const input_state_esc_intermediate_table as *const input_transition,
     }
 };
-static mut input_state_csi_enter: input_state =  {
+static mut input_state_csi_enter: input_state = {
     input_state {
         name: c"csi_enter",
         enter: Some(input_clear),
@@ -791,7 +791,7 @@ static mut input_state_csi_enter: input_state =  {
         transitions: &raw const input_state_csi_enter_table as *const input_transition,
     }
 };
-static mut input_state_csi_parameter: input_state =  {
+static mut input_state_csi_parameter: input_state = {
     input_state {
         name: c"csi_parameter",
         enter: None,
@@ -799,7 +799,7 @@ static mut input_state_csi_parameter: input_state =  {
         transitions: &raw const input_state_csi_parameter_table as *const input_transition,
     }
 };
-static mut input_state_csi_intermediate: input_state =  {
+static mut input_state_csi_intermediate: input_state = {
     input_state {
         name: c"csi_intermediate",
         enter: None,
@@ -807,7 +807,7 @@ static mut input_state_csi_intermediate: input_state =  {
         transitions: &raw const input_state_csi_intermediate_table as *const input_transition,
     }
 };
-static mut input_state_csi_ignore: input_state =  {
+static mut input_state_csi_ignore: input_state = {
     input_state {
         name: c"csi_ignore",
         enter: None,
@@ -815,7 +815,7 @@ static mut input_state_csi_ignore: input_state =  {
         transitions: &raw const input_state_csi_ignore_table as *const input_transition,
     }
 };
-static mut input_state_dcs_enter: input_state =  {
+static mut input_state_dcs_enter: input_state = {
     input_state {
         name: c"dcs_enter",
         enter: Some(input_enter_dcs),
@@ -823,7 +823,7 @@ static mut input_state_dcs_enter: input_state =  {
         transitions: &raw const input_state_dcs_enter_table as *const input_transition,
     }
 };
-static mut input_state_dcs_parameter: input_state =  {
+static mut input_state_dcs_parameter: input_state = {
     input_state {
         name: c"dcs_parameter",
         enter: None,
@@ -831,7 +831,7 @@ static mut input_state_dcs_parameter: input_state =  {
         transitions: &raw const input_state_dcs_parameter_table as *const input_transition,
     }
 };
-static mut input_state_dcs_intermediate: input_state =  {
+static mut input_state_dcs_intermediate: input_state = {
     input_state {
         name: c"dcs_intermediate",
         enter: None,
@@ -839,7 +839,7 @@ static mut input_state_dcs_intermediate: input_state =  {
         transitions: &raw const input_state_dcs_intermediate_table as *const input_transition,
     }
 };
-static mut input_state_dcs_handler: input_state =  {
+static mut input_state_dcs_handler: input_state = {
     input_state {
         name: c"dcs_handler",
         enter: None,
@@ -847,7 +847,7 @@ static mut input_state_dcs_handler: input_state =  {
         transitions: &raw const input_state_dcs_handler_table as *const input_transition,
     }
 };
-static mut input_state_dcs_escape: input_state =  {
+static mut input_state_dcs_escape: input_state = {
     input_state {
         name: c"dcs_escape",
         enter: None,
@@ -855,7 +855,7 @@ static mut input_state_dcs_escape: input_state =  {
         transitions: &raw const input_state_dcs_escape_table as *const input_transition,
     }
 };
-static mut input_state_dcs_ignore: input_state =  {
+static mut input_state_dcs_ignore: input_state = {
     input_state {
         name: c"dcs_ignore",
         enter: None,
@@ -863,7 +863,7 @@ static mut input_state_dcs_ignore: input_state =  {
         transitions: &raw const input_state_dcs_ignore_table as *const input_transition,
     }
 };
-static mut input_state_osc_string: input_state =  {
+static mut input_state_osc_string: input_state = {
     input_state {
         name: c"osc_string",
         enter: Some(input_enter_osc),
@@ -871,7 +871,7 @@ static mut input_state_osc_string: input_state =  {
         transitions: &raw const input_state_osc_string_table as *const input_transition,
     }
 };
-static mut input_state_apc_string: input_state =  {
+static mut input_state_apc_string: input_state = {
     input_state {
         name: c"apc_string",
         enter: Some(input_enter_apc),
@@ -879,7 +879,7 @@ static mut input_state_apc_string: input_state =  {
         transitions: &raw const input_state_apc_string_table as *const input_transition,
     }
 };
-static mut input_state_rename_string: input_state =  {
+static mut input_state_rename_string: input_state = {
     input_state {
         name: c"rename_string",
         enter: Some(input_enter_rename),
@@ -887,7 +887,7 @@ static mut input_state_rename_string: input_state =  {
         transitions: &raw const input_state_rename_string_table as *const input_transition,
     }
 };
-static mut input_state_consume_st: input_state =  {
+static mut input_state_consume_st: input_state = {
     input_state {
         name: c"consume_st",
         enter: Some(input_enter_rename),
@@ -895,7 +895,7 @@ static mut input_state_consume_st: input_state =  {
         transitions: &raw const input_state_consume_st_table as *const input_transition,
     }
 };
-static mut input_state_ground_table: [input_transition; 10] =  {
+static mut input_state_ground_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -959,7 +959,7 @@ static mut input_state_ground_table: [input_transition; 10] =  {
         },
     ]
 };
-static mut input_state_esc_enter_table: [input_transition; 23] =  {
+static mut input_state_esc_enter_table: [input_transition; 23] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1101,7 +1101,7 @@ static mut input_state_esc_enter_table: [input_transition; 23] =  {
         },
     ]
 };
-static mut input_state_esc_intermediate_table: [input_transition; 10] =  {
+static mut input_state_esc_intermediate_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1165,7 +1165,7 @@ static mut input_state_esc_intermediate_table: [input_transition; 10] =  {
         },
     ]
 };
-static mut input_state_csi_enter_table: [input_transition; 14] =  {
+static mut input_state_csi_enter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1253,7 +1253,7 @@ static mut input_state_csi_enter_table: [input_transition; 14] =  {
         },
     ]
 };
-static mut input_state_csi_parameter_table: [input_transition; 14] =  {
+static mut input_state_csi_parameter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1341,7 +1341,7 @@ static mut input_state_csi_parameter_table: [input_transition; 14] =  {
         },
     ]
 };
-static mut input_state_csi_intermediate_table: [input_transition; 11] =  {
+static mut input_state_csi_intermediate_table: [input_transition; 11] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1411,7 +1411,7 @@ static mut input_state_csi_intermediate_table: [input_transition; 11] =  {
         },
     ]
 };
-static mut input_state_csi_ignore_table: [input_transition; 10] =  {
+static mut input_state_csi_ignore_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1475,7 +1475,7 @@ static mut input_state_csi_ignore_table: [input_transition; 10] =  {
         },
     ]
 };
-static mut input_state_dcs_enter_table: [input_transition; 14] =  {
+static mut input_state_dcs_enter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1563,7 +1563,7 @@ static mut input_state_dcs_enter_table: [input_transition; 14] =  {
         },
     ]
 };
-static mut input_state_dcs_parameter_table: [input_transition; 14] =  {
+static mut input_state_dcs_parameter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1651,7 +1651,7 @@ static mut input_state_dcs_parameter_table: [input_transition; 14] =  {
         },
     ]
 };
-static mut input_state_dcs_intermediate_table: [input_transition; 11] =  {
+static mut input_state_dcs_intermediate_table: [input_transition; 11] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1721,7 +1721,7 @@ static mut input_state_dcs_intermediate_table: [input_transition; 11] =  {
         },
     ]
 };
-static mut input_state_dcs_handler_table: [input_transition; 4] =  {
+static mut input_state_dcs_handler_table: [input_transition; 4] = {
     [
         input_transition {
             first: 0 as ::core::ffi::c_int,
@@ -1749,7 +1749,7 @@ static mut input_state_dcs_handler_table: [input_transition; 4] =  {
         },
     ]
 };
-static mut input_state_dcs_escape_table: [input_transition; 4] =  {
+static mut input_state_dcs_escape_table: [input_transition; 4] = {
     [
         input_transition {
             first: 0 as ::core::ffi::c_int,
@@ -1777,7 +1777,7 @@ static mut input_state_dcs_escape_table: [input_transition; 4] =  {
         },
     ]
 };
-static mut input_state_dcs_ignore_table: [input_transition; 8] =  {
+static mut input_state_dcs_ignore_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1829,7 +1829,7 @@ static mut input_state_dcs_ignore_table: [input_transition; 8] =  {
         },
     ]
 };
-static mut input_state_osc_string_table: [input_transition; 10] =  {
+static mut input_state_osc_string_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1893,7 +1893,7 @@ static mut input_state_osc_string_table: [input_transition; 10] =  {
         },
     ]
 };
-static mut input_state_apc_string_table: [input_transition; 8] =  {
+static mut input_state_apc_string_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1945,7 +1945,7 @@ static mut input_state_apc_string_table: [input_transition; 8] =  {
         },
     ]
 };
-static mut input_state_rename_string_table: [input_transition; 8] =  {
+static mut input_state_rename_string_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -1997,7 +1997,7 @@ static mut input_state_rename_string_table: [input_transition; 8] =  {
         },
     ]
 };
-static mut input_state_consume_st_table: [input_transition; 8] =  {
+static mut input_state_consume_st_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
@@ -2102,11 +2102,7 @@ unsafe fn input_fire_pane_title_changed(
         ep,
     );
 }
-unsafe fn input_ground_timer_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn input_ground_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut ictx: *mut input_ctx = arg as *mut input_ctx;
     log_debug(
         b"%s: %s expired\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2191,17 +2187,13 @@ pub unsafe fn input_init(
         &raw mut (*ictx).ground_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            input_ground_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { input_ground_timer_callback(ictx as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*ictx).request_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            input_request_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { input_request_timer_callback(ictx as *mut ::core::ffi::c_void) },
     );
     input_reset(ictx, 0 as ::core::ffi::c_int);
     return ictx;
@@ -3459,7 +3451,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             input_csi_dispatch_sm_private(ictx);
         }
         34 => {
-            input_csi_dispatch_sm_graphics(ictx);
+            input_csi_dispatch_sm_graphics();
         }
         36 => {
             n = input_get(
@@ -3778,7 +3770,7 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm_graphics(_ictx: *mut input_ctx) {}
+unsafe fn input_csi_dispatch_sm_graphics() {}
 unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).s;
@@ -4639,13 +4631,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             input_osc_4(ictx, p as *const ::core::ffi::c_char);
         }
         7 => {
-            if !wp.is_null()
-                && screen_set_path(
-                    (*sctx).s,
-                    p as *const ::core::ffi::c_char,
-                    1 as ::core::ffi::c_int,
-                ) != 0
-            {
+            if !wp.is_null() && screen_set_path((*sctx).s, p as *const ::core::ffi::c_char) != 0 {
                 server_redraw_window_borders((*wp).window as *mut window);
                 server_status_window((*wp).window as *mut window);
             }
@@ -5772,11 +5758,7 @@ pub unsafe fn input_set_buffer_size(mut buffer_size: size_t) {
     );
     input_buffer_size = buffer_size;
 }
-unsafe fn input_request_timer_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn input_request_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut ictx: *mut input_ctx = arg as *mut input_ctx;
     let mut t: uint64_t = get_timer();
     for ir in input_ctx_request_handles(ictx) {

@@ -36,7 +36,7 @@ pub struct window_clock_mode_data {
     pub tim: time_t,
     pub timer: event,
 }
-pub static mut window_clock_mode: window_mode =  {
+pub static mut window_clock_mode: window_mode = {
     window_mode {
         name: c"clock-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -613,11 +613,7 @@ unsafe fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
     }
     event_add(&raw mut (*data).timer, &raw mut tv);
 }
-unsafe fn window_clock_timer_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_clock_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
@@ -679,9 +675,7 @@ unsafe fn window_clock_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            window_clock_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { window_clock_timer_callback(wme as *mut ::core::ffi::c_void) },
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;

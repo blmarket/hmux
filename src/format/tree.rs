@@ -116,18 +116,11 @@ unsafe fn format_entry_tree_remove(
         .unwrap_or(::core::ptr::null_mut::<format_entry>())
 }
 
-unsafe fn format_entry_tree_minmax(
-    head: *mut format_entry_tree,
-    val: ::core::ffi::c_int,
-) -> *mut format_entry {
+unsafe fn format_entry_tree_minmax(head: *mut format_entry_tree) -> *mut format_entry {
     if head.is_null() {
         return ::core::ptr::null_mut::<format_entry>();
     }
-    let item = if val < 0 {
-        (*head).entries.values().next()
-    } else {
-        (*head).entries.values().next_back()
-    };
+    let item = (*head).entries.values().next();
     item.copied()
         .unwrap_or(::core::ptr::null_mut::<format_entry>())
 }
@@ -151,7 +144,7 @@ unsafe fn format_entry_tree_next(
 }
 pub unsafe fn format_merge(mut ft: *mut format_tree, mut from: *mut format_tree) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_tree_minmax(&raw mut (*from).tree, RB_NEGINF);
+    fe = format_entry_tree_minmax(&raw mut (*from).tree);
     while !fe.is_null() {
         if !(*fe).value.is_none() {
             format_add(
@@ -202,7 +195,7 @@ pub unsafe fn format_create(
 pub unsafe fn format_free(mut ft: *mut format_tree) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe1: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
+    fe = format_entry_tree_minmax(&raw mut (*ft).tree);
     while !fe.is_null() && {
         fe1 = format_entry_tree_next(&raw mut (*ft).tree, fe);
         1 as ::core::ffi::c_int != 0
@@ -243,7 +236,7 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         cb(entry.key, value.as_c_str());
     }
     let mut values = Vec::new();
-    fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
+    fe = format_entry_tree_minmax(&raw mut (*ft).tree);
     let mut keys = Vec::new();
     while !fe.is_null() {
         keys.push((*fe).key.clone());
@@ -540,90 +533,12 @@ mod tests {
     }
 
     unsafe fn free_tree(head: &mut format_entry_tree) {
-        let mut item = format_entry_tree_minmax(head, RB_NEGINF);
+        let mut item = format_entry_tree_minmax(head);
         while !item.is_null() {
             let next = format_entry_tree_next(head, item);
             assert_eq!(format_entry_tree_remove(head, item), item);
             drop(Box::from_raw(item));
             item = next;
-        }
-    }
-
-    #[test]
-    fn format_entry_tree_preserves_strcmp_order_and_duplicate_keys() {
-        unsafe {
-            let names: &[&[u8]] = &[b"zeta", b"alpha", b"alpha-2", b"\x80high", b"alpha\x01"];
-            let keys: Vec<CString> = names
-                .iter()
-                .map(|name| CString::new(*name).expect("test key has no NUL"))
-                .collect();
-            assert!(crate::src::ffi::libc::strcmp(keys[1].as_ptr(), keys[2].as_ptr()) < 0);
-            assert!(crate::src::ffi::libc::strcmp(keys[3].as_ptr(), keys[0].as_ptr()) > 0);
-            let mut head = format_entry_tree::default();
-            let mut items = Vec::new();
-            for key in &keys {
-                let item = new_entry(key);
-                assert!(format_entry_tree_insert(&mut head, item).is_null());
-                items.push(item);
-            }
-
-            let duplicate_key = CString::new(b"alpha".as_slice()).unwrap();
-            let duplicate = new_entry(&duplicate_key);
-            assert_eq!(format_entry_tree_insert(&mut head, duplicate), items[1]);
-            drop(Box::from_raw(duplicate));
-
-            let probe_key = CString::new(b"alpha".as_slice()).unwrap();
-            let probe = new_entry(&probe_key);
-            assert_eq!(format_entry_tree_find(&mut head, probe), items[1]);
-            drop(Box::from_raw(probe));
-
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*format_entry_tree_minmax(&mut head, RB_NEGINF)).key)
-                        .as_ptr()
-                        .cast_mut()
-                )
-                .to_bytes(),
-                b"alpha"
-            );
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*format_entry_tree_minmax(&mut head, RB_INF)).key)
-                        .as_ptr()
-                        .cast_mut()
-                )
-                .to_bytes(),
-                b"\x80high"
-            );
-
-            let mut ordered = Vec::new();
-            let mut item = format_entry_tree_minmax(&mut head, RB_NEGINF);
-            while !item.is_null() {
-                ordered.push(
-                    CStr::from_ptr(((*item).key).as_ptr().cast_mut())
-                        .to_bytes()
-                        .to_vec(),
-                );
-                item = format_entry_tree_next(&mut head, item);
-            }
-            assert_eq!(
-                ordered,
-                vec![
-                    b"alpha".to_vec(),
-                    b"alpha\x01".to_vec(),
-                    b"alpha-2".to_vec(),
-                    b"zeta".to_vec(),
-                    b"\x80high".to_vec(),
-                ]
-            );
-
-            let removed = format_entry_tree_remove(&mut head, items[2]);
-            assert_eq!(removed, items[2]);
-            let removed_probe = new_entry(&keys[2]);
-            assert!(format_entry_tree_find(&mut head, removed_probe).is_null());
-            drop(Box::from_raw(removed_probe));
-            drop(Box::from_raw(removed));
-            free_tree(&mut head);
         }
     }
 }

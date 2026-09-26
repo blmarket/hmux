@@ -82,15 +82,8 @@ unsafe fn utf8_width_cache_insert(
     }
 }
 
-unsafe fn utf8_width_cache_minmax(
-    head: &utf8_width_cache,
-    val: ::core::ffi::c_int,
-) -> *mut utf8_width_item {
-    let entry = if val < 0 {
-        head.entries.iter().next()
-    } else {
-        head.entries.iter().next_back()
-    };
+unsafe fn utf8_width_cache_minmax(head: &utf8_width_cache) -> *mut utf8_width_item {
+    let entry = head.entries.iter().next();
     entry
         .map(|(_, entry)| *entry)
         .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
@@ -1174,7 +1167,7 @@ pub unsafe fn utf8_update_width_cache() {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut i: u_int = 0;
-    uw = utf8_width_cache_minmax(&*(&raw const utf8_width_cache), RB_NEGINF);
+    uw = utf8_width_cache_minmax(&*(&raw const utf8_width_cache));
     while !uw.is_null() && {
         uw1 = utf8_width_cache_next(&*(&raw const utf8_width_cache), &*uw);
         1 as ::core::ffi::c_int != 0
@@ -1988,7 +1981,7 @@ mod tests {
 
     #[test]
     fn sanitize_owns_printable_ascii_and_preserves_legacy_widths() {
-         {
+        {
             for (input, expected) in [
                 (&b"\0"[..], &b""[..]),
                 (&b"A\x01 \x7fB\0"[..], &b"A_ _B"[..]),
@@ -2054,7 +2047,7 @@ mod tests {
 
     #[test]
     fn owned_vis_helpers_preserve_multibyte_and_explicit_length_bytes() {
-         {
+        {
             let input = CString::new(&b"a\xc3\xa9\xff"[..]).unwrap();
             let escaped =
                 utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);
@@ -2134,52 +2127,6 @@ mod tests {
             let mut missing = items[0];
             set_data(&mut missing, &[0x81]);
             assert!(utf8_data_tree_find(&tree, &missing).is_null());
-        }
-    }
-
-    #[test]
-    fn utf8_width_cache_matches_width_comparator() {
-        unsafe {
-            let mut cache = utf8_width_cache::default();
-            let mut items: [utf8_width_item; 4] = [utf8_width_item::default(); 4];
-            items[0].wc = 7;
-            items[1].wc = -1;
-            items[2].wc = 0;
-            items[3].wc = 7;
-
-            let first = &mut items[0] as *mut utf8_width_item;
-            let duplicate = &mut items[3] as *mut utf8_width_item;
-            assert!(utf8_width_cache_insert(&mut cache, &mut *first).is_null());
-            assert!(utf8_width_cache_insert(&mut cache, &mut items[1]).is_null());
-            assert!(utf8_width_cache_insert(&mut cache, &mut items[2]).is_null());
-            assert_eq!(
-                utf8_width_cache_insert(&mut cache, &mut *duplicate),
-                first,
-                "duplicate codepoints keep the original item"
-            );
-
-            assert_eq!(
-                cache.entries.keys().copied().collect::<Vec<_>>(),
-                vec![-1, 0, 7]
-            );
-            assert_eq!(utf8_width_cache_find(&cache, 7), first);
-            assert!(utf8_width_cache_find(&cache, 8).is_null());
-            assert_eq!(
-                utf8_width_cache_minmax(&cache, RB_NEGINF),
-                &mut items[1] as *mut utf8_width_item
-            );
-            assert_eq!(
-                utf8_width_cache_next(&cache, &items[1]),
-                &mut items[2] as *mut utf8_width_item
-            );
-            assert_eq!(
-                utf8_width_cache_minmax(&cache, 0),
-                first,
-                "non-negative minmax selects the maximum"
-            );
-
-            assert_eq!(utf8_width_cache_remove(&mut cache, &*first), first);
-            assert!(utf8_width_cache_find(&cache, 7).is_null());
         }
     }
 

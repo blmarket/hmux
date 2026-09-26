@@ -35,7 +35,7 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_first, window_pane_next};
 use std::ffi::{CStr, CString};
-pub static mut cmd_set_option_entry: cmd_entry =  {
+pub static mut cmd_set_option_entry: cmd_entry = {
     cmd_entry {
         name: c"set-option",
         alias: Some(c"set"),
@@ -60,7 +60,7 @@ pub static mut cmd_set_option_entry: cmd_entry =  {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_set_window_option_entry: cmd_entry =  {
+pub static mut cmd_set_window_option_entry: cmd_entry = {
     cmd_entry {
         name: c"set-window-option",
         alias: Some(c"setw"),
@@ -85,7 +85,7 @@ pub static mut cmd_set_window_option_entry: cmd_entry =  {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_set_hook_entry: cmd_entry =  {
+pub static mut cmd_set_hook_entry: cmd_entry = {
     cmd_entry {
         name: c"set-hook",
         alias: None,
@@ -153,11 +153,7 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     event_payload_set_target(ep, target);
     c = cmdq_get_client(item);
     if !c.is_null() {
-        event_payload_set_client(
-            ep,
-            b"client\0" as *const u8 as *const ::core::ffi::c_char,
-            c,
-        );
+        event_payload_set_client(ep, c);
     }
     if !(*target).s.is_null() {
         event_payload_set_session(
@@ -311,7 +307,7 @@ unsafe fn cmd_set_hook_monitor_exec(
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     flags |= MONITOR_NOTIFY_TRUE;
                 }
-                hooks_monitor_add(item, oo, name, type_0, id, format, flags, &raw mut fs, s);
+                hooks_monitor_add(oo, name, type_0, id, format, flags, &raw mut fs, s);
             }
             return CMD_RETURN_NORMAL;
         }

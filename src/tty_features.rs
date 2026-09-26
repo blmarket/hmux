@@ -441,11 +441,7 @@ mod tests {
         }
     }
 }
-pub unsafe fn tty_default_features(
-    mut c: *mut client,
-    mut name: *const ::core::ffi::c_char,
-    mut version: u_int,
-) {
+pub unsafe fn tty_default_features(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
     static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",
@@ -500,13 +496,11 @@ pub unsafe fn tty_default_features(
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
         if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
-            if !(version != 0 as u_int && version < table[i as usize].version) {
-                tty_parse_client_features(
-                    c,
-                    table[i as usize].features.as_ptr(),
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
-                );
-            }
+            tty_parse_client_features(
+                c,
+                table[i as usize].features.as_ptr(),
+                b",\0" as *const u8 as *const ::core::ffi::c_char,
+            );
         }
         i = i.wrapping_add(1);
     }

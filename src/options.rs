@@ -172,7 +172,7 @@ unsafe fn options_parent_table_entry(
     }
     return (*o).tableentry;
 }
-unsafe fn options_value_free(_o: *mut options_entry, ov: *mut options_value) {
+unsafe fn options_value_free(ov: *mut options_value) {
     *ov = options_value::Empty;
 }
 unsafe fn options_value_to_cstring(
@@ -411,9 +411,7 @@ unsafe fn options_add(
         fire_time: 0,
     });
     o = Box::into_raw(owned);
-    (*oo)
-        .tree
-        .insert((*o).name.as_bytes().to_vec(), o);
+    (*oo).tree.insert((*o).name.as_bytes().to_vec(), o);
     return o;
 }
 unsafe fn options_remove(mut o: *mut options_entry) {
@@ -423,7 +421,7 @@ unsafe fn options_remove(mut o: *mut options_entry) {
     }
     // Release the value before the monitor, including array storage after its
     // items have been cleared.
-    options_value_free(o, &raw mut (*o).value);
+    options_value_free(&raw mut (*o).value);
     if !(*o).monitor_data.is_null() {
         hooks_monitor_free((*o).monitor_data);
     }
@@ -462,8 +460,7 @@ unsafe fn options_array_item(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    (*o)
-        .value
+    (*o).value
         .array_storage()
         .entries
         .get(&options_array_index(CStr::from_ptr(key)))
@@ -480,17 +477,15 @@ unsafe fn options_array_new(
         owner: o,
     });
     let a = Box::into_raw(owner);
-    (*o)
-        .value
+    (*o).value
         .array_storage()
         .entries
         .insert(options_array_index(CStr::from_ptr(key)), a);
     return a;
 }
 unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
-    options_value_free(o, &raw mut (*a).value);
-    (*o)
-        .value
+    options_value_free(&raw mut (*a).value);
+    (*o).value
         .array_storage()
         .entries
         .remove(&options_array_index((*a).key.as_c_str()));
@@ -592,7 +587,7 @@ pub unsafe fn options_array_set(
         if a.is_null() {
             a = options_array_new(o, new_key.as_ptr());
         } else {
-            options_value_free(o, &raw mut (*a).value);
+            options_value_free(&raw mut (*a).value);
         }
         (*a).value = options_value::Command(OptionCommand(pr.cmdlist));
         return 0 as ::core::ffi::c_int;
@@ -635,7 +630,7 @@ pub unsafe fn options_array_set(
         if a.is_null() {
             a = options_array_new(o, new_key.as_ptr());
         } else {
-            options_value_free(o, &raw mut (*a).value);
+            options_value_free(&raw mut (*a).value);
         }
         (*a).value = options_value::Number(number);
         return 0 as ::core::ffi::c_int;
@@ -733,8 +728,7 @@ pub unsafe fn options_array_first(mut o: *mut options_entry) -> *mut options_arr
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_array_item>();
     }
-    (*o)
-        .value
+    (*o).value
         .array_storage()
         .entries
         .first_key_value()
@@ -769,8 +763,8 @@ pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int
 pub(crate) unsafe fn options_to_string(
     o: *mut options_entry,
     key: *const ::core::ffi::c_char,
-    numeric: ::core::ffi::c_int,
 ) -> CString {
+    let numeric: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     options_to_cstring(o, key, numeric)
 }
 
@@ -941,10 +935,9 @@ pub unsafe fn options_get_number(
     }
     return (*o).value.number();
 }
-pub unsafe fn options_get_command(
-    mut oo: *mut options,
-    mut name: *const ::core::ffi::c_char,
-) -> *mut cmd_list {
+pub unsafe fn options_get_command(mut oo: *mut options) -> *mut cmd_list {
+    let mut name: *const ::core::ffi::c_char =
+        b"default-client-command\0" as *const u8 as *const ::core::ffi::c_char;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     o = options_get(oo, name);
     if o.is_null() {
@@ -1686,7 +1679,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             if !(*w).active.is_null() {
                 if options_get_number((*w).options, name) != 0 {
@@ -1701,7 +1694,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             window_pane_default_cursor(wp);
             wp = window_pane_tree_next(&*wp);
@@ -1712,7 +1705,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             window_pane_default_cursor(wp);
             wp = window_pane_tree_next(&*wp);
@@ -1723,7 +1716,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             window_set_fill_cells(w);
             w = windows_next(&*w);
@@ -1815,14 +1808,14 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
             wp = window_pane_tree_next(&*wp);
         }
     }
     if *name as ::core::ffi::c_int == '@' as i32 {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
             wp = window_pane_tree_next(&*wp);
@@ -1833,7 +1826,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-colours\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);
             wp = window_pane_tree_next(&*wp);
@@ -1852,7 +1845,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             (*w).sb = options_get_number(
                 (*w).options,
@@ -1871,7 +1864,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             window_pane_scrollbar_hide(wp);
             wp = window_pane_tree_next(&*wp);
@@ -1882,12 +1875,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
             style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, (*wp).options);
             wp = window_pane_tree_next(&*wp);
         }
-        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
             w = windows_next(&*w);
@@ -1912,13 +1905,13 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+        s = sessions_minmax(&*std::ptr::addr_of!(sessions));
         while !s.is_null() {
             session_update_history(s);
             s = sessions_next(&*s);
         }
     }
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         status_update_cache(s);
         s = sessions_next(&*s);

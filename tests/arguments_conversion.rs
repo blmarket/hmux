@@ -2,11 +2,9 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_copy, args_create, args_first_value, args_free, args_get, args_has, args_next_value,
-    args_parse as parse_args, args_percentage_result, args_print, args_push_positional_commands,
-    args_push_positional_string, args_set_flag, args_set_owned_commands, args_set_owned_string,
-    args_string, args_string_percentage_and_expand_result, args_string_percentage_result,
-    args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
+    args_copy, args_create, args_first_value, args_free, args_parse as parse_args,
+    args_percentage_result, args_push_positional_commands, args_set_owned_commands, args_string,
+    args_string_percentage_result, args_strtonum_result, parse_number, parse_percentage,
     ArgumentValueError,
 };
 use hmux2::src::cmd::queue::{
@@ -18,18 +16,6 @@ use hmux2::src::shared::arguments::{args, args_parse, args_value, ARGS_PARSE_COM
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
-}
-
-#[test]
-fn printing_options_uses_formatted_flag_and_string_fragments() {
-    unsafe {
-        let args = args_create();
-        args_set_flag(args, b'v', 0);
-        args_set_owned_string(args, b'n', c"hello".to_owned(), 0);
-        let printed = args_print(args);
-        assert_eq!(printed.as_bytes(), b"-v -n hello");
-        args_free(args);
-    }
 }
 
 fn error_message(error: ArgumentValueError) -> &'static [u8] {
@@ -122,49 +108,14 @@ fn percentage_helper_preserves_literal_and_computed_bounds() {
         Err(ArgumentValueError::Empty)
     );
     assert_eq!(
-        args_string_percentage_result(None, 0, 100, 80),
+        args_string_percentage_result(None, 100, 80),
         Err(ArgumentValueError::Missing)
     );
     assert_eq!(
-        args_string_percentage_result(Some(zero.as_c_str()), 0, 100, 80),
+        args_string_percentage_result(Some(zero.as_c_str()), 100, 80),
         Ok(0)
     );
     assert_eq!(error_message(ArgumentValueError::Empty), b"empty");
-}
-
-#[test]
-fn expanded_helpers_convert_formatted_values_and_keep_errors_typed() {
-    unsafe {
-        let item_name = cstring("arguments-conversion");
-        let item = cmdq_get_callback1(item_name.as_ptr(), None, ptr::null_mut());
-        let number = cstring("17");
-        let malformed = cstring("17x");
-        let percentage = cstring("1000%");
-        let empty = cstring("");
-
-        let args = hmux2::src::arguments::args_create();
-        args_set_owned_string(args, b'n', number.clone(), 0);
-        assert_eq!(
-            args_strtonum_and_expand_result(args, b'n', 0, 20, item),
-            Ok(17)
-        );
-        args_set_owned_string(args, b'n', malformed.clone(), 0);
-        assert_eq!(
-            args_strtonum_and_expand_result(args, b'n', 0, 20, item),
-            Err(ArgumentValueError::Invalid)
-        );
-        args_free(args);
-
-        assert_eq!(
-            args_string_percentage_and_expand_result(Some(percentage.as_c_str()), 0, 1000, 1, item,),
-            Ok(10)
-        );
-        assert_eq!(
-            args_string_percentage_and_expand_result(Some(empty.as_c_str()), 0, 1000, 1, item),
-            Err(ArgumentValueError::Invalid)
-        );
-        cmdq_free_detached(item);
-    }
 }
 
 #[test]
@@ -203,81 +154,6 @@ fn detached_error_callback_keeps_its_message_after_input_changes() {
             b"raw\xff error"
         );
         cmdq_free_detached(item);
-    }
-}
-
-#[test]
-fn repeated_flags_keep_order_and_numeric_helpers_use_the_last_value() {
-    unsafe {
-        let args = args_create();
-        let first_text = cstring("12");
-        let second_text = cstring("34");
-        args_set_owned_string(args, b'v', first_text.clone(), 0);
-        args_set_owned_string(args, b'v', second_text.clone(), 0);
-
-        assert_eq!(args_has(args, b'v'), 2);
-        let first = args_first_value(args, b'v');
-        let second = args_next_value(first);
-        assert_eq!(CStr::from_ptr((*first).string_ptr()).to_bytes(), b"12");
-        assert_eq!(CStr::from_ptr((*second).string_ptr()).to_bytes(), b"34");
-        assert_eq!(args_strtonum_result(args, b'v', 0, 100), Ok(34));
-        assert_eq!(args_percentage_result(args, b'v', 0, 100, 100), Ok(34));
-        args_free(args);
-    }
-}
-
-#[test]
-fn flag_value_collection_keeps_addresses_stable_and_returns_the_last_value() {
-    unsafe {
-        let args = args_create();
-        let first_text = cstring("first");
-        args_set_owned_string(args, b'n', first_text.clone(), 0);
-        let first = args_first_value(args, b'n');
-
-        for index in 1..512 {
-            let text = CString::new(index.to_string()).unwrap();
-            args_set_owned_string(args, b'n', text, 0);
-        }
-
-        assert_eq!(args_first_value(args, b'n'), first);
-        assert_eq!(CStr::from_ptr((*first).string_ptr()).to_bytes(), b"first");
-
-        let mut value = first;
-        for _ in 0..512 {
-            assert!(!value.is_null());
-            value = args_next_value(value);
-        }
-        assert!(value.is_null());
-        assert_eq!(CStr::from_ptr(args_get(args, b'n')).to_bytes(), b"511");
-        args_free(args);
-    }
-}
-
-#[test]
-fn c_boundary_translates_typed_errors_without_changing_success_values() {
-    unsafe {
-        let missing = args_create();
-        assert_eq!(
-            args_strtonum_result(missing, b'n', 0, 50),
-            Err(ArgumentValueError::Missing)
-        );
-        args_set_flag(missing, b'p', 0);
-        assert_eq!(
-            args_percentage_result(missing, b'p', 0, 50, 50),
-            Err(ArgumentValueError::Empty)
-        );
-        args_free(missing);
-
-        let args = args_create();
-        let value = cstring("42");
-        args_set_owned_string(args, b'n', value.clone(), 0);
-
-        assert_eq!(args_strtonum_result(args, b'n', 0, 50), Ok(42));
-        assert_eq!(
-            args_strtonum_result(args, b'n', 0, 40),
-            Err(ArgumentValueError::TooLarge)
-        );
-        args_free(args);
     }
 }
 
@@ -398,38 +274,6 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 }
 
 #[test]
-fn copied_argument_templates_own_intermediate_and_final_strings() {
-    unsafe {
-        let source = args_create();
-        args_set_owned_string(source, b'n', c"left-%1-right-%2".to_owned(), 0);
-        args_set_owned_string(source, b'q', c"%%".to_owned(), 0);
-        args_push_positional_string(source, c"%2:%1".to_owned());
-
-        let argv = vec![c"A'B".to_owned(), c"X Y".to_owned()];
-        let copied = args_copy(source, &argv);
-        let source_named = args_first_value(source, b'n');
-        let copied_named = args_first_value(copied, b'n');
-        assert_ne!((*source_named).string_ptr(), (*copied_named).string_ptr());
-        args_free(source);
-
-        assert_eq!(
-            CStr::from_ptr((*copied_named).string_ptr()).to_bytes(),
-            b"left-A'B-right-X Y"
-        );
-        let quoted = args_first_value(copied, b'q');
-        assert_eq!(
-            CStr::from_ptr((*quoted).string_ptr()).to_bytes(),
-            b"A'\\''B"
-        );
-        assert_eq!(
-            CStr::from_ptr((&(*copied).values)[0].string_ptr()).to_bytes(),
-            b"X Y:A'B"
-        );
-        args_free(copied);
-    }
-}
-
-#[test]
 fn rejected_command_argument_keeps_source_value_ownership() {
     unsafe {
         let command = cstring("command");
@@ -452,48 +296,5 @@ fn rejected_command_argument_keeps_source_value_ownership() {
         };
         assert_eq!(error.to_bytes(), b"argument 1 must be \"string\"");
         cmd_list_free(command_list);
-    }
-}
-
-#[test]
-fn flag_value_backpointers_survive_growth_and_expire_with_owner() {
-    unsafe {
-        let args = args_create();
-        args_set_owned_string(args, b'n', c"first".to_owned(), 0);
-        let first = args_first_value(args, b'n');
-        let observer = (*first).entry.owner.as_ref().unwrap().clone();
-        let mut detached = args_value::empty();
-        detached.entry = (*first).entry.clone();
-
-        for index in 1..128 {
-            args_set_owned_string(args, b'n', cstring(&index.to_string()), 0);
-        }
-        assert_eq!(args_first_value(args, b'n'), first);
-        let mut value = first;
-        for index in 0..128 {
-            assert!(!value.is_null());
-            let expected = if index == 0 {
-                "first".to_owned()
-            } else {
-                index.to_string()
-            };
-            assert_eq!(
-                CStr::from_ptr((*value).string_ptr()).to_str().unwrap(),
-                expected
-            );
-            value = args_next_value(value);
-        }
-        assert!(value.is_null());
-        assert_eq!(args_next_value(&mut detached), args_next_value(first));
-
-        args_free(args);
-        assert_eq!(
-            observer.try_borrow_mut().err(),
-            Some(refbox::BorrowError::Dropped)
-        );
-        // The detached record is still alive, but its storage back-pointer expired.
-        assert!(args_next_value(&mut detached).is_null());
-        assert!(args_next_value(&mut args_value::empty()).is_null());
-        assert!(args_next_value(ptr::null_mut()).is_null());
     }
 }

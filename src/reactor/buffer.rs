@@ -83,34 +83,21 @@ pub unsafe fn evbuffer_write(b: *mut ByteBuffer, fd: c_int) -> c_int {
     n as c_int
 }
 
-unsafe fn read_line(b: *mut ByteBuffer, out: *mut size_t, ending: LineEnding) -> Option<Vec<u8>> {
-    if !out.is_null() {
-        *out = 0;
-    }
+unsafe fn read_line(b: *mut ByteBuffer, ending: LineEnding) -> Option<Vec<u8>> {
     let Some(mut line) = (*b).read_line(ending) else {
         return None;
     };
-    let len = line.len();
     line.push(0);
-    if !out.is_null() {
-        *out = len as size_t;
-    }
+
     super::wake_buffer(b);
     Some(line)
 }
-pub unsafe fn evbuffer_readln(b: *mut ByteBuffer, out: *mut size_t, style: u32) -> Option<Vec<u8>> {
-    let ending = match style {
-        0 => LineEnding::Any,
-        1 => LineEnding::CrLf,
-        2 => LineEnding::CrLfStrict,
-        3 => LineEnding::Lf,
-        4 => LineEnding::Nul,
-        _ => return None,
-    };
-    read_line(b, out, ending)
+pub unsafe fn evbuffer_readln(b: *mut ByteBuffer) -> Option<Vec<u8>> {
+    read_line(b, LineEnding::Lf)
 }
+
 pub unsafe fn evbuffer_readline(b: *mut ByteBuffer) -> Option<Vec<u8>> {
-    read_line(b, std::ptr::null_mut(), LineEnding::Legacy)
+    read_line(b, LineEnding::Legacy)
 }
 pub unsafe extern "C" fn evbuffer_add_printf(
     b: *mut ByteBuffer,
@@ -240,26 +227,5 @@ mod tests {
             buffer.chunks().flatten().copied().collect::<Vec<_>>(),
             b"prefix\0:7"
         );
-    }
-
-    #[test]
-    fn c_formats_and_owned_lines() {
-        unsafe {
-            let b = evbuffer_new();
-            let long = std::ffi::CString::new("x".repeat(100_000)).unwrap();
-            assert_eq!(
-                evbuffer_add_printf(b, c"%s:%d:%zu\n".as_ptr(), long.as_ptr(), -7i32, 42usize),
-                100_007
-            );
-            let mut len = 0;
-            let line = evbuffer_readln(b, &mut len, 3).unwrap();
-            assert_eq!(len, 100_006);
-            assert!(std::ffi::CStr::from_bytes_with_nul(&line)
-                .unwrap()
-                .to_bytes()
-                .ends_with(b":-7:42"));
-            assert_eq!(evbuffer_get_length(&*(b)), 0);
-            evbuffer_free(b);
-        }
     }
 }

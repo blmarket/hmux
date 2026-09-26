@@ -1,4 +1,3 @@
-use std::ffi::CStr;
 use crate::src::arguments::args_string_percentage_result;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::{strcmp, strlen, strncmp};
@@ -16,6 +15,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_MINIMUM;
 use crate::src::shared::window::window;
 use crate::src::window::{window_count_panes, window_pane_first, window_pane_next, window_resize};
+use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -23,7 +23,7 @@ pub struct C2RustUnnamed_35 {
     pub name: &'static CStr,
     pub arrange: Option<fn(&mut window)>,
 }
-static layout_sets: [C2RustUnnamed_35; 7] =  {
+static layout_sets: [C2RustUnnamed_35; 7] = {
     [
         C2RustUnnamed_35 {
             name: c"even-horizontal",
@@ -73,7 +73,9 @@ pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core:
         < (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
-        if strncmp(layout_sets[i as usize].name.as_ptr(), name, strlen(name)) == 0 as ::core::ffi::c_int {
+        if strncmp(layout_sets[i as usize].name.as_ptr(), name, strlen(name))
+            == 0 as ::core::ffi::c_int
+        {
             if matched != -(1 as ::core::ffi::c_int) {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -307,7 +309,6 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     );
     mainh = match args_string_percentage_result(
         (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-        0 as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
     ) {
@@ -328,7 +329,6 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
         );
         otherh = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-            0 as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
         ) {
@@ -465,7 +465,6 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     );
     mainh = match args_string_percentage_result(
         (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-        0 as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
     ) {
@@ -486,7 +485,6 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
         );
         otherh = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-            0 as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
         ) {
@@ -623,7 +621,6 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     );
     mainw = match args_string_percentage_result(
         (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-        0 as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
     ) {
@@ -644,7 +641,6 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
         );
         otherw = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-            0 as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
         ) {
@@ -781,7 +777,6 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     );
     mainw = match args_string_percentage_result(
         (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-        0 as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
     ) {
@@ -802,7 +797,6 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
         );
         otherw = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
-            0 as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
         ) {

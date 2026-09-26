@@ -45,11 +45,7 @@ fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, i
     true
 }
 
-unsafe fn alerts_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn alerts_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut w: *mut window = arg as *mut window;
     log_debug(
         b"@%u alerts timer expired\0" as *const u8 as *const ::core::ffi::c_char,
@@ -57,11 +53,7 @@ unsafe fn alerts_timer(
     );
     alerts_queue(w, WINDOW_SILENCE);
 }
-unsafe fn alerts_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    _arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn alerts_callback() {
     let mut alerts: ::core::ffi::c_int = 0;
     loop {
         let next = {
@@ -154,7 +146,7 @@ unsafe fn alerts_enabled(mut w: *mut window, mut flags: ::core::ffi::c_int) -> :
 }
 pub unsafe fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         alerts_reset(w);
         w = windows_next(&*w);
@@ -170,7 +162,7 @@ unsafe fn alerts_reset(mut w: *mut window) {
             &raw mut (*w).alerts_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { alerts_timer(fd, flags, w as *mut ::core::ffi::c_void) },
+            move |_, _| unsafe { alerts_timer(w as *mut ::core::ffi::c_void) },
         );
     }
     (*w).flags &= !WINDOW_SILENCE;
@@ -216,12 +208,7 @@ pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
                 b"alerts check queued (by @%u)\0" as *const u8 as *const ::core::ffi::c_char,
                 (*w).id,
             );
-            event_once(
-                -(1 as ::core::ffi::c_int),
-                EV_TIMEOUT as ::core::ffi::c_short,
-                move |fd, flags| unsafe { alerts_callback(fd, flags, NULL) },
-                ::core::ptr::null::<timeval>(),
-            );
+            event_once(move |_, _| unsafe { alerts_callback() });
             alerts_fired = 1 as ::core::ffi::c_int;
         }
     }

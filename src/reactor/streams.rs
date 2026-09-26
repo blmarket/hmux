@@ -1,4 +1,5 @@
 use super::{descriptor, evbuffer, evbuffer_free, evbuffer_new, handle};
+use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 use hmux_buffer::{Buf, BufMut};
 use hmux_rt::Handle as _;
@@ -313,19 +314,9 @@ pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: *mut ev
     state(&*stream).wake();
     0
 }
-pub unsafe fn bufferevent_setwatermark(
-    stream: *mut bufferevent,
-    flags: c_short,
-    low: usize,
-    high: usize,
-) {
-    if flags & 2 != 0 {
-        (*stream).wm_read.low = low;
-        (*stream).wm_read.high = high;
-    }
-    if flags & 4 != 0 {
-        (*stream).wm_write.low = low;
-        (*stream).wm_write.high = high;
-    }
+pub unsafe fn bufferevent_setwatermark(stream: *mut bufferevent) {
+    (*stream).wm_write.low = CONTROL_BUFFER_LOW as usize;
+    (*stream).wm_write.high = 0;
+
     state(&*stream).wake();
 }

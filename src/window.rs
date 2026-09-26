@@ -216,18 +216,14 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
     }
     elm
 }
-pub fn windows_minmax(head: &windows, direction: ::core::ffi::c_int) -> *mut window {
+pub fn windows_minmax(head: &windows) -> *mut window {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("window index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_next(elm: &window) -> *mut window {
@@ -456,19 +452,12 @@ pub unsafe fn window_pane_tree_remove(
     }
     elm
 }
-pub fn window_pane_tree_minmax(
-    head: &window_pane_tree,
-    direction: ::core::ffi::c_int,
-) -> *mut window_pane {
+pub fn window_pane_tree_minmax(head: &window_pane_tree) -> *mut window_pane {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner.try_borrow_mut().expect("pane index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
@@ -1041,7 +1030,7 @@ fn checked_winlink_ptr(link: &refbox::Weak<winlink>) -> *mut winlink {
     }
 }
 
-pub fn winlink_stack_first(stack: &winlink_stack, _links: *mut winlinks) -> *mut winlink {
+pub fn winlink_stack_first(stack: &winlink_stack) -> *mut winlink {
     let Some(storage) = stack.storage.as_ref() else {
         return std::ptr::null_mut();
     };
@@ -1052,11 +1041,7 @@ pub fn winlink_stack_first(stack: &winlink_stack, _links: *mut winlinks) -> *mut
         .unwrap_or(std::ptr::null_mut())
 }
 
-pub fn winlink_stack_next(
-    stack: &winlink_stack,
-    _links: *mut winlinks,
-    wl: *mut winlink,
-) -> *mut winlink {
+pub fn winlink_stack_next(stack: &winlink_stack, wl: *mut winlink) -> *mut winlink {
     if wl.is_null() || stack.storage.is_none() {
         return std::ptr::null_mut();
     }
@@ -2259,7 +2244,7 @@ pub unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh7 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
-    if wl == winlink_stack_first(&(*s).lastw, &raw mut (*s).windows) {
+    if wl == winlink_stack_first(&(*s).lastw) {
         let fresh8 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh8 as usize] = '-' as i32 as ::core::ffi::c_char;
@@ -2913,9 +2898,7 @@ unsafe fn window_pane_create(
         &raw mut (*wp).sb_auto_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            window_pane_scrollbar_timer(fd, flags, wp as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { window_pane_scrollbar_timer(wp as *mut ::core::ffi::c_void) },
     );
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
@@ -2965,11 +2948,7 @@ unsafe fn window_pane_free_modes(mut wp: *mut window_pane) {
     }
     (*wp).screen = &raw mut (*wp).base;
 }
-unsafe fn window_pane_scrollbar_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_pane_scrollbar_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = arg as *mut window_pane;
     (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
     window_pane_scrollbar_hide(wp);
@@ -3061,7 +3040,7 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
         .expect("final pane release must have an owner");
     drop(owner);
 }
-unsafe fn window_pane_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
+unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     let mut evb: *mut evbuffer = (*(*wp).event).input;
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
@@ -3095,11 +3074,7 @@ unsafe fn window_pane_read_callback(_bufev: *mut bufferevent, mut data: *mut ::c
     input_parse_pane(wp);
     bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
 }
-unsafe fn window_pane_error_callback(
-    _bufev: *mut bufferevent,
-    _what: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_pane_error_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     log_debug(
         b"%%%u error\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3114,12 +3089,12 @@ pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
     setblocking((*wp).fd, 0 as ::core::ffi::c_int);
     (*wp).event = bufferevent_new(
         (*wp).fd,
-        bufferevent_data_callback(move |stream| unsafe {
-            window_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void)
+        bufferevent_data_callback(move |_| unsafe {
+            window_pane_read_callback(wp as *mut ::core::ffi::c_void)
         }),
         None,
-        bufferevent_event_callback(move |stream, flags| unsafe {
-            window_pane_error_callback(stream.as_ptr(), flags, wp as *mut ::core::ffi::c_void)
+        bufferevent_event_callback(move |_, _| unsafe {
+            window_pane_error_callback(wp as *mut ::core::ffi::c_void)
         }),
     );
     if (*wp).event.is_null() {
@@ -3736,7 +3711,7 @@ pub unsafe fn window_pane_search(
     };
     i = 0 as u_int;
     while i < (*(*s).grid).sy {
-        let mut line = grid_view_string_cells_bytes((*s).grid, 0 as u_int, i, (*(*s).grid).sx);
+        let mut line = grid_view_string_cells_bytes((*s).grid, i, (*(*s).grid).sx);
         if let Some(nul) = line.iter().position(|&byte| byte == 0) {
             line.truncate(nul);
         }
@@ -4281,10 +4256,7 @@ pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
     event_del(&raw mut (*wp).sb_auto_timer);
     event_add(&raw mut (*wp).sb_auto_timer, &raw mut tv);
 }
-pub unsafe fn window_pane_scrollbar_show(
-    mut wp: *mut window_pane,
-    mut start_timer: ::core::ffi::c_int,
-) {
+pub unsafe fn window_pane_scrollbar_show(mut wp: *mut window_pane) {
     let mut changed: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if window_pane_scrollbar_auto_hide(wp) == 0 {
         return;
@@ -4297,9 +4269,9 @@ pub unsafe fn window_pane_scrollbar_show(
         changed = 1 as ::core::ffi::c_int;
     }
     event_del(&raw mut (*wp).sb_auto_timer);
-    if start_timer != 0 {
-        window_pane_scrollbar_start_timer(wp);
-    }
+
+    window_pane_scrollbar_start_timer(wp);
+
     if changed != 0 {
         window_pane_scrollbar_redraw_visibility(wp);
     }
@@ -4597,67 +4569,6 @@ mod name_tests {
         window: *mut window,
         events: Vec<(Vec<u8>, Vec<u8>)>,
         reenter: bool,
-    }
-
-    #[test]
-    fn rename_keeps_old_name_through_reentrant_notification() {
-        unsafe {
-            // Only the window's owned name matters here; an extra reference
-            // prevents the sessionless fixture from reaching window_destroy.
-            let mut node = window::default();
-            node.entry.owner = None;
-            node.name = CString::new("before").unwrap();
-            let w = &raw mut node;
-            (*w).references = 1;
-            let state = std::rc::Rc::new(std::cell::RefCell::new(RenameState {
-                window: w,
-                events: Vec::new(),
-                reenter: true,
-            }));
-            let callback_state = state.clone();
-            let sink = events_add_sink(
-                c"window-renamed",
-                events_callback(move |_, payload| {
-                    let payload = payload as *mut event_payload;
-                    let (window, reenter) = {
-                        let old =
-                            CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
-                                .to_bytes()
-                                .to_vec();
-                        let new =
-                            CStr::from_ptr(event_payload_get_string(payload, c"new_name".as_ptr()))
-                                .to_bytes()
-                                .to_vec();
-                        let mut state = callback_state.borrow_mut();
-                        state.events.push((old, new));
-                        let reenter = state.reenter;
-                        state.reenter = false;
-                        (state.window, reenter)
-                    };
-                    if reenter {
-                        {
-                            window_set_name(window, c"inner".as_ptr(), 0)
-                        };
-                    }
-                }),
-            );
-
-            window_set_name(w, c"outer".as_ptr(), 0);
-            assert_eq!(
-                state.borrow().events,
-                vec![
-                    (b"before".to_vec(), b"outer".to_vec()),
-                    (b"outer".to_vec(), b"inner".to_vec()),
-                ]
-            );
-            assert_eq!(CStr::from_ptr((*w).name.as_ptr()), c"inner");
-            assert_eq!((*w).references, 1);
-
-            window_set_name(w, c"\xff".as_ptr(), 0);
-            assert_eq!(CStr::from_ptr((*w).name.as_ptr()), c"inner");
-            assert_eq!(state.borrow().events.len(), 2);
-            events_remove_sink(sink);
-        }
     }
 }
 

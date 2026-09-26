@@ -51,10 +51,7 @@ pub(super) fn format_quote_style(s: &CStr) -> CString {
     }
     CString::new(quoted).expect("style-quoted C string contains no NUL")
 }
-pub(crate) unsafe fn format_pretty_time_cstring(
-    mut t: time_t,
-    mut seconds: ::core::ffi::c_int,
-) -> CString {
+pub(crate) unsafe fn format_pretty_time_cstring(mut t: time_t) -> CString {
     let mut now_tm: tm = tm {
         tm_sec: 0,
         tm_min: 0,
@@ -92,21 +89,13 @@ pub(crate) unsafe fn format_pretty_time_cstring(
     localtime_r(&raw mut now, &raw mut now_tm);
     localtime_r(&raw mut t, &raw mut tm);
     if age < (24 as ::core::ffi::c_int * 3600 as ::core::ffi::c_int) as time_t {
-        if seconds != 0 {
-            strftime(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 9]>() as size_t,
-                b"%H:%M:%S\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut tm,
-            );
-        } else {
-            strftime(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 9]>() as size_t,
-                b"%H:%M\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut tm,
-            );
-        }
+        strftime(
+            &raw mut s as *mut ::core::ffi::c_char,
+            ::core::mem::size_of::<[::core::ffi::c_char; 9]>() as size_t,
+            b"%H:%M\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut tm,
+        );
+
         return CStr::from_ptr(s.as_ptr()).to_owned();
     }
     if tm.tm_year == now_tm.tm_year && tm.tm_mon == now_tm.tm_mon
@@ -365,7 +354,7 @@ pub(super) unsafe fn format_find(
         } else if modifiers as ::core::ffi::c_ulonglong & FORMAT_DIFFERENCE != 0 {
             found = Some(format_time_difference(t));
         } else if modifiers & FORMAT_PRETTY as uint64_t != 0 {
-            found = Some(format_pretty_time_cstring(t, 0));
+            found = Some(format_pretty_time_cstring(t));
         } else {
             if !time_format.is_null() {
                 localtime_r(&raw mut t, &raw mut tm);
@@ -553,10 +542,8 @@ pub(super) unsafe fn format_skip1(
     }
     return s;
 }
-pub unsafe fn format_skip(
-    mut s: *const ::core::ffi::c_char,
-    mut end: *const ::core::ffi::c_char,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn format_skip(mut s: *const ::core::ffi::c_char) -> *const ::core::ffi::c_char {
+    let mut end: *const ::core::ffi::c_char = b"]\0" as *const u8 as *const ::core::ffi::c_char;
     return format_skip1(::core::ptr::null_mut::<format_expand_state>(), s, end);
 }
 unsafe fn format_choose(
@@ -994,7 +981,7 @@ pub(super) unsafe fn format_session_name(
 ) -> CString {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let name = format_expand1_cstring(es, fmt);
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if strcmp(((*s).name).as_ptr().cast_mut(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return c"1".to_owned();
@@ -2233,11 +2220,7 @@ pub(super) unsafe fn format_replace_expression(
     }
     return None;
 }
-pub(super) unsafe fn format_cycle_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+pub(super) unsafe fn format_cycle_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut c: *mut client = arg as *mut client;
     if (*c).message_string.is_none() && (*c).prompt.is_null() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
@@ -2256,9 +2239,7 @@ pub(super) unsafe fn format_cycle_start_timer(mut c: *mut client) {
             &raw mut (*c).cycle_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                format_cycle_callback(fd, flags, c as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { format_cycle_callback(c as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(

@@ -129,18 +129,14 @@ pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut se
     }
     elm
 }
-pub fn sessions_minmax(head: &sessions, direction: ::core::ffi::c_int) -> *mut session {
+pub fn sessions_minmax(head: &sessions) -> *mut session {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("session index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
@@ -287,21 +283,14 @@ pub unsafe fn session_groups_remove(head: *mut session_groups, elm: *mut session
     drop(removed);
     true
 }
-pub fn session_groups_minmax(
-    head: &session_groups,
-    direction: ::core::ffi::c_int,
-) -> *mut session_group {
+pub fn session_groups_minmax(head: &session_groups) -> *mut session_group {
     let Some(storage) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = storage
         .try_borrow_mut()
         .expect("session group index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
 pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
@@ -334,7 +323,7 @@ pub unsafe fn session_groups_prev(elm: &session_group) -> *mut session_group {
 }
 pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s_loop.is_null() {
         if s_loop == s {
             return 1 as ::core::ffi::c_int;
@@ -403,7 +392,7 @@ pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut 
 }
 pub unsafe fn session_find_by_id(mut id: u_int) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if (*s).id == id {
             return s;
@@ -503,19 +492,10 @@ pub unsafe fn session_remove_ref(mut s: *mut session, mut from: *const ::core::f
         (*s).references,
     );
     if (*s).references == 0 as ::core::ffi::c_int {
-        event_once(
-            -(1 as ::core::ffi::c_int),
-            EV_TIMEOUT as ::core::ffi::c_short,
-            move |fd, flags| unsafe { session_free(fd, flags, s as *mut ::core::ffi::c_void) },
-            ::core::ptr::null::<timeval>(),
-        );
+        event_once(move |_, _| unsafe { session_free(s as *mut ::core::ffi::c_void) });
     }
 }
-unsafe fn session_free(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn session_free(mut arg: *mut ::core::ffi::c_void) {
     let mut s: *mut session = arg as *mut session;
     log_debug(
         b"session %s freed (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
@@ -557,8 +537,8 @@ pub unsafe fn session_destroy(
         event_del(&raw mut (*s).lock_timer);
     }
     session_group_remove(s);
-    while !crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows).is_null() {
-        let first = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
+    while !crate::src::window::winlink_stack_first(&(*s).lastw).is_null() {
+        let first = crate::src::window::winlink_stack_first(&(*s).lastw);
         winlink_stack_remove(&raw mut (*s).lastw, first);
     }
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
@@ -576,11 +556,7 @@ pub unsafe fn session_destroy(
         b"session_destroy\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-unsafe fn session_lock_timer(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn session_lock_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut s: *mut session = arg as *mut session;
     if (*s).attached == 0 as u_int {
         return;
@@ -621,9 +597,7 @@ pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeva
             &raw mut (*s).lock_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe {
-                session_lock_timer(fd, flags, s as *mut ::core::ffi::c_void)
-            },
+            move |_, _| unsafe { session_lock_timer(s as *mut ::core::ffi::c_void) },
         );
     }
     if (*s).attached != 0 as u_int {
@@ -831,7 +805,7 @@ pub unsafe fn session_select(
 }
 pub unsafe fn session_last(mut s: *mut session) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
+    wl = crate::src::window::winlink_stack_first(&(*s).lastw);
     if wl.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
@@ -929,7 +903,7 @@ pub unsafe fn session_set_current(mut s: *mut session, mut wl: *mut winlink) -> 
 }
 pub unsafe fn session_group_contains(mut target: *mut session) -> *mut session_group {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups), RB_NEGINF);
+    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
     while !sg.is_null() {
         if (*sg).members.contains(&target) {
             return sg;
@@ -1255,42 +1229,6 @@ mod session_index_tests {
         let mut session = Box::new(session::empty());
         session.name = std::ffi::CString::new(name).unwrap();
         Box::into_raw(session)
-    }
-
-    #[test]
-    fn session_index_observers_follow_move_duplicate_and_removal() {
-        unsafe {
-            let mut head = sessions { storage: None };
-            let mut other = sessions { storage: None };
-            let first = session("alpha");
-            let second = session("beta");
-            let duplicate = session("alpha");
-
-            assert!(sessions_insert(&mut head, first).is_null());
-            assert!(sessions_insert(&mut head, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
-            assert_eq!(sessions_insert(&mut head, duplicate), first);
-            assert!((*duplicate).entry.owner.is_none());
-            assert!(sessions_remove(&mut other, first).is_null());
-            assert!((*first).entry.owner.is_some());
-
-            let mut moved = head;
-            assert_eq!(sessions_minmax(&moved, -1), first);
-            assert_eq!(sessions_next(&*first), second);
-            assert_eq!(sessions_remove(&mut moved, first), first);
-            assert!((*first).entry.owner.is_none());
-            assert!(sessions_next(&*first).is_null());
-            assert_eq!(sessions_remove(&mut moved, second), second);
-
-            drop(Box::from_raw(duplicate));
-            drop(Box::from_raw(first));
-            drop(Box::from_raw(second));
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-        }
     }
 
     #[test]

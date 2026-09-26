@@ -528,10 +528,8 @@ pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut ds
 }
 pub unsafe fn environ_push(mut env: *mut environ) {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let seed = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
+    let seed = xcalloc(::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t)
+        as *mut *mut ::core::ffi::c_char;
     environ = seed;
     let seed_owner = ProcessEnvironmentSeed(seed);
     envent = environ_first(env);

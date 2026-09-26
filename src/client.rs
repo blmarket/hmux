@@ -1,5 +1,9 @@
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
+use crate::src::compat::imsg::imsg;
+use crate::src::compat::imsg::msg_command;
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
 use crate::src::environ::environ_free;
@@ -20,7 +24,7 @@ use crate::src::proc::{
     proc_add_peer, proc_clear_signals, proc_exit, proc_flush_peer, proc_loop, proc_send,
     proc_set_signals, proc_start,
 };
-use crate::src::server::{server_start, server_start_owned};
+use crate::src::server::server_start;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{socklen_t, ssize_t, uint32_t};
 use crate::src::shared::client::*;
@@ -34,10 +38,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
 use crate::src::shared::event::*;
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::msg_command;
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 use crate::src::shared::posix_io::{
     O_CREAT, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG,
 };
@@ -116,7 +116,6 @@ unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::f
     return lockfd;
 }
 unsafe fn client_connect(
-    mut base: *mut event_base,
     mut path: *const ::core::ffi::c_char,
     mut flags: uint64_t,
 ) -> ::core::ffi::c_int {
@@ -216,7 +215,7 @@ unsafe fn client_connect(
                 close(lockfd);
                 return -(1 as ::core::ffi::c_int);
             }
-            fd = server_start_owned(client_proc, flags, base, lockfd, &mut lockfile);
+            fd = server_start(client_proc, flags, lockfd, &mut lockfile);
             current_block = 7172762164747879670;
             break;
         }
@@ -291,7 +290,6 @@ unsafe fn client_exit() {
     }
 }
 pub unsafe fn client_main(
-    mut base: *mut event_base,
     argv: &Vec<CString>,
     mut flags: uint64_t,
     mut feat: ::core::ffi::c_int,
@@ -334,11 +332,11 @@ pub unsafe fn client_main(
         flags |= CLIENT_STARTSERVER as uint64_t;
     } else {
         msg = MSG_COMMAND;
-        pr = cmd_parse_from_argv(argv, ::core::ptr::null_mut::<cmd_parse_input>());
+        pr = cmd_parse_from_argv(argv);
         if pr.status as ::core::ffi::c_uint
             == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if cmd_list_any_have(pr.cmdlist, CMD_STARTSERVER) != 0 {
+            if cmd_list_any_have(pr.cmdlist) != 0 {
                 flags |= CLIENT_STARTSERVER as uint64_t;
             }
             cmd_list_free(pr.cmdlist);
@@ -355,15 +353,9 @@ pub unsafe fn client_main(
         client_flags as ::core::ffi::c_ulonglong,
     );
     if systemd_activated() != 0 {
-        fd = server_start(
-            client_proc,
-            flags,
-            base,
-            0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        );
+        fd = server_start(client_proc, flags, -1, &mut None);
     } else {
-        fd = client_connect(base, socket_path, client_flags);
+        fd = client_connect(socket_path, client_flags);
     }
     if fd == -(1 as ::core::ffi::c_int) {
         if *__errno_location() == ECONNREFUSED {
@@ -406,7 +398,7 @@ pub unsafe fn client_main(
         fatal(b"pledge failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
     if isatty(STDIN_FILENO) != 0 && *termname as ::core::ffi::c_int != '\0' as i32 {
-        match tty_term_read_list(CStr::from_ptr(termname), STDIN_FILENO) {
+        match tty_term_read_list(CStr::from_ptr(termname)) {
             Ok(read_caps) => caps = read_caps,
             Err(cause) => {
                 fprintf(
@@ -551,7 +543,7 @@ pub unsafe fn client_main(
         }
         fflush(stdout);
         if client_flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_WAITEXIT != 0 {
-            control_wait_exit(STDIN_FILENO);
+            control_wait_exit();
         }
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
             printf(b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char);
@@ -957,7 +949,6 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
                 &raw mut client_files,
                 client_peer,
                 imsg,
-                1 as ::core::ffi::c_int,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
                 Some(Box::new(|_| unsafe { client_file_check_cb() })),
             );
@@ -970,7 +961,6 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
                 &raw mut client_files,
                 client_peer,
                 imsg,
-                1 as ::core::ffi::c_int,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
                 Some(Box::new(|_| unsafe { client_file_check_cb() })),
             );

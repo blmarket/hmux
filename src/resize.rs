@@ -566,7 +566,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         (*s).attached = 0 as u_int;
         status_update_cache(s);
@@ -587,7 +587,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         }
         c = clients.next(c);
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         recalculate_size(w, now);
         w = windows_next(&*w);

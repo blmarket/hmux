@@ -142,7 +142,7 @@ unsafe fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
     if c.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
+    wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
     while !wp.is_null() {
         if (*wp).fd != -(1 as ::core::ffi::c_int)
             && strcmp(
@@ -267,7 +267,7 @@ unsafe fn cmd_find_best_session(
             i = i.wrapping_add(1);
         }
     } else {
-        s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+        s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
         while !s_loop.is_null() {
             if !(cmd_find_session_valid(s_loop) == 0) {
                 if cmd_find_session_better(s_loop, s, flags) != 0 {
@@ -287,7 +287,7 @@ unsafe fn cmd_find_best_session_with_window(mut fs: *mut cmd_find_state) -> ::co
         b"cmd_find_best_session_with_window\0" as *const u8 as *const ::core::ffi::c_char,
         (*(*fs).w).id,
     );
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if !(session_has(s, (*fs).w) == 0) {
             slist.push(s);
@@ -396,7 +396,7 @@ unsafe fn cmd_find_get_session(
         return -(1 as ::core::ffi::c_int);
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s_loop.is_null() {
         if strncmp(
             session,
@@ -416,7 +416,7 @@ unsafe fn cmd_find_get_session(
         return 0 as ::core::ffi::c_int;
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s_loop.is_null() {
         if fnmatch(
             session,
@@ -541,10 +541,7 @@ unsafe fn cmd_find_get_window_with_session(
         if strcmp(window, b"!\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).wl = crate::src::window::winlink_stack_first(
-                &(*(*fs).s).lastw,
-                &raw mut (*(*fs).s).windows,
-            );
+            (*fs).wl = crate::src::window::winlink_stack_first(&(*(*fs).s).lastw);
             if (*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -1049,8 +1046,8 @@ pub unsafe fn cmd_find_from_nothing(
 pub unsafe fn cmd_find_from_mouse(
     mut fs: *mut cmd_find_state,
     mut m: *mut mouse_event,
-    mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     cmd_find_clear_state(fs, flags);
     if (*m).valid == 0 {
         return -(1 as ::core::ffi::c_int);

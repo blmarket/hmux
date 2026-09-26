@@ -66,7 +66,7 @@ impl wait_event_item {
         }
     }
 }
-pub static mut cmd_wait_for_entry: cmd_entry =  {
+pub static mut cmd_wait_for_entry: cmd_entry = {
     cmd_entry {
         name: c"wait-for",
         alias: Some(c"wait"),
@@ -268,10 +268,10 @@ unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         return cmd_wait_for_list(item, wc);
     }
     if args_has(args, 'w' as i32 as u_char) != 0 {
-        return cmd_wait_for_wake(item, name, args, wc);
+        return cmd_wait_for_wake(name, args, wc);
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
-        return cmd_wait_for_signal(item, name, wc);
+        return cmd_wait_for_signal(name, wc);
     }
     if args_has(args, 'L' as i32 as u_char) != 0 {
         return cmd_wait_for_lock(item, name, wc);
@@ -450,7 +450,6 @@ unsafe fn cmd_wait_for_list(mut item: *mut cmdq_item, mut wc: *mut wait_channel)
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_wait_for_wake(
-    _item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
     mut wc: *mut wait_channel,
@@ -489,7 +488,6 @@ unsafe fn cmd_wait_for_wake(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_wait_for_signal(
-    _item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
 ) -> cmd_retval {

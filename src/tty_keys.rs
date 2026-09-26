@@ -2173,9 +2173,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         &raw mut (*tty).key_timer,
                         -(1 as ::core::ffi::c_int),
                         0 as ::core::ffi::c_short,
-                        move |fd, flags| unsafe {
-                            tty_keys_callback(fd, flags, tty as *mut ::core::ffi::c_void)
-                        },
+                        move |_, _| unsafe { tty_keys_callback(tty as *mut ::core::ffi::c_void) },
                     );
                     event_add(&raw mut (*tty).key_timer, &raw mut tv);
                     (*tty).flags |= TTY_TIMER;
@@ -2185,11 +2183,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         }
     }
 }
-unsafe fn tty_keys_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn tty_keys_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;
     if (*tty).flags & TTY_TIMER != 0 {
         while tty_keys_next(tty) != 0 {}
@@ -2991,24 +2985,15 @@ unsafe fn tty_keys_device_attributes2(
     }
     match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
         77 => {
-            tty_default_features(
-                c,
-                b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as u_int,
-            );
+            tty_default_features(c, b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
         }
         84 => {
-            tty_default_features(
-                c,
-                b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as u_int,
-            );
+            tty_default_features(c, b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
         }
         85 => {
             tty_default_features(
                 c,
                 b"rxvt-unicode\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as u_int,
             );
         }
         _ => {}
@@ -3096,88 +3081,56 @@ unsafe fn tty_keys_extended_device_attributes(
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"tmux \0" as *const u8 as *const ::core::ffi::c_char,
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"XTerm(\0" as *const u8 as *const ::core::ffi::c_char,
         6 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"XTerm\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"XTerm\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"mintty \0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"foot(\0" as *const u8 as *const ::core::ffi::c_char,
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"foot\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"foot\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"WezTerm \0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"ghostty \0" as *const u8 as *const ::core::ffi::c_char,
         8 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"ghostty\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"ghostty\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"Rio \0" as *const u8 as *const ::core::ffi::c_char,
         4 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            c,
-            b"Rio\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as u_int,
-        );
+        tty_default_features(c, b"Rio\0" as *const u8 as *const ::core::ffi::c_char);
     }
     log_debug(
         b"%s: received extended DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,

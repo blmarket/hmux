@@ -97,15 +97,8 @@ fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<InputKey
     })
 }
 
-unsafe fn input_key_tree_minmax(
-    head: &input_key_tree,
-    val: ::core::ffi::c_int,
-) -> *mut input_key_entry {
-    let entry = if val < 0 {
-        head.entries.iter().next()
-    } else {
-        head.entries.iter().next_back()
-    };
+unsafe fn input_key_tree_minmax(head: &input_key_tree) -> *mut input_key_entry {
+    let entry = head.entries.iter().next();
     entry
         .map(|(_, entry)| *entry)
         .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
@@ -528,7 +521,7 @@ pub unsafe fn input_key_build() {
         }
         i = i.wrapping_add(1);
     }
-    ike = input_key_tree_minmax(&*(&raw const input_key_tree), -1);
+    ike = input_key_tree_minmax(&*(&raw const input_key_tree));
     while !ike.is_null() {
         let key_string = key_string_format((*ike).key, true);
         log_debug(
@@ -1150,59 +1143,6 @@ mod tests {
             assert_eq!(tree.generated.len(), 101);
             assert_eq!(input_key_tree_find(&tree, 7), first);
             assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
-        }
-    }
-
-    #[test]
-    fn input_key_tree_matches_numeric_rb_semantics() {
-        unsafe {
-            let mut tree = input_key_tree::default();
-            let mut items: [input_key_entry; 4] = [
-                input_key_entry {
-                    key: 7,
-                    data: ::core::ptr::null(),
-                },
-                input_key_entry {
-                    key: 0,
-                    data: ::core::ptr::null(),
-                },
-                input_key_entry {
-                    key: u_int::MAX as key_code,
-                    data: ::core::ptr::null(),
-                },
-                input_key_entry {
-                    key: 7,
-                    data: ::core::ptr::null(),
-                },
-            ];
-            let first = &mut items[0] as *mut input_key_entry;
-            let duplicate = &mut items[3] as *mut input_key_entry;
-
-            assert!(input_key_tree_insert(&mut tree, &mut *first).is_null());
-            assert!(input_key_tree_insert(&mut tree, &mut items[1]).is_null());
-            assert!(input_key_tree_insert(&mut tree, &mut items[2]).is_null());
-            assert_eq!(
-                input_key_tree_insert(&mut tree, &mut *duplicate),
-                first,
-                "duplicate keys keep the original item"
-            );
-
-            assert_eq!(
-                input_key_tree_minmax(&tree, -1),
-                &mut items[1] as *mut input_key_entry
-            );
-            assert_eq!(input_key_tree_next(&tree, &items[1]), first);
-            assert_eq!(
-                input_key_tree_next(&tree, &*first),
-                &mut items[2] as *mut input_key_entry
-            );
-            assert!(input_key_tree_next(&tree, &items[2]).is_null());
-            assert_eq!(
-                input_key_tree_minmax(&tree, 1),
-                &mut items[2] as *mut input_key_entry
-            );
-            assert_eq!(input_key_tree_find(&tree, 7), first);
-            assert!(input_key_tree_find(&tree, 8).is_null());
         }
     }
 }

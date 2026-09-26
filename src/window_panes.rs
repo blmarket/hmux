@@ -87,7 +87,7 @@ pub struct window_panes_area {
 }
 
 pub const WINDOW_MODE_FILL_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub static mut window_panes_mode: window_mode =  {
+pub static mut window_panes_mode: window_mode = {
     window_mode {
         name: c"panes-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -1519,11 +1519,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     screen_write_stop(&raw mut ctx);
     (*(*data).wp).flags |= PANE_REDRAW;
 }
-unsafe fn window_panes_timer_callback(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
     window_pane_reset_mode((*wme).wp);
 }
@@ -1631,9 +1627,7 @@ unsafe fn window_panes_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe {
-            window_panes_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void)
-        },
+        move |_, _| unsafe { window_panes_timer_callback(wme as *mut ::core::ffi::c_void) },
     );
     if (*data).delay != 0 as u_int {
         tv.tv_sec = (*data).delay.wrapping_div(1000 as u_int) as __time_t;

@@ -1,5 +1,6 @@
 use super::{descriptor, ensure_runtime, handle};
 use crate::src::shared::abi::timeval;
+use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::{event, event_base, EventCallback};
 use hmux_rt::{Handle as _, Runtime as _, Signals as _};
 use std::cell::{Cell, RefCell};
@@ -143,7 +144,7 @@ pub unsafe fn event_init() -> *mut event_base {
     ensure_runtime();
     std::ptr::NonNull::<event_base>::dangling().as_ptr()
 }
-pub unsafe fn event_reinit(_: *mut event_base) -> c_int {
+pub unsafe fn event_reinit() -> c_int {
     if super::PID.with(|p| p.get() == std::process::id()) {
         return 0;
     }
@@ -178,8 +179,8 @@ pub unsafe fn event_reinit(_: *mut event_base) -> c_int {
     super::streams::restart();
     0
 }
-pub unsafe fn event_loop(flags: c_int) -> c_int {
-    super::run_once(flags & 2 != 0);
+pub unsafe fn event_loop() -> c_int {
+    super::run_once();
     0
 }
 pub fn event_initialized(ev: &event) -> c_int {
@@ -228,7 +229,8 @@ fn activate(state: &Rc<EventState>) {
         .expect("activate event");
     *state.activation.borrow_mut() = Some(task);
 }
-pub unsafe fn event_active(ev: *mut event, flags: c_int, _: c_short) {
+pub unsafe fn event_active(ev: *mut event) {
+    let flags: c_int = EV_TIMEOUT;
     ensure_runtime();
     let existing = EVENTS.with(|e| e.borrow().get(&(ev as usize)).cloned());
     let state = existing.unwrap_or_else(|| {
@@ -239,22 +241,17 @@ pub unsafe fn event_active(ev: *mut event, flags: c_int, _: c_short) {
     state.active.set(state.active.get() | flags as c_short);
     activate(&state);
 }
-pub unsafe fn event_once<F>(fd: c_int, flags: c_short, cb: F, timeout: *const timeval) -> c_int
+pub unsafe fn event_once<F>(cb: F) -> c_int
 where
     F: FnMut(c_int, c_short) + 'static,
 {
     let mut ev: Box<event> = Box::default();
-    event_set(&mut *ev, fd, flags & !0x10, cb);
+    event_set(&mut *ev, -1, EV_TIMEOUT as c_short, cb);
     let zero = timeval {
         tv_sec: 0,
         tv_usec: 0,
     };
-    let timeout = if timeout.is_null() && flags & 6 == 0 {
-        &zero
-    } else {
-        timeout
-    };
-    let result = event_add(&mut *ev, timeout);
+    let result = event_add(&mut *ev, &zero);
     if result == 0 {
         let key = &*ev as *const event as usize;
         EVENTS.with(|e| *e.borrow().get(&key).unwrap().owned.borrow_mut() = Some(ev));

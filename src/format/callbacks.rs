@@ -185,7 +185,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         (*(*s).curw).idx,
     );
-    wl = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
+    wl = crate::src::window::winlink_stack_first(&(*s).lastw);
     while !wl.is_null() {
         xsnprintf(
             &raw mut tmp as *mut ::core::ffi::c_char,
@@ -205,7 +205,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
             &raw mut tmp as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
         );
-        wl = crate::src::window::winlink_stack_next(&(*s).lastw, &raw mut (*s).windows, wl);
+        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl);
     }
     return Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned());
 }
@@ -219,13 +219,13 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
     }
     s = (*(*ft).wl).session;
     idx = 0 as u_int;
-    wl = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
+    wl = crate::src::window::winlink_stack_first(&(*s).lastw);
     while !wl.is_null() {
         idx = idx.wrapping_add(1);
         if wl == (*ft).wl {
             break;
         }
-        wl = crate::src::window::winlink_stack_next(&(*s).lastw, &raw mut (*s).windows, wl);
+        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl);
     }
     if wl.is_null() {
         return Some(c"0".to_owned());
@@ -379,7 +379,7 @@ unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    return layout_dump_owned(w, lcroot, flags);
+    return layout_dump_owned(lcroot, flags);
 }
 unsafe fn format_cb_window_visible_layout(mut ft: *mut format_tree) -> Option<CString> {
     let mut c: *mut client = (*ft).client;
@@ -394,7 +394,7 @@ unsafe fn format_cb_window_visible_layout(mut ft: *mut format_tree) -> Option<CS
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    return layout_dump_owned(w, (*w).layout_root, flags);
+    return layout_dump_owned((*w).layout_root, flags);
 }
 unsafe fn format_cb_start_command(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
@@ -436,9 +436,7 @@ unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString>
     if wp.is_null() || (*wp).shell.is_none() {
         return None;
     }
-    if let Some(cmd) =
-        osdep_get_name_cstring((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char)
-    {
+    if let Some(cmd) = osdep_get_name_cstring((*wp).fd) {
         let value = parse_window_name_cstring(cmd.as_c_str());
         return Some(value);
     }
@@ -2340,7 +2338,7 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         n = n.wrapping_add(1);
         s = sessions_next(&*s);
@@ -2695,12 +2693,7 @@ unsafe fn format_cb_window_index(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        if (*ft).wl
-            == crate::src::window::winlink_stack_first(
-                &(*(*(*ft).wl).session).lastw,
-                &raw mut (*(*(*ft).wl).session).windows,
-            )
-        {
+        if (*ft).wl == crate::src::window::winlink_stack_first(&(*(*(*ft).wl).session).lastw) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2712,7 +2705,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if !(*ft).wl.is_null() {
-        s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+        s = sessions_minmax(&*std::ptr::addr_of!(sessions));
         while !s.is_null() {
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
@@ -2739,7 +2732,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         return None;
     }
     w = (*(*ft).wl).window;
-    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups), RB_NEGINF);
+    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
     while !sg.is_null() {
         s = crate::src::session::session_group_members(sg)
             .first()
@@ -2750,7 +2743,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         }
         sg = session_groups_next(&*sg);
     }
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if session_group_contains(s).is_null() {
             if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {

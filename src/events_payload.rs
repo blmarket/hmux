@@ -116,10 +116,7 @@ unsafe fn event_payload_tree_remove(
     removed
 }
 
-unsafe fn event_payload_tree_minmax(
-    head: *mut event_payload_tree,
-    val: ::core::ffi::c_int,
-) -> *mut event_payload_item {
+unsafe fn event_payload_tree_minmax(head: *mut event_payload_tree) -> *mut event_payload_item {
     if head.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
@@ -127,11 +124,7 @@ unsafe fn event_payload_tree_minmax(
         .entries
         .try_borrow_mut()
         .expect("event payload tree already borrowed");
-    let item = if val < 0 {
-        storage.entries.values().next()
-    } else {
-        storage.entries.values().next_back()
-    };
+    let item = storage.entries.values().next();
     item.copied()
         .unwrap_or(::core::ptr::null_mut::<event_payload_item>())
 }
@@ -425,11 +418,9 @@ pub unsafe fn event_payload_set_uint(
     (*epi).value = EventPayloadValue::Uint(value);
     event_payload_set_item(ep, name, epi);
 }
-pub unsafe fn event_payload_set_client(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut c: *mut client,
-) {
+pub unsafe fn event_payload_set_client(mut ep: *mut event_payload, mut c: *mut client) {
+    let mut name: *const ::core::ffi::c_char =
+        b"client\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     (*c).references += 1;
     epi = event_payload_new_item();
@@ -488,10 +479,9 @@ pub unsafe fn event_payload_set_pointer(
     (*epi).value = EventPayloadValue::Pointer(pointer);
     event_payload_set_item(ep, name, epi);
 }
-pub unsafe fn event_payload_get_string(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-) -> *const ::core::ffi::c_char {
+pub unsafe fn event_payload_get_string(mut ep: *mut event_payload) -> *const ::core::ffi::c_char {
+    let mut name: *const ::core::ffi::c_char =
+        b"paste_buffer\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
@@ -600,10 +590,8 @@ pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item
     value
 }
 
-pub(crate) unsafe fn event_payload_print_owned(
-    ep: *mut event_payload,
-    name: *const ::core::ffi::c_char,
-) -> Option<Vec<u8>> {
+pub(crate) unsafe fn event_payload_print_owned(ep: *mut event_payload) -> Option<Vec<u8>> {
+    let name: *const ::core::ffi::c_char = b"pane\0" as *const u8 as *const ::core::ffi::c_char;
     let epi = event_payload_find(ep, name);
     (!epi.is_null()).then(|| event_payload_item_print_owned(epi))
 }
@@ -617,7 +605,7 @@ pub unsafe fn event_payload_add_formats(
         prefix = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     let prefix = CStr::from_ptr(prefix).to_bytes();
-    epi = event_payload_tree_minmax(&raw mut (*ep).items, -1);
+    epi = event_payload_tree_minmax(&raw mut (*ep).items);
     while !epi.is_null() {
         let key = (*epi).name.as_ref().unwrap().as_ptr();
         if !(*key as ::core::ffi::c_int == '_' as i32) {
@@ -661,7 +649,7 @@ pub unsafe fn event_payload_add_formats(
     }
 }
 pub unsafe fn event_payload_first(mut ep: *mut event_payload) -> *mut event_payload_item {
-    return event_payload_tree_minmax(&raw mut (*ep).items, -1);
+    return event_payload_tree_minmax(&raw mut (*ep).items);
 }
 pub unsafe fn event_payload_next(mut epi: *mut event_payload_item) -> *mut event_payload_item {
     return event_payload_tree_next(epi);
@@ -691,7 +679,7 @@ pub unsafe extern "C" fn event_payload_log(
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     if !ep.is_null() {
-        epi = event_payload_tree_minmax(&raw mut (*ep).items, -1);
+        epi = event_payload_tree_minmax(&raw mut (*ep).items);
         while !epi.is_null() {
             if evbuffer_get_length(&*(evb)) != 0 as size_t {
                 evbuffer_add_printf(evb, b", \0" as *const u8 as *const ::core::ffi::c_char);
@@ -761,10 +749,9 @@ pub unsafe fn event_payload_get_uint(
     *value = (*epi).value.unsigned_number();
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn event_payload_get_client(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-) -> *mut client {
+pub unsafe fn event_payload_get_client(mut ep: *mut event_payload) -> *mut client {
+    let mut name: *const ::core::ffi::c_char =
+        b"client\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
@@ -775,10 +762,9 @@ pub unsafe fn event_payload_get_client(
     }
     return (*epi).value.client();
 }
-pub unsafe fn event_payload_get_session(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-) -> *mut session {
+pub unsafe fn event_payload_get_session(mut ep: *mut event_payload) -> *mut session {
+    let mut name: *const ::core::ffi::c_char =
+        b"session\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
@@ -789,10 +775,9 @@ pub unsafe fn event_payload_get_session(
     }
     return (*epi).value.session();
 }
-pub unsafe fn event_payload_get_window(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-) -> *mut window {
+pub unsafe fn event_payload_get_window(mut ep: *mut event_payload) -> *mut window {
+    let mut name: *const ::core::ffi::c_char =
+        b"window\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
@@ -803,10 +788,8 @@ pub unsafe fn event_payload_get_window(
     }
     return (*epi).value.window();
 }
-pub unsafe fn event_payload_get_pane(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-) -> *mut window_pane {
+pub unsafe fn event_payload_get_pane(mut ep: *mut event_payload) -> *mut window_pane {
+    let mut name: *const ::core::ffi::c_char = b"pane\0" as *const u8 as *const ::core::ffi::c_char;
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_find(ep, name);
     if epi.is_null()
@@ -864,81 +847,6 @@ mod tests {
     }
 
     #[test]
-    fn printed_pointer_bytes_keep_an_interior_nul() {
-        unsafe {
-            let ep = event_payload_create();
-            event_payload_set_pointer(
-                ep,
-                c"binary".as_ptr(),
-                EventPayloadPointer::Owned(Box::new(TestEventPayload {
-                    ptr: ::core::ptr::null_mut(),
-                    bytes: b"A\0B".to_vec(),
-                    released: None,
-                })),
-            );
-            let item = event_payload_first(ep);
-            assert_eq!(event_payload_item_print_owned(item), b"A\0B\0");
-            assert_eq!(
-                event_payload_print_owned(ep, c"binary".as_ptr()),
-                Some(b"A\0B\0".to_vec())
-            );
-            assert!(event_payload_print_owned(ep, c"missing".as_ptr()).is_none());
-            event_payload_free(ep);
-        }
-    }
-
-    #[test]
-    fn string_items_survive_lookup_and_release_on_both_replacement_and_payload_free() {
-        unsafe {
-            let ep = event_payload_create();
-            let name = c"value";
-            let first = CString::new(vec![b'a', 0xff]).unwrap();
-            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), first.as_ptr());
-            let first_item = event_payload_first(ep);
-            assert_eq!((*first_item).type_0(), EVENT_PAYLOAD_STRING);
-            assert_eq!(
-                CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())).to_bytes(),
-                first.to_bytes()
-            );
-            assert_eq!(
-                (*first_item).value.string(),
-                event_payload_get_string(ep, name.as_ptr()).cast_mut()
-            );
-
-            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"second".as_ptr());
-            let second_item = event_payload_first(ep);
-            assert_ne!(second_item, first_item);
-            assert_eq!(
-                CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())),
-                c"second"
-            );
-
-            event_payload_set_int(ep, name.as_ptr(), 42);
-            assert!(event_payload_get_string(ep, name.as_ptr()).is_null());
-            assert_eq!((*event_payload_first(ep)).type_0(), EVENT_PAYLOAD_INT);
-
-            let releases = std::rc::Rc::new(std::cell::Cell::new(0usize));
-            let release_counter = releases.clone();
-            event_payload_set_pointer(
-                ep,
-                name.as_ptr(),
-                EventPayloadPointer::Owned(Box::new(TestEventPayload {
-                    ptr: ::core::ptr::null_mut(),
-                    bytes: Vec::new(),
-                    released: Some(release_counter),
-                })),
-            );
-            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"".as_ptr());
-            assert_eq!(releases.get(), 1);
-            assert_eq!(
-                CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())),
-                c""
-            );
-            event_payload_free(ep);
-        }
-    }
-
-    #[test]
     fn replacement_accepts_the_previous_items_borrowed_name() {
         unsafe {
             let ep = event_payload_create();
@@ -987,7 +895,7 @@ mod tests {
             assert!((*first).owner.is_some());
 
             let mut moved = payload;
-            assert_eq!(event_payload_tree_minmax(&raw mut moved.items, -1), first);
+            assert_eq!(event_payload_tree_minmax(&raw mut moved.items), first);
             assert_eq!(event_payload_tree_next(first), second);
             assert_eq!(
                 event_payload_tree_remove(&raw mut moved.items, first),

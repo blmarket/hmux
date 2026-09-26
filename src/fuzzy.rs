@@ -262,7 +262,6 @@ unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
                     end = format_skip(
                         cp.offset(n as isize)
                             .offset(1 as ::core::ffi::c_int as isize),
-                        b"]\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                     if end.is_null() {
                         break;

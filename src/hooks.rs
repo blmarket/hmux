@@ -300,7 +300,7 @@ unsafe fn hooks_insert_event(
     if !item.is_null() && cmdq_get_flags(item) & CMDQ_STATE_NOHOOKS != 0 {
         return;
     }
-    c = event_payload_get_client(ep, b"client\0" as *const u8 as *const ::core::ffi::c_char);
+    c = event_payload_get_client(ep);
     ft = format_create(c, item, FORMAT_NONE, FORMAT_NOJOBS);
     event_payload_add_formats(
         ep,
@@ -358,7 +358,7 @@ unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
         );
         return;
     }
-    item = cmdq_running(::core::ptr::null_mut::<client>());
+    item = cmdq_running();
     if item.is_null() || !cmdq_get_flags(item) & CMDQ_STATE_NOHOOKS != 0 {
         hooks_insert_event(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -472,13 +472,7 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
     ) == hm as *mut ::core::ffi::c_void
     {
-        hooks_insert_event(
-            cmdq_running(::core::ptr::null_mut::<client>()),
-            name,
-            ep,
-            (*hm).oo,
-            1 as ::core::ffi::c_int,
-        );
+        hooks_insert_event(cmdq_running(), name, ep, (*hm).oo, 1 as ::core::ffi::c_int);
     }
 }
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
@@ -544,11 +538,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         );
     }
     if !change.c.is_null() {
-        event_payload_set_client(
-            ep,
-            b"client\0" as *const u8 as *const ::core::ffi::c_char,
-            change.c,
-        );
+        event_payload_set_client(ep, change.c);
     }
     if !change.s.is_null() {
         event_payload_set_session(
@@ -589,7 +579,6 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     events_fire(change.name, ep);
 }
 pub unsafe fn hooks_monitor_add(
-    _item: *mut cmdq_item,
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut type_0: monitor_type,

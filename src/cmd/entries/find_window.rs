@@ -11,7 +11,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
-pub static mut cmd_find_window_entry: cmd_entry =  {
+pub static mut cmd_find_window_entry: cmd_entry = {
     cmd_entry {
         name: c"find-window",
         alias: Some(c"findw"),
@@ -78,7 +78,7 @@ unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         args_set_flag(new_args, 'Z' as i32 as u_char, 0);
     }
-    args_set_owned_string(new_args, 'f' as i32 as u_char, filter_value, 0);
+    args_set_owned_string(new_args, filter_value);
     window_pane_set_mode(
         wp,
         ::core::ptr::null_mut::<window_pane>(),

@@ -758,8 +758,8 @@ pub unsafe fn mode_tree_draw_as_parent(mut mti: *mut mode_tree_item) {
 pub unsafe fn mode_tree_no_tag(mut mti: *mut mode_tree_item) {
     (*mti).no_tag = 1 as ::core::ffi::c_int;
 }
-pub unsafe fn mode_tree_align(mut mti: *mut mode_tree_item, mut align: ::core::ffi::c_int) {
-    (*mti).align = align;
+pub unsafe fn mode_tree_align(mut mti: *mut mode_tree_item) {
+    (*mti).align = 1;
 }
 pub unsafe fn mode_tree_remove(mut mtd: *mut mode_tree_data, mut mti: *mut mode_tree_item) {
     let siblings = &mut *mode_tree_siblings(mtd, mti);
@@ -1631,7 +1631,6 @@ unsafe fn mode_tree_search_set(mut mtd: *mut mode_tree_data) {
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
 unsafe fn mode_tree_search_callback(
-    _c: *mut client,
     mut mtd: *mut mode_tree_data,
     s: Option<&CStr>,
     mut key: prompt_key_result,
@@ -1654,7 +1653,6 @@ unsafe fn mode_tree_search_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn mode_tree_filter_callback(
-    _c: *mut client,
     mut mtd: *mut mode_tree_data,
     s: Option<&CStr>,
     mut key: prompt_key_result,
@@ -1708,13 +1706,7 @@ unsafe fn mode_tree_display_menu(
         c"".to_owned()
     };
     menu = menu_create(title.as_ptr());
-    menu_add_items(
-        menu,
-        items,
-        ::core::ptr::null_mut::<cmdq_item>(),
-        c,
-        ::core::ptr::null_mut::<cmd_find_state>(),
-    );
+    menu_add_items(menu, items, c);
     drop(title);
     (*mtd).references = (*mtd).references.wrapping_add(1);
     if x >= (*menu)
@@ -2254,13 +2246,8 @@ pub unsafe fn mode_tree_key(
                 b"\0" as *const u8 as *const ::core::ffi::c_char,
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
-                Some(Box::new(move |c, s, key| unsafe {
-                    mode_tree_search_callback(
-                        c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-                        mtd,
-                        s,
-                        key,
-                    )
+                Some(Box::new(move |_, s, key| unsafe {
+                    mode_tree_search_callback(mtd, s, key)
                 })),
                 None,
             );
@@ -2286,13 +2273,8 @@ pub unsafe fn mode_tree_key(
                     }),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
-                Some(Box::new(move |c, s, key| unsafe {
-                    mode_tree_filter_callback(
-                        c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-                        mtd,
-                        s,
-                        key,
-                    )
+                Some(Box::new(move |_, s, key| unsafe {
+                    mode_tree_filter_callback(mtd, s, key)
                 })),
                 None,
             );
@@ -2341,12 +2323,7 @@ pub unsafe fn mode_tree_run_command(
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
-        if let Err(mut error) = cmd_parse_and_append(
-            command.as_c_str(),
-            ::core::ptr::null_mut::<cmd_parse_input>(),
-            c,
-            state,
-        ) {
+        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), c, state) {
             if !c.is_null() {
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(

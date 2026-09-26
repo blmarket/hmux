@@ -44,8 +44,8 @@ pub unsafe fn window_visible_ranges(
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
     mut width: u_int,
-    mut r: *mut visible_ranges,
 ) -> *mut visible_ranges {
+    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut current_block: u64;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();

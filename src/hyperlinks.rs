@@ -199,7 +199,7 @@ pub unsafe fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
 pub unsafe fn hyperlinks_reset(mut hl: *mut hyperlinks) {
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     let mut hlu1: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    hlu = hyperlinks_by_inner_tree_minmax(&(*hl).by_inner, RB_NEGINF);
+    hlu = hyperlinks_by_inner_tree_minmax(&(*hl).by_inner);
     while !hlu.is_null() && {
         hlu1 = hyperlinks_by_inner_tree_next(&*hlu);
         1 as ::core::ffi::c_int != 0
@@ -294,7 +294,6 @@ pub unsafe fn hyperlinks_by_inner_tree_remove(
 }
 pub unsafe fn hyperlinks_by_inner_tree_minmax(
     head: &hyperlinks_by_inner_tree,
-    direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
@@ -302,11 +301,7 @@ pub unsafe fn hyperlinks_by_inner_tree_minmax(
     let map = owner
         .try_borrow_mut()
         .expect("hyperlink inner index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_inner_tree_next(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {

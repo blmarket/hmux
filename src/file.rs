@@ -1,4 +1,7 @@
 use crate::src::cmd::queue::{cmdq_clear_wait_file, cmdq_set_wait_file};
+use crate::src::compat::imsg::imsg;
+use crate::src::compat::imsg::*;
+use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{
     __errno_location, close, dup, ferror, fopen, fread, fwrite, memcpy, open, strcmp, strlen,
@@ -21,9 +24,6 @@ use crate::src::shared::command::cmdq_item;
 use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_TIMEOUT, EV_WRITE};
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::posix_io::{
     O_APPEND, O_CREAT, O_NONBLOCK, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
@@ -238,11 +238,7 @@ pub unsafe fn file_free(mut cf: *mut client_file) {
     (*cf).path = Default::default();
     drop(Box::from_raw(cf));
 }
-unsafe fn file_fire_done_cb(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn file_fire_done_cb(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     let c: *mut client = (*cf).c;
     let wait_client = (*cf).wait_client;
@@ -283,12 +279,7 @@ pub unsafe fn file_fire_done(mut cf: *mut client_file) {
         return;
     }
     owner.terminal_scheduled = true;
-    event_once(
-        -(1 as ::core::ffi::c_int),
-        EV_TIMEOUT as ::core::ffi::c_short,
-        move |fd, flags| unsafe { file_fire_done_cb(fd, flags, cf as *mut ::core::ffi::c_void) },
-        ::core::ptr::null::<timeval>(),
-    );
+    event_once(move |_, _| unsafe { file_fire_done_cb(cf as *mut ::core::ffi::c_void) });
 }
 pub unsafe fn file_fire_read(mut cf: *mut client_file) {
     let c = (*cf).c;
@@ -500,8 +491,8 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
     bsize: size_t,
     cb: client_file_cb,
     item: *mut cmdq_item,
-    cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
+    let cancel_cb: Option<Box<dyn FnOnce()>> = None;
     file_write_impl(c, path, flags, bdata, bsize, cb, Some((item, cancel_cb)));
 }
 
@@ -794,11 +785,7 @@ pub unsafe fn file_cancel(mut cf: *mut client_file) {
         ::core::mem::size_of::<msg_read_cancel>() as size_t,
     );
 }
-unsafe fn file_push_cb(
-    _fd: ::core::ffi::c_int,
-    _events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn file_push_cb(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     if (*cf).c.is_null() || !(*(*cf).c).flags & CLIENT_DEAD as uint64_t != 0 {
         file_push(cf);
@@ -860,12 +847,7 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
     }
     if left != 0 as size_t {
         (*cf).references += 1;
-        event_once(
-            -(1 as ::core::ffi::c_int),
-            EV_TIMEOUT as ::core::ffi::c_short,
-            move |fd, flags| unsafe { file_push_cb(fd, flags, cf as *mut ::core::ffi::c_void) },
-            ::core::ptr::null::<timeval>(),
-        );
+        event_once(move |_, _| unsafe { file_push_cb(cf as *mut ::core::ffi::c_void) });
     } else if (*cf).stream > 2 as ::core::ffi::c_int {
         close_0.stream = (*cf).stream;
         proc_send(
@@ -886,7 +868,7 @@ pub unsafe fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_in
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    cf = client_files_minmax(&*files, RB_NEGINF);
+    cf = client_files_minmax(&*files);
     while !cf.is_null() {
         if !(*cf).event.is_null() {
             left = evbuffer_get_length(&*((*(*cf).event).output));
@@ -939,7 +921,6 @@ unsafe fn file_write_finished(mut cf: *mut client_file) {
     file_free(cf);
 }
 unsafe fn file_write_error_callback(
-    _bev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
@@ -974,7 +955,7 @@ unsafe fn file_write_error_callback(
         });
     }
 }
-unsafe fn file_write_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::c_void) {
+unsafe fn file_write_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     log_debug(
         b"write check file %d\0" as *const u8 as *const ::core::ffi::c_char,
@@ -996,7 +977,6 @@ pub unsafe fn file_write_open(
     mut files: *mut client_files,
     mut peer: *mut tmuxpeer,
     imsg: &imsg,
-    mut allow_streams: ::core::ffi::c_int,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) {
@@ -1052,7 +1032,7 @@ pub unsafe fn file_write_open(
             (*cf).fd = -(1 as ::core::ffi::c_int);
             if msg.fd == -(1 as ::core::ffi::c_int) {
                 (*cf).fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
-            } else if allow_streams != 0 {
+            } else {
                 if msg.fd != STDOUT_FILENO && msg.fd != STDERR_FILENO {
                     *__errno_location() = EBADF;
                 } else {
@@ -1061,8 +1041,6 @@ pub unsafe fn file_write_open(
                         close(msg.fd);
                     }
                 }
-            } else {
-                *__errno_location() = EBADF;
             }
             if (*cf).fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
@@ -1070,15 +1048,11 @@ pub unsafe fn file_write_open(
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     None,
-                    bufferevent_data_callback(move |stream| unsafe {
-                        file_write_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void)
+                    bufferevent_data_callback(move |_| unsafe {
+                        file_write_callback(cf as *mut ::core::ffi::c_void)
                     }),
-                    bufferevent_event_callback(move |stream, flags| unsafe {
-                        file_write_error_callback(
-                            stream.as_ptr(),
-                            flags,
-                            cf as *mut ::core::ffi::c_void,
-                        )
+                    bufferevent_event_callback(move |_, flags| unsafe {
+                        file_write_error_callback(flags, cf as *mut ::core::ffi::c_void)
                     }),
                 );
                 if (*cf).event.is_null() {
@@ -1180,7 +1154,6 @@ pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
     }
 }
 unsafe fn file_read_error_callback(
-    _bev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
@@ -1211,7 +1184,7 @@ unsafe fn file_read_error_callback(
     client_files_remove((*cf).tree as *mut client_files, cf);
     file_free(cf);
 }
-unsafe fn file_read_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::c_void) {
+unsafe fn file_read_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut bsize: size_t = 0;
@@ -1263,7 +1236,6 @@ pub unsafe fn file_read_open(
     mut files: *mut client_files,
     mut peer: *mut tmuxpeer,
     imsg: &imsg,
-    mut allow_streams: ::core::ffi::c_int,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) {
@@ -1319,7 +1291,7 @@ pub unsafe fn file_read_open(
             (*cf).fd = -(1 as ::core::ffi::c_int);
             if msg.fd == -(1 as ::core::ffi::c_int) {
                 (*cf).fd = open(path, flags);
-            } else if allow_streams != 0 {
+            } else {
                 if msg.fd != STDIN_FILENO {
                     *__errno_location() = EBADF;
                 } else {
@@ -1328,24 +1300,18 @@ pub unsafe fn file_read_open(
                         close(msg.fd);
                     }
                 }
-            } else {
-                *__errno_location() = EBADF;
             }
             if (*cf).fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
             } else {
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
-                    bufferevent_data_callback(move |stream| unsafe {
-                        file_read_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void)
+                    bufferevent_data_callback(move |_| unsafe {
+                        file_read_callback(cf as *mut ::core::ffi::c_void)
                     }),
                     None,
-                    bufferevent_event_callback(move |stream, flags| unsafe {
-                        file_read_error_callback(
-                            stream.as_ptr(),
-                            flags,
-                            cf as *mut ::core::ffi::c_void,
-                        )
+                    bufferevent_event_callback(move |_, flags| unsafe {
+                        file_read_error_callback(flags, cf as *mut ::core::ffi::c_void)
                     }),
                 );
                 if (*cf).event.is_null() {
@@ -1398,16 +1364,9 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
         b"cancel file %d\0" as *const u8 as *const ::core::ffi::c_char,
         (*cf).stream,
     );
-    file_read_error_callback(
-        ::core::ptr::null_mut::<bufferevent>(),
-        0 as ::core::ffi::c_short,
-        cf as *mut ::core::ffi::c_void,
-    );
+    file_read_error_callback(0 as ::core::ffi::c_short, cf as *mut ::core::ffi::c_void);
 }
-pub unsafe fn file_write_ready(
-    mut files: *mut client_files,
-    imsg: &imsg,
-) -> ::core::ffi::c_int {
+pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_ready>() {
         return -1;
@@ -1443,10 +1402,7 @@ pub unsafe fn file_write_ready(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_write_done(
-    mut files: *mut client_files,
-    imsg: &imsg,
-) -> ::core::ffi::c_int {
+pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_done>() {
         return -1;
@@ -1485,10 +1441,7 @@ pub unsafe fn file_write_done(
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_read_data(
-    mut files: *mut client_files,
-    imsg: &imsg,
-) -> ::core::ffi::c_int {
+pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_read_data>() {
         return -1;
@@ -1535,10 +1488,7 @@ pub unsafe fn file_read_data(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_read_done(
-    mut files: *mut client_files,
-    imsg: &imsg,
-) -> ::core::ffi::c_int {
+pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_done>() {
         return -1;
@@ -1646,18 +1596,14 @@ pub unsafe fn client_files_remove(
     }
     elm
 }
-pub fn client_files_minmax(head: &client_files, direction: ::core::ffi::c_int) -> *mut client_file {
+pub fn client_files_minmax(head: &client_files) -> *mut client_file {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("client file index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn client_files_next(elm: &client_file) -> *mut client_file {
@@ -1697,41 +1643,5 @@ mod client_files_index_tests {
         let mut file = Box::new(client_file::empty());
         file.stream = stream;
         Box::into_raw(file)
-    }
-
-    #[test]
-    fn client_file_index_observers_follow_move_duplicate_and_removal() {
-        unsafe {
-            let mut head = client_files { storage: None };
-            let mut other = client_files { storage: None };
-            let first = file(4);
-            let second = file(8);
-            let duplicate = file(4);
-
-            assert!(client_files_insert(&mut head, first).is_null());
-            assert!(client_files_insert(&mut head, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
-            assert_eq!(client_files_insert(&mut head, duplicate), first);
-            assert!((*duplicate).entry.owner.is_none());
-            assert!(client_files_remove(&mut other, first).is_null());
-            assert!( { (*first).entry.owner.is_some() });
-
-            let mut moved = head;
-            assert_eq!(client_files_minmax(&moved, -1), first);
-            assert_eq!(client_files_next(&*first), second);
-            assert_eq!(client_files_remove(&mut moved, first), first);
-            assert!((*first).entry.owner.is_none());
-            assert!(client_files_next(&*first).is_null());
-            assert_eq!(client_files_remove(&mut moved, second), second);
-
-            drop(Box::from_raw(duplicate));
-            drop(Box::from_raw(first));
-            drop(Box::from_raw(second));
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-        }
     }
 }

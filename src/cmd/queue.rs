@@ -981,7 +981,8 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
         }
     };
 }
-pub unsafe fn cmdq_running(mut c: *mut client) -> *mut cmdq_item {
+pub unsafe fn cmdq_running() -> *mut cmdq_item {
+    let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut queue: *mut cmdq_list = cmdq_get(c);
     if (*queue).item.is_null() {
         return ::core::ptr::null_mut::<cmdq_item>();

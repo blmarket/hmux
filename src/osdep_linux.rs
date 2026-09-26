@@ -13,10 +13,7 @@ pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
 
 pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;
-pub(crate) unsafe fn osdep_get_name_cstring(
-    fd: ::core::ffi::c_int,
-    _tty: *mut ::core::ffi::c_char,
-) -> Option<CString> {
+pub(crate) unsafe fn osdep_get_name_cstring(fd: ::core::ffi::c_int) -> Option<CString> {
     let pgrp = tcgetpgrp(fd) as pid_t;
     if pgrp == -(1 as ::core::ffi::c_int) {
         return None;

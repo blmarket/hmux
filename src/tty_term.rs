@@ -18,6 +18,7 @@ use crate::src::shared::client::client;
 use crate::src::shared::environment::environ_entry;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::options::{options_array_item, options_entry, options_value};
+use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::tty::tty_terms;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{tty, tty_code, tty_code_type, tty_term, tty_term_entry};
@@ -1510,10 +1511,8 @@ pub unsafe fn tty_term_free(mut term: *mut tty_term) {
     *(*term).entry.le_prev = (*term).entry.le_next;
     drop(Box::from_raw(term));
 }
-pub(crate) unsafe fn tty_term_read_list(
-    name: &CStr,
-    fd: ::core::ffi::c_int,
-) -> Result<Vec<CString>, CString> {
+pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
+    let fd: ::core::ffi::c_int = STDIN_FILENO;
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut error: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;

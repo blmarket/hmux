@@ -209,7 +209,7 @@ pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
 }
 pub unsafe fn server_status_window(mut w: *mut window) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if session_has(s, w) != 0 {
             server_status_session(s);
@@ -295,7 +295,7 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
         w,
         b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         // Destroying a group may remove both s and its next session.
         let name = sessions_key(&*s);
@@ -344,7 +344,7 @@ pub unsafe fn server_renumber_session(mut s: *mut session) {
 }
 pub unsafe fn server_renumber_all() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         server_renumber_session(s);
         s = sessions_next(&*s);
@@ -582,7 +582,7 @@ unsafe fn server_find_session(
 ) -> *mut session {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut s_out: *mut session = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s_loop.is_null() {
         if s_loop != s && choose(&*s_loop, (!s_out.is_null()).then(|| &*s_out)) {
             s_out = s_loop;
@@ -664,7 +664,7 @@ pub unsafe fn server_check_unattached() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current_block_4: u64;
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         let name = sessions_key(&*s);
         if !((*s).attached != 0 as u_int) {

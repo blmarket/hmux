@@ -496,7 +496,7 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client
 }
 pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut session> {
     let mut l = Vec::new();
-    let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         l.push(s);
         s = sessions_next(&*s);
@@ -523,7 +523,7 @@ pub unsafe fn sort_get_panes_window(
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winlink> {
     let mut links = Vec::new();
-    let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
+    let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         let mut wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
@@ -559,7 +559,7 @@ pub unsafe fn sort_get_key_bindings(sort_crit: *mut sort_criteria) -> Vec<*mut k
         let mut bd = key_bindings_first(table);
         while !bd.is_null() {
             bindings.push(bd);
-            bd = key_bindings_next(table, bd);
+            bd = key_bindings_next(bd);
         }
         table = key_bindings_next_table(table);
     }
@@ -579,7 +579,7 @@ pub unsafe fn sort_get_key_bindings_table(
     let mut bd = key_bindings_first(table);
     while !bd.is_null() {
         bindings.push(bd);
-        bd = key_bindings_next(table, bd);
+        bd = key_bindings_next(bd);
     }
     sort_by_criteria(&mut bindings, &*sort_crit, |a, b, criteria| unsafe {
         sort_key_binding_cmp(*a, *b, criteria)

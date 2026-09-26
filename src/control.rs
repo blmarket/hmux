@@ -38,6 +38,7 @@ use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set}
 use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
+use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::session::session;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
@@ -347,7 +348,7 @@ mod control_queue_tests {
             let removed = control_panes_remove(&raw mut index, first).unwrap();
             assert!(removed.entry.owner.is_none());
             drop(removed);
-            assert_eq!(control_panes_minmax(&index, RB_NEGINF), second);
+            assert_eq!(control_panes_minmax(&index), second);
             drop(control_panes_remove(&raw mut index, second));
             assert!(index.storage.is_none());
             assert!(matches!(
@@ -383,7 +384,7 @@ mod control_queue_tests {
             assert!((*first).entry.owner.is_some());
 
             let mut moved = index;
-            assert_eq!(control_windows_minmax(&moved, RB_NEGINF), first);
+            assert_eq!(control_windows_minmax(&moved), first);
             assert_eq!(control_windows_next(&*first), second);
             assert_eq!(control_windows_remove(&raw mut moved, first), first);
             assert!((*first).entry.owner.is_none());
@@ -557,7 +558,7 @@ pub unsafe fn control_reset_offsets(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_panes_minmax(&(*cs).panes, RB_NEGINF);
+    cp = control_panes_minmax(&(*cs).panes);
     while !cp.is_null() && {
         cp1 = control_panes_next(&*cp);
         1 as ::core::ffi::c_int != 0
@@ -973,23 +974,17 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
     );
     return CMD_RETURN_NORMAL;
 }
-unsafe fn control_error_callback(
-    _bufev: *mut bufferevent,
-    _what: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn control_error_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
-unsafe fn control_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
+unsafe fn control_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
     let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
-        let Some(line) =
-            evbuffer_readln(buffer, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
-        else {
+        let Some(line) = evbuffer_readln(buffer) else {
             break;
         };
         log_debug(
@@ -1011,7 +1006,6 @@ unsafe fn control_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core:
             );
             match cmd_parse_and_append(
                 CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
-                ::core::ptr::null_mut::<cmd_parse_input>(),
                 c,
                 state,
             ) {
@@ -1038,7 +1032,8 @@ pub unsafe fn control_all_done(mut c: *mut client) -> ::core::ffi::c_int {
     return (evbuffer_get_length(&*((*(*cs).write_event).output)) == 0 as size_t)
         as ::core::ffi::c_int;
 }
-pub unsafe fn control_wait_exit(mut fd: ::core::ffi::c_int) {
+pub unsafe fn control_wait_exit() {
+    let mut fd: ::core::ffi::c_int = STDIN_FILENO;
     let mut pfd: pollfd = pollfd {
         fd: 0,
         events: 0,
@@ -1051,8 +1046,7 @@ pub unsafe fn control_wait_exit(mut fd: ::core::ffi::c_int) {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     loop {
-        if let Some(line) = evbuffer_readln(evb, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
-        {
+        if let Some(line) = evbuffer_readln(evb) {
             if line[0] == 0 {
                 break;
             }
@@ -1286,7 +1280,7 @@ unsafe fn control_write_pending(
     }
     return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
 }
-unsafe fn control_write_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
+unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
     let mut evb: *mut evbuffer = (*(*cs).write_event).output;
@@ -1399,14 +1393,14 @@ pub unsafe fn control_start(mut c: *mut client) {
     ) as *mut monitor_set;
     (*cs).read_event = bufferevent_new(
         (*c).fd,
-        bufferevent_data_callback(move |stream| unsafe {
-            control_read_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void)
+        bufferevent_data_callback(move |_| unsafe {
+            control_read_callback(c as *mut ::core::ffi::c_void)
         }),
-        bufferevent_data_callback(move |stream| unsafe {
-            control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void)
+        bufferevent_data_callback(move |_| unsafe {
+            control_write_callback(c as *mut ::core::ffi::c_void)
         }),
-        bufferevent_event_callback(move |stream, flags| unsafe {
-            control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void)
+        bufferevent_event_callback(move |_, _| unsafe {
+            control_error_callback(c as *mut ::core::ffi::c_void)
         }),
     );
     if (*cs).read_event.is_null() {
@@ -1418,23 +1412,18 @@ pub unsafe fn control_start(mut c: *mut client) {
         (*cs).write_event = bufferevent_new(
             (*c).out_fd,
             None,
-            bufferevent_data_callback(move |stream| unsafe {
-                control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void)
+            bufferevent_data_callback(move |_| unsafe {
+                control_write_callback(c as *mut ::core::ffi::c_void)
             }),
-            bufferevent_event_callback(move |stream, flags| unsafe {
-                control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void)
+            bufferevent_event_callback(move |_, _| unsafe {
+                control_error_callback(c as *mut ::core::ffi::c_void)
             }),
         );
         if (*cs).write_event.is_null() {
             fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
         }
     }
-    bufferevent_setwatermark(
-        (*cs).write_event,
-        EV_WRITE as ::core::ffi::c_short,
-        CONTROL_BUFFER_LOW as size_t,
-        0 as size_t,
-    );
+    bufferevent_setwatermark((*cs).write_event);
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         bufferevent_write(
             (*cs).write_event,
@@ -1454,7 +1443,7 @@ pub unsafe fn control_ready(mut c: *mut client) {
 pub unsafe fn control_discard(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_panes_minmax(&(*cs).panes, RB_NEGINF);
+    cp = control_panes_minmax(&(*cs).panes);
     while !cp.is_null() {
         control_discard_pane(c, cp);
         cp = control_panes_next(&*cp);
@@ -1487,7 +1476,7 @@ pub unsafe fn control_stop(mut c: *mut client) {
     }
     bufferevent_free((*cs).read_event);
     control_reset_offsets(c);
-    cw = control_windows_minmax(&(*cs).windows, RB_NEGINF);
+    cw = control_windows_minmax(&(*cs).windows);
     while !cw.is_null() && {
         cw1 = control_windows_next(&*cw);
         1 as ::core::ffi::c_int != 0
@@ -1607,21 +1596,14 @@ pub unsafe fn control_panes_remove(
     }
     removed
 }
-pub unsafe fn control_panes_minmax(
-    head: &control_panes,
-    direction: ::core::ffi::c_int,
-) -> *mut control_pane {
+pub unsafe fn control_panes_minmax(head: &control_panes) -> *mut control_pane {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("control pane index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| {
         &**node as *const control_pane as *mut control_pane
     })
@@ -1736,21 +1718,14 @@ pub unsafe fn control_windows_remove(
     }
     elm
 }
-pub unsafe fn control_windows_minmax(
-    head: &control_windows,
-    direction: ::core::ffi::c_int,
-) -> *mut control_window {
+pub unsafe fn control_windows_minmax(head: &control_windows) -> *mut control_window {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let map = owner
         .try_borrow_mut()
         .expect("control window index already borrowed");
-    let pair = if direction < 0 {
-        map.first_key_value()
-    } else {
-        map.last_key_value()
-    };
+    let pair = map.first_key_value();
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_windows_next(elm: &control_window) -> *mut control_window {

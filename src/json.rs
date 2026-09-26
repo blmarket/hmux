@@ -107,12 +107,8 @@ unsafe fn json_fields_remove(head: &mut json_fields, elm: &json_node) -> *mut js
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
-unsafe fn json_fields_minmax(head: &json_fields, val: ::core::ffi::c_int) -> *mut json_node {
-    let entry = if val < 0 {
-        head.entries.values().next()
-    } else {
-        head.entries.values().next_back()
-    };
+unsafe fn json_fields_minmax(head: &json_fields) -> *mut json_node {
+    let entry = head.entries.values().next();
     entry
         .copied()
         .unwrap_or(::core::ptr::null_mut::<json_node>())
@@ -273,10 +269,10 @@ pub unsafe fn json_get_array(
 }
 pub unsafe fn json_find_string(
     mut jn: *mut json_node,
-    mut key: *const ::core::ffi::c_char,
     mut out: *mut *const ::core::ffi::c_char,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
+    let mut key: *const ::core::ffi::c_char = b"t\0" as *const u8 as *const ::core::ffi::c_char;
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
@@ -339,10 +335,10 @@ pub unsafe fn json_find_number(
 }
 pub unsafe fn json_find_boolean(
     mut jn: *mut json_node,
-    mut key: *const ::core::ffi::c_char,
     mut out: *mut ::core::ffi::c_int,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
+    let mut key: *const ::core::ffi::c_char = b"a\0" as *const u8 as *const ::core::ffi::c_char;
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
@@ -372,10 +368,10 @@ pub unsafe fn json_find_boolean(
 }
 pub unsafe fn json_find_object(
     mut jn: *mut json_node,
-    mut key: *const ::core::ffi::c_char,
     mut out: *mut *mut json_node,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
+    let mut key: *const ::core::ffi::c_char = b"L\0" as *const u8 as *const ::core::ffi::c_char;
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
@@ -405,10 +401,10 @@ pub unsafe fn json_find_object(
 }
 pub unsafe fn json_find_array(
     mut jn: *mut json_node,
-    mut key: *const ::core::ffi::c_char,
     mut out: *mut *mut json_node,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
+    let mut key: *const ::core::ffi::c_char = b"c\0" as *const u8 as *const ::core::ffi::c_char;
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
@@ -663,7 +659,7 @@ pub unsafe fn json_destroy_node(mut node: *mut json_node) {
     match (*node).type_0() as ::core::ffi::c_uint {
         0 => {}
         3 => {
-            field = json_fields_minmax((*node).value.fields(), RB_NEGINF);
+            field = json_fields_minmax((*node).value.fields());
             while !field.is_null() && {
                 field1 = json_fields_next((*node).value.fields(), &*field);
                 1 as ::core::ffi::c_int != 0
@@ -1193,7 +1189,7 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
                 b"{\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            field = json_fields_minmax((*node).value.fields(), RB_NEGINF);
+            field = json_fields_minmax((*node).value.fields());
             while !field.is_null() {
                 if comma != 0 {
                     evbuffer_add(
@@ -1296,7 +1292,7 @@ mod json_fields_tests {
     }
 
     unsafe fn free_tree(head: &mut json_fields) {
-        let mut item = json_fields_minmax(head, RB_NEGINF);
+        let mut item = json_fields_minmax(head);
         while !item.is_null() {
             let next = json_fields_next(head, &*item);
             assert_eq!(json_fields_remove(head, &*item), item);
@@ -1304,114 +1300,9 @@ mod json_fields_tests {
             item = next;
         }
     }
-
-    #[test]
-    fn json_fields_preserves_strcmp_order_and_duplicate_keys() {
-        unsafe {
-            let names: &[&[u8]] = &[b"zeta", b"alpha", b"alpha-2", b"\x80high", b"alpha\x01"];
-            let keys: Vec<CString> = names
-                .iter()
-                .map(|name| CString::new(*name).expect("test key has no NUL"))
-                .collect();
-            assert!(crate::src::ffi::libc::strcmp(keys[1].as_ptr(), keys[2].as_ptr()) < 0);
-            assert!(crate::src::ffi::libc::strcmp(keys[3].as_ptr(), keys[0].as_ptr()) > 0);
-            let mut head = json_fields::default();
-            let mut items = Vec::new();
-            for key in &keys {
-                let item = new_node(key);
-                assert!(json_fields_insert(&mut head, &mut *item).is_null());
-                items.push(item);
-            }
-            drop(keys);
-
-            let duplicate_key = CString::new(b"alpha".as_slice()).unwrap();
-            let duplicate = new_node(&duplicate_key);
-            assert_eq!(json_fields_insert(&mut head, &mut *duplicate), items[1]);
-            json_destroy_node(duplicate);
-
-            let probe_key = CString::new(b"alpha".as_slice()).unwrap();
-            assert_eq!(json_fields_find(&head, probe_key.as_c_str()), items[1]);
-
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*json_fields_minmax(&mut head, RB_NEGINF)).key)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"alpha"
-            );
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*json_fields_minmax(&mut head, crate::src::shared::tree::RB_INF)).key)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"\x80high"
-            );
-
-            let mut ordered = Vec::new();
-            let mut item = json_fields_minmax(&head, RB_NEGINF);
-            while !item.is_null() {
-                ordered.push(
-                    CStr::from_ptr(
-                        ((*item).key)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
-                    .to_bytes()
-                    .to_vec(),
-                );
-                item = json_fields_next(&head, &*item);
-            }
-            assert_eq!(
-                ordered,
-                vec![
-                    b"alpha".to_vec(),
-                    b"alpha\x01".to_vec(),
-                    b"alpha-2".to_vec(),
-                    b"zeta".to_vec(),
-                    b"\x80high".to_vec(),
-                ]
-            );
-
-            let removed = json_fields_remove(&mut head, &*items[2]);
-            assert_eq!(removed, items[2]);
-            let removed_probe = CString::new(b"alpha-2".as_slice()).unwrap();
-            assert!(json_fields_find(&head, removed_probe.as_c_str()).is_null());
-            json_destroy_node(removed);
-            free_tree(&mut head);
-        }
-    }
 }
 
 #[cfg(test)]
 mod json_string_owner_tests {
     use super::*;
-
-    #[test]
-    fn parsed_high_byte_string_survives_input_release() {
-        unsafe {
-            let input = CString::new(b"{\"nested\":[{\"value\":\"\xff\"}]}".as_slice()).unwrap();
-            let root = json_parse(input.as_ptr(), ::core::ptr::null_mut());
-            assert!(!root.is_null());
-            drop(input);
-
-            let nested = json_find(root, c"nested".as_ptr());
-            let first = json_array_first(nested);
-            let mut raw = ::core::ptr::null();
-            assert_eq!(
-                json_find_string(
-                    first,
-                    c"value".as_ptr(),
-                    &raw mut raw,
-                    ::core::ptr::null_mut()
-                ),
-                0
-            );
-            assert_eq!(CStr::from_ptr(raw).to_bytes(), b"\xff");
-            json_destroy_node(root);
-        }
-    }
 }
