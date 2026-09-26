@@ -12,7 +12,7 @@ pub enum PeerMessage<'a> {
 /// Owned by the parent process's peer list until `proc_remove_peer`.
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
-    pub ibuf: imsgbuf,
+    pub(crate) ibuf: imsgbuf,
     pub event: event,
     pub uid: uid_t,
     pub gid: gid_t,

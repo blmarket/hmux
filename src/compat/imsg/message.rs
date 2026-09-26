@@ -205,34 +205,34 @@ impl Drop for ibuf<'_> {
 ///
 /// Queue insertion still checks `is_owned`; a static lifetime alone does not
 /// establish ownership of the bytes.
-pub type OwnedIbuf = ibuf<'static>;
+pub(crate) type OwnedIbuf = ibuf<'static>;
 
 pub struct imsg {
     pub hdr: imsg_hdr,
-    pub data: Box<[u8]>,
+    pub data: Vec<u8>,
     pub(crate) fd: Option<OwnedFd>,
 }
 
-pub struct msgbuf {
-    pub bufs: ibufqueue,
-    pub rbufs: ibufqueue,
-    pub rbuf: Box<[u8]>,
-    pub rpmsg: Option<Box<OwnedIbuf>>,
-    pub readhdr:
+pub(crate) struct msgbuf {
+    pub(crate) bufs: ibufqueue,
+    pub(crate) rbufs: ibufqueue,
+    pub(crate) rbuf: Box<[u8]>,
+    pub(crate) rpmsg: Option<Box<OwnedIbuf>>,
+    pub(crate) readhdr:
         Option<
             Box<dyn FnMut(&[u8], Option<OwnedFd>) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>>,
         >,
-    pub roff: size_t,
-    pub hdrsize: size_t,
+    pub(crate) roff: size_t,
+    pub(crate) hdrsize: size_t,
 }
 
 #[derive(Default)]
-pub struct imsgbuf {
-    pub w: Option<Box<msgbuf>>,
-    pub pid: pid_t,
-    pub maxsize: uint32_t,
-    pub fd: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
+pub(crate) struct imsgbuf {
+    pub(crate) w: Option<Box<msgbuf>>,
+    pub(crate) pid: pid_t,
+    pub(crate) maxsize: uint32_t,
+    pub(crate) fd: ::core::ffi::c_int,
+    pub(crate) flags: ::core::ffi::c_int,
 }
 
 /// Make a read-only view whose lifetime is tied to the source slice.

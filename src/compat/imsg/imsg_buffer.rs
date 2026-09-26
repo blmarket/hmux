@@ -9,7 +9,7 @@ use crate::src::shared::socket::SOL_SOCKET;
 use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-pub struct ibufqueue {
+pub(crate) struct ibufqueue {
     bufs: ibufqueue_bufs,
 }
 

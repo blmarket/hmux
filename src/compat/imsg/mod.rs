@@ -1,10 +1,8 @@
 mod imsg_buffer;
 mod message;
 
-pub use imsg_buffer::ibufqueue;
 pub use message::{
-    ibuf, ibuf_from_buffer, ibuf_from_ibuf, ibuf_get_ibuf, imsg, imsg_hdr, imsgbuf,
-    msg_command, msgbuf, msgtype, OwnedIbuf, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION,
+    ibuf, ibuf_from_buffer, ibuf_from_ibuf, ibuf_get_ibuf, imsg, imsg_hdr, msgtype,
     MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING,
     MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE,
     MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS,
@@ -14,6 +12,10 @@ pub use message::{
     MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP,
     MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY,
 };
+pub(crate) use message::{
+    imsgbuf, msg_command, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION,
+};
+use message::{msgbuf, OwnedIbuf};
 
 use imsg_buffer::{
     ibuf_add, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get, ibuf_fd_set,
@@ -26,9 +28,9 @@ use crate::src::shared::abi::uint32_t;
 use crate::src::shared::errno::{EBADMSG, EINVAL, ENOMEM, ERANGE};
 use std::os::fd::OwnedFd;
 
-pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
-pub fn imsgbuf_init(
+const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
+pub(crate) fn imsgbuf_init(
     imsgbuf: &mut imsgbuf,
     fd: ::core::ffi::c_int,
 ) -> Result<(), ::core::ffi::c_int> {
@@ -43,10 +45,10 @@ pub fn imsgbuf_init(
     imsgbuf.flags = 0;
     Ok(())
 }
-pub fn imsgbuf_allow_fdpass(imsgbuf: &mut imsgbuf) {
+pub(crate) fn imsgbuf_allow_fdpass(imsgbuf: &mut imsgbuf) {
     imsgbuf.flags |= IMSG_ALLOW_FDPASS;
 }
-pub fn imsgbuf_read(imsgbuf: &mut imsgbuf) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
+pub(crate) fn imsgbuf_read(imsgbuf: &mut imsgbuf) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
         return Err(EINVAL);
     };
@@ -56,7 +58,7 @@ pub fn imsgbuf_read(imsgbuf: &mut imsgbuf) -> Result<::core::ffi::c_int, ::core:
         ibuf_read(imsgbuf.fd, msgbuf)
     }
 }
-pub fn imsgbuf_write(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
+pub(crate) fn imsgbuf_write(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
     let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
         return Err(EINVAL);
     };
@@ -66,19 +68,19 @@ pub fn imsgbuf_write(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
         ibuf_write(imsgbuf.fd, msgbuf)
     }
 }
-pub fn imsgbuf_flush(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
+pub(crate) fn imsgbuf_flush(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
     while imsgbuf_queuelen(imsgbuf) > 0 {
         imsgbuf_write(imsgbuf)?;
     }
     Ok(())
 }
-pub fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
+pub(crate) fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
     imsgbuf.w = None;
 }
-pub fn imsgbuf_queuelen(imsgbuf: &imsgbuf) -> uint32_t {
+pub(crate) fn imsgbuf_queuelen(imsgbuf: &imsgbuf) -> uint32_t {
     imsgbuf.w.as_deref().map_or(0, msgbuf_queuelen)
 }
-pub fn imsgbuf_get(imsgbuf: &mut imsgbuf) -> Result<Option<imsg>, ::core::ffi::c_int> {
+pub(crate) fn imsgbuf_get(imsgbuf: &mut imsgbuf) -> Result<Option<imsg>, ::core::ffi::c_int> {
     let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
         return Ok(None);
     };
@@ -95,14 +97,13 @@ pub fn imsgbuf_get(imsgbuf: &mut imsgbuf) -> Result<Option<imsg>, ::core::ffi::c
     let mut data = Vec::new();
     data.try_reserve_exact(buf.size()).map_err(|_| ENOMEM)?;
     data.extend_from_slice(buf.unread());
-    let data = data.into_boxed_slice();
     let fd = ibuf_fd_get(&mut buf);
     Ok(Some(imsg { hdr, data, fd }))
 }
-pub fn imsg_get_fd(imsg: &mut imsg) -> Option<OwnedFd> {
+pub(crate) fn imsg_get_fd(imsg: &mut imsg) -> Option<OwnedFd> {
     imsg.fd.take()
 }
-pub fn imsg_compose(
+pub(crate) fn imsg_compose(
     imsgbuf: &mut imsgbuf,
     type_0: uint32_t,
     id: uint32_t,
@@ -115,7 +116,7 @@ pub fn imsg_compose(
     ibuf_fd_set(&mut wbuf, fd)?;
     imsg_close(imsgbuf, wbuf)
 }
-pub fn imsg_create(
+fn imsg_create(
     imsgbuf: &imsgbuf,
     type_0: uint32_t,
     id: uint32_t,
@@ -145,7 +146,7 @@ pub fn imsg_create(
     ibuf_add(&mut wbuf, &encode_imsg_hdr(hdr))?;
     Ok(wbuf)
 }
-pub fn imsg_close(
+fn imsg_close(
     imsgbuf: &mut imsgbuf,
     mut msg: Box<OwnedIbuf>,
 ) -> Result<(), ::core::ffi::c_int> {
