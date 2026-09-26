@@ -823,7 +823,8 @@ pub unsafe fn spawn_pane(
                     log_cstr(
                         (systemd_error
                             .as_ref()
-                            .map_or(::core::ptr::null(), |error| error.as_ptr())) as *const _
+                            .map_or(::core::ptr::null(), |error| error.as_ptr()))
+                            as *const _
                     )
                 ));
             }

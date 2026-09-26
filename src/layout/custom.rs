@@ -134,9 +134,7 @@ pub(crate) unsafe fn layout_dump_owned(
     }
     let mut output = Vec::new();
     if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
-        output.extend_from_slice(
-            format!("{:04x},", layout_checksum(&body)).as_bytes(),
-        );
+        output.extend_from_slice(format!("{:04x},", layout_checksum(&body)).as_bytes());
         output.extend_from_slice(&body);
     } else {
         output.extend_from_slice(b"{\"V\":2,\"L\":");
@@ -1197,7 +1195,9 @@ unsafe fn layout_construct(
             return -(1 as ::core::ffi::c_int);
         }
         input = input.offset(n as isize);
-        if csum as ::core::ffi::c_int != layout_checksum(CStr::from_ptr(input).to_bytes()) as ::core::ffi::c_int {
+        if csum as ::core::ffi::c_int
+            != layout_checksum(CStr::from_ptr(input).to_bytes()) as ::core::ffi::c_int
+        {
             layout_set_static_cause(
                 (*pctx).cause.as_mut(),
                 b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char,

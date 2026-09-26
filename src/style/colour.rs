@@ -1,7 +1,7 @@
-use crate::src::log::log_cstr;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
+use crate::src::log::log_cstr;
 use crate::src::options::{options_array_first, options_array_get_index, options_get};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;

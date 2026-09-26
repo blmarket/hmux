@@ -330,7 +330,9 @@ unsafe fn clients_calculate_size(
                             log_debug(format_args!(
                                 "{}: {} size for @{} is {}x{}",
                                 log_cstr(
-                                    (b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char) as *const _
+                                    (b"clients_calculate_size\0" as *const u8
+                                        as *const ::core::ffi::c_char)
+                                        as *const _
                                 ),
                                 log_cstr(
                                     (((*loop_0).name)

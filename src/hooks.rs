@@ -232,7 +232,8 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                     log_cstr(
                         (pr.error
                             .as_ref()
-                            .map_or(::core::ptr::null(), |cause| cause.as_ptr())) as *const _
+                            .map_or(::core::ptr::null(), |cause| cause.as_ptr()))
+                            as *const _
                     )
                 ));
             }

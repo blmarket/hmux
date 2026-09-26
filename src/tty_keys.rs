@@ -2030,8 +2030,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                             log_cstr(
                                 (((*c).name)
                                     .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                    as *const _
+                                    .map_or(::core::ptr::null_mut(), |value| value
+                                        .as_ptr()
+                                        .cast_mut())) as *const _
                             ),
                             log_hex((key) as u64)
                         ));
@@ -2043,8 +2044,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                             log_cstr(
                                 (((*c).name)
                                     .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                    as *const _
+                                    .map_or(::core::ptr::null_mut(), |value| value
+                                        .as_ptr()
+                                        .cast_mut())) as *const _
                             ),
                             log_hex((key) as u64)
                         ));
@@ -2168,8 +2170,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                             log_cstr(
                                 (((*c).name)
                                     .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                    as *const _
+                                    .map_or(::core::ptr::null_mut(), |value| value
+                                        .as_ptr()
+                                        .cast_mut())) as *const _
                             )
                         ));
                         if delay < 500 as ::core::ffi::c_int {
@@ -2186,8 +2189,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                             log_cstr(
                                 (((*c).name)
                                     .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                    as *const _
+                                    .map_or(::core::ptr::null_mut(), |value| value
+                                        .as_ptr()
+                                        .cast_mut())) as *const _
                             )
                         ));
                         if delay < 500 as ::core::ffi::c_int {

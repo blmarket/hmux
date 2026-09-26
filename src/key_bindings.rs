@@ -934,7 +934,8 @@ pub unsafe fn key_bindings_init() {
                 log_cstr(
                     (pr.error
                         .as_ref()
-                        .map_or(::core::ptr::null(), |cause| cause.as_ptr())) as *const _
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()))
+                        as *const _
                 )
             ));
             fatalx(

@@ -524,10 +524,7 @@ pub unsafe fn options_array_get(
     return &raw mut (*a).value;
 }
 /// Look up an array value by its decimal numeric index.
-pub unsafe fn options_array_get_index(
-    o: *mut options_entry,
-    index: u_int,
-) -> *mut options_value {
+pub unsafe fn options_array_get_index(o: *mut options_entry, index: u_int) -> *mut options_value {
     let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
     options_array_get(o, key.as_ptr())
 }

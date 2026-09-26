@@ -2813,12 +2813,16 @@ unsafe fn server_client_key_callback(
                                     if wp.is_null() {
                                         log_debug(format_args!(
                                             "key table {} (no pane)",
-                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                            log_cstr(
+                                                (((*table).name).as_ptr().cast_mut()) as *const _
+                                            )
                                         ));
                                     } else {
                                         log_debug(format_args!(
                                             "key table {} (pane %{})",
-                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _),
+                                            log_cstr(
+                                                (((*table).name).as_ptr().cast_mut()) as *const _
+                                            ),
                                             ((*wp).id) as u32
                                         ));
                                     }
@@ -2843,7 +2847,9 @@ unsafe fn server_client_key_callback(
                                             && (*c).flags & CLIENT_REPEAT as uint64_t != 0
                                             && (*bd).flags & KEY_BINDING_REPEAT != 0
                                         {
-                                            log_debug(format_args!("prefix timeout ignored, repeat is active"));
+                                            log_debug(format_args!(
+                                                "prefix timeout ignored, repeat is active"
+                                            ));
                                         } else {
                                             log_debug(format_args!("prefix timeout exceeded"));
                                             server_client_set_key_table(
@@ -2896,7 +2902,9 @@ unsafe fn server_client_key_callback(
                                         }
                                         log_debug(format_args!(
                                             "not found in key table {}",
-                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                            log_cstr(
+                                                (((*table).name).as_ptr().cast_mut()) as *const _
+                                            )
                                         ));
                                         if server_client_is_default_key_table(c, table) == 0
                                             || (*c).flags & CLIENT_REPEAT as uint64_t != 0
@@ -2923,7 +2931,9 @@ unsafe fn server_client_key_callback(
                                     13763002826403452995 => {
                                         log_debug(format_args!(
                                             "found in key table {}",
-                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                            log_cstr(
+                                                (((*table).name).as_ptr().cast_mut()) as *const _
+                                            )
                                         ));
                                         crate::src::shared::rc::retain(table);
                                         repeat = server_client_repeat_time(c, bd);
@@ -2967,7 +2977,9 @@ unsafe fn server_client_key_callback(
                                     _ => {
                                         log_debug(format_args!(
                                             "found in key table {} (not repeating)",
-                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                            log_cstr(
+                                                (((*table).name).as_ptr().cast_mut()) as *const _
+                                            )
                                         ));
                                         server_client_set_key_table(
                                             c,
@@ -3461,7 +3473,8 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                     log_debug(format_args!(
                         "{}: {} has {} bytes used and {} left for %{}",
                         log_cstr(
-                            (b"server_client_check_pane_buffer\0" as *const u8 as *const ::core::ffi::c_char)
+                            (b"server_client_check_pane_buffer\0" as *const u8
+                                as *const ::core::ffi::c_char)
                                 as *const _
                         ),
                         log_cstr(
