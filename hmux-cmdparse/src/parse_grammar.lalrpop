@@ -24,6 +24,7 @@ extern {
         "FORMAT" => Token::Format(<TokenText>),
         "TOKEN"  => Token::Word(<TokenText>),
         "EQUALS" => Token::Equals(<TokenText>),
+        "equals-end" => Token::EqualsEnd,
     }
 }
 
@@ -63,12 +64,15 @@ OptionalAssignment: () = {
 };
 
 // assignment : EQUALS
-Assignment: () = <s:"EQUALS"> =>? {
+// Reduce the side effect using synthetic lookahead, before lexing another word.
+Assignment: () = AssignmentValue "equals-end";
+AssignmentValue: () = <s:"EQUALS"> =>? {
     ps.put_environ(s, false).map_err(|error| ParseError::User { error })
 };
 
 // hidden_assignment : HIDDEN EQUALS
-HiddenAssignment: () = "hidden" <s:"EQUALS"> =>? {
+HiddenAssignment: () = HiddenAssignmentValue "equals-end";
+HiddenAssignmentValue: () = "hidden" <s:"EQUALS"> =>? {
     ps.put_environ(s, true).map_err(|error| ParseError::User { error })
 };
 
@@ -162,7 +166,7 @@ Arguments: Vec<ParseArgument> = {
 // argument : TOKEN | EQUALS | '{' argument_statements
 Argument: ParseArgument = {
     <t:"TOKEN"> => ParseArgument::String(t),
-    <t:"EQUALS"> => ParseArgument::String(t),
+    <t:"EQUALS"> "equals-end" => ParseArgument::String(t),
     "{" <s:ArgumentStatements> => ParseArgument::Commands(s),
 };
 

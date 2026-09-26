@@ -28,6 +28,17 @@ pub fn parse(
     context: &mut dyn Context,
     tokens: impl IntoIterator<Item = Result<(usize, Token, usize), LexError>>,
 ) -> Result<Vec<ParseCommand>, ParseError> {
+    // LALRPOP fetches lookahead before running reduction actions. Supply a
+    // synthetic boundary after EQUALS so an assignment can be applied before
+    // the application lexer expands the next word. EQUALS used as an argument
+    // consumes the same boundary without assigning anything.
+    let tokens = tokens.into_iter().flat_map(|token| {
+        let boundary = match &token {
+            Ok((_, Token::Equals(_), end)) => Some(Ok((*end, Token::EqualsEnd, *end))),
+            _ => None,
+        };
+        std::iter::once(token).chain(boundary)
+    });
     parse_grammar::LinesParser::new().parse(&mut ParseState::new(context), tokens)
 }
 
@@ -63,6 +74,9 @@ pub enum Token {
     Format(TokenText),
     Word(TokenText),
     Equals(TokenText),
+    /// Internal lookahead boundary inserted by `parse`; lexers must not emit it.
+    #[doc(hidden)]
+    EqualsEnd,
 }
 
 /// The lexer or an application service aborted parsing. The host can retain
