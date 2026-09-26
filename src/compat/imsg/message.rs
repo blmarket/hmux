@@ -216,7 +216,7 @@ pub struct imsg {
 pub(crate) struct msgbuf {
     pub(crate) bufs: ibufqueue,
     pub(crate) rbufs: ibufqueue,
-    pub(crate) rbuf: Box<[u8]>,
+    pub(crate) rbuf: Vec<u8>,
     pub(crate) rpmsg: Option<Box<OwnedIbuf>>,
     pub(crate) readhdr:
         Option<

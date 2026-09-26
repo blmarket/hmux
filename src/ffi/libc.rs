@@ -41,17 +41,7 @@ pub struct pollfd {
     pub revents: ::core::ffi::c_short,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct msghdr {
-    pub msg_name: *mut ::core::ffi::c_void,
-    pub msg_namelen: socklen_t,
-    pub msg_iov: *mut ::libc::iovec,
-    pub msg_iovlen: size_t,
-    pub msg_control: *mut ::core::ffi::c_void,
-    pub msg_controllen: size_t,
-    pub msg_flags: ::core::ffi::c_int,
-}
+pub use ::libc::msghdr;
 
 extern "C" {
     pub type _IO_codecvt;

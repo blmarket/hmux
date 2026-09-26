@@ -1,7 +1,7 @@
-use crate::src::ffi::libc::msghdr;
 use crate::src::ffi::libc::{__errno_location, readv, recvmsg, sendmsg, writev};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::uint32_t;
+use ::libc::{cmsghdr, msghdr};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 use super::message::{ibuf, msgbuf, OwnedIbuf, IbufStorage};
@@ -66,67 +66,27 @@ impl ibufqueue {
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmsghdr {
-    pub cmsg_len: size_t,
-    pub cmsg_level: ::core::ffi::c_int,
-    pub cmsg_type: ::core::ffi::c_int,
-    pub __cmsg_data: [::core::ffi::c_uchar; 0],
-}
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SCM_PIDFD: C2RustUnnamed = 4;
 pub const SCM_SECURITY: C2RustUnnamed = 3;
 pub const SCM_CREDENTIALS: C2RustUnnamed = 2;
 pub const SCM_RIGHTS: C2RustUnnamed = 1;
 
+const IMSG_CMSG_FD_BUFFER_SIZE: usize = unsafe {
+    ::libc::CMSG_SPACE(::core::mem::size_of::<::core::ffi::c_int>() as ::libc::c_uint) as usize
+};
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed_2 {
     pub hdr: cmsghdr,
-    pub buf: [::core::ffi::c_char; 24],
+    pub buf: [::core::ffi::c_char; IMSG_CMSG_FD_BUFFER_SIZE],
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed_3 {
     pub hdr: cmsghdr,
-    pub buf: [::core::ffi::c_char; 24],
-}
-#[inline]
-unsafe fn __cmsg_nxthdr(mut __mhdr: *mut msghdr, mut __cmsg: *mut cmsghdr) -> *mut cmsghdr {
-    let mut __msg_control_ptr: *mut ::core::ffi::c_uchar =
-        (*__mhdr).msg_control as *mut ::core::ffi::c_uchar;
-    let mut __cmsg_ptr: *mut ::core::ffi::c_uchar = __cmsg as *mut ::core::ffi::c_uchar;
-    let mut __size_needed: size_t = (::core::mem::size_of::<cmsghdr>() as size_t).wrapping_add(
-        (::core::mem::size_of::<size_t>() as size_t).wrapping_sub(
-            (*__cmsg).cmsg_len
-                & (::core::mem::size_of::<size_t>() as size_t).wrapping_sub(1 as size_t),
-        ) & (::core::mem::size_of::<size_t>() as size_t).wrapping_sub(1 as size_t),
-    );
-    if (*__cmsg).cmsg_len < ::core::mem::size_of::<cmsghdr>() as usize {
-        return ::core::ptr::null_mut::<cmsghdr>();
-    }
-    if (__msg_control_ptr
-        .offset((*__mhdr).msg_controllen as isize)
-        .offset_from(__cmsg_ptr) as ::core::ffi::c_long as size_t)
-        < __size_needed
-        || (__msg_control_ptr
-            .offset((*__mhdr).msg_controllen as isize)
-            .offset_from(__cmsg_ptr) as ::core::ffi::c_long as size_t)
-            .wrapping_sub(__size_needed)
-            < (*__cmsg).cmsg_len
-    {
-        return ::core::ptr::null_mut::<cmsghdr>();
-    }
-    __cmsg = (__cmsg as *mut ::core::ffi::c_uchar).offset(
-        ((*__cmsg)
-            .cmsg_len
-            .wrapping_add(::core::mem::size_of::<size_t>() as size_t)
-            .wrapping_sub(1 as size_t)
-            & !(::core::mem::size_of::<size_t>() as usize).wrapping_sub(1 as usize))
-            as isize,
-    ) as *mut cmsghdr;
-    return __cmsg;
+    pub buf: [::core::ffi::c_char; IMSG_CMSG_FD_BUFFER_SIZE],
 }
 
 pub const __IOV_MAX: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
@@ -337,7 +297,7 @@ pub fn msgbuf_new() -> Result<Box<msgbuf>, ::core::ffi::c_int> {
     let Ok(msgbuf) = Box::try_new(msgbuf {
         bufs: ibufqueue::new(),
         rbufs: ibufqueue::new(),
-        rbuf: Vec::new().into_boxed_slice(),
+        rbuf: Vec::new(),
         rpmsg: None,
         readhdr: None,
         roff: 0,
@@ -364,7 +324,7 @@ fn msgbuf_new_reader_with(
     }
     let scratch = try_zeroed_vec(IBUF_READ_SIZE as usize).map_err(|_| ENOMEM)?;
     let mut msgbuf = msgbuf_new()?;
-    msgbuf.rbuf = scratch.into_boxed_slice();
+    msgbuf.rbuf = scratch;
     msgbuf.hdrsize = hdrsz;
     msgbuf.readhdr = readhdr;
     Ok(msgbuf)
@@ -462,13 +422,8 @@ pub fn msgbuf_write(
     }
 
     let mut msg: msghdr = unsafe { ::core::mem::zeroed() };
-    let mut cmsgbuf: C2RustUnnamed_2 = C2RustUnnamed_2 {
-        hdr: cmsghdr {
-            cmsg_len: 0,
-            cmsg_level: 0,
-            cmsg_type: 0,
-            __cmsg_data: [],
-        },
+    let mut cmsgbuf = C2RustUnnamed_2 {
+        buf: [0; IMSG_CMSG_FD_BUFFER_SIZE],
     };
     msg.msg_iov = iov.as_mut_ptr();
     msg.msg_iovlen = i as size_t;
@@ -477,21 +432,20 @@ pub fn msgbuf_write(
             return Err(EINVAL);
         };
         msg.msg_control = (&mut cmsgbuf as *mut C2RustUnnamed_2).cast();
-        msg.msg_controllen = ::core::mem::size_of::<[::core::ffi::c_char; 24]>();
-        let cmsg = msg.msg_control.cast::<cmsghdr>();
+        msg.msg_controllen = IMSG_CMSG_FD_BUFFER_SIZE;
+        let cmsg = unsafe { ::libc::CMSG_FIRSTHDR(&msg) };
+        if cmsg.is_null() {
+            return Err(EINVAL);
+        }
         unsafe {
-            let alignment = ::core::mem::size_of::<size_t>();
-            let aligned_header_len = (::core::mem::size_of::<cmsghdr>()
-                .wrapping_add(alignment.wrapping_sub(1)))
-                & !alignment.wrapping_sub(1);
-            (*cmsg).cmsg_len = aligned_header_len
-                .wrapping_add(::core::mem::size_of::<::core::ffi::c_int>())
-                as size_t;
+            (*cmsg).cmsg_len = ::libc::CMSG_LEN(
+                ::core::mem::size_of::<::core::ffi::c_int>() as ::libc::c_uint,
+            ) as size_t;
             (*cmsg).cmsg_level = SOL_SOCKET;
             (*cmsg).cmsg_type = SCM_RIGHTS as ::core::ffi::c_int;
-            let data = (&mut (*cmsg).__cmsg_data as *mut [::core::ffi::c_uchar; 0])
-                .cast::<::core::ffi::c_int>();
-            *data = fd.as_raw_fd();
+            ::libc::CMSG_DATA(cmsg)
+                .cast::<::core::ffi::c_int>()
+                .write(fd.as_raw_fd());
         }
     }
 
@@ -606,12 +560,7 @@ pub fn msgbuf_read(
         return Err(EINVAL);
     }
     let mut cmsgbuf = C2RustUnnamed_3 {
-        hdr: cmsghdr {
-            cmsg_len: 0,
-            cmsg_level: 0,
-            cmsg_type: 0,
-            __cmsg_data: [],
-        },
+        buf: [0; IMSG_CMSG_FD_BUFFER_SIZE],
     };
     let mut iov = libc::iovec {
         iov_base: unsafe { msgbuf.rbuf.as_mut_ptr().add(msgbuf.roff).cast() },
@@ -621,7 +570,7 @@ pub fn msgbuf_read(
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
     msg.msg_control = (&mut cmsgbuf as *mut C2RustUnnamed_3).cast();
-    msg.msg_controllen = ::core::mem::size_of::<[::core::ffi::c_char; 24]>();
+    msg.msg_controllen = IMSG_CMSG_FD_BUFFER_SIZE;
 
     let n = loop {
         let n = unsafe { recvmsg(fd, &mut msg, 0) };
@@ -643,18 +592,13 @@ pub fn msgbuf_read(
     msgbuf.roff += n as usize;
 
     let mut fdpass = None;
-    let mut cmsg = if msg.msg_controllen >= ::core::mem::size_of::<cmsghdr>() {
-        msg.msg_control.cast::<cmsghdr>()
-    } else {
-        ::core::ptr::null_mut::<cmsghdr>()
-    };
+    let mut cmsg = unsafe { ::libc::CMSG_FIRSTHDR(&msg) };
     while !cmsg.is_null() {
         unsafe {
             if (*cmsg).cmsg_level == SOL_SOCKET && (*cmsg).cmsg_type == SCM_RIGHTS as i32 {
-                let data = (&mut (*cmsg).__cmsg_data as *mut [::core::ffi::c_uchar; 0])
-                    .cast::<i32>();
+                let data = ::libc::CMSG_DATA(cmsg).cast::<i32>();
                 let data_bytes = ((*cmsg).cmsg_len as usize)
-                    .saturating_sub(::core::mem::size_of::<cmsghdr>());
+                    .saturating_sub(::libc::CMSG_LEN(0) as usize);
                 let count = data_bytes / ::core::mem::size_of::<i32>();
                 for index in 0..count {
                     let raw_fd = *data.add(index);
@@ -666,7 +610,7 @@ pub fn msgbuf_read(
                     }
                 }
             }
-            cmsg = __cmsg_nxthdr(&mut msg, cmsg);
+            cmsg = ::libc::CMSG_NXTHDR(&msg, cmsg);
         }
     }
     ibuf_read_process(msgbuf, fdpass)
