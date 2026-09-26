@@ -14,7 +14,6 @@ pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf, Ow
 use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::posix_io::iovec;
 use std::os::fd::{IntoRawFd, OwnedFd};
-use std::ptr::NonNull;
 
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
@@ -491,7 +490,7 @@ unsafe fn imsg_parse_hdr(
     header: &[u8],
     maxsize: uint32_t,
     mut fd: Option<OwnedFd>,
-) -> (Option<NonNull<OwnedIbuf>>, Option<OwnedFd>) {
+) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>) {
     let mut view = IbufView::new(header);
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
@@ -523,5 +522,8 @@ unsafe fn imsg_parse_hdr(
         let raw_fd = fd.take().map(IntoRawFd::into_raw_fd).unwrap_or(-1);
         ibuf_fd_set(b, raw_fd);
     }
-    (NonNull::new(b), fd)
+    let Some(b) = OwnedIbuf::from_raw_owned(b) else {
+        return (None, fd);
+    };
+    (Some(b), fd)
 }

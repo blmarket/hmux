@@ -3,7 +3,6 @@
 use super::abi::{pid_t, size_t, uint32_t};
 use std::collections::VecDeque;
 use std::os::fd::OwnedFd;
-use std::ptr::NonNull;
 pub type msgtype = ::core::ffi::c_uint;
 
 pub const MSG_WRITE_DONE: msgtype = 308;
@@ -245,7 +244,7 @@ pub struct msgbuf {
     pub rbuf: *mut ::core::ffi::c_char,
     pub rpmsg: *mut OwnedIbuf,
     pub readhdr: Option<
-        Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<NonNull<OwnedIbuf>>, Option<OwnedFd>)>,
+        Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>)>,
     >,
     pub roff: size_t,
     pub hdrsize: size_t,

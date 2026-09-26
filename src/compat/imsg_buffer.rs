@@ -966,14 +966,15 @@ pub unsafe extern "C" fn msgbuf_new_reader(
             let mut raw_fd = fd.map_or(-1, IntoRawFd::into_raw_fd);
             let message = readhdr(unsafe { view.as_ibuf_ptr() }, arg, &raw mut raw_fd);
             let remaining_fd = (raw_fd >= 0).then(|| OwnedFd::from_raw_fd(raw_fd));
-            (std::ptr::NonNull::new(message), remaining_fd)
+            let message = (!message.is_null()).then(|| unsafe { Box::from_raw(message) });
+            (message, remaining_fd)
         })
             as Box<
                 dyn FnMut(
                     &[u8],
                     Option<OwnedFd>,
                 )
-                    -> (Option<std::ptr::NonNull<OwnedIbuf>>, Option<OwnedFd>),
+                    -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>),
             >
     });
     msgbuf_new_reader_with(hdrsz, reader)
@@ -986,7 +987,7 @@ unsafe fn msgbuf_new_reader_with(
             dyn FnMut(
                 &[u8],
                 Option<OwnedFd>,
-            ) -> (Option<std::ptr::NonNull<OwnedIbuf>>, Option<OwnedFd>),
+            ) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>),
         >,
     >,
 ) -> *mut msgbuf {
@@ -1015,7 +1016,7 @@ unsafe fn msgbuf_new_reader_with(
 
 pub(crate) unsafe fn msgbuf_new_reader_owned(
     hdrsz: size_t,
-    callback: impl FnMut(&[u8], Option<OwnedFd>) -> (Option<std::ptr::NonNull<OwnedIbuf>>, Option<OwnedFd>)
+    callback: impl FnMut(&[u8], Option<OwnedFd>) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>)
         + 'static,
 ) -> *mut msgbuf {
     msgbuf_new_reader_with(hdrsz, Some(Box::new(callback)))
@@ -1242,13 +1243,11 @@ unsafe extern "C" fn ibuf_read_process(
                 failed = true;
                 break;
             };
-            let message = message.as_ptr();
             if !(*message).is_owned() {
-                drop(Box::from_raw(message));
                 failed = true;
                 break;
             }
-            (*msgbuf).rpmsg = message;
+            (*msgbuf).rpmsg = Box::into_raw(message);
         }
         let available = read_len.wrapping_sub(cursor);
         if ibuf_left((*msgbuf).rpmsg) <= available {
