@@ -2,15 +2,13 @@ mod imsg_buffer;
 mod message;
 
 pub use message::{
-    ibuf, ibuf_from_buffer, ibuf_from_ibuf, ibuf_get_ibuf, imsg, imsg_hdr, msgtype,
-    MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING,
-    MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE,
-    MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS,
-    MSG_IDENTIFY_OLDCWD, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM,
-    MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_OLDSTDERR, MSG_OLDSTDIN,
-    MSG_OLDSTDOUT, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_READY,
-    MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP,
-    MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY,
+    imsg, imsg_hdr, msgtype, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT,
+    MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD,
+    MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_LONGFLAGS,
+    MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
+    MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN,
+    MSG_READY, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION,
+    MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY,
 };
 pub(crate) use message::{
     imsgbuf, msg_command, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION,
@@ -19,7 +17,7 @@ use message::{msgbuf, OwnedIbuf};
 
 use imsg_buffer::{
     ibuf_add, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get, ibuf_fd_set,
-    ibuf_get, ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_get,
+    ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_get,
     msgbuf_new_reader_owned, msgbuf_queuelen, msgbuf_read, msgbuf_write,
 };
 use crate::src::ffi::libc::getpid;

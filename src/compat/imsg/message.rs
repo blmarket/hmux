@@ -19,9 +19,9 @@ pub const MSG_EXEC: msgtype = 217;
 pub const MSG_WAKEUP: msgtype = 216;
 pub const MSG_UNLOCK: msgtype = 215;
 pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
+const MSG_OLDSTDOUT: msgtype = 213;
+const MSG_OLDSTDIN: msgtype = 212;
+const MSG_OLDSTDERR: msgtype = 211;
 pub const MSG_SHUTDOWN: msgtype = 210;
 pub const MSG_SHELL: msgtype = 209;
 pub const MSG_RESIZE: msgtype = 208;
@@ -42,10 +42,10 @@ pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
 pub const MSG_IDENTIFY_DONE: msgtype = 106;
 pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
 pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
+const MSG_IDENTIFY_OLDCWD: msgtype = 103;
 pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
 pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
+const MSG_IDENTIFY_FLAGS: msgtype = 100;
 pub const MSG_VERSION: msgtype = 12;
 
 #[cfg(test)]
@@ -73,30 +73,30 @@ pub struct imsg_hdr {
     pub pid: uint32_t,
 }
 
-pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
+pub(crate) const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
 
-pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
+pub(crate) const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 
-pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
+pub(crate) const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
-pub(crate) enum IbufStorage<'a> {
+pub(super) enum IbufStorage<'a> {
     Owned(Vec<u8>),
     Borrowed(&'a [u8]),
 }
 
 impl IbufStorage<'_> {
-    pub fn as_slice(&self) -> &[u8] {
+    pub(super) fn as_slice(&self) -> &[u8] {
         match self {
             Self::Owned(bytes) => bytes,
             Self::Borrowed(bytes) => bytes,
         }
     }
 
-    pub fn is_owned(&self) -> bool {
+    pub(super) fn is_owned(&self) -> bool {
         matches!(self, Self::Owned(_))
     }
 
-    pub(crate) fn as_mut_slice(&mut self) -> Option<&mut [u8]> {
+    pub(super) fn as_mut_slice(&mut self) -> Option<&mut [u8]> {
         match self {
             Self::Owned(bytes) => Some(bytes),
             Self::Borrowed(_) => None,
@@ -106,16 +106,16 @@ impl IbufStorage<'_> {
 
 /// An opaque ibuf record. Use the accessors rather than relying on a C layout.
 /// The lifetime parameter keeps borrowed byte storage tied to its source.
-pub struct ibuf<'a> {
-    pub(crate) storage: IbufStorage<'a>,
-    pub(crate) max: size_t,
-    pub(crate) wpos: size_t,
-    pub(crate) rpos: size_t,
-    pub(crate) fd: Option<OwnedFd>,
+pub(super) struct ibuf<'a> {
+    pub(super) storage: IbufStorage<'a>,
+    pub(super) max: size_t,
+    pub(super) wpos: size_t,
+    pub(super) rpos: size_t,
+    pub(super) fd: Option<OwnedFd>,
 }
 
 impl<'a> ibuf<'a> {
-    pub fn borrowed(bytes: &'a [u8]) -> Self {
+    pub(super) fn borrowed(bytes: &'a [u8]) -> Self {
         Self {
             storage: IbufStorage::Borrowed(bytes),
             max: 0,
@@ -125,14 +125,14 @@ impl<'a> ibuf<'a> {
         }
     }
 
-    pub fn from_ibuf(from: &'a ibuf<'_>) -> Self {
+    pub(super) fn from_ibuf(from: &'a ibuf<'_>) -> Self {
         let start = from.rpos;
         let end = from.wpos;
         let bytes = from.storage.as_slice().get(start..end).unwrap_or(&[]);
         Self::borrowed(bytes)
     }
 
-    pub fn take_view(&mut self, len: usize) -> Option<ibuf<'_>> {
+    pub(super) fn take_view(&mut self, len: usize) -> Option<ibuf<'_>> {
         let start = self.rpos;
         let end = start.checked_add(len)?;
         if end > self.wpos || end > self.storage_len() {
@@ -143,22 +143,22 @@ impl<'a> ibuf<'a> {
         Some(ibuf::borrowed(bytes))
     }
 
-    pub fn is_owned(&self) -> bool {
+    pub(super) fn is_owned(&self) -> bool {
         self.storage.is_owned()
     }
 
-    pub fn size(&self) -> usize {
+    pub(super) fn size(&self) -> usize {
         self.wpos.saturating_sub(self.rpos)
     }
 
-    pub fn unread(&self) -> &[u8] {
+    pub(super) fn unread(&self) -> &[u8] {
         let bytes = self.storage.as_slice();
         let end = self.wpos.min(bytes.len());
         let start = self.rpos.min(end);
         &bytes[start..end]
     }
 
-    pub fn skip(&mut self, len: usize) -> bool {
+    pub(super) fn skip(&mut self, len: usize) -> bool {
         let Some(end) = self.rpos.checked_add(len) else {
             return false;
         };
@@ -169,15 +169,15 @@ impl<'a> ibuf<'a> {
         true
     }
 
-    pub fn rewind(&mut self) {
+    pub(super) fn rewind(&mut self) {
         self.rpos = 0;
     }
 
-    pub fn storage_len(&self) -> usize {
+    pub(super) fn storage_len(&self) -> usize {
         self.storage.as_slice().len()
     }
 
-    pub(crate) fn replace_owned(&mut self, bytes: Vec<u8>) {
+    pub(super) fn replace_owned(&mut self, bytes: Vec<u8>) {
         self.storage = IbufStorage::Owned(bytes);
     }
 }
@@ -186,15 +186,15 @@ impl<'a> ibuf<'a> {
 ///
 /// Queue insertion still checks `is_owned`; a static lifetime alone does not
 /// establish ownership of the bytes.
-pub(crate) type OwnedIbuf = ibuf<'static>;
+pub(super) type OwnedIbuf = ibuf<'static>;
 
 pub struct imsg {
     pub hdr: imsg_hdr,
     pub data: Vec<u8>,
-    pub(crate) fd: Option<OwnedFd>,
+    pub(super) fd: Option<OwnedFd>,
 }
 
-pub(crate) struct msgbuf {
+pub(super) struct msgbuf {
     pub(super) bufs: ibufqueue,
     pub(super) rbufs: ibufqueue,
     pub(super) rbuf: Vec<u8>,
@@ -217,43 +217,22 @@ pub(crate) struct imsgbuf {
 }
 
 /// Make a read-only view whose lifetime is tied to the source slice.
-///
-/// A view cannot outlive its source:
-///
-/// ```compile_fail
-/// use hmux2::src::compat::imsg::ibuf_from_buffer;
-/// let bytes = vec![1, 2, 3];
-/// let view = ibuf_from_buffer(&bytes);
-/// drop(bytes);
-/// assert_eq!(view.unread(), &[1, 2, 3]);
-/// ```
-pub fn ibuf_from_buffer(data: &[u8]) -> ibuf<'_> {
+fn ibuf_from_buffer(data: &[u8]) -> ibuf<'_> {
     ibuf::borrowed(data)
 }
 
 /// Make a read-only view whose lifetime is tied to the source buffer borrow.
-pub fn ibuf_from_ibuf<'a>(from: &'a ibuf<'_>) -> ibuf<'a> {
+fn ibuf_from_ibuf<'a>(from: &'a ibuf<'_>) -> ibuf<'a> {
     ibuf::from_ibuf(from)
 }
 
 /// Advance the source cursor and return a view of the consumed bytes.
-///
-/// The mutable borrow stays active for as long as the subview exists:
-///
-/// ```compile_fail
-/// use hmux2::src::compat::imsg::{ibuf_from_buffer, ibuf_get_ibuf};
-/// let bytes = [1, 2, 3];
-/// let mut source = ibuf_from_buffer(&bytes);
-/// let view = ibuf_get_ibuf(&mut source, 1).unwrap();
-/// source.rewind();
-/// assert_eq!(view.unread(), &[1]);
-/// ```
-pub fn ibuf_get_ibuf<'a>(from: &'a mut ibuf<'_>, len: usize) -> Option<ibuf<'a>> {
+fn ibuf_get_ibuf<'a>(from: &'a mut ibuf<'_>, len: usize) -> Option<ibuf<'a>> {
     from.take_view(len)
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct msg_command {
+pub(crate) struct msg_command {
     pub argc: ::core::ffi::c_int,
 }

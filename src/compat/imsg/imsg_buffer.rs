@@ -2,14 +2,14 @@ use crate::src::ffi::libc::{__errno_location, readv, recvmsg, sendmsg, writev};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::uint32_t;
 use ::libc::{cmsghdr, msghdr};
-pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
+use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 use super::message::{ibuf, msgbuf, OwnedIbuf, IbufStorage};
 use crate::src::shared::socket::SOL_SOCKET;
 use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-pub(crate) struct ibufqueue {
+pub(super) struct ibufqueue {
     bufs: ibufqueue_bufs,
 }
 
@@ -66,11 +66,11 @@ impl ibufqueue {
     }
 }
 
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const SCM_PIDFD: C2RustUnnamed = 4;
-pub const SCM_SECURITY: C2RustUnnamed = 3;
-pub const SCM_CREDENTIALS: C2RustUnnamed = 2;
-pub const SCM_RIGHTS: C2RustUnnamed = 1;
+type C2RustUnnamed = ::core::ffi::c_uint;
+const SCM_PIDFD: C2RustUnnamed = 4;
+const SCM_SECURITY: C2RustUnnamed = 3;
+const SCM_CREDENTIALS: C2RustUnnamed = 2;
+const SCM_RIGHTS: C2RustUnnamed = 1;
 
 const IMSG_CMSG_FD_BUFFER_SIZE: usize = unsafe {
     ::libc::CMSG_SPACE(::core::mem::size_of::<::core::ffi::c_int>() as ::libc::c_uint) as usize
@@ -78,27 +78,27 @@ const IMSG_CMSG_FD_BUFFER_SIZE: usize = unsafe {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub union C2RustUnnamed_2 {
+union C2RustUnnamed_2 {
     pub hdr: cmsghdr,
     pub buf: [::core::ffi::c_char; IMSG_CMSG_FD_BUFFER_SIZE],
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub union C2RustUnnamed_3 {
+union C2RustUnnamed_3 {
     pub hdr: cmsghdr,
     pub buf: [::core::ffi::c_char; IMSG_CMSG_FD_BUFFER_SIZE],
 }
 
-pub const __IOV_MAX: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
-pub const IOV_MAX: ::core::ffi::c_int = __IOV_MAX;
+const __IOV_MAX: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
+const IOV_MAX: ::core::ffi::c_int = __IOV_MAX;
 
-pub const EOVERFLOW: ::core::ffi::c_int = 75 as ::core::ffi::c_int;
-pub const EMSGSIZE: ::core::ffi::c_int = 90 as ::core::ffi::c_int;
-pub const ENOBUFS: ::core::ffi::c_int = 105 as ::core::ffi::c_int;
-pub const UINT8_MAX: ::core::ffi::c_int = 255 as ::core::ffi::c_int;
-pub const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
+const EOVERFLOW: ::core::ffi::c_int = 75 as ::core::ffi::c_int;
+const EMSGSIZE: ::core::ffi::c_int = 90 as ::core::ffi::c_int;
+const ENOBUFS: ::core::ffi::c_int = 105 as ::core::ffi::c_int;
+const UINT8_MAX: ::core::ffi::c_int = 255 as ::core::ffi::c_int;
+const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
-pub const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
+const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
 fn try_zeroed_vec(len: usize) -> Result<Vec<u8>, std::collections::TryReserveError> {
     let mut bytes = Vec::new();
@@ -107,7 +107,7 @@ fn try_zeroed_vec(len: usize) -> Result<Vec<u8>, std::collections::TryReserveErr
     Ok(bytes)
 }
 
-pub fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
+pub(super) fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
     let Ok(mut buf) = Box::try_new(ibuf {
         storage: IbufStorage::Owned(Vec::new()),
         max: len,
@@ -129,7 +129,7 @@ pub fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
     }
     Ok(buf)
 }
-pub fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
+pub(super) fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
     if max == 0 as size_t || max < len {
         return Err(EINVAL);
     }
@@ -156,7 +156,7 @@ pub fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, ::core::
 }
 /// Reserve writable space at the end of an owned ibuf.
 ///
-pub fn ibuf_reserve(
+fn ibuf_reserve(
     buf: &mut OwnedIbuf,
     len: size_t,
 ) -> Result<&mut [u8], ::core::ffi::c_int> {
@@ -188,7 +188,7 @@ pub fn ibuf_reserve(
         .get_mut(start..new_wpos)
         .ok_or(ERANGE)
 }
-pub fn ibuf_add(buf: &mut OwnedIbuf, data: &[u8]) -> Result<(), ::core::ffi::c_int> {
+pub(super) fn ibuf_add(buf: &mut OwnedIbuf, data: &[u8]) -> Result<(), ::core::ffi::c_int> {
     if !buf.is_owned() {
         return Err(EINVAL);
     }
@@ -199,7 +199,7 @@ pub fn ibuf_add(buf: &mut OwnedIbuf, data: &[u8]) -> Result<(), ::core::ffi::c_i
     target.copy_from_slice(data);
     Ok(())
 }
-pub fn ibuf_seek(
+fn ibuf_seek(
     buf: &mut OwnedIbuf,
     pos: size_t,
     len: size_t,
@@ -225,7 +225,7 @@ pub fn ibuf_seek(
         .get_mut(start..end)
         .ok_or(ERANGE)
 }
-pub fn ibuf_set(
+fn ibuf_set(
     buf: &mut OwnedIbuf,
     pos: size_t,
     data: &[u8],
@@ -234,7 +234,7 @@ pub fn ibuf_set(
     target.copy_from_slice(data);
     Ok(())
 }
-pub fn ibuf_set_h32(
+pub(super) fn ibuf_set_h32(
     buf: &mut OwnedIbuf,
     pos: size_t,
     value: uint64_t,
@@ -245,25 +245,25 @@ pub fn ibuf_set_h32(
     let bytes = (value as uint32_t).to_ne_bytes();
     ibuf_set(buf, pos, &bytes)
 }
-pub fn ibuf_data(buf: &OwnedIbuf) -> &[u8] {
+pub(super) fn ibuf_data(buf: &OwnedIbuf) -> &[u8] {
     buf.unread()
 }
-pub fn ibuf_size(buf: &OwnedIbuf) -> size_t {
+pub(super) fn ibuf_size(buf: &OwnedIbuf) -> size_t {
     buf.size()
 }
-pub fn ibuf_left(buf: &OwnedIbuf) -> size_t {
+fn ibuf_left(buf: &OwnedIbuf) -> size_t {
     if !buf.is_owned() {
         return 0 as size_t;
     }
     buf.max.saturating_sub(buf.wpos)
 }
-pub fn ibuf_close(
+pub(super) fn ibuf_close(
     msgbuf: &mut msgbuf,
     buf: Box<OwnedIbuf>,
 ) -> Result<(), ::core::ffi::c_int> {
     msgbuf.bufs.bufs.push_back_owned(buf)
 }
-pub fn ibuf_get(buf: &mut OwnedIbuf, data: &mut [u8]) -> Result<(), ::core::ffi::c_int> {
+fn ibuf_get(buf: &mut OwnedIbuf, data: &mut [u8]) -> Result<(), ::core::ffi::c_int> {
     if ibuf_size(buf) < data.len() {
         return Err(EBADMSG);
     }
@@ -277,13 +277,13 @@ pub fn ibuf_get(buf: &mut OwnedIbuf, data: &mut [u8]) -> Result<(), ::core::ffi:
     }
     Ok(())
 }
-pub fn ibuf_fd_avail(buf: &OwnedIbuf) -> bool {
+pub(super) fn ibuf_fd_avail(buf: &OwnedIbuf) -> bool {
     buf.fd.is_some()
 }
-pub fn ibuf_fd_get(buf: &mut OwnedIbuf) -> Option<OwnedFd> {
+pub(super) fn ibuf_fd_get(buf: &mut OwnedIbuf) -> Option<OwnedFd> {
     buf.fd.take()
 }
-pub fn ibuf_fd_set(
+pub(super) fn ibuf_fd_set(
     buf: &mut OwnedIbuf,
     fd: Option<OwnedFd>,
 ) -> Result<(), ::core::ffi::c_int> {
@@ -293,7 +293,7 @@ pub fn ibuf_fd_set(
     buf.fd = fd;
     Ok(())
 }
-pub fn msgbuf_new() -> Result<Box<msgbuf>, ::core::ffi::c_int> {
+fn msgbuf_new() -> Result<Box<msgbuf>, ::core::ffi::c_int> {
     let Ok(msgbuf) = Box::try_new(msgbuf {
         bufs: ibufqueue::new(),
         rbufs: ibufqueue::new(),
@@ -330,7 +330,7 @@ fn msgbuf_new_reader_with(
     Ok(msgbuf)
 }
 
-pub(crate) fn msgbuf_new_reader_owned(
+pub(super) fn msgbuf_new_reader_owned(
     hdrsz: size_t,
     callback: impl FnMut(
             &[u8],
@@ -341,22 +341,22 @@ pub(crate) fn msgbuf_new_reader_owned(
     msgbuf_new_reader_with(hdrsz, Some(Box::new(callback)))
 }
 
-pub fn msgbuf_queuelen(msgbuf: &msgbuf) -> uint32_t {
+pub(super) fn msgbuf_queuelen(msgbuf: &msgbuf) -> uint32_t {
     ibufq_queuelen(&msgbuf.bufs) as uint32_t
 }
 
-pub fn msgbuf_clear(msgbuf: &mut msgbuf) {
+fn msgbuf_clear(msgbuf: &mut msgbuf) {
     ibufq_flush(&mut msgbuf.bufs);
     ibufq_flush(&mut msgbuf.rbufs);
     msgbuf.roff = 0;
     msgbuf.rpmsg = None;
 }
 
-pub fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<OwnedIbuf>> {
+pub(super) fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<OwnedIbuf>> {
     ibufq_pop(&mut msgbuf.rbufs)
 }
 
-pub fn ibuf_write(
+pub(super) fn ibuf_write(
     fd: ::core::ffi::c_int,
     msgbuf: &mut msgbuf,
 ) -> Result<(), ::core::ffi::c_int> {
@@ -392,7 +392,7 @@ pub fn ibuf_write(
     Ok(())
 }
 
-pub fn msgbuf_write(
+pub(super) fn msgbuf_write(
     fd: ::core::ffi::c_int,
     msgbuf: &mut msgbuf,
 ) -> Result<(), ::core::ffi::c_int> {
@@ -520,7 +520,7 @@ fn ibuf_read_process(
     Ok(1)
 }
 
-pub fn ibuf_read(
+pub(super) fn ibuf_read(
     fd: ::core::ffi::c_int,
     msgbuf: &mut msgbuf,
 ) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
@@ -552,7 +552,7 @@ pub fn ibuf_read(
     ibuf_read_process(msgbuf, None)
 }
 
-pub fn msgbuf_read(
+pub(super) fn msgbuf_read(
     fd: ::core::ffi::c_int,
     msgbuf: &mut msgbuf,
 ) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
@@ -635,21 +635,21 @@ fn msgbuf_drain(msgbuf: &mut msgbuf, mut n: size_t) {
     }
 }
 
-pub fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<OwnedIbuf>> {
+fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<OwnedIbuf>> {
     bufq.bufs.pop_front_owned()
 }
 
-pub fn ibufq_push(
+fn ibufq_push(
     bufq: &mut ibufqueue,
     buf: Box<OwnedIbuf>,
 ) -> Result<(), ::core::ffi::c_int> {
     bufq.bufs.push_back_owned(buf)
 }
 
-pub fn ibufq_queuelen(bufq: &ibufqueue) -> usize {
+fn ibufq_queuelen(bufq: &ibufqueue) -> usize {
     bufq.bufs.len()
 }
 
-pub fn ibufq_flush(bufq: &mut ibufqueue) {
+fn ibufq_flush(bufq: &mut ibufqueue) {
     bufq.bufs.clear();
 }
