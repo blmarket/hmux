@@ -80,7 +80,7 @@ pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
 pub(crate) enum IbufStorage<'a> {
-    Owned(Box<[u8]>),
+    Owned(Vec<u8>),
     Borrowed(&'a [u8]),
 }
 
@@ -177,7 +177,7 @@ impl<'a> ibuf<'a> {
         self.storage.as_slice().len()
     }
 
-    pub(crate) fn replace_owned(&mut self, bytes: Box<[u8]>) {
+    pub(crate) fn replace_owned(&mut self, bytes: Vec<u8>) {
         if let IbufStorage::Owned(mut old) =
             ::core::mem::replace(&mut self.storage, IbufStorage::Owned(bytes))
         {

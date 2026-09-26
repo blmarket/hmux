@@ -140,16 +140,16 @@ pub const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
 pub const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
-fn try_zeroed_boxed_slice(len: usize) -> Result<Box<[u8]>, std::collections::TryReserveError> {
+fn try_zeroed_vec(len: usize) -> Result<Vec<u8>, std::collections::TryReserveError> {
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(len)?;
     bytes.resize(len, 0);
-    Ok(bytes.into_boxed_slice())
+    Ok(bytes)
 }
 
 pub fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
     let Ok(mut buf) = Box::try_new(ibuf {
-        storage: IbufStorage::Owned(Vec::new().into_boxed_slice()),
+        storage: IbufStorage::Owned(Vec::new()),
         max: len,
         wpos: 0,
         rpos: 0,
@@ -158,7 +158,7 @@ pub fn ibuf_open(len: size_t) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
         return Err(ENOMEM);
     };
     if len > 0 as size_t {
-        match try_zeroed_boxed_slice(len) {
+        match try_zeroed_vec(len) {
             Ok(bytes) => {
                 buf.storage = IbufStorage::Owned(bytes);
             }
@@ -174,7 +174,7 @@ pub fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, ::core::
         return Err(EINVAL);
     }
     let Ok(mut buf) = Box::try_new(ibuf {
-        storage: IbufStorage::Owned(Vec::new().into_boxed_slice()),
+        storage: IbufStorage::Owned(Vec::new()),
         max,
         wpos: 0,
         rpos: 0,
@@ -183,7 +183,7 @@ pub fn ibuf_dynamic(len: size_t, max: size_t) -> Result<Box<OwnedIbuf>, ::core::
         return Err(ENOMEM);
     };
     if len > 0 as size_t {
-        match try_zeroed_boxed_slice(len) {
+        match try_zeroed_vec(len) {
             Ok(bytes) => {
                 buf.storage = IbufStorage::Owned(bytes);
             }
@@ -214,7 +214,7 @@ pub fn ibuf_reserve(
             return Err(ERANGE);
         }
         let old_size = buf.storage_len();
-        let mut bytes = try_zeroed_boxed_slice(new_wpos).map_err(|_| ENOMEM)?;
+        let mut bytes = try_zeroed_vec(new_wpos).map_err(|_| ENOMEM)?;
         if old_size > 0 {
             bytes[..old_size].copy_from_slice(&buf.storage.as_slice()[..old_size]);
         }
@@ -362,9 +362,9 @@ fn msgbuf_new_reader_with(
     if hdrsz == 0 || hdrsz > (IBUF_READ_SIZE / 2) as size_t {
         return Err(EINVAL);
     }
-    let scratch = try_zeroed_boxed_slice(IBUF_READ_SIZE as usize).map_err(|_| ENOMEM)?;
+    let scratch = try_zeroed_vec(IBUF_READ_SIZE as usize).map_err(|_| ENOMEM)?;
     let mut msgbuf = msgbuf_new()?;
-    msgbuf.rbuf = scratch;
+    msgbuf.rbuf = scratch.into_boxed_slice();
     msgbuf.hdrsize = hdrsz;
     msgbuf.readhdr = readhdr;
     Ok(msgbuf)
