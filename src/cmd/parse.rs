@@ -948,8 +948,13 @@ impl LexerBuffer {
         self.bytes.push(byte as u8);
     }
 
-    fn into_cstring(self) -> CString {
-        CString::new(self.bytes).expect("lexer token contains no interior NUL")
+    fn into_cstring(mut self) -> CString {
+        // Decode the whole token, then preserve the original C-string behavior:
+        // an escaped NUL ends the argument, not parsing of the following commands.
+        if let Some(nul) = self.bytes.iter().position(|&byte| byte == 0) {
+            self.bytes.truncate(nul);
+        }
+        CString::new(self.bytes).expect("lexer token was truncated at the first NUL")
     }
 }
 unsafe fn yylex_getc1() -> ::core::ffi::c_int {
