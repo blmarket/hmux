@@ -2569,7 +2569,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
         } else {
             y = (*c).tty.sy.wrapping_sub(lines);
         }
-        sl = (*c).status.active;
+        sl = (*c).status.active_screen();
         i = 0 as u_int;
         while i < lines {
             r = tty_check_overlay_range(tty, 0 as u_int, y.wrapping_add(i), (*tty).sx);

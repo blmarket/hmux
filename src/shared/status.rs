@@ -15,7 +15,8 @@ use std::ffi::{CStr, CString};
 pub struct status_line {
     pub timer: event,
     pub screen: screen,
-    pub active: *mut screen,
+    /// Owns the temporary message/prompt screen; None selects the base screen.
+    pub active: Option<Box<screen>>,
     pub references: ::core::ffi::c_int,
     pub prompt_cx: u_int,
     pub style: grid_cell,
@@ -23,6 +24,11 @@ pub struct status_line {
 }
 
 impl status_line {
+    /// The returned screen is borrowed until the next status push/pop or teardown.
+    pub fn active_screen(&mut self) -> &mut screen {
+        self.active.as_deref_mut().unwrap_or(&mut self.screen)
+    }
+
     pub fn empty() -> Self {
         Self::default()
     }

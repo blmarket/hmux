@@ -273,19 +273,6 @@ unsafe fn server_client_ensure_term_name(c: &mut client) {
     }
 }
 
-pub(crate) fn server_client_set_saved_status_screen(c: &mut client, screen: Box<screen>) {
-    assert!(c.saved_status_screen.is_none());
-    c.saved_status_screen = Some(screen);
-    c.status.active = c.saved_status_screen.as_deref_mut().unwrap();
-}
-
-pub(crate) fn server_client_clear_saved_status_screen(c: &mut client) {
-    // Reset the public view before dropping the allocation it pointed into.
-    c.status.active = &raw mut c.status.screen;
-    assert!(c.saved_status_screen.is_some());
-    c.saved_status_screen = None;
-}
-
 fn server_client_add_term_cap(c: &mut client, data: &CStr) {
     assert!(c.term_caps.len() < u_int::MAX as usize);
     c.term_caps.push(data.to_owned());
@@ -3743,7 +3730,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     } else if !wp.is_null() && (*c).prompt.is_null() {
         s = (*wp).screen;
     } else {
-        s = (*c).status.active;
+        s = (*c).status.active_screen();
     }
     if !s.is_null() {
         mode = (*s).mode;

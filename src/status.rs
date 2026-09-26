@@ -24,9 +24,7 @@ use crate::src::screen_write::{
 use crate::src::server::clients;
 use crate::src::server::server_add_message;
 use crate::src::server_client::{
-    server_client_clear_overlay, server_client_clear_saved_status_screen,
-    server_client_set_message, server_client_set_saved_status_screen,
-    server_client_set_status_expanded,
+    server_client_clear_overlay, server_client_set_message, server_client_set_status_expanded,
 };
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::style::{
@@ -207,9 +205,14 @@ pub unsafe fn status_get_range(mut c: *mut client, mut x: u_int, mut y: u_int) -
 }
 unsafe fn status_push_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
-    if (*sl).active == &raw mut (*sl).screen {
-        server_client_set_saved_status_screen(&mut *c, Box::new(screen::empty()));
-        screen_init((*sl).active, (*c).tty.sx, status_line_size(c), 0 as u_int);
+    if (*sl).active.is_none() {
+        (*sl).active = Some(Box::new(screen::empty()));
+        screen_init(
+            (*sl).active_screen(),
+            (*c).tty.sx,
+            status_line_size(c),
+            0 as u_int,
+        );
     }
     (*sl).references += 1;
 }
@@ -217,8 +220,11 @@ unsafe fn status_pop_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     (*sl).references -= 1;
     if (*sl).references == 0 as ::core::ffi::c_int {
-        screen_free((*sl).active);
-        server_client_clear_saved_status_screen(&mut *c);
+        let mut active = (*sl)
+            .active
+            .take()
+            .expect("status screen push/pop balanced");
+        screen_free(&mut *active);
     }
 }
 pub unsafe fn status_init(mut c: *mut client) {
@@ -235,7 +241,7 @@ pub unsafe fn status_init(mut c: *mut client) {
         i = i.wrapping_add(1);
     }
     screen_init(&raw mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
-    (*sl).active = &raw mut (*sl).screen;
+    (*sl).active = None;
 }
 pub unsafe fn status_free(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
@@ -254,9 +260,8 @@ pub unsafe fn status_free(mut c: *mut client) {
     if event_initialized(&(*sl).timer) != 0 {
         event_del(&raw mut (*sl).timer);
     }
-    if (*sl).active != &raw mut (*sl).screen {
-        screen_free((*sl).active);
-        server_client_clear_saved_status_screen(&mut *c);
+    if let Some(mut active) = (*sl).active.take() {
+        screen_free(&mut *active);
     }
     screen_free(&raw mut (*sl).screen);
 }
@@ -303,7 +308,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         b"%s enter\0" as *const u8 as *const ::core::ffi::c_char,
         b"status_redraw\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if (*sl).active != &raw mut (*sl).screen {
+    if (*sl).active.is_some() {
         fatalx(b"not the active screen\0" as *const u8 as *const ::core::ffi::c_char);
     }
     lines = status_line_size(c);
@@ -621,12 +626,12 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    old_screen = std::ptr::replace((*sl).active, screen::empty());
+    old_screen = std::mem::replace((*sl).active_screen(), screen::empty());
     lines = status_line_size(c);
     if lines <= 1 as u_int {
         lines = 1 as u_int;
     }
-    screen_init((*sl).active, (*c).tty.sx, lines, 0 as u_int);
+    screen_init((*sl).active_screen(), (*c).tty.sx, lines, 0 as u_int);
     messageline = status_prompt_line_at(c);
     if messageline > lines.wrapping_sub(1 as u_int) {
         messageline = lines.wrapping_sub(1 as u_int);
@@ -675,7 +680,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     let expanded = format_expand_time_cstring(ft, msgfmt);
     format_free(ft);
-    screen_write_start(&raw mut ctx, (*sl).active);
+    screen_write_start(&raw mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
         &raw mut ctx,
         &raw mut (*sl).screen,
@@ -699,7 +704,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    if grid_compare((*(*sl).active).grid, old_screen.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare((*sl).active_screen().grid, old_screen.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
@@ -822,18 +827,18 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    old_screen = std::ptr::replace((*sl).active, screen::empty());
+    old_screen = std::mem::replace((*sl).active_screen(), screen::empty());
     lines = status_line_size(c);
     if lines <= 1 as u_int {
         lines = 1 as u_int;
     }
-    screen_init((*sl).active, (*c).tty.sx, lines, 0 as u_int);
+    screen_init((*sl).active_screen(), (*c).tty.sx, lines, 0 as u_int);
     promptline = status_prompt_line_at(c);
     if promptline > lines.wrapping_sub(1 as u_int) {
         promptline = lines.wrapping_sub(1 as u_int);
     }
     status_message_area(c, &raw mut ax, &raw mut aw);
-    screen_write_start(&raw mut ctx, (*sl).active);
+    screen_write_start(&raw mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
         &raw mut ctx,
         &raw mut (*sl).screen,
@@ -849,7 +854,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     pdd.cursor_x = &raw mut (*sl).prompt_cx;
     prompt_draw((*c).prompt, &raw mut pdd);
     screen_write_stop(&raw mut ctx);
-    if grid_compare((*(*sl).active).grid, old_screen.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare((*sl).active_screen().grid, old_screen.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
@@ -898,4 +903,83 @@ pub unsafe fn status_prompt_key(
         status_prompt_clear(c);
     }
     return result;
+}
+
+#[cfg(test)]
+mod status_screen_tests {
+    use super::*;
+    use crate::src::grid::{grid_default_cell, grid_get_cell, grid_set_cell};
+    use crate::src::options::{options_create, options_default, options_free};
+    use crate::src::options_table::options_table;
+    use crate::src::tmux::{global_options, global_s_options};
+
+    #[test]
+    fn temporary_screen_is_shared_until_last_pop_and_base_survives() {
+        unsafe {
+            let previous = (global_options, global_s_options);
+            global_options = options_create(std::ptr::null_mut());
+            global_s_options = options_create(std::ptr::null_mut());
+            for (options, name) in [
+                (global_options, c"extended-keys"),
+                (global_s_options, c"status"),
+            ] {
+                let definition = options_table
+                    .iter()
+                    .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == name)
+                    .unwrap();
+                options_default(options, definition);
+            }
+
+            let mut c = Box::new(client::empty());
+            c.tty.sx = 80;
+            c.tty.sy = 24;
+            status_init(&mut *c);
+            let base = &raw mut c.status.screen;
+            let base_grid = c.status.screen.grid;
+            assert!(c.status.active.is_none());
+            assert_eq!(c.status.active_screen() as *mut screen, base);
+            let mut cell = grid_default_cell;
+            cell.data.data[0] = b'B';
+            grid_set_cell(base_grid, 0, 0, &cell);
+
+            // A prompt and a message share one temporary screen.
+            status_push_screen(&mut *c);
+            let temporary = c.status.active_screen() as *mut screen;
+            let temporary_grid = c.status.active_screen().grid;
+            assert_ne!(temporary, base);
+            assert_ne!(temporary_grid, base_grid);
+            cell.data.data[0] = b'T';
+            grid_set_cell(temporary_grid, 0, 0, &cell);
+            status_push_screen(&mut *c);
+            assert_eq!(c.status.references, 2);
+            assert_eq!(c.status.active_screen() as *mut screen, temporary);
+            status_pop_screen(&mut *c);
+            assert_eq!(c.status.references, 1);
+            assert_eq!(c.status.active_screen().grid, temporary_grid);
+            grid_get_cell(temporary_grid, 0, 0, &mut cell);
+            assert_eq!(cell.data.data[0], b'T');
+
+            status_pop_screen(&mut *c);
+            assert_eq!(c.status.references, 0);
+            assert!(c.status.active.is_none());
+            assert_eq!(c.status.active_screen() as *mut screen, base);
+            assert_eq!(c.status.screen.grid, base_grid);
+            grid_get_cell(base_grid, 0, 0, &mut cell);
+            assert_eq!(cell.data.data[0], b'B');
+            status_free(&mut *c);
+            assert!(c.status.screen.grid.is_null());
+
+            // Teardown also releases an active temporary screen without a pop.
+            status_init(&mut *c);
+            status_push_screen(&mut *c);
+            assert!(c.status.active.is_some());
+            status_free(&mut *c);
+            assert!(c.status.active.is_none());
+            assert!(c.status.screen.grid.is_null());
+
+            options_free(global_options);
+            options_free(global_s_options);
+            (global_options, global_s_options) = previous;
+        }
+    }
 }

@@ -191,9 +191,6 @@ pub struct client {
     pub overlay_timer: event,
     pub files: client_files,
     pub source_file_depth: u_int,
-    // status.active can borrow either the inline screen or this saved screen.
-    // Keep ownership separate from that switching observer.
-    pub(crate) saved_status_screen: Option<Box<screen>>,
 }
 
 impl client {
@@ -271,7 +268,6 @@ impl client {
             overlay_timer: Default::default(),
             files: Default::default(),
             source_file_depth: Default::default(),
-            saved_status_screen: Default::default(),
         }
     }
 }
