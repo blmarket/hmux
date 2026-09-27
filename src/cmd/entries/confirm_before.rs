@@ -19,8 +19,6 @@ use crate::src::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
 use crate::src::status::status_prompt_set;
 use std::ffi::{CStr, CString};
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_confirm_before_data {
     pub item: *mut cmdq_item,
     pub cmdlist: *mut cmd_list,
@@ -93,7 +91,6 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             cdata.confirm_key = *confirm_key.offset(0 as ::core::ffi::c_int as isize) as u_char;
         } else {
             cmdq_error(item, |out| out.write_all(b"invalid confirm key"));
-            cmd_list_free(cdata.cmdlist);
             return CMD_RETURN_ERROR;
         }
     } else {
@@ -115,23 +112,14 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         bytes.extend_from_slice(b"/n) ");
         CString::new(bytes).expect("C string command and validated key contain no interior NUL")
     };
-    let cdata = Box::into_raw(cdata);
-    let inputcb: crate::src::shared::status::status_prompt_input_cb =
-        Some(Box::new(move |c, s, _key| unsafe {
-            cmd_confirm_before_callback(
-                c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-                cdata,
-                s,
-            )
-        }));
-    let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_confirm_before_free(cdata) }));
+    let inputcb = cdata.into_callback();
     status_prompt_set(
         tc,
         target,
         new_prompt.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
         inputcb,
-        freecb,
+        None,
         PROMPT_SINGLE,
         PROMPT_TYPE_COMMAND,
     );
@@ -143,26 +131,25 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
 }
 unsafe fn cmd_confirm_before_callback(
     mut c: *mut client,
-    mut cdata: *mut cmd_confirm_before_data,
+    cdata: &cmd_confirm_before_data,
     s: Option<&CStr>,
 ) -> prompt_result {
-    let mut item: *mut cmdq_item = (*cdata).item;
+    let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     if !((*c).flags & CLIENT_DEAD as uint64_t != 0) {
         if let Some(s) = s {
             let bytes = s.to_bytes();
             let confirmed = bytes.len() == 1
-                && (bytes[0] == (*cdata).confirm_key
-                    || (bytes[0] == b'\r' && (*cdata).default_yes != 0));
+                && (bytes[0] == cdata.confirm_key || (bytes[0] == b'\r' && cdata.default_yes != 0));
             if confirmed {
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
                     new_item =
-                        cmdq_get_command((*cdata).cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+                        cmdq_get_command(cdata.cmdlist, ::core::ptr::null_mut::<cmdq_state>());
                     cmdq_append(c, new_item);
                 } else {
-                    new_item = cmdq_get_command((*cdata).cmdlist, cmdq_get_state(item));
+                    new_item = cmdq_get_command(cdata.cmdlist, cmdq_get_state(item));
                     cmdq_insert_after(item, new_item);
                 }
             }
@@ -176,7 +163,76 @@ unsafe fn cmd_confirm_before_callback(
     }
     return PROMPT_CLOSE;
 }
-unsafe fn cmd_confirm_before_free(mut data: *mut cmd_confirm_before_data) {
-    let cdata = Box::from_raw(data);
-    cmd_list_free(cdata.cmdlist);
+impl cmd_confirm_before_data {
+    fn into_callback(self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
+        Some(Box::new(move |client, text, _key| unsafe {
+            cmd_confirm_before_callback(
+                client.map_or(std::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                &self,
+                text,
+            )
+        }))
+    }
+}
+
+impl Drop for cmd_confirm_before_data {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.cmdlist.is_null() {
+                cmd_list_free(self.cmdlist);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::src::cmd::cmd_list_new;
+    use crate::src::prompt::{prompt_free, prompt_key};
+    use crate::src::shared::rc;
+    use crate::src::text::utf8::utf8_fromcstr_vec;
+    use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn owned_callback_releases_commands_after_rejection_or_replacement() {
+        unsafe {
+            for reject in [false, true] {
+                let client = client::new();
+                let pointer = std::ptr::NonNull::new(rc::as_ptr(&client));
+                let mut item = cmdq_item::empty();
+                item.flags = CMDQ_WAITING;
+                let cmdlist = cmd_list_new();
+                let commands = rc::downgrade(cmdlist);
+                let data = Box::new(cmd_confirm_before_data {
+                    item: &mut item,
+                    cmdlist,
+                    confirm_key: b'y',
+                    default_yes: 0,
+                });
+                let owner = Rc::new(RefCell::new(prompt {
+                    flags: PROMPT_SINGLE,
+                    buffer: utf8_fromcstr_vec(c""),
+                    ..Default::default()
+                }));
+                let mut callback = data.into_callback().unwrap();
+                owner.borrow_mut().inputcb =
+                    Some(Box::new(move |text, key| callback(pointer, text, key)));
+                if reject {
+                    assert_eq!(prompt_key(&owner, b'n' as u64, &mut 0), PROMPT_KEY_CLOSE);
+                    assert_eq!(item.flags & CMDQ_WAITING, 0);
+                }
+                assert!(commands.upgrade().is_some());
+                prompt_free(&owner);
+                assert!(commands.upgrade().is_none());
+                assert!(owner.borrow().inputcb.is_none());
+                if !reject {
+                    // Pinned tmux cleanup only frees commands; callback dispatch
+                    // is responsible for continuing a waiting confirmation.
+                    assert_ne!(item.flags & CMDQ_WAITING, 0);
+                }
+                prompt_free(&owner);
+            }
+        }
+    }
 }
