@@ -133,15 +133,15 @@ pub type mode_tree_prompt_input_cb = Option<
 >;
 
 /// Each row keeps its mode-specific record alive across rebuilds and callbacks.
-/// Category rows have no payload. UnsafeCell bridges the remaining translated
-/// mode code while the row and list share the original heap allocation.
+/// Category rows have no payload. Rows and mode lists share immutable records
+/// in their original heap allocations.
 #[derive(Clone, Default)]
 pub enum ModeTreeItemData {
     #[default]
     None,
     Buffer(Rc<window_buffer_itemdata>),
     Client(Rc<window_client_itemdata>),
-    Customize(Rc<UnsafeCell<window_customize_itemdata>>),
+    Customize(Rc<window_customize_itemdata>),
     Tree(Rc<window_tree_itemdata>),
 }
 
@@ -158,7 +158,7 @@ impl ModeTreeItemData {
             _ => None,
         }
     }
-    pub fn as_customize(&self) -> Option<&Rc<UnsafeCell<window_customize_itemdata>>> {
+    pub fn as_customize(&self) -> Option<&Rc<window_customize_itemdata>> {
         match self {
             Self::Customize(item) => Some(item),
             _ => None,
