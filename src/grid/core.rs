@@ -162,7 +162,7 @@ static grid_cleared_cell: grid_cell = grid_cell {
     us: 8 as ::core::ffi::c_int,
     link: 0 as u_int,
 };
-static mut grid_cleared_entry: grid_cell_entry = grid_cell_entry {
+static grid_cleared_entry: grid_cell_entry = grid_cell_entry {
     c2rust_unnamed: grid_cell_entry_storage {
         data: grid_cell_entry_data {
             attr: 0 as u_char,
@@ -174,97 +174,75 @@ static mut grid_cleared_entry: grid_cell_entry = grid_cell_entry {
     flags: GRID_FLAG_CLEARED as u_char,
 };
 pub unsafe fn grid_check_is_clear() {}
-unsafe fn grid_store_cell(mut gce: *mut grid_cell_entry, mut gc: *const grid_cell, mut c: u_char) {
-    (*gce).flags = ((*gc).flags as ::core::ffi::c_int & !GRID_FLAG_CLEARED) as u_char;
-    (*gce).c2rust_unnamed.data.fg = ((*gc).fg & 0xff as ::core::ffi::c_int) as u_char;
-    if (*gc).fg & COLOUR_FLAG_256 != 0 {
-        (*gce).flags = ((*gce).flags as ::core::ffi::c_int | GRID_FLAG_FG256) as u_char;
+fn grid_store_cell(entry: &mut grid_cell_entry, cell: &grid_cell, byte: u_char) {
+    entry.flags = (cell.flags as i32 & !GRID_FLAG_CLEARED) as u_char;
+    if cell.fg & COLOUR_FLAG_256 != 0 {
+        entry.flags |= GRID_FLAG_FG256 as u_char;
     }
-    (*gce).c2rust_unnamed.data.bg = ((*gc).bg & 0xff as ::core::ffi::c_int) as u_char;
-    if (*gc).bg & COLOUR_FLAG_256 != 0 {
-        (*gce).flags = ((*gce).flags as ::core::ffi::c_int | GRID_FLAG_BG256) as u_char;
+    if cell.bg & COLOUR_FLAG_256 != 0 {
+        entry.flags |= GRID_FLAG_BG256 as u_char;
     }
-    (*gce).c2rust_unnamed.data.attr = (*gc).attr as u_char;
-    (*gce).c2rust_unnamed.data.data = c;
+    entry.c2rust_unnamed.data = grid_cell_entry_data {
+        fg: (cell.fg & 0xff) as u_char,
+        bg: (cell.bg & 0xff) as u_char,
+        attr: cell.attr as u_char,
+        data: byte,
+    };
 }
-unsafe fn grid_need_extended_cell(
-    mut gce: *const grid_cell_entry,
-    mut gc: *const grid_cell,
-) -> ::core::ffi::c_int {
-    if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*gc).attr as ::core::ffi::c_int > 0xff as ::core::ffi::c_int {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*gc).data.size as ::core::ffi::c_int > 1 as ::core::ffi::c_int
-        || (*gc).data.width as ::core::ffi::c_int > 1 as ::core::ffi::c_int
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*gc).fg & (COLOUR_FLAG_RGB | COLOUR_FLAG_THEME) != 0
-        || (*gc).bg & (COLOUR_FLAG_RGB | COLOUR_FLAG_THEME) != 0
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*gc).us != 8 as ::core::ffi::c_int {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*gc).link != 0 as u_int {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
+fn grid_need_extended_cell(entry: &grid_cell_entry, cell: &grid_cell) -> bool {
+    entry.flags as i32 & GRID_FLAG_EXTENDED != 0
+        || cell.attr > 0xff
+        || cell.data.size > 1
+        || cell.data.width > 1
+        || cell.fg & (COLOUR_FLAG_RGB | COLOUR_FLAG_THEME) != 0
+        || cell.bg & (COLOUR_FLAG_RGB | COLOUR_FLAG_THEME) != 0
+        || cell.us != 8
+        || cell.link != 0
+        || cell.flags as i32 & GRID_FLAG_TAB != 0
 }
-unsafe fn grid_get_extended_cell(
-    mut gl: *mut grid_line,
-    mut gce: *mut grid_cell_entry,
-    mut flags: ::core::ffi::c_int,
-) {
-    let mut at: u_int = (*gl).extdsize.wrapping_add(1 as u_int);
-    (*gl)
-        .extddata
-        .resize_with(at as usize, grid_extd_entry::default);
-    (*gl).extdsize = at;
-    (*gce).c2rust_unnamed.offset = at.wrapping_sub(1 as u_int);
-    (*gce).flags = (flags | GRID_FLAG_EXTENDED) as u_char;
+fn grid_get_extended_cell(line: &mut grid_line, column: usize, flags: i32) {
+    let count = line.extdsize.wrapping_add(1);
+    line.extddata
+        .resize_with(count as usize, grid_extd_entry::default);
+    line.extdsize = count;
+    let entry = &mut line.celldata[column];
+    entry.c2rust_unnamed.offset = count.wrapping_sub(1);
+    entry.flags = (flags | GRID_FLAG_EXTENDED) as u_char;
 }
-unsafe fn grid_extended_cell(
-    mut gl: *mut grid_line,
-    mut gce: *mut grid_cell_entry,
-    mut gc: *const grid_cell,
-) -> *mut grid_extd_entry {
-    let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
-    let mut flags: ::core::ffi::c_int = (*gc).flags as ::core::ffi::c_int & !GRID_FLAG_CLEARED;
-    let mut uc: utf8_char = 0;
-    if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-        grid_get_extended_cell(gl, gce, flags);
-    } else if (*gce).c2rust_unnamed.offset >= (*gl).extdsize {
+unsafe fn grid_extended_cell<'a>(
+    line: &'a mut grid_line,
+    column: usize,
+    cell: &grid_cell,
+) -> &'a mut grid_extd_entry {
+    let flags = cell.flags as i32 & !GRID_FLAG_CLEARED;
+    let entry = &line.celldata[column];
+    if entry.flags as i32 & GRID_FLAG_EXTENDED == 0 {
+        grid_get_extended_cell(line, column, flags);
+    } else if entry.c2rust_unnamed.offset >= line.extdsize {
         fatalx(|out| out.write_all(b"offset too big"));
     }
-    (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_EXTENDED) as u_short;
-    if (*gc).link != 0 as u_int {
-        (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_HYPERLINK) as u_short;
+    line.flags |= GRID_LINE_EXTENDED as u_short;
+    if cell.link != 0 {
+        line.flags |= GRID_LINE_HYPERLINK as u_short;
     }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-        uc = (*gc).data.width as utf8_char;
+    let mut packed = 0;
+    if cell.flags as i32 & GRID_FLAG_TAB != 0 {
+        packed = cell.data.width as utf8_char;
     } else {
-        utf8_from_data(&(*gc).data, &mut uc);
+        utf8_from_data(&cell.data, &mut packed);
     }
-    gee = (*gl)
-        .extddata
-        .as_mut_ptr()
-        .offset((*gce).c2rust_unnamed.offset as isize) as *mut grid_extd_entry;
-    (*gee).data = uc;
-    (*gee).attr = (*gc).attr;
-    (*gee).flags = flags as u_char;
-    (*gee).fg = (*gc).fg;
-    (*gee).bg = (*gc).bg;
-    (*gee).us = (*gc).us;
-    (*gee).link = (*gc).link;
-    return gee;
+    let offset = line.celldata[column].c2rust_unnamed.offset;
+    let extended = &mut line.extddata[offset as usize];
+    *extended = grid_extd_entry {
+        data: packed,
+        attr: cell.attr,
+        flags: flags as u_char,
+        fg: cell.fg,
+        bg: cell.bg,
+        us: cell.us,
+        link: cell.link,
+    };
+    extended
 }
 unsafe fn grid_compact_line(gl: &mut grid_line) {
     if gl.extdsize == 0 {
@@ -312,41 +290,29 @@ unsafe fn grid_line_set_time(gl: &mut grid_line) {
 pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {
     gd.linedata.resize_with(lines as usize, grid_line::default);
 }
-unsafe fn grid_clear_cell(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut bg: u_int,
-    mut moved: ::core::ffi::c_int,
-) {
-    let mut gl: *mut grid_line = (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
-    let mut gce: *mut grid_cell_entry =
-        (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
-    let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
-    let mut old_offset: u_int = (*gce).c2rust_unnamed.offset;
-    let mut had_extd: ::core::ffi::c_int = (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED;
-    memcpy(
-        gce as *mut ::core::ffi::c_void,
-        &raw const grid_cleared_entry as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell_entry>() as size_t,
-    );
-    if moved == 0 && had_extd != 0 && old_offset < (*gl).extdsize {
-        (*gce).flags = ((*gce).flags as ::core::ffi::c_int | GRID_FLAG_EXTENDED) as u_char;
-        (*gce).c2rust_unnamed.offset = old_offset;
-        gee = grid_extended_cell(gl, gce, &raw const grid_cleared_cell);
-        if bg != 8 as u_int {
-            (*gee).bg = bg as ::core::ffi::c_int;
+unsafe fn grid_clear_cell(line: &mut grid_line, px: u_int, bg: u_int, moved: bool) {
+    let column = px as usize;
+    let entry = &mut line.celldata[column];
+    let old_offset = entry.c2rust_unnamed.offset;
+    let had_extended = entry.flags as i32 & GRID_FLAG_EXTENDED != 0;
+    *entry = grid_cleared_entry;
+    if !moved && had_extended && old_offset < line.extdsize {
+        entry.flags |= GRID_FLAG_EXTENDED as u_char;
+        entry.c2rust_unnamed.offset = old_offset;
+        let extended = grid_extended_cell(line, column, &grid_cleared_cell);
+        if bg != 8 {
+            extended.bg = bg as i32;
         }
-    } else if bg != 8 as u_int {
+    } else if bg != 8 {
         if bg & (COLOUR_FLAG_RGB | COLOUR_FLAG_THEME) as u_int != 0 {
-            grid_get_extended_cell(gl, gce, (*gce).flags as ::core::ffi::c_int);
-            gee = grid_extended_cell(gl, gce, &raw const grid_cleared_cell);
-            (*gee).bg = bg as ::core::ffi::c_int;
+            let flags = entry.flags as i32;
+            grid_get_extended_cell(line, column, flags);
+            grid_extended_cell(line, column, &grid_cleared_cell).bg = bg as i32;
         } else {
             if bg & COLOUR_FLAG_256 as u_int != 0 {
-                (*gce).flags = ((*gce).flags as ::core::ffi::c_int | GRID_FLAG_BG256) as u_char;
+                entry.flags |= GRID_FLAG_BG256 as u_char;
             }
-            (*gce).c2rust_unnamed.data.bg = bg as u_char;
+            entry.c2rust_unnamed.data.bg = bg as u_char;
         }
     }
 }
@@ -514,7 +480,7 @@ unsafe fn grid_expand_line(mut gd: *mut grid, mut py: u_int, mut sx: u_int, mut 
         .resize_with(sx as usize, grid_cell_entry::default);
     xx = (*gl).cellsize as u_int;
     while xx < sx {
-        grid_clear_cell(gd, xx, py, bg, 0 as ::core::ffi::c_int);
+        grid_clear_cell(&mut *gl, xx, bg, false);
         xx = xx.wrapping_add(1);
     }
     (*gl).cellsize = sx as u_short;
@@ -599,10 +565,10 @@ pub unsafe fn grid_set_cell(
         (*gl).cellused = px.wrapping_add(1 as u_int) as u_short;
     }
     gce = (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
-    if grid_need_extended_cell(gce, gc) != 0 {
-        grid_extended_cell(gl, gce, gc);
+    if grid_need_extended_cell(&*gce, &*gc) {
+        grid_extended_cell(&mut *gl, px as usize, &*gc);
     } else {
-        grid_store_cell(gce, gc, (*gc).data.data[0 as ::core::ffi::c_int as usize]);
+        grid_store_cell(&mut *gce, &*gc, (*gc).data.data[0]);
     };
 }
 pub unsafe fn grid_set_padding(
@@ -643,7 +609,6 @@ pub unsafe fn grid_set_cells(
 ) {
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
-    let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
     let mut i: u_int = 0;
     if grid_check_y(
         &*gd,
@@ -669,11 +634,11 @@ pub unsafe fn grid_set_cells(
             .celldata
             .as_mut_ptr()
             .offset(px.wrapping_add(i) as isize) as *mut grid_cell_entry;
-        if grid_need_extended_cell(gce, gc) != 0 {
-            gee = grid_extended_cell(gl, gce, gc);
-            (*gee).data = utf8_build_one(*s.offset(i as isize) as u_char);
+        if grid_need_extended_cell(&*gce, &*gc) {
+            let extended = grid_extended_cell(&mut *gl, px.wrapping_add(i) as usize, &*gc);
+            extended.data = utf8_build_one(*s.offset(i as isize) as u_char);
         } else {
-            grid_store_cell(gce, gc, *s.offset(i as isize) as u_char);
+            grid_store_cell(&mut *gce, &*gc, *s.offset(i as isize) as u_char);
         }
         i = i.wrapping_add(1);
     }
@@ -740,7 +705,7 @@ pub unsafe fn grid_clear(
                 grid_expand_line(gd, yy, px.wrapping_add(ox), 8 as u_int);
                 xx = px;
                 while xx < px.wrapping_add(ox) {
-                    grid_clear_cell(gd, xx, yy, bg, 0 as ::core::ffi::c_int);
+                    grid_clear_cell(&mut *gl, xx, bg, false);
                     xx = xx.wrapping_add(1);
                 }
             }
@@ -844,7 +809,7 @@ pub unsafe fn grid_move_cells(
     xx = px;
     while xx < px.wrapping_add(nx) {
         if !(xx >= dx && xx < dx.wrapping_add(nx)) {
-            grid_clear_cell(gd, xx, py, bg, 1 as ::core::ffi::c_int);
+            grid_clear_cell(&mut *gl, xx, bg, true);
         }
         xx = xx.wrapping_add(1);
     }
@@ -2293,6 +2258,50 @@ pub unsafe fn grid_cell_attr_string(mut attr: ::core::ffi::c_int) -> *const ::co
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn clearing_extended_cells_preserves_moved_entries_and_reuses_live_slots() {
+        unsafe {
+            let mut line = grid_line::default();
+            line.cellsize = 2;
+            line.celldata.resize_with(2, grid_cell_entry::default);
+            let mut cell = grid_default_cell;
+            cell.fg = COLOUR_FLAG_RGB | 0xabcdef;
+            cell.link = 7;
+            utf8_set(&mut cell.data, b'X');
+            grid_extended_cell(&mut line, 0, &cell);
+            line.celldata[1] = line.celldata[0];
+            grid_clear_cell(&mut line, 0, 8, true);
+            let mut actual = grid_default_cell;
+            grid_get_cell1(&line, 1, &mut actual);
+            assert_same_cell(&actual, &cell);
+            assert_eq!(line.extdsize, 1);
+            assert!(!grid_need_extended_cell(
+                &line.celldata[0],
+                &grid_default_cell
+            ));
+
+            grid_clear_cell(&mut line, 1, 9, false);
+            grid_get_cell1(&line, 1, &mut actual);
+            assert_eq!(
+                (actual.data.data[0], actual.fg, actual.bg, actual.link),
+                (b' ', 8, 9, 0)
+            );
+            assert_eq!(line.extdsize, 1);
+            assert_ne!(line.flags as i32 & GRID_LINE_HYPERLINK, 0);
+
+            let bg = (COLOUR_FLAG_RGB | 0x123456) as u_int;
+            grid_clear_cell(&mut line, 0, bg, false);
+            assert_eq!(line.extdsize, 2);
+            grid_clear_cell(&mut line, 0, bg, false);
+            assert_eq!(line.extdsize, 2);
+            line.celldata[0].c2rust_unnamed.offset = u_int::MAX;
+            grid_clear_cell(&mut line, 0, bg, false);
+            assert_eq!(line.extdsize, 3);
+            grid_get_cell1(&line, 0, &mut actual);
+            assert_eq!((actual.data.data[0], actual.bg), (b' ', bg as i32));
+        }
+    }
 
     #[test]
     fn line_compaction_remaps_live_offsets_and_releases_unused_entries() {
