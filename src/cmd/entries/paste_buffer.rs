@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
-use crate::src::ffi::libc::{memchr, strlen};
 use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use crate::src::reactor::bufferevent_write;
@@ -17,6 +16,7 @@ use crate::src::shared::screen::MODE_BRACKETPASTE;
 use crate::src::shared::vis::{VIS_NOSLASH, VIS_SAFE};
 use crate::src::text::utf8::utf8_stravisx_bytes;
 use crate::src::window::window_pane_exited;
+use std::ffi::CStr;
 pub static mut cmd_paste_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"paste-buffer",
@@ -53,12 +53,6 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufend: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut seplen: size_t = 0;
-    let mut bufsize: size_t = 0;
-    let mut len: size_t = 0;
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
     if window_pane_exited(wp) != 0 {
         cmdq_error(item, |out| out.write_all(b"target pane has exited"));
@@ -89,7 +83,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 sepstr = b"\r\0" as *const u8 as *const ::core::ffi::c_char;
             }
         }
-        seplen = strlen(sepstr);
+        let separator = CStr::from_ptr(sepstr).to_bytes();
         if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {
             bufferevent_write(
                 (*wp).event,
@@ -98,32 +92,16 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 6 as size_t,
             );
         }
-        bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        bufend = bufdata.offset(bufsize as isize);
-        loop {
-            line = memchr(
-                bufdata as *const ::core::ffi::c_void,
-                '\n' as i32,
-                bufend.offset_from(bufdata) as ::core::ffi::c_long as size_t,
-            ) as *const ::core::ffi::c_char;
-            if line.is_null() {
-                break;
-            }
-            len = line.offset_from(bufdata) as ::core::ffi::c_long as size_t;
+        let bufdata = paste_buffer_data(&*pb).unwrap_or_default();
+        for chunk in bufdata.split_inclusive(|&byte| byte == b'\n') {
+            let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
             if args_has(args, 'S' as i32 as u_char) != 0 {
-                bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
+                bufferevent_write((*wp).event, line.as_ptr().cast(), line.len());
             } else {
-                cmd_paste_buffer_paste(&*wp, std::slice::from_raw_parts(bufdata.cast::<u8>(), len));
+                cmd_paste_buffer_paste(&*wp, line);
             }
-            bufferevent_write((*wp).event, sepstr as *const ::core::ffi::c_void, seplen);
-            bufdata = line.offset(1 as ::core::ffi::c_int as isize);
-        }
-        if bufdata != bufend {
-            len = bufend.offset_from(bufdata) as ::core::ffi::c_long as size_t;
-            if args_has(args, 'S' as i32 as u_char) != 0 {
-                bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
-            } else {
-                cmd_paste_buffer_paste(&*wp, std::slice::from_raw_parts(bufdata.cast::<u8>(), len));
+            if line.len() != chunk.len() {
+                bufferevent_write((*wp).event, separator.as_ptr().cast(), separator.len());
             }
         }
         if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {

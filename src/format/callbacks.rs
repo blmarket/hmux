@@ -997,32 +997,18 @@ unsafe fn format_cb_buffer_sample(mut ft: *mut format_tree) -> Option<CString> {
     }
     return None;
 }
-unsafe fn format_cb_buffer_full(mut ft: *mut format_tree) -> Option<CString> {
-    let mut size: size_t = 0;
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if !(*ft).pb.is_null() {
-        s = paste_buffer_data((*ft).pb, &raw mut size);
-        if !s.is_null() {
-            return Some(
-                CString::new(std::slice::from_raw_parts(
-                    s.cast::<u8>(),
-                    libc::strnlen(s, size),
-                ))
-                .expect("bounded buffer contains no NUL"),
-            );
-        }
-    }
-    return None;
+unsafe fn format_cb_buffer_full(ft: *mut format_tree) -> Option<CString> {
+    let buffer = (*ft).pb.as_ref()?;
+    let bytes = paste_buffer_data(buffer)?;
+    let end = bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len());
+    Some(CString::new(&bytes[..end]).expect("bounded buffer contains no NUL"))
 }
-unsafe fn format_cb_buffer_size(mut ft: *mut format_tree) -> Option<CString> {
-    let mut size: size_t = 0;
-    if !(*ft).pb.is_null() {
-        paste_buffer_data((*ft).pb, &raw mut size);
-        return Some(
-            CString::new(format!("{}", (size) as usize)).expect("formatted numbers contain no NUL"),
-        );
-    }
-    return None;
+unsafe fn format_cb_buffer_size(ft: *mut format_tree) -> Option<CString> {
+    let buffer = (*ft).pb.as_ref()?;
+    Some(CString::new(buffer.size.to_string()).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_client_cell_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() && (*(*ft).c).tty.flags & TTY_STARTED != 0 {
@@ -3801,6 +3787,36 @@ pub(super) fn format_table_get(key: &CStr) -> Option<&'static FormatTableEntry> 
 #[cfg(test)]
 mod owned_callback_tests {
     use super::*;
+
+    #[test]
+    fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {
+        let mut buffer = Box::new(crate::src::shared::paste::paste_buffer::empty());
+        unsafe {
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            (*ft).pb = &mut *buffer;
+            assert!(paste_buffer_data(&buffer).is_none());
+            assert!(format_cb_buffer_full(ft).is_none());
+            assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"0");
+
+            buffer.data = Some(Box::default());
+            assert_eq!(paste_buffer_data(&buffer), Some(&b""[..]));
+            assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"");
+
+            buffer.data = Some(b"A\xff\0Btrailing".to_vec().into_boxed_slice());
+            buffer.size = 4;
+            let bytes = paste_buffer_data(&buffer).unwrap();
+            assert_eq!(bytes, b"A\xff\0B");
+            assert_eq!(bytes.as_ptr(), buffer.data.as_ref().unwrap().as_ptr());
+            assert_eq!(format_cb_buffer_full(ft).unwrap().as_bytes(), b"A\xff");
+            assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"4");
+
+            buffer.size = 1;
+            assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
+            assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
+            (*ft).pb = std::ptr::null_mut();
+            format_free(ft);
+        }
+    }
 
     #[test]
     fn builtin_lookup_preserves_sorted_keys_and_missing_results() {

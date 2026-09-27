@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strlen, strstr};
+use crate::src::ffi::libc::{memcpy, strcasestr, strlen, strstr};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::{
@@ -23,7 +23,7 @@ use crate::src::screen_write::{
     screen_write_start, screen_write_stop,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__int32_t, ssize_t};
+use crate::src::shared::abi::ssize_t;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
@@ -80,15 +80,6 @@ pub struct window_buffer_editdata {
     pub name: Option<::std::ffi::CString>,
     pub pb: *mut paste_buffer,
     pub editor: *mut spawn_editor_state,
-}
-
-#[inline]
-unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
 }
 
 pub const WINDOW_BUFFER_DEFAULT_COMMAND: [::core::ffi::c_char; 24] = unsafe {
@@ -240,7 +231,7 @@ unsafe fn window_buffer_build(
     for pb in buffers {
         let name = CStr::from_ptr(paste_buffer_name(pb));
         item = window_buffer_add_item(&mut (*data).item_list, name);
-        paste_buffer_data(pb, &raw mut (*item).size);
+        (*item).size = (*pb).size;
         (*item).order = paste_buffer_order(pb);
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
@@ -308,7 +299,7 @@ unsafe fn window_buffer_draw(
     let Some(pb) = paste_get_name(item.name.as_ptr()).as_ref() else {
         return;
     };
-    let data = &pb.data.as_deref().unwrap_or(&[])[..pb.size];
+    let data = paste_buffer_data(pb).unwrap_or_default();
     let mut buf = Vec::<u8>::new();
     for (row, line) in data.split(|&byte| byte == b'\n').take(sy as usize).enumerate() {
         buf.resize(4 * (line.len() + 1), 0);
@@ -322,130 +313,39 @@ unsafe fn window_buffer_draw(
         }
     }
 }
-unsafe fn window_buffer_find(
-    mut data: *const ::core::ffi::c_void,
-    mut datalen: size_t,
-    mut find: *const ::core::ffi::c_void,
-    mut findlen: size_t,
-    mut icase: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut udata: *const u_char = data as *const u_char;
-    let mut ufind: *const u_char = find as *const u_char;
-    let mut i: size_t = 0;
-    let mut j: size_t = 0;
-    if findlen == 0 as size_t || datalen < findlen {
-        return 0 as ::core::ffi::c_int;
+fn window_buffer_find(data: &[u8], find: &[u8], icase: bool) -> bool {
+    if find.is_empty() {
+        return false;
     }
-    i = 0 as size_t;
-    while i.wrapping_add(findlen) <= datalen {
-        j = 0 as size_t;
-        while j < findlen {
-            if icase == 0
-                && *udata.offset(i.wrapping_add(j) as isize) as ::core::ffi::c_int
-                    != *ufind.offset(j as isize) as ::core::ffi::c_int
-            {
-                break;
-            }
-            if icase != 0
-                && ({
-                    let mut __res: ::core::ffi::c_int = 0;
-                    if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                        if 0 != 0 {
-                            let mut __c: ::core::ffi::c_int =
-                                *udata.offset(i.wrapping_add(j) as isize) as ::core::ffi::c_int;
-                            __res = (if __c < -(128 as ::core::ffi::c_int)
-                                || __c > 255 as ::core::ffi::c_int
-                            {
-                                __c as __int32_t
-                            } else {
-                                *(*__ctype_tolower_loc()).offset(__c as isize)
-                            }) as ::core::ffi::c_int;
-                        } else {
-                            __res = tolower(
-                                *udata.offset(i.wrapping_add(j) as isize) as ::core::ffi::c_int
-                            );
-                        }
-                    } else {
-                        __res =
-                            *(*__ctype_tolower_loc())
-                                .offset(*udata.offset(i.wrapping_add(j) as isize)
-                                    as ::core::ffi::c_int
-                                    as isize) as ::core::ffi::c_int;
-                    }
-                    __res
-                }) != ({
-                    let mut __res: ::core::ffi::c_int = 0;
-                    if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                        if 0 != 0 {
-                            let mut __c: ::core::ffi::c_int =
-                                *ufind.offset(j as isize) as ::core::ffi::c_int;
-                            __res = (if __c < -(128 as ::core::ffi::c_int)
-                                || __c > 255 as ::core::ffi::c_int
-                            {
-                                __c as __int32_t
-                            } else {
-                                *(*__ctype_tolower_loc()).offset(__c as isize)
-                            }) as ::core::ffi::c_int;
-                        } else {
-                            __res = tolower(*ufind.offset(j as isize) as ::core::ffi::c_int);
-                        }
-                    } else {
-                        __res = *(*__ctype_tolower_loc())
-                            .offset(*ufind.offset(j as isize) as ::core::ffi::c_int as isize)
-                            as ::core::ffi::c_int;
-                    }
-                    __res
-                })
-            {
-                break;
-            }
-            j = j.wrapping_add(1);
+    data.windows(find.len()).any(|candidate| {
+        if icase {
+            candidate.iter().zip(find).all(|(&a, &b)| unsafe {
+                // C tolower follows the active locale; both inputs are
+                // unsigned bytes, including when the buffer is binary.
+                libc::tolower(i32::from(a)) == libc::tolower(i32::from(b))
+            })
+        } else {
+            candidate == find
         }
-        if j == findlen {
-            return 1 as ::core::ffi::c_int;
-        }
-        i = i.wrapping_add(1);
-    }
-    return 0 as ::core::ffi::c_int;
+    })
 }
-unsafe fn window_buffer_search(
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut ss: *const ::core::ffi::c_char,
-    mut icase: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufsize: size_t = 0;
-    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
-    if pb.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    if icase != 0 {
-        if !strcasestr(((*item).name).as_ptr().cast_mut(), ss).is_null() {
-            return 1 as ::core::ffi::c_int;
-        }
-        bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        return window_buffer_find(
-            bufdata as *const ::core::ffi::c_void,
-            bufsize,
-            ss as *const ::core::ffi::c_void,
-            strlen(ss),
-            icase,
-        );
-    } else {
-        if !strstr(((*item).name).as_ptr().cast_mut(), ss).is_null() {
-            return 1 as ::core::ffi::c_int;
-        }
-        bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        return window_buffer_find(
-            bufdata as *const ::core::ffi::c_void,
-            bufsize,
-            ss as *const ::core::ffi::c_void,
-            strlen(ss),
-            icase,
-        );
+unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: bool) -> bool {
+    let Some(buffer) = paste_get_name(item.name.as_ptr()).as_ref() else {
+        return false;
     };
+    let name_match = if icase {
+        strcasestr(item.name.as_ptr(), search.as_ptr())
+    } else {
+        strstr(item.name.as_ptr(), search.as_ptr())
+    };
+    if !name_match.is_null() {
+        return true;
+    }
+    window_buffer_find(
+        paste_buffer_data(buffer).unwrap_or_default(),
+        search.to_bytes(),
+        icase,
+    )
 }
 unsafe fn window_buffer_menu(
     mut modedata: *mut ::core::ffi::c_void,
@@ -596,7 +496,7 @@ unsafe fn window_buffer_init(
             window_buffer_draw(itemdata, ctx as *mut screen_write_ctx, sx, sy)
         })),
         Some(Box::new(move |itemdata, search, icase| {
-            window_buffer_search(itemdata, search.as_ptr(), icase as ::core::ffi::c_int) != 0
+            window_buffer_search(&*(itemdata as *const window_buffer_itemdata), search, icase)
         })),
         Some(Box::new(move |client, key| {
             window_buffer_menu(
@@ -783,8 +683,6 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     screen_write_stop(&mut ctx);
 }
 unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_buffer_editdata) {
-    let mut oldlen: size_t = 0;
-    let mut oldbuf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
@@ -819,12 +717,8 @@ unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_
         window_buffer_finish_edit(ed);
         return;
     }
-    oldbuf = paste_buffer_data(pb, &raw mut oldlen);
-    if oldlen != 0 as size_t
-        && *oldbuf.offset(oldlen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-            != '\n' as i32
-        && buf[len - 1] == b'\n'
-    {
+    let oldbuf = paste_buffer_data(&*pb).unwrap_or_default();
+    if oldbuf.last().is_some_and(|&byte| byte != b'\n') && buf[len - 1] == b'\n' {
         len = len.wrapping_sub(1);
     }
     if len != 0 as size_t {
@@ -850,8 +744,6 @@ unsafe fn window_buffer_start_edit(
     mut c: *mut client,
 ) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
     let mut ed: *mut window_buffer_editdata = ::core::ptr::null_mut::<window_buffer_editdata>();
     if !(*data).editor.is_null() {
         return;
@@ -860,7 +752,7 @@ unsafe fn window_buffer_start_edit(
     if pb.is_null() {
         return;
     }
-    buf = paste_buffer_data(pb, &raw mut len);
+    let buf = paste_buffer_data(&*pb).unwrap_or_default();
     let name = CStr::from_ptr(paste_buffer_name(pb)).to_owned();
     ed = Box::into_raw(Box::new(window_buffer_editdata {
         wp_id: (*(*data).wp).id,
@@ -870,8 +762,8 @@ unsafe fn window_buffer_start_edit(
     }));
     (*ed).editor = spawn_editor(
         c,
-        buf,
-        len,
+        buf.as_ptr().cast(),
+        buf.len(),
         Some(Box::new(move |buf| unsafe {
             window_buffer_edit_close_cb(buf, ed)
         })),
@@ -966,6 +858,37 @@ unsafe fn window_buffer_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buffer_search_matches_binary_substrings_without_unicode_case_folding() {
+        unsafe {
+            assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
+        }
+        let bytes = b"\xffA\0ZbA\n";
+        for (find, sensitive, insensitive) in [
+            (&b""[..], false, false),
+            (&b"A\0Z"[..], true, true),
+            (&b"a\0z"[..], false, true),
+            (&b"\xffa"[..], false, true),
+            (&b"A\n"[..], true, true),
+            (&b"\n"[..], true, true),
+            (&b"\nZ"[..], false, false),
+            (&b"\xffA\0ZbA\nextra"[..], false, false),
+        ] {
+            assert_eq!(
+                window_buffer_find(bytes, find, false),
+                sensitive,
+                "{find:?}"
+            );
+            assert_eq!(
+                window_buffer_find(bytes, find, true),
+                insensitive,
+                "{find:?}"
+            );
+        }
+        assert!(!window_buffer_find(b"", b"x", true));
+        assert!(!window_buffer_find("É".as_bytes(), "é".as_bytes(), true));
+    }
 
     #[test]
     fn buffer_items_own_names_and_keep_callback_addresses_stable() {

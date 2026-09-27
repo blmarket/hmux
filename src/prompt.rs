@@ -14,7 +14,7 @@ use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_number,
     options_get_only, options_get_string,
 };
-use crate::src::paste::paste_get_top;
+use crate::src::paste::{paste_buffer_data, paste_get_top};
 use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
 use crate::src::screen::screen_set_cursor_style;
 use crate::src::screen_write::{
@@ -1084,7 +1084,7 @@ unsafe fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
         let Some(buffer) = paste_get_top(None).as_ref() else {
             return 0;
         };
-        let bytes = &buffer.data.as_deref().unwrap_or_default()[..buffer.size];
+        let bytes = paste_buffer_data(buffer).unwrap_or_default();
         decoded = prompt_decode_paste(bytes);
         &decoded[..decoded.len() - 1]
     };

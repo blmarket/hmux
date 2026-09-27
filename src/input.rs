@@ -5443,8 +5443,6 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
     let mut ev: *mut bufferevent = (*ictx).event;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut state: ::core::ffi::c_int = 0;
-    let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
     state = options_get_number(
         global_options,
         b"get-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5457,22 +5455,22 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
         if pb.is_null() {
             return;
         }
-        buf = paste_buffer_data(pb, &raw mut len);
+        let buf = paste_buffer_data(&*pb).unwrap_or_default();
         if (*ictx).input_end as ::core::ffi::c_uint
             == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             input_reply_clipboard(
                 ev,
-                buf,
-                len,
+                buf.as_ptr().cast(),
+                buf.len(),
                 b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
                 clip,
             );
         } else {
             input_reply_clipboard(
                 ev,
-                buf,
-                len,
+                buf.as_ptr().cast(),
+                buf.len(),
                 b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
                 clip,
             );

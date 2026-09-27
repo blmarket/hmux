@@ -8096,8 +8096,6 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     let mut buf: Vec<u8>;
     let mut bufname: Option<CString> = None;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufsize: size_t = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -8130,8 +8128,8 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     }
     pb = paste_get_top(Some(&mut bufname));
     if !pb.is_null() {
-        bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        let mut appended = std::slice::from_raw_parts(bufdata.cast::<u8>(), bufsize).to_vec();
+        let bufdata = paste_buffer_data(&*pb).unwrap_or_default();
+        let mut appended = bufdata.to_vec();
         appended.extend_from_slice(&buf);
         buf = appended;
     }

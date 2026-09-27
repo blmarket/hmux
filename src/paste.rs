@@ -279,18 +279,8 @@ pub unsafe fn paste_buffer_order(mut pb: *mut paste_buffer) -> u_int {
 pub unsafe fn paste_buffer_created(mut pb: *mut paste_buffer) -> time_t {
     return (*pb).created;
 }
-pub unsafe fn paste_buffer_data(
-    mut pb: *mut paste_buffer,
-    mut size: *mut size_t,
-) -> *const ::core::ffi::c_char {
-    if !size.is_null() {
-        *size = (*pb).size;
-    }
-    return ((*pb).data)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| {
-            value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
-        });
+pub fn paste_buffer_data(pb: &paste_buffer) -> Option<&[u8]> {
+    pb.data.as_deref().map(|data| &data[..pb.size])
 }
 pub unsafe fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
     if pb.is_null() {

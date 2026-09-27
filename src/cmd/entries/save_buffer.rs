@@ -92,8 +92,6 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut flags: ::core::ffi::c_int = 0;
     let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
-    let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufsize: size_t = 0;
     if bufname.is_null() {
         pb = paste_get_top(None);
         if pb.is_null() {
@@ -110,12 +108,12 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             return CMD_RETURN_ERROR;
         }
     }
-    bufdata = paste_buffer_data(pb, &raw mut bufsize);
+    let bufdata = paste_buffer_data(&*pb).unwrap_or_default();
     let show_buffer = cmd_get_entry(self_0) == &raw const cmd_show_buffer_entry;
     if show_buffer {
         if !(*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             let mut evb = evbuffer_new();
-            evbuffer_add(&mut *evb, bufdata as *const ::core::ffi::c_void, bufsize);
+            evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
             cmdq_print_data(item, &mut *evb);
             return CMD_RETURN_NORMAL;
         }
@@ -135,8 +133,8 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         cmdq_get_client(item),
         path,
         flags,
-        bufdata as *const ::core::ffi::c_void,
-        bufsize,
+        bufdata.as_ptr().cast(),
+        bufdata.len(),
         Some(Box::new(move |event| unsafe {
             cmd_save_buffer_done(
                 item,

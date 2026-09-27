@@ -153,12 +153,8 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'a' as i32 as u_char) != 0 && !pb.is_null() {
-            let mut oldsize = 0;
-            let olddata = paste_buffer_data(pb, &raw mut oldsize);
-            if oldsize != 0 {
-                bufdata
-                    .extend_from_slice(std::slice::from_raw_parts(olddata.cast::<u8>(), oldsize));
-            }
+            let olddata = paste_buffer_data(&*pb).unwrap_or_default();
+            bufdata.extend_from_slice(olddata);
         }
         bufdata.extend_from_slice(new_data);
         let selection_data = if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
