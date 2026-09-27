@@ -86,8 +86,8 @@ pub struct window {
     pub z_index: window_panes,
     pub panes: window_panes,
     pub lastlayout: ::core::ffi::c_int,
-    pub layout_root: *mut layout_cell,
-    pub saved_layout_root: *mut layout_cell,
+    pub layout_root: Option<Box<layout_cell>>,
+    pub saved_layout_root: Option<Box<layout_cell>>,
     pub old_layout: Option<std::ffi::CString>,
     pub sx: u_int,
     pub sy: u_int,
@@ -223,4 +223,18 @@ pub struct winlink_stack {
 pub struct windows {
     /// The head owns the index; window records remain externally owned.
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window>>>,
+}
+
+impl window {
+    pub fn layout_root_ptr(&mut self) -> *mut layout_cell {
+        self.layout_root
+            .as_deref_mut()
+            .map_or(std::ptr::null_mut(), |root| root)
+    }
+
+    pub fn saved_layout_root_ptr(&mut self) -> *mut layout_cell {
+        self.saved_layout_root
+            .as_deref_mut()
+            .map_or(std::ptr::null_mut(), |root| root)
+    }
 }

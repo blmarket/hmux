@@ -6,7 +6,7 @@ use crate::src::json::{
 };
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
-    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_free_cell, layout_make_leaf,
+    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_take_leaf, layout_make_leaf,
     layout_print_cell, layout_replace_with_node, layout_set_size,
 };
 use crate::src::resize::recalculate_sizes;
@@ -52,10 +52,18 @@ use crate::src::shared::window::WINDOW_MAXIMUM;
 pub struct layout_parse_ctx {
     pub version: int64_t,
     pub num_active: ::core::ffi::c_int,
-    pub root: *mut layout_cell,
+    pub root: Option<Box<layout_cell>>,
     pub cause: *mut Option<CString>,
     pub cctxs: Vec<layout_parse_cell_ctx>,
 }
+impl layout_parse_ctx {
+    fn root_ptr(&mut self) -> *mut layout_cell {
+        self.root
+            .as_deref_mut()
+            .map_or(std::ptr::null_mut(), |root| root)
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct layout_parse_cell_ctx {
@@ -69,13 +77,13 @@ pub struct layout_parse_cell_ctx {
 unsafe fn layout_parse_init_ctx(mut pctx: *mut layout_parse_ctx, mut cause: *mut Option<CString>) {
     (*pctx).version = -(1 as ::core::ffi::c_int) as int64_t;
     (*pctx).num_active = 0 as ::core::ffi::c_int;
-    (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
+    (*pctx).root = None;
     (*pctx).cause = cause;
     (*pctx).cctxs.clear();
 }
 unsafe fn layout_parse_free_ctx(mut pctx: *mut layout_parse_ctx) {
-    layout_free_cell((*pctx).root, 0 as ::core::ffi::c_int);
-    (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
+    drop((*pctx).root.take());
+    (*pctx).root = None;
     (*pctx).cctxs.clear();
 }
 unsafe fn layout_parse_add_cctx(
@@ -283,62 +291,42 @@ unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn layout_custom_copy_layout(mut lc: *mut layout_cell) -> *mut layout_cell {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcnewchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lconly: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcnew: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    if (*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-        && (*lc).flags & LAYOUT_CELL_FLOATING != 0
-    {
-        return ::core::ptr::null_mut::<layout_cell>();
+unsafe fn layout_custom_copy_layout(lc: *mut layout_cell) -> Option<Box<layout_cell>> {
+    if (*lc).type_0 == LAYOUT_WINDOWPANE && (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
+        return None;
     }
-    lcnew = layout_create_cell(::core::ptr::null_mut::<layout_cell>());
-    (*lcnew).type_0 = (*lc).type_0;
-    (*lcnew).flags = (*lc).flags;
-    if (*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        (*lcnew).wp = (*lc).wp;
-    }
-    layout_set_size(lcnew, (*lc).g.sx, (*lc).g.sy, (*lc).g.xoff, (*lc).g.yoff);
-    match (*lc).type_0 as ::core::ffi::c_uint {
-        1 | 0 => {
-            lcchild = layout_cells_first(&*lc);
-            while !lcchild.is_null() {
-                lcnewchild = layout_custom_copy_layout(lcchild);
-                if !lcnewchild.is_null() {
-                    layout_cells_push_back(lcnew, lcnewchild);
-                    (*lcnewchild).parent = lcnew;
-                }
-                lcchild = layout_cell_next(lcchild);
+    let mut owner = layout_create_cell();
+    let copy: *mut layout_cell = &mut *owner;
+    owner.type_0 = (*lc).type_0;
+    owner.flags = (*lc).flags;
+    owner.g = (*lc).g;
+    if owner.type_0 == LAYOUT_WINDOWPANE {
+        owner.wp = (*lc).wp;
+    } else {
+        let mut child = layout_cells_first(&*lc);
+        while !child.is_null() {
+            if let Some(copy_child) = layout_custom_copy_layout(child) {
+                layout_cells_push_back(copy, copy_child);
             }
-            lconly = layout_cells_first(&*lcnew);
-            if lconly.is_null() {
-                layout_free_cell(lcnew, 0 as ::core::ffi::c_int);
-                return ::core::ptr::null_mut::<layout_cell>();
-            }
-            if (*lcnew).cells.children.len() == 1 {
-                layout_cells_remove(lcnew, lconly);
-                (*lconly).parent = ::core::ptr::null_mut::<layout_cell>();
-                layout_free_cell(lcnew, 0 as ::core::ffi::c_int);
-                return lconly;
-            }
+            child = layout_cell_next(child);
         }
-        2 | _ => {}
+        match owner.cells.children.len() {
+            0 => return None,
+            1 => return layout_cells_remove(copy, layout_cells_first(&owner)),
+            _ => {}
+        }
     }
-    return lcnew;
+    Some(owner)
 }
-unsafe fn layout_custom_create_compat(mut lcroot: *mut layout_cell) -> *mut layout_cell {
-    let mut lccompat: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    lccompat = layout_custom_copy_layout(lcroot);
-    if !lccompat.is_null() && layout_cell_is_tiled(lccompat) != 0 {
-        (*lccompat).g.xoff = 0 as ::core::ffi::c_int;
-        (*lccompat).g.yoff = 0 as ::core::ffi::c_int;
+unsafe fn layout_custom_create_compat(lcroot: *mut layout_cell) -> Option<Box<layout_cell>> {
+    let mut root = layout_custom_copy_layout(lcroot)?;
+    if layout_cell_is_tiled(&mut *root) != 0 {
+        root.g.xoff = 0;
+        root.g.yoff = 0;
     }
-    return lccompat;
+    Some(root)
 }
+
 unsafe fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     match (*lc).type_0 as ::core::ffi::c_uint {
@@ -355,26 +343,25 @@ unsafe fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
         _ => {}
     };
 }
-unsafe fn layout_custom_free_compat(mut lcroot: *mut layout_cell) {
-    if lcroot.is_null() {
-        return;
+unsafe fn layout_custom_free_compat(mut root: Option<Box<layout_cell>>) {
+    if let Some(root) = root.as_deref_mut() {
+        layout_custom_unlink_panes(root);
     }
-    layout_custom_unlink_panes(lcroot);
-    layout_free_cell(lcroot, 0 as ::core::ffi::c_int);
+    drop(root);
 }
+
 unsafe fn layout_append(
     mut lcroot: *mut layout_cell,
     ls: &mut Vec<u8>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut lccompat: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut result: ::core::ffi::c_int = 0;
     if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
         if layout_cell_is_tiled(lcroot) == 0 && layout_cell_has_tiled_child(lcroot) == 0 {
             return -(1 as ::core::ffi::c_int);
         }
-        lccompat = layout_custom_create_compat(lcroot);
-        result = layout_append_v1(lccompat, ls);
+        let mut lccompat = layout_custom_create_compat(lcroot);
+        result = layout_append_v1(lccompat.as_deref_mut().map_or(std::ptr::null_mut(), |root| root), ls);
         layout_custom_free_compat(lccompat);
     } else {
         result = layout_append_v2(lcroot, ls);
@@ -438,10 +425,11 @@ pub unsafe fn layout_parse(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
+    let mut candidate: Option<Box<layout_cell>> = None;
     let mut pctx: layout_parse_ctx = layout_parse_ctx {
         version: 0,
         num_active: 0,
-        root: ::core::ptr::null_mut::<layout_cell>(),
+        root: None,
         cause: ::core::ptr::null_mut::<Option<CString>>(),
         cctxs: Vec::new(),
     };
@@ -461,7 +449,7 @@ pub unsafe fn layout_parse(
         layout_format_cause!(cause, "window @{} has no panes", (*w).id,);
     } else {
         loop {
-            ncells = layout_count_cells(pctx.root, with_floating);
+            ncells = layout_count_cells(pctx.root_ptr(), with_floating);
             if npanes > ncells {
                 layout_format_cause!(cause, "have {} panes but need {}", npanes, ncells,);
                 current_block = 4277046812173491162;
@@ -471,7 +459,7 @@ pub unsafe fn layout_parse(
                     current_block = 15976848397966268834;
                     break;
                 }
-                lcchild = layout_find_bottomright(pctx.root);
+                lcchild = layout_find_bottomright(pctx.root_ptr());
                 if pctx.version > 1 as int64_t
                     && layout_parse_remove_cctx(&raw mut pctx, lcchild) != 0 as ::core::ffi::c_int
                 {
@@ -486,7 +474,7 @@ pub unsafe fn layout_parse(
                     layout_destroy_cell(
                         ::core::ptr::null_mut::<window>(),
                         lcchild,
-                        &raw mut pctx.root,
+                        &mut pctx.root,
                     );
                 }
             }
@@ -494,8 +482,8 @@ pub unsafe fn layout_parse(
         match current_block {
             4277046812173491162 => {}
             _ => {
-                lc = pctx.root;
-                pctx.root = ::core::ptr::null_mut::<layout_cell>();
+                candidate = pctx.root.take();
+                lc = candidate.as_deref_mut().expect("parsed layout is owned");
                 match (*lc).type_0 as ::core::ffi::c_uint {
                     0 => {
                         lcchild = layout_cells_first(&*lc);
@@ -553,20 +541,22 @@ pub unsafe fn layout_parse(
                             -(1 as ::core::ffi::c_int),
                         );
                     }
+                    let mut floating = Vec::new();
                     if pctx.version == 1 as int64_t {
                         wp = window_pane_first(w);
                         while !wp.is_null() {
                             if !(window_pane_is_floating(wp) == 0) {
                                 lcchild = (*wp).layout_cell as *mut layout_cell;
-                                layout_cells_remove((*lcchild).parent, lcchild);
+                                floating.push(layout_cells_remove((*lcchild).parent, lcchild).expect("floating cell is owned"));
                                 (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
                             }
                             wp = window_pane_next(wp);
                         }
                     }
-                    layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
-                    (*w).layout_root = lc;
-                    layout_assign(w, &raw mut pctx);
+                    drop((*w).layout_root.take());
+                    (*w).layout_root = candidate.take();
+                    layout_assign(w, &raw mut pctx, &mut floating);
+                    assert!(floating.is_empty());
                     layout_fix_offsets(w);
                     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
                     if pctx.version > 1 as int64_t {
@@ -590,7 +580,7 @@ pub unsafe fn layout_parse(
             }
         }
     }
-    layout_free_cell(lc, 0 as ::core::ffi::c_int);
+    drop(candidate);
     layout_parse_free_ctx(&raw mut pctx);
     return -(1 as ::core::ffi::c_int);
 }
@@ -631,7 +621,7 @@ unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *m
         _ => {}
     };
 }
-unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell) {
+unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
     let mut wp: *mut window_pane = window_pane_first(w);
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     layout_assign_fallback_tiled(&raw mut wp, lcroot);
@@ -645,23 +635,21 @@ unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cel
     while !wp.is_null() {
         if window_pane_is_floating(wp) != 0 {
             lc = (*wp).layout_cell as *mut layout_cell;
-            layout_cells_push_back(lcroot, lc);
+            layout_cells_push_back(lcroot, layout_take_leaf(floating, lc));
         }
         wp = window_pane_next(wp);
     }
 }
-unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx, floating: &mut Vec<Box<layout_cell>>) {
     if !(*pctx).cctxs.is_empty() {
         layout_assign_from_ctx(w, pctx);
     } else {
-        layout_assign_fallback(w, (*w).layout_root);
+        layout_assign_fallback(w, (*w).layout_root_ptr(), floating);
     };
 }
 unsafe fn layout_construct_cell(
-    mut lcparent: *mut layout_cell,
     mut layout: *mut *const ::core::ffi::c_char,
-) -> *mut layout_cell {
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
+) -> Option<Box<layout_cell>> {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut xoff: ::core::ffi::c_int = 0;
@@ -672,7 +660,7 @@ unsafe fn layout_construct_cell(
         & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
         == 0
     {
-        return ::core::ptr::null_mut::<layout_cell>();
+        return None;
     }
     if sscanf(
         *layout,
@@ -683,7 +671,7 @@ unsafe fn layout_construct_cell(
         &raw mut yoff,
     ) != 4 as ::core::ffi::c_int
     {
-        return ::core::ptr::null_mut::<layout_cell>();
+        return None;
     }
     while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
         as ::core::ffi::c_int
@@ -693,7 +681,7 @@ unsafe fn layout_construct_cell(
         *layout = (*layout).offset(1);
     }
     if **layout as ::core::ffi::c_int != 'x' as i32 {
-        return ::core::ptr::null_mut::<layout_cell>();
+        return None;
     }
     *layout = (*layout).offset(1);
     while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
@@ -704,7 +692,7 @@ unsafe fn layout_construct_cell(
         *layout = (*layout).offset(1);
     }
     if **layout as ::core::ffi::c_int != ',' as i32 {
-        return ::core::ptr::null_mut::<layout_cell>();
+        return None;
     }
     *layout = (*layout).offset(1);
     while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
@@ -715,7 +703,7 @@ unsafe fn layout_construct_cell(
         *layout = (*layout).offset(1);
     }
     if **layout as ::core::ffi::c_int != ',' as i32 {
-        return ::core::ptr::null_mut::<layout_cell>();
+        return None;
     }
     *layout = (*layout).offset(1);
     while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
@@ -739,101 +727,60 @@ unsafe fn layout_construct_cell(
             *layout = saved;
         }
     }
-    lc = layout_create_cell(lcparent);
+    let mut lc = layout_create_cell();
     (*lc).g.sx = sx;
     (*lc).g.sy = sy;
     (*lc).g.xoff = xoff;
     (*lc).g.yoff = yoff;
-    return lc;
+    Some(lc)
 }
 unsafe fn layout_construct_v1(
-    mut lcparent: *mut layout_cell,
-    mut layout: *mut *const ::core::ffi::c_char,
-    mut depth: u_int,
-) -> *mut layout_cell {
-    let mut current_block: u64;
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
+    layout: *mut *const ::core::ffi::c_char,
+    depth: u_int,
+) -> Option<Box<layout_cell>> {
     if depth > LAYOUT_V1_MAX_DEPTH as u_int {
-        return ::core::ptr::null_mut::<layout_cell>();
+        return None;
     }
-    lc = layout_construct_cell(lcparent, layout);
-    if lc.is_null() {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    match **layout as ::core::ffi::c_int {
-        44 | 125 | 93 | 0 => return lc,
-        123 => {
-            (*lc).type_0 = LAYOUT_LEFTRIGHT;
-            current_block = 1917311967535052937;
-        }
-        91 => {
-            (*lc).type_0 = LAYOUT_TOPBOTTOM;
-            current_block = 1917311967535052937;
-        }
-        _ => {
-            current_block = 17291956987205268033;
-        }
+    let mut owner = layout_construct_cell(layout)?;
+    match **layout as u8 {
+        b',' | b'}' | b']' | 0 => return Some(owner),
+        b'{' => owner.type_0 = LAYOUT_LEFTRIGHT,
+        b'[' => owner.type_0 = LAYOUT_TOPBOTTOM,
+        _ => return None,
     }
     loop {
-        match current_block {
-            17291956987205268033 => {
-                layout_free_cell(lc, 0 as ::core::ffi::c_int);
-                return ::core::ptr::null_mut::<layout_cell>();
-            }
-            _ => {
-                *layout = (*layout).offset(1);
-                lcchild = layout_construct_v1(lc, layout, depth.wrapping_add(1 as u_int));
-                if lcchild.is_null() {
-                    current_block = 17291956987205268033;
-                    continue;
-                }
-                layout_cells_push_back(lc, lcchild);
-                if **layout as ::core::ffi::c_int == ',' as i32 {
-                    current_block = 1917311967535052937;
-                    continue;
-                }
-                match (*lc).type_0 as ::core::ffi::c_uint {
-                    0 => {
-                        if **layout as ::core::ffi::c_int != '}' as i32 {
-                            current_block = 17291956987205268033;
-                        } else {
-                            break;
-                        }
-                    }
-                    1 => {
-                        if **layout as ::core::ffi::c_int != ']' as i32 {
-                            current_block = 17291956987205268033;
-                        } else {
-                            break;
-                        }
-                    }
-                    _ => {
-                        current_block = 17291956987205268033;
-                    }
-                }
-            }
+        *layout = (*layout).add(1);
+        let child = layout_construct_v1(layout, depth.wrapping_add(1))?;
+        layout_cells_push_back(&mut *owner, child);
+        if **layout as u8 == b',' {
+            continue;
         }
+        let closing = if owner.type_0 == LAYOUT_LEFTRIGHT {
+            b'}'
+        } else {
+            b']'
+        };
+        if **layout as u8 != closing {
+            return None;
+        }
+        *layout = (*layout).add(1);
+        return Some(owner);
     }
-    *layout = (*layout).offset(1);
-    return lc;
 }
+
 unsafe fn layout_parse_json(root: &json_node, pctx: *mut layout_parse_ctx) -> ::core::ffi::c_int {
     let result = (|| {
         let root = json_get_object(root).ok_or_else(|| c"invalid layout json".to_owned())?;
         (*pctx).version = json_find_number(root, c"V")?;
         let object = json_find_object(root, c"L")?;
-        (*pctx).root = layout_parse_json_layout(object, std::ptr::null_mut(), pctx)?;
+        (*pctx).root = Some(layout_parse_json_layout(object, pctx)?);
         Ok::<_, CString>(())
     })();
     if let Err(error) = result {
         if let Some(cause) = (*pctx).cause.as_mut() {
             *cause = Some(error);
         }
-        if !(*pctx).root.is_null() {
-            layout_free_cell((*pctx).root, 0);
-        }
-        (*pctx).root = std::ptr::null_mut();
+        drop((*pctx).root.take());
         return -1;
     }
     0
@@ -855,10 +802,10 @@ fn layout_json_number(
 
 unsafe fn layout_parse_json_layout(
     node: &json_node,
-    parent: *mut layout_cell,
     pctx: *mut layout_parse_ctx,
-) -> Result<*mut layout_cell, CString> {
-    let lc = layout_create_cell(parent);
+) -> Result<Box<layout_cell>, CString> {
+    let mut owner = layout_create_cell();
+    let lc: *mut layout_cell = &mut *owner;
     let result = (|| {
         let kind = json_find_string(node, c"t")?;
         (*lc).type_0 = match kind.to_bytes() {
@@ -931,16 +878,14 @@ unsafe fn layout_parse_json_layout(
                 return Err(c"nodes must have more than one child".to_owned());
             }
             for member in members {
-                let child = layout_parse_json_layout(member, lc, pctx)?;
+                let child = layout_parse_json_layout(member, pctx)?;
                 layout_cells_push_back(lc, child);
             }
         }
-        Ok(lc)
+        Ok::<_, CString>(())
     })();
-    if result.is_err() {
-        layout_free_cell(lc, 0);
-    }
-    result
+    result?;
+    Ok(owner)
 }
 unsafe fn layout_construct(
     mut input: *const ::core::ffi::c_char,
@@ -981,11 +926,10 @@ unsafe fn layout_construct(
             return -(1 as ::core::ffi::c_int);
         }
         (*pctx).root = layout_construct_v1(
-            ::core::ptr::null_mut::<layout_cell>(),
             &raw mut input,
             0 as u_int,
         );
-        if (*pctx).root.is_null() {
+        if (*pctx).root.is_none() {
             layout_set_static_cause(
                 (*pctx).cause.as_mut(),
                 b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1132,7 +1076,7 @@ mod json_tests {
             let mut ctx = layout_parse_ctx {
                 version: -1,
                 num_active: 0,
-                root: std::ptr::null_mut(),
+                root: None,
                 cause: &mut cause,
                 cctxs: Vec::new(),
             };

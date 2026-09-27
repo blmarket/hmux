@@ -1463,9 +1463,9 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     {
         return;
     }
-    root = (*w).saved_layout_root;
+    root = (*w).saved_layout_root_ptr();
     if root.is_null() {
-        root = (*w).layout_root;
+        root = (*w).layout_root_ptr();
     }
     if root.is_null() {
         return;

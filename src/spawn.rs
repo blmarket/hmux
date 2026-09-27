@@ -311,7 +311,7 @@ pub unsafe fn spawn_window(
         (*sc).wp0 = window_pane_first(w);
         window_pane_list_remove(w, (*sc).wp0);
         window_pane_z_remove(w, (*sc).wp0);
-        layout_free(w, 0 as ::core::ffi::c_int);
+        layout_free(w);
         window_destroy_panes(w);
         window_pane_list_insert_front(w, (*sc).wp0);
         window_pane_z_insert_back(w, (*sc).wp0);

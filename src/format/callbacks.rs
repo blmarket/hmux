@@ -350,10 +350,10 @@ unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
     if w.is_null() {
         return None;
     }
-    if !(*w).saved_layout_root.is_null() {
-        lcroot = (*w).saved_layout_root;
+    if !(*w).saved_layout_root_ptr().is_null() {
+        lcroot = (*w).saved_layout_root_ptr();
     } else {
-        lcroot = (*w).layout_root;
+        lcroot = (*w).layout_root_ptr();
     }
     if !c.is_null()
         && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -376,7 +376,7 @@ unsafe fn format_cb_window_visible_layout(mut ft: *mut format_tree) -> Option<CS
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    return layout_dump_owned((*w).layout_root, flags);
+    return layout_dump_owned((*w).layout_root_ptr(), flags);
 }
 unsafe fn format_cb_start_command(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
@@ -2166,9 +2166,9 @@ unsafe fn format_cb_pane_unzoomed_height(mut ft: *mut format_tree) -> Option<CSt
     }
     sy = (*lc).g.sy;
     floating = (*lc).flags & LAYOUT_CELL_FLOATING;
-    root = (*w).saved_layout_root;
+    root = (*w).saved_layout_root_ptr();
     if root.is_null() {
-        root = (*w).layout_root;
+        root = (*w).layout_root_ptr();
     }
     if lc == (*wp).saved_layout_cell && floating == 0 {
         status = window_get_pane_status(w);

@@ -23,7 +23,7 @@ use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::layout::{
-    layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_free_cell,
+    layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free,
     layout_init,
 };
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
@@ -1077,7 +1077,7 @@ pub unsafe fn window_create(
     (*w).last_panes = window_pane_history::default();
     (*w).active = ::core::ptr::null_mut::<window_pane>();
     (*w).lastlayout = -(1 as ::core::ffi::c_int);
-    (*w).layout_root = ::core::ptr::null_mut::<layout_cell>();
+    (*w).layout_root = None;
     (*w).sx = sx;
     (*w).sy = sy;
     (*w).manual_sx = sx;
@@ -1120,8 +1120,8 @@ unsafe fn window_destroy(mut w: *mut window) {
     if (*w).entry.owner.is_some() {
         windows_remove(&raw mut windows, w);
     }
-    layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
-    layout_free_cell((*w).saved_layout_root, 0 as ::core::ffi::c_int);
+    drop((*w).layout_root.take());
+    drop((*w).saved_layout_root.take());
     drop(window_replace_old_layout(w, None));
     menu_destroy((*w).menu.take());
     window_destroy_panes(w);
@@ -1711,7 +1711,7 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
         (*wp1).layout_cell = ::core::ptr::null_mut::<layout_cell>();
         wp1 = window_pane_next(wp1);
     }
-    (*w).saved_layout_root = (*w).layout_root;
+    (*w).saved_layout_root = (*w).layout_root.take();
     layout_init(w, wp);
     wp1 = window_pane_first(w);
     while !wp1.is_null() {
@@ -1782,9 +1782,8 @@ pub unsafe fn window_unzoom(
         wp = window_pane_next(wp);
     }
     (*w).flags &= !WINDOW_ZOOMED;
-    layout_free(w, 0 as ::core::ffi::c_int);
-    (*w).layout_root = (*w).saved_layout_root;
-    (*w).saved_layout_root = ::core::ptr::null_mut::<layout_cell>();
+    layout_free(w);
+    (*w).layout_root = (*w).saved_layout_root.take();
     wp = window_pane_first(w);
     while !wp.is_null() {
         (*wp).layout_cell = (*wp).saved_layout_cell as *mut layout_cell;

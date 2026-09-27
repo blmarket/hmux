@@ -50,7 +50,7 @@ mod tests {
     }
 }
 
-/// Each cell is Box-owned by its parent collection until the tree is freed.
+/// Cells are Box-owned by their parent, a window root, or an explicit detached owner.
 /// Child addresses remain stable as the parent `Vec` moves the boxes.
 pub struct layout_cell {
     pub type_0: layout_type,
@@ -136,7 +136,10 @@ pub unsafe fn layout_cell_prev(cell: *mut layout_cell) -> *mut layout_cell {
 }
 
 #[inline]
-pub unsafe fn layout_cells_remove(parent: *mut layout_cell, child: *mut layout_cell) -> bool {
+pub unsafe fn layout_cells_remove(
+    parent: *mut layout_cell,
+    child: *mut layout_cell,
+) -> Option<Box<layout_cell>> {
     let children = &mut (*parent).cells.children;
     let hinted = (*child).sibling_index;
     let index = if children.get(hinted).map(layout_cell_ptr) == Some(child) {
@@ -145,42 +148,27 @@ pub unsafe fn layout_cells_remove(parent: *mut layout_cell, child: *mut layout_c
         children
             .iter()
             .position(|item| layout_cell_ptr(item) == child)
-    };
-    if let Some(index) = index {
-        let boxed = children.remove(index);
-        let removed = Box::into_raw(boxed);
-        debug_assert_eq!(removed, child);
-        (*child).sibling_index = 0;
-        (*child).parent = std::ptr::null_mut();
-        for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
-            sibling.sibling_index = sibling_index;
-        }
-        true
-    } else {
-        false
+    }?;
+    let mut removed = children.remove(index);
+    removed.sibling_index = 0;
+    removed.parent = std::ptr::null_mut();
+    for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
+        sibling.sibling_index = sibling_index;
     }
+    Some(removed)
 }
 
 #[inline]
-unsafe fn layout_cells_prepare_insert(parent: *mut layout_cell, child: *mut layout_cell) {
-    let old_parent = (*child).parent;
-    if !old_parent.is_null() {
-        layout_cells_remove(old_parent, child);
-    }
-    (*child).parent = parent;
+pub unsafe fn layout_cells_push_back(parent: *mut layout_cell, mut child: Box<layout_cell>) {
+    child.parent = parent;
+    child.sibling_index = (*parent).cells.children.len();
+    (*parent).cells.children.push(child);
 }
 
 #[inline]
-pub unsafe fn layout_cells_push_back(parent: *mut layout_cell, child: *mut layout_cell) {
-    layout_cells_prepare_insert(parent, child);
-    (*child).sibling_index = (*parent).cells.children.len();
-    (*parent).cells.children.push(Box::from_raw(child));
-}
-
-#[inline]
-pub unsafe fn layout_cells_push_front(parent: *mut layout_cell, child: *mut layout_cell) {
-    layout_cells_prepare_insert(parent, child);
-    (*parent).cells.children.insert(0, Box::from_raw(child));
+pub unsafe fn layout_cells_push_front(parent: *mut layout_cell, mut child: Box<layout_cell>) {
+    child.parent = parent;
+    (*parent).cells.children.insert(0, child);
     for (index, sibling) in (*parent).cells.children.iter_mut().enumerate() {
         sibling.sibling_index = index;
     }
@@ -190,15 +178,15 @@ pub unsafe fn layout_cells_push_front(parent: *mut layout_cell, child: *mut layo
 pub unsafe fn layout_cells_insert_before(
     parent: *mut layout_cell,
     reference: *mut layout_cell,
-    child: *mut layout_cell,
+    mut child: Box<layout_cell>,
 ) {
-    layout_cells_prepare_insert(parent, child);
+    child.parent = parent;
     let children = &mut (*parent).cells.children;
     let index = children
         .iter()
         .position(|item| layout_cell_ptr(item) == reference)
         .expect("layout cell reference must be a child of its parent");
-    children.insert(index, Box::from_raw(child));
+    children.insert(index, child);
     for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
         sibling.sibling_index = sibling_index;
     }
@@ -208,15 +196,15 @@ pub unsafe fn layout_cells_insert_before(
 pub unsafe fn layout_cells_insert_after(
     parent: *mut layout_cell,
     reference: *mut layout_cell,
-    child: *mut layout_cell,
+    mut child: Box<layout_cell>,
 ) {
-    layout_cells_prepare_insert(parent, child);
+    child.parent = parent;
     let children = &mut (*parent).cells.children;
     let index = children
         .iter()
         .position(|item| layout_cell_ptr(item) == reference)
         .expect("layout cell reference must be a child of its parent");
-    children.insert(index + 1, Box::from_raw(child));
+    children.insert(index + 1, child);
     for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index + 1) {
         sibling.sibling_index = sibling_index;
     }
@@ -226,21 +214,32 @@ pub unsafe fn layout_cells_insert_after(
 pub unsafe fn layout_cells_replace(
     parent: *mut layout_cell,
     old: *mut layout_cell,
-    new: *mut layout_cell,
-) {
-    layout_cells_prepare_insert(parent, new);
+    mut new: Box<layout_cell>,
+) -> Box<layout_cell> {
     let children = &mut (*parent).cells.children;
     let index = children
         .iter()
         .position(|item| layout_cell_ptr(item) == old)
         .expect("layout cell to replace must be a child of its parent");
-    let old_box = std::mem::replace(&mut children[index], Box::from_raw(new));
-    let detached_old = Box::into_raw(old_box);
-    debug_assert_eq!(detached_old, old);
-    (*old).parent = std::ptr::null_mut();
-    (*old).sibling_index = 0;
-    (*new).parent = parent;
-    (*new).sibling_index = index;
+    new.parent = parent;
+    new.sibling_index = index;
+    let mut detached = std::mem::replace(&mut children[index], new);
+    detached.parent = std::ptr::null_mut();
+    detached.sibling_index = 0;
+    detached
+}
+
+impl Drop for layout_cell {
+    fn drop(&mut self) {
+        if self.type_0 == LAYOUT_WINDOWPANE && !self.wp.is_null() {
+            unsafe {
+                if !(*self.wp).layout_cell.is_null() {
+                    (*(*self.wp).layout_cell).parent = std::ptr::null_mut();
+                    (*self.wp).layout_cell = std::ptr::null_mut();
+                }
+            }
+        }
+    }
 }
 
 /// Confirm that a cell has no owned children before changing its role.

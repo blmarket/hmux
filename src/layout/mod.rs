@@ -10,7 +10,7 @@ pub use self::core::{
     layout_assign_pane, layout_cell, layout_cell_has_tiled_child, layout_cell_is_tiled,
     layout_close_pane, layout_count_cells, layout_create_cell, layout_destroy_cell,
     layout_fix_offsets, layout_fix_panes, layout_floating_args_parse, layout_floating_pane,
-    layout_free, layout_free_cell, layout_get_floating_cell, layout_get_tiled_cell, layout_init,
+    layout_free, layout_take_leaves, layout_take_leaf, layout_get_floating_cell, layout_get_tiled_cell, layout_init,
     layout_insert_tile, layout_make_leaf, layout_make_node, layout_print_cell, layout_remove_tile,
     layout_replace_with_node, layout_resize, layout_resize_adjust, layout_resize_floating_pane,
     layout_resize_floating_pane_to, layout_resize_layout, layout_resize_pane,
