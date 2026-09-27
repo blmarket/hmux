@@ -1258,7 +1258,7 @@ unsafe fn prompt_done_with_history(
 ) -> prompt_key_result {
     let input = utf8_tocstr_cstring(&(*pr).buffer);
     if !input.is_empty() {
-        prompt_add_history(input.as_ptr(), (*pr).type_0);
+        prompt_add_history(&input, (*pr).type_0);
     }
     prompt_done(pr, Some(&input), redraw).key_result()
 }
@@ -1374,19 +1374,15 @@ unsafe fn prompt_edit_key(pr: &mut prompt, key: key_code) -> PromptEditAction {
             pr.index = prompt_backward_word(pr, &pr.word_separators);
         }
         k if k == KEYC_UP || k == KEYC_CTRL | b'p' as key_code => {
-            let history = prompt_up_history(pr.hindex.as_mut_ptr(), pr.type_0);
-            if history.is_null() {
+            let Some(history) = prompt_up_history(&mut pr.hindex, pr.type_0) else {
                 return PromptEditAction::Unchanged;
-            }
-            pr.buffer = utf8_fromcstr_vec(CStr::from_ptr(history));
+            };
+            pr.buffer = utf8_fromcstr_vec(&history);
             pr.index = utf8_strlen(&pr.buffer);
         }
         k if k == KEYC_DOWN || k == KEYC_CTRL | b'n' as key_code => {
-            let history = prompt_down_history(pr.hindex.as_mut_ptr(), pr.type_0);
-            if history.is_null() {
-                return PromptEditAction::Unchanged;
-            }
-            pr.buffer = utf8_fromcstr_vec(CStr::from_ptr(history));
+            let history = prompt_down_history(&mut pr.hindex, pr.type_0);
+            pr.buffer = utf8_fromcstr_vec(history.as_deref().unwrap_or(c""));
             pr.index = utf8_strlen(&pr.buffer);
         }
         k if k == KEYC_CTRL | b'y' as key_code => {

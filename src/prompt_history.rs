@@ -1,5 +1,5 @@
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror};
+use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strerror};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
@@ -8,7 +8,9 @@ use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
 use crate::src::shared::stdio::FILE;
 use crate::src::tmux::{find_home_cstr, global_options};
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 // Keep the bytes through the first newline, including embedded NULs. The
 // history parser below intentionally sees only the first C-string segment.
@@ -25,9 +27,13 @@ unsafe fn read_history_line(stream: &mut CFile, line: &mut Vec<u8>) -> bool {
         line.push(ch as u8);
     }
 }
-// The C API borrows each string until that entry is pruned or cleared. Moving
-// CString values within the vector does not move their NUL-terminated buffers.
-static mut prompt_hlist: [Vec<CString>; PROMPT_NTYPES as usize] = [Vec::new(), Vec::new()];
+// History lives on the server thread. Readers retain immutable entries across
+// pruning or clearing without borrowing the registry during command output.
+thread_local! {
+    static PROMPT_HISTORY: RefCell<[Vec<Rc<CStr>>; PROMPT_NTYPES as usize]> =
+        const { RefCell::new([Vec::new(), Vec::new()]) };
+}
+
 unsafe fn prompt_find_history_file() -> Option<CString> {
     let history_file = options_get_string(
         global_options,
@@ -62,11 +68,11 @@ unsafe fn prompt_add_typed_history(line: &CStr) {
         if let Some(history_type) = history_type {
             let content = CStr::from_bytes_with_nul(&line.to_bytes_with_nul()[colon + 1..])
                 .expect("history content is a C string suffix");
-            prompt_add_history(content.as_ptr(), history_type as u_int);
+            prompt_add_history(content, history_type);
             return;
         }
     }
-    prompt_add_history(line.as_ptr(), PROMPT_TYPE_COMMAND as u_int);
+    prompt_add_history(line, PROMPT_TYPE_COMMAND);
 }
 pub unsafe fn prompt_load_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
@@ -101,8 +107,6 @@ pub unsafe fn prompt_load_history() {
 }
 pub unsafe fn prompt_save_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut i: u_int = 0;
-    let mut type_0: u_int = 0;
     let history_file = match prompt_find_history_file() {
         Some(path) => path,
         None => return,
@@ -124,115 +128,107 @@ pub unsafe fn prompt_save_history() {
         return;
     }
     let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
-    type_0 = 0 as u_int;
-    while type_0 < PROMPT_NTYPES as u_int {
-        i = 0 as u_int;
-        let history = &*(&raw const prompt_hlist[type_0 as usize]);
-        while i < history.len() as u_int {
-            fputs(
-                prompt_type_string(type_0 as prompt_type).as_ptr(),
-                stream.as_ptr(),
-            );
-            fputc(':' as i32, stream.as_ptr());
-            fputs(history[i as usize].as_ptr(), stream.as_ptr());
-            fputc('\n' as i32, stream.as_ptr());
-            i = i.wrapping_add(1);
+    PROMPT_HISTORY.with_borrow(|histories| {
+        for (kind, history) in histories.iter().enumerate() {
+            for entry in history {
+                fputs(
+                    prompt_type_string(kind as prompt_type).as_ptr(),
+                    stream.as_ptr(),
+                );
+                fputc(b':' as i32, stream.as_ptr());
+                fputs(entry.as_ptr(), stream.as_ptr());
+                fputc(b'\n' as i32, stream.as_ptr());
+            }
         }
-        type_0 = type_0.wrapping_add(1);
-    }
+    });
     drop(stream);
 }
-pub unsafe fn prompt_up_history(
-    mut idx: *mut u_int,
-    mut type_0: u_int,
-) -> *const ::core::ffi::c_char {
-    if type_0 >= PROMPT_NTYPES as u_int {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    let history = &*(&raw const prompt_hlist[type_0 as usize]);
-    if history.is_empty() || *idx.offset(type_0 as isize) == history.len() as u_int {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    let ref mut fresh0 = *idx.offset(type_0 as isize);
-    *fresh0 = (*fresh0).wrapping_add(1);
-    return history[history.len() - *idx.offset(type_0 as isize) as usize].as_ptr();
+/// Move backward through history. None leaves the prompt input unchanged.
+pub fn prompt_up_history(
+    indexes: &mut [u_int; PROMPT_NTYPES as usize],
+    kind: prompt_type,
+) -> Option<Rc<CStr>> {
+    PROMPT_HISTORY.with_borrow(|histories| {
+        let history = histories.get(kind as usize)?;
+        let index = &mut indexes[kind as usize];
+        if *index as usize >= history.len() {
+            return None;
+        }
+        *index += 1;
+        Some(history[history.len() - *index as usize].clone())
+    })
 }
-pub unsafe fn prompt_down_history(
-    mut idx: *mut u_int,
-    mut type_0: u_int,
-) -> *const ::core::ffi::c_char {
-    if type_0 >= PROMPT_NTYPES as u_int {
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    let history = &*(&raw const prompt_hlist[type_0 as usize]);
-    if history.is_empty() || *idx.offset(type_0 as isize) == 0 as u_int {
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    let ref mut fresh1 = *idx.offset(type_0 as isize);
-    *fresh1 = (*fresh1).wrapping_sub(1);
-    if *idx.offset(type_0 as isize) == 0 as u_int {
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    return history[history.len() - *idx.offset(type_0 as isize) as usize].as_ptr();
+
+/// Move forward through history. None represents the empty input at its end.
+pub fn prompt_down_history(
+    indexes: &mut [u_int; PROMPT_NTYPES as usize],
+    kind: prompt_type,
+) -> Option<Rc<CStr>> {
+    PROMPT_HISTORY.with_borrow(|histories| {
+        let history = histories.get(kind as usize)?;
+        let index = &mut indexes[kind as usize];
+        if history.is_empty() || *index == 0 {
+            return None;
+        }
+        *index -= 1;
+        if *index == 0 {
+            return None;
+        }
+        // Another prompt may have pruned history since this cursor moved.
+        history
+            .get(history.len().checked_sub(*index as usize)?)
+            .cloned()
+    })
 }
-pub unsafe fn prompt_add_history(mut line: *const ::core::ffi::c_char, mut type_0: u_int) {
-    if type_0 >= PROMPT_NTYPES as u_int {
+
+pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
+    if kind >= PROMPT_NTYPES as prompt_type {
         return;
     }
-    let history = &*(&raw const prompt_hlist[type_0 as usize]);
-    let oldsize = history.len() as u_int;
-    let new = !history
-        .last()
-        .is_some_and(|last| strcmp(last.as_ptr(), line) == 0);
-    let hlimit = options_get_number(
-        global_options,
-        b"prompt-history-limit\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
-    if hlimit > oldsize {
-        if !new {
+    let limit = options_get_number(global_options, c"prompt-history-limit".as_ptr()) as u_int;
+    PROMPT_HISTORY.with_borrow_mut(|histories| {
+        let history = &mut histories[kind as usize];
+        let old_size = history.len() as u_int;
+        let new = !history.last().is_some_and(|last| last.as_ref() == line);
+        if limit > old_size {
+            if !new {
+                return;
+            }
+        } else if old_size + u_int::from(new) - limit == 0 {
             return;
         }
-    } else if oldsize + new as u_int - hlimit == 0 {
-        return;
-    }
 
-    // `line` may borrow an existing entry. Copy it before pruning can drop
-    // that entry, including when the new entry comes from the oldest slot.
-    let added = (new && hlimit != 0).then(|| CStr::from_ptr(line).to_owned());
-    let history = &mut *(&raw mut prompt_hlist[type_0 as usize]);
-    if hlimit <= oldsize {
-        let freecount = (oldsize + new as u_int - hlimit).min(oldsize) as usize;
-        history.drain(..freecount);
-    }
-    if hlimit == 0 {
-        // The old implementation freed the pointer list as well as its items.
-        *history = Vec::new();
-    } else if let Some(added) = added {
-        history.push(added);
-    }
+        let added = (new && limit != 0).then(|| Rc::<CStr>::from(line));
+        if limit <= old_size {
+            let free_count = (old_size + u_int::from(new) - limit).min(old_size) as usize;
+            history.drain(..free_count);
+        }
+        if limit == 0 {
+            // Release the list storage as well as its entries, matching tmux.
+            *history = Vec::new();
+        } else if let Some(added) = added {
+            history.push(added);
+        }
+    });
 }
-pub unsafe fn prompt_history_size(mut type_0: prompt_type) -> u_int {
-    if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
-        return 0 as u_int;
-    }
-    return (&*(&raw const prompt_hlist[type_0 as usize])).len() as u_int;
+
+pub fn prompt_history_size(kind: prompt_type) -> u_int {
+    PROMPT_HISTORY.with_borrow(|histories| {
+        histories
+            .get(kind as usize)
+            .map_or(0, |history| history.len() as u_int)
+    })
 }
-pub unsafe fn prompt_history_get(
-    mut type_0: prompt_type,
-    mut idx: u_int,
-) -> *const ::core::ffi::c_char {
-    if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    let history = &*(&raw const prompt_hlist[type_0 as usize]);
-    if idx >= history.len() as u_int {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    return history[idx as usize].as_ptr();
+
+pub fn prompt_history_get(kind: prompt_type, index: u_int) -> Option<Rc<CStr>> {
+    PROMPT_HISTORY
+        .with_borrow(|histories| histories.get(kind as usize)?.get(index as usize).cloned())
 }
-pub unsafe fn prompt_history_clear(mut type_0: prompt_type) {
-    if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
-        return;
-    }
-    *(&raw mut prompt_hlist[type_0 as usize]) = Vec::new();
+
+pub fn prompt_history_clear(kind: prompt_type) {
+    PROMPT_HISTORY.with_borrow_mut(|histories| {
+        if let Some(history) = histories.get_mut(kind as usize) {
+            *history = Vec::new();
+        }
+    });
 }

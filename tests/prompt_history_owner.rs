@@ -1,4 +1,4 @@
-//! Prompt history keeps stable borrowed C strings while entries remain live.
+//! Prompt history readers retain immutable entries across pruning and clearing.
 
 use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::options::{
@@ -13,6 +13,7 @@ use hmux2::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
 use hmux2::src::tmux::global_options;
 use std::ffi::{CStr, CString};
 use std::os::unix::ffi::OsStrExt;
+use std::rc::Rc;
 
 #[test]
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
@@ -20,7 +21,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         let previous_options = global_options;
         let options = options_create(std::ptr::null_mut());
         for name in [c"prompt-history-limit", c"history-file"] {
-            let definition = options_table
+            let definition = (&*std::ptr::addr_of!(options_table))
                 .iter()
                 .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == name)
                 .unwrap();
@@ -31,82 +32,119 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 0);
-        assert!(prompt_history_get(PROMPT_TYPE_COMMAND, 0).is_null());
-        assert!(prompt_history_get(255, 0).is_null());
+        assert!(prompt_history_get(PROMPT_TYPE_COMMAND, 0).is_none());
+        assert!(prompt_history_get(255, 0).is_none());
 
         options_set_number(options, c"prompt-history-limit".as_ptr(), 200);
-        prompt_add_history(c"\xff-first".as_ptr(), PROMPT_TYPE_COMMAND);
-        let first = prompt_history_get(PROMPT_TYPE_COMMAND, 0);
+        prompt_add_history(c"\xff-first", PROMPT_TYPE_COMMAND);
+        let first = prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap();
         for n in 0..128 {
             let text = CString::new(format!("entry-{n}")).unwrap();
-            prompt_add_history(text.as_ptr(), PROMPT_TYPE_COMMAND);
+            prompt_add_history(&text, PROMPT_TYPE_COMMAND);
         }
-        assert_eq!(prompt_history_get(PROMPT_TYPE_COMMAND, 0), first);
-        assert_eq!(CStr::from_ptr(first).to_bytes(), b"\xff-first");
+        assert!(Rc::ptr_eq(
+            &prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap(),
+            &first
+        ));
+        assert_eq!(first.as_ref().to_bytes(), b"\xff-first");
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 129);
-        prompt_add_history(c"entry-127".as_ptr(), PROMPT_TYPE_COMMAND);
+        prompt_add_history(c"entry-127", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 129);
 
+        let first_weak = Rc::downgrade(&first);
         prompt_history_clear(PROMPT_TYPE_COMMAND);
+        assert_eq!(first.to_bytes(), b"\xff-first");
+        assert_eq!(Rc::strong_count(&first), 1);
+        drop(first);
+        assert!(first_weak.upgrade().is_none());
         options_set_number(options, c"prompt-history-limit".as_ptr(), 3);
         for text in [c"one", c"two", c"three"] {
-            prompt_add_history(text.as_ptr(), PROMPT_TYPE_COMMAND);
+            prompt_add_history(text, PROMPT_TYPE_COMMAND);
         }
-        let middle = prompt_history_get(PROMPT_TYPE_COMMAND, 1);
-        prompt_add_history(c"four".as_ptr(), PROMPT_TYPE_COMMAND);
+        let middle = prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap();
+        prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 3);
-        assert_eq!(prompt_history_get(PROMPT_TYPE_COMMAND, 0), middle);
-        assert_eq!(CStr::from_ptr(middle), c"two");
+        assert!(Rc::ptr_eq(
+            &prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap(),
+            &middle
+        ));
+        assert_eq!(middle.as_ref(), c"two");
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 2)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 2).unwrap().as_ref(),
             c"four"
         );
 
         // A duplicate at the limit does not add a row, but reducing the
         // limit still prunes the oldest rows.
         options_set_number(options, c"prompt-history-limit".as_ptr(), 2);
-        prompt_add_history(c"four".as_ptr(), PROMPT_TYPE_COMMAND);
+        prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
             c"three"
         );
 
         let mut indexes = [0_u32; 2];
         assert_eq!(
-            CStr::from_ptr(prompt_up_history(indexes.as_mut_ptr(), PROMPT_TYPE_COMMAND)),
+            prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND)
+                .unwrap()
+                .as_ref(),
             c"four"
         );
         assert_eq!(
-            CStr::from_ptr(prompt_up_history(indexes.as_mut_ptr(), PROMPT_TYPE_COMMAND)),
+            prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND)
+                .unwrap()
+                .as_ref(),
             c"three"
         );
-        assert!(prompt_up_history(indexes.as_mut_ptr(), PROMPT_TYPE_COMMAND).is_null());
+        assert!(prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND).is_none());
         assert_eq!(
-            CStr::from_ptr(prompt_down_history(
-                indexes.as_mut_ptr(),
-                PROMPT_TYPE_COMMAND
-            )),
+            prompt_down_history(&mut indexes, PROMPT_TYPE_COMMAND)
+                .as_deref()
+                .unwrap_or(c""),
             c"four"
         );
         assert_eq!(
-            CStr::from_ptr(prompt_down_history(
-                indexes.as_mut_ptr(),
-                PROMPT_TYPE_COMMAND
-            )),
+            prompt_down_history(&mut indexes, PROMPT_TYPE_COMMAND)
+                .as_deref()
+                .unwrap_or(c""),
             c""
         );
 
-        // The input can itself be a borrowed entry. Copy it before the old
-        // entry is pruned, so the new entry gets the same bytes.
-        let oldest = prompt_history_get(PROMPT_TYPE_COMMAND, 0);
-        prompt_add_history(oldest, PROMPT_TYPE_COMMAND);
+        // Command and search prompts share storage without sharing cursors.
+        prompt_add_history(c"search-one", PROMPT_TYPE_SEARCH);
+        prompt_add_history(c"search-two", PROMPT_TYPE_SEARCH);
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)),
+            prompt_up_history(&mut indexes, PROMPT_TYPE_SEARCH).as_deref(),
+            Some(c"search-two")
+        );
+        assert_eq!(
+            prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND).as_deref(),
+            Some(c"four")
+        );
+        assert_eq!(indexes, [1, 1]);
+        assert!(prompt_down_history(&mut indexes, PROMPT_TYPE_SEARCH).is_none());
+        assert_eq!(indexes, [1, 0]);
+        assert!(prompt_up_history(&mut indexes, 255).is_none());
+        assert!(prompt_down_history(&mut indexes, 255).is_none());
+        assert_eq!(indexes, [1, 0]);
+        prompt_history_clear(PROMPT_TYPE_SEARCH);
+
+        // A retained input stays valid while the registry prunes its entry.
+        let oldest = prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap();
+        prompt_add_history(&oldest, PROMPT_TYPE_COMMAND);
+        assert_eq!(oldest.as_ref(), c"three");
+        assert_eq!(Rc::strong_count(&oldest), 1);
+        assert!(!Rc::ptr_eq(
+            &oldest,
+            &prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap()
+        ));
+        assert_eq!(
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
             c"four"
         );
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 1)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_ref(),
             c"three"
         );
 
@@ -125,11 +163,11 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
             c"four"
         );
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 1)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_ref(),
             c"three"
         );
         prompt_history_clear(PROMPT_TYPE_COMMAND);
@@ -137,11 +175,11 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
             c"one"
         );
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 1)),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_ref(),
             c"two"
         );
 
@@ -167,21 +205,34 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         );
         for (index, expected) in command_history.into_iter().enumerate() {
             assert_eq!(
-                CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, index as u32)).to_bytes(),
+                prompt_history_get(PROMPT_TYPE_COMMAND, index as u32)
+                    .unwrap()
+                    .as_ref()
+                    .to_bytes(),
                 expected
             );
         }
         assert_eq!(prompt_history_size(PROMPT_TYPE_SEARCH), 1);
         assert_eq!(
-            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_SEARCH, 0)).to_bytes(),
+            prompt_history_get(PROMPT_TYPE_SEARCH, 0)
+                .unwrap()
+                .as_ref()
+                .to_bytes(),
             b"a:b"
         );
+        // An active prompt can outlive pruning by another prompt. A stale
+        // cursor must not wrap around or index beyond the remaining entries.
+        let mut stale = [u32::MAX, 0];
+        assert!(prompt_up_history(&mut stale, PROMPT_TYPE_COMMAND).is_none());
+        assert_eq!(stale, [u32::MAX, 0]);
+        assert!(prompt_down_history(&mut stale, PROMPT_TYPE_COMMAND).is_none());
+        assert_eq!(stale, [u32::MAX - 1, 0]);
         std::fs::remove_file(path).unwrap();
 
         options_set_number(options, c"prompt-history-limit".as_ptr(), 0);
-        prompt_add_history(c"ignored".as_ptr(), PROMPT_TYPE_COMMAND);
+        prompt_add_history(c"ignored", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 0);
-        prompt_add_history(c"search".as_ptr(), PROMPT_TYPE_SEARCH);
+        prompt_add_history(c"search", PROMPT_TYPE_SEARCH);
         assert_eq!(prompt_history_size(PROMPT_TYPE_SEARCH), 0);
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);

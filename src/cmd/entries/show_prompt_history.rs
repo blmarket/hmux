@@ -75,7 +75,6 @@ unsafe fn cmd_show_prompt_history_exec(
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;
     let mut h: u_int = 0;
-    let mut v: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cmd_get_entry(self_0) == &raw const cmd_clear_prompt_history_entry {
         if typestr.is_null() {
             t = 0 as u_int;
@@ -109,10 +108,11 @@ unsafe fn cmd_show_prompt_history_exec(
             });
             h = 0 as u_int;
             while h < prompt_history_size(t as prompt_type) {
-                v = prompt_history_get(t as prompt_type, h);
+                let value =
+                    prompt_history_get(t as prompt_type, h).expect("existing history entry");
                 cmdq_print(item, |out| {
                     write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
-                    write_cstr(out, v)
+                    out.write_all(value.to_bytes())
                 });
                 h = h.wrapping_add(1);
             }
@@ -139,10 +139,10 @@ unsafe fn cmd_show_prompt_history_exec(
         });
         h = 0 as u_int;
         while h < prompt_history_size(type_0) {
-            v = prompt_history_get(type_0, h);
+            let value = prompt_history_get(type_0, h).expect("existing history entry");
             cmdq_print(item, |out| {
                 write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
-                write_cstr(out, v)
+                out.write_all(value.to_bytes())
             });
             h = h.wrapping_add(1);
         }
