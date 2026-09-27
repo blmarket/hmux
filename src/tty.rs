@@ -2826,11 +2826,11 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
             gc2.bg = style_ctx.defaults.bg;
         }
         if !palette.is_null() {
-            changed = colour_palette_get(palette, gc2.fg);
+            changed = colour_palette_get(palette.as_ref(), gc2.fg);
             if changed != -(1 as ::core::ffi::c_int) {
                 gc2.fg = changed;
             }
-            changed = colour_palette_get(palette, gc2.bg);
+            changed = colour_palette_get(palette.as_ref(), gc2.bg);
             if changed != -(1 as ::core::ffi::c_int) {
                 gc2.bg = changed;
             }
@@ -3014,7 +3014,7 @@ unsafe fn tty_check_fg(
         {
             c += 90 as ::core::ffi::c_int;
         }
-        c = colour_palette_get(palette, c);
+        c = colour_palette_get(palette.as_ref(), c);
         if c != -(1 as ::core::ffi::c_int) {
             (*gc).fg = c;
         }
@@ -3069,7 +3069,7 @@ unsafe fn tty_check_bg(
     let mut colours: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
     if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = colour_palette_get(palette, (*gc).bg);
+        c = colour_palette_get(palette.as_ref(), (*gc).bg);
         if c != -(1 as ::core::ffi::c_int) {
             (*gc).bg = c;
         }
@@ -3115,7 +3115,7 @@ unsafe fn tty_check_us(
 ) {
     let mut c: ::core::ffi::c_int = 0;
     if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = colour_palette_get(palette, (*gc).us);
+        c = colour_palette_get(palette.as_ref(), (*gc).us);
         if c != -(1 as ::core::ffi::c_int) {
             (*gc).us = c;
         }

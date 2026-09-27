@@ -155,7 +155,7 @@ unsafe fn popup_free_resources(pd: *mut popup_data) {
         input_free((*pd).ictx);
     }
     screen_free(&mut (*pd).s);
-    colour_palette_free(&raw mut (*pd).palette);
+    colour_palette_free(Some(&mut (*pd).palette));
 }
 unsafe fn popup_free(mut pd: *mut popup_data) {
     popup_free_resources(pd);
@@ -1012,8 +1012,8 @@ pub unsafe fn popup_display(
     (*pd).border_cell.attr = 0 as u_short;
     screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
     screen_set_default_cursor(&mut (*pd).s, global_w_options);
-    colour_palette_init(&raw mut (*pd).palette);
-    colour_palette_from_option(&raw mut (*pd).palette, global_w_options);
+    colour_palette_init(&mut (*pd).palette);
+    colour_palette_from_option(Some(&mut (*pd).palette), global_w_options);
     memcpy(
         &raw mut (*pd).defaults as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,

@@ -733,7 +733,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_pane_z_insert_after(dst_w, dst_wp, src_wp);
     }
     layout_assign_pane(lc, src_wp, 0 as ::core::ffi::c_int);
-    colour_palette_from_option(&raw mut (*src_wp).palette, (*src_wp).options);
+    colour_palette_from_option(Some(&mut (*src_wp).palette), (*src_wp).options);
     recalculate_sizes();
     server_redraw_window(src_w);
     server_redraw_window(dst_w);

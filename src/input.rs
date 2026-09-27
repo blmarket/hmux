@@ -2703,17 +2703,25 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     }
     match (*entry).type_0 {
         9 => {
-            colour_palette_clear((*ictx).palette);
+            colour_palette_clear((*ictx).palette.as_mut());
             input_reset_cell(ictx);
             screen_write_reset(&mut *sctx);
             screen_write_fullredraw(&mut *sctx);
         }
         6 => {
-            screen_write_linefeed(&mut *sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(
+                &mut *sctx,
+                0 as ::core::ffi::c_int,
+                (*ictx).cell.cell.bg as u_int,
+            );
         }
         7 => {
             screen_write_carriagereturn(&mut *sctx);
-            screen_write_linefeed(&mut *sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(
+                &mut *sctx,
+                0 as ::core::ffi::c_int,
+                (*ictx).cell.cell.bg as u_int,
+            );
         }
         5 => {
             if (*s).cx < (*s).grid().sx {
@@ -4873,7 +4881,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
                 == 0 as ::core::ffi::c_int
             {
                 c = colour_palette_get(
-                    palette,
+                    palette.as_ref(),
                     (idx | COLOUR_FLAG_256 as ::core::ffi::c_long) as ::core::ffi::c_int,
                 );
                 if c != -(1 as ::core::ffi::c_int) {
@@ -4895,7 +4903,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
                 if c == -(1 as ::core::ffi::c_int) {
                     s = next;
                 } else {
-                    if colour_palette_set(palette, idx as ::core::ffi::c_int, c) != 0 {
+                    if colour_palette_set(palette.as_mut(), idx as ::core::ffi::c_int, c) != 0 {
                         redraw = 1 as ::core::ffi::c_int;
                     }
                     s = next;
@@ -5585,7 +5593,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if *p as ::core::ffi::c_int == '\0' as i32 {
-        colour_palette_clear((*ictx).palette);
+        colour_palette_clear((*ictx).palette.as_mut());
         screen_write_fullredraw(&mut (*ictx).ctx);
         return;
     }
@@ -5601,7 +5609,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
             break;
         } else {
             if colour_palette_set(
-                (*ictx).palette,
+                (*ictx).palette.as_mut(),
                 idx as ::core::ffi::c_int,
                 -(1 as ::core::ffi::c_int),
             ) != 0

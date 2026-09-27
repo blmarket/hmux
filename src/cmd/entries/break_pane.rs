@@ -245,7 +245,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         };
         layout_init(w, wp);
         (*wp).flags |= PANE_CHANGED;
-        colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);
+        colour_palette_from_option(Some(&mut (*wp).palette), (*wp).options);
         window_remove_ref(
             w,
             b"cmd_break_pane_exec\0" as *const u8 as *const ::core::ffi::c_char,

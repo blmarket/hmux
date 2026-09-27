@@ -1439,7 +1439,7 @@ unsafe fn window_pane_get_palette(
     if wp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    return colour_palette_get(&raw mut (*wp).palette, c);
+    return colour_palette_get(Some(&(*wp).palette), c);
 }
 pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut window_pane) {
     let mut gc1: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
@@ -2756,17 +2756,12 @@ unsafe fn window_pane_create(
     (*wp).control_bg = -(1 as ::core::ffi::c_int);
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
     style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, (*wp).options);
-    colour_palette_init(&raw mut (*wp).palette);
-    colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);
+    colour_palette_init(&mut (*wp).palette);
+    colour_palette_from_option(Some(&mut (*wp).palette), (*wp).options);
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen = &raw mut (*wp).base;
     window_pane_default_cursor(wp);
-    screen_init(
-        &mut (*wp).status_screen,
-        1 as u_int,
-        1 as u_int,
-        0 as u_int,
-    );
+    screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&raw mut (*wp).border_status_line.ranges);
     event_set(
         &raw mut (*wp).sb_auto_timer,
@@ -2907,7 +2902,7 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
     }
     window_pane_set_cwd(&mut *wp, None);
     window_pane_set_shell(&mut *wp, None);
-    colour_palette_free(&raw mut (*wp).palette);
+    colour_palette_free(Some(&mut (*wp).palette));
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
 }
 unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {

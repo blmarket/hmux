@@ -179,8 +179,8 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         if src_w != dst_w {
             window_pane_stack_remove(&raw mut (*src_w).last_panes, src_wp);
             window_pane_stack_remove(&raw mut (*dst_w).last_panes, dst_wp);
-            colour_palette_from_option(&raw mut (*src_wp).palette, (*src_wp).options);
-            colour_palette_from_option(&raw mut (*dst_wp).palette, (*dst_wp).options);
+            colour_palette_from_option(Some(&mut (*src_wp).palette), (*src_wp).options);
+            colour_palette_from_option(Some(&mut (*dst_wp).palette), (*dst_wp).options);
             layout_fix_panes(src_w, ::core::ptr::null_mut::<window_pane>());
             redraw_invalidate_scene(src_w);
             server_redraw_window(src_w);

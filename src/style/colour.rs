@@ -3732,7 +3732,7 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     return colour;
 }
-pub unsafe fn colour_palette_init(p: *mut colour_palette) {
+pub fn colour_palette_init(p: &mut colour_palette) {
     *p = colour_palette {
         fg: 8,
         bg: 8,
@@ -3740,24 +3740,24 @@ pub unsafe fn colour_palette_init(p: *mut colour_palette) {
         default_palette: None,
     };
 }
-pub unsafe fn colour_palette_clear(p: *mut colour_palette) {
-    if let Some(p) = p.as_mut() {
+pub fn colour_palette_clear(p: Option<&mut colour_palette>) {
+    if let Some(p) = p {
         p.fg = 8;
         p.bg = 8;
         p.palette = None;
     }
 }
-pub unsafe fn colour_palette_free(p: *mut colour_palette) {
-    if let Some(p) = p.as_mut() {
+pub fn colour_palette_free(p: Option<&mut colour_palette>) {
+    if let Some(p) = p {
         p.palette = None;
         p.default_palette = None;
     }
 }
-pub unsafe fn colour_palette_get(
-    p: *mut colour_palette,
+pub fn colour_palette_get(
+    p: Option<&colour_palette>,
     mut n: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let Some(p) = p.as_ref() else {
+    let Some(p) = p else {
         return -1;
     };
     if (90..=97).contains(&n) {
@@ -3778,12 +3778,12 @@ pub unsafe fn colour_palette_get(
         .or_else(|| lookup(&p.default_palette))
         .unwrap_or(-1)
 }
-pub unsafe fn colour_palette_set(
-    p: *mut colour_palette,
+pub fn colour_palette_set(
+    p: Option<&mut colour_palette>,
     n: ::core::ffi::c_int,
     c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let Some(p) = p.as_mut() else {
+    let Some(p) = p else {
         return 0;
     };
     if !(0..=255).contains(&n) || (c == -1 && p.palette.is_none()) {
@@ -3793,8 +3793,8 @@ pub unsafe fn colour_palette_set(
     palette[n as usize] = c;
     1
 }
-pub unsafe fn colour_palette_from_option(p: *mut colour_palette, oo: *mut options) {
-    let Some(p) = p.as_mut() else {
+pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mut options) {
+    let Some(p) = p else {
         return;
     };
     let o = options_get(oo, c"pane-colours".as_ptr());

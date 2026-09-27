@@ -285,7 +285,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
-        colour_palette_clear(&raw mut (*wp).palette);
+        colour_palette_clear(Some(&mut (*wp).palette));
         input_reset((*wp).ictx, 1 as ::core::ffi::c_int);
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }

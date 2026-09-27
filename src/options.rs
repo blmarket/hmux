@@ -1801,7 +1801,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
-            colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);
+            colour_palette_from_option(Some(&mut (*wp).palette), (*wp).options);
             wp = window_pane_tree_next(&*wp);
         }
     }
