@@ -69,9 +69,9 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

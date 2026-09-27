@@ -191,19 +191,19 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> PromptOwner {
         // Copy the selected target, matching cmd_find_copy_state rather than
         // inheriting the source's search flags or current-state pointer.
         pr.state = cmd_find_state {
-            s: fs.s,
-            wl: fs.wl,
-            w: fs.w,
-            wp: fs.wp,
+            s: fs.s.clone(),
+            wl: fs.wl.clone(),
+            w: fs.w.clone(),
+            wp: fs.wp.clone(),
             idx: fs.idx,
             ..Default::default()
         };
         format_create_defaults(
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            fs.s,
-            fs.wl,
-            fs.wp,
+            fs.s_ptr(),
+            fs.wl_ptr(),
+            fs.wp_ptr(),
         )
     } else {
         cmd_find_clear_state(&mut pr.state, 0);

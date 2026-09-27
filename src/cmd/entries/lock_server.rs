@@ -90,7 +90,7 @@ unsafe fn cmd_lock_server_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_server_entry) {
         server_lock();
     } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_session_entry) {
-        server_lock_session((*target).s);
+        server_lock_session((*target).s_ptr());
     } else {
         server_lock_client(tc);
     }

@@ -73,16 +73,16 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut tflag: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut src: *mut session = (*source).s;
+    let mut src: *mut session = (*source).s_ptr();
     let mut dst: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = (*source).wl;
+    let mut wl: *mut winlink = (*source).wl_ptr();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;
     let mut dflag: ::core::ffi::c_int = 0;
@@ -99,9 +99,9 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         {
             return CMD_RETURN_ERROR;
         }
-        session_renumber_windows(target.s);
+        session_renumber_windows(target.s_ptr());
         recalculate_sizes();
-        server_status_session(target.s);
+        server_status_session(target.s_ptr());
         return CMD_RETURN_NORMAL;
     }
     if cmd_find_target(
@@ -114,15 +114,15 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     {
         return CMD_RETURN_ERROR;
     }
-    dst = target.s;
+    dst = target.s_ptr();
     idx = target.idx;
     kflag = args_has(args, 'k' as i32 as u_char);
     dflag = args_has(args, 'd' as i32 as u_char);
     sflag = args_has(args, 's' as i32 as u_char);
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-        if !target.wl.is_null() {
-            idx = winlink_shuffle_up(dst, target.wl, before);
+        if !target.wl_ptr().is_null() {
+            idx = winlink_shuffle_up(dst, target.wl_ptr(), before);
         } else {
             idx = winlink_shuffle_up(dst, (*dst).curw, before);
         }

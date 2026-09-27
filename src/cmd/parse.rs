@@ -152,7 +152,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                 &raw mut fs
             };
             let ft = format_create((*pi).c, (*pi).item, FORMAT_NONE, FORMAT_NOJOBS);
-            format_defaults(ft, (*pi).c, (*fsp).s, (*fsp).wl, (*fsp).wp);
+            format_defaults(ft, (*pi).c, (*fsp).s_ptr(), (*fsp).wl_ptr(), (*fsp).wp_ptr());
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(ft);
             take_parser_token(expanded)
@@ -434,10 +434,10 @@ pub unsafe fn cmd_parse_from_file(
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
-            s: ::core::ptr::null_mut::<session>(),
-            wl: ::core::ptr::null_mut::<winlink>(),
-            w: ::core::ptr::null_mut::<window>(),
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
     };
@@ -466,10 +466,10 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
-            s: ::core::ptr::null_mut::<session>(),
-            wl: ::core::ptr::null_mut::<winlink>(),
-            w: ::core::ptr::null_mut::<window>(),
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
     };
@@ -513,10 +513,10 @@ pub unsafe fn cmd_parse_from_buffer(
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
-            s: ::core::ptr::null_mut::<session>(),
-            wl: ::core::ptr::null_mut::<winlink>(),
-            w: ::core::ptr::null_mut::<window>(),
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
     };
@@ -564,10 +564,10 @@ pub unsafe fn cmd_parse_from_arguments(
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
-            s: ::core::ptr::null_mut::<session>(),
-            wl: ::core::ptr::null_mut::<winlink>(),
-            w: ::core::ptr::null_mut::<window>(),
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
     };

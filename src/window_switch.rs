@@ -494,7 +494,7 @@ unsafe fn window_switch_init(
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    prompt_set_options(&mut pd, ((*fs).s).as_mut());
+    prompt_set_options(&mut pd, ((*fs).s_ptr()).as_mut());
     pd.fs = fs.as_ref();
     pd.prompt = c"(search) ";
     pd.input = Some(c"");
@@ -561,10 +561,10 @@ unsafe fn window_switch_run_command(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut s: *mut session = ::core::ptr::null_mut::<session>();

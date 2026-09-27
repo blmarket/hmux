@@ -130,7 +130,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt_bytes = Vec::<u8>::new();
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;

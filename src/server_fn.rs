@@ -73,10 +73,10 @@ unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *m
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut status: ::core::ffi::c_int = (*wp).status;
@@ -408,8 +408,8 @@ pub unsafe fn server_link_window(
             )) as ::core::ffi::c_int;
     }
     dstwl = session_attach(dst, (*srcwl).window_ptr(), dstidx)?;
-    if marked_pane.wl == srcwl {
-        marked_pane.wl = dstwl;
+    if marked_pane.wl_ptr() == srcwl {
+        marked_pane.set_wl(dstwl);
     }
     if selectflag != 0 {
         session_select(dst, (*dstwl).idx);

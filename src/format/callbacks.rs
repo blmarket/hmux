@@ -1984,7 +1984,7 @@ unsafe fn format_cb_pane_left(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_marked(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        if server_check_marked() != 0 && marked_pane.wp == (*ft).wp {
+        if server_check_marked() != 0 && marked_pane.wp_ptr() == (*ft).wp {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2454,7 +2454,7 @@ unsafe fn format_cb_session_many_attached(mut ft: *mut format_tree) -> Option<CS
 }
 unsafe fn format_cb_session_marked(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        if server_check_marked() != 0 && marked_pane.s == (*ft).s {
+        if server_check_marked() != 0 && marked_pane.s_ptr() == (*ft).s {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2711,7 +2711,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
 }
 unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        if server_check_marked() != 0 && marked_pane.wl == (*ft).wl {
+        if server_check_marked() != 0 && marked_pane.wl_ptr() == (*ft).wl {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

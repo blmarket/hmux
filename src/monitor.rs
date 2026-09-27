@@ -137,7 +137,7 @@ unsafe fn monitor_report(
         last,
         c: None,
         s: None,
-        wl: ::core::ptr::null_mut::<winlink>(),
+        wl: refbox::Weak::new(),
         wp: None,
     };
     log_debug(format_args!(
@@ -150,7 +150,7 @@ unsafe fn monitor_report(
     (*me).fire_time = current_time;
     change.c = (*ms).client.clone();
     change.s = (!s.is_null()).then(|| (*s).observer.clone());
-    change.wl = wl;
+    change.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
     change.wp = (!wp.is_null()).then(|| (*wp).observer.clone());
     // The callback may destroy the monitor set while it is running.
     let callback = (*ms).cb.clone();

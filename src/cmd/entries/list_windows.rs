@@ -88,7 +88,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
         links
     } else {
-        let links = sort_get_winlinks_session((*target).s, &raw mut sort_crit);
+        let links = sort_get_winlinks_session((*target).s_ptr(), &raw mut sort_crit);
         if template.is_null() {
             template = b"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}\0"
                 as *const u8 as *const ::core::ffi::c_char;

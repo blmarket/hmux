@@ -1071,9 +1071,9 @@ pub unsafe fn options_scope_from_name(
     mut oo: *mut *mut options,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*fs).s;
-    let mut wl: *mut winlink = (*fs).wl;
-    let mut wp: *mut window_pane = (*fs).wp;
+    let mut s: *mut session = (*fs).s_ptr();
+    let mut wl: *mut winlink = (*fs).wl_ptr();
+    let mut wp: *mut window_pane = (*fs).wp_ptr();
     let mut target: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut scope: ::core::ffi::c_int = OPTIONS_TABLE_NONE;
@@ -1184,9 +1184,9 @@ pub unsafe fn options_scope_from_flags(
     mut oo: *mut *mut options,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*fs).s;
-    let mut wl: *mut winlink = (*fs).wl;
-    let mut wp: *mut window_pane = (*fs).wp;
+    let mut s: *mut session = (*fs).s_ptr();
+    let mut wl: *mut winlink = (*fs).wl_ptr();
+    let mut wp: *mut window_pane = (*fs).wp_ptr();
     let mut target: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if args_has(args, 's' as i32 as u_char) != 0 {
         *oo = global_options;

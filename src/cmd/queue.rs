@@ -627,10 +627,10 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut flags: ::core::ffi::c_int = 0;
@@ -718,7 +718,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                             match current_block {
                                 7379054416801212160 => {}
                                 _ => {
-                                    cmdq_insert_hook((*fsp).s, item, fsp, |out| {
+                                    cmdq_insert_hook((*fsp).s_ptr(), item, fsp, |out| {
                                         out.write_all(b"after-")?;
                                         write_cstr(out, entry.name.as_ptr())
                                     });
@@ -745,7 +745,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         }
         cmdq_insert_hook(
             if !fsp.is_null() {
-                (*fsp).s
+                (*fsp).s_ptr()
             } else {
                 ::core::ptr::null_mut::<session>()
             },

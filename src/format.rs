@@ -375,7 +375,7 @@ pub unsafe fn format_create_from_state(
     mut c: *mut client,
     fs: &cmd_find_state,
 ) -> *mut format_tree {
-    return format_create_defaults(item, c, fs.s, fs.wl, fs.wp);
+    return format_create_defaults(item, c, fs.s_ptr(), fs.wl_ptr(), fs.wp_ptr());
 }
 pub unsafe fn format_create_from_target(mut item: *mut cmdq_item) -> *mut format_tree {
     let mut tc: *mut client = cmdq_get_target_client(item);

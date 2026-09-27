@@ -584,7 +584,7 @@ unsafe fn window_tree_build(
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut i: u_int = 0;
-    current = session_group_contains((*data).fs.s);
+    current = session_group_contains((*data).fs.s_ptr());
     (*data).item_list.clear();
     let l = sort_get_sessions(sort_crit);
     let n = u_int::try_from(l.len()).expect("too many sessions for window tree");
@@ -599,7 +599,7 @@ unsafe fn window_tree_build(
             sg = session_group_contains(s);
             !sg.is_null()
         } {
-            if sg == current && s != (*data).fs.s
+            if sg == current && s != (*data).fs.s_ptr()
                 || sg != current
                     && Some(s)
                         != crate::src::session::session_group_members(sg)
@@ -623,20 +623,20 @@ unsafe fn window_tree_build(
     }
     match (*data).type_0 as ::core::ffi::c_uint {
         1 => {
-            if !(*data).fs.s.is_null() {
-                *tag = (*data).fs.s as uint64_t;
+            if !(*data).fs.s_ptr().is_null() {
+                *tag = (*data).fs.s_ptr() as uint64_t;
             }
         }
         2 => {
-            if !(*data).fs.s.is_null() && !(*data).fs.wl.is_null() {
-                *tag = (*data).fs.wl as uint64_t;
+            if !(*data).fs.s_ptr().is_null() && !(*data).fs.wl_ptr().is_null() {
+                *tag = (*data).fs.wl_ptr() as uint64_t;
             }
         }
         3 => {
-            if window_count_panes((*(*data).fs.wl).window_ptr(), 1 as ::core::ffi::c_int) == 1 as u_int {
-                *tag = (*data).fs.wl as uint64_t;
+            if window_count_panes((*(*data).fs.wl_ptr()).window_ptr(), 1 as ::core::ffi::c_int) == 1 as u_int {
+                *tag = (*data).fs.wl_ptr() as uint64_t;
             } else {
-                *tag = (*data).fs.wp as uint64_t;
+                *tag = (*data).fs.wp_ptr() as uint64_t;
             }
         }
         0 | _ => {}
@@ -1740,11 +1740,7 @@ unsafe fn window_tree_init(
     } else {
         (*data).type_0 = WINDOW_TREE_PANE;
     }
-    memcpy(
-        &raw mut (*data).fs as *mut ::core::ffi::c_void,
-        fs as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<cmd_find_state>() as size_t,
-    );
+    (*data).fs = (*fs).clone();
     (*data).squash_groups = (args_has(args, 'G' as i32 as u_char) == 0) as ::core::ffi::c_int;
     (*data).hide_preview_this_pane = args_has(args, 'h' as i32 as u_char);
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -1872,10 +1868,10 @@ unsafe fn window_tree_command_each(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     if let Some(name) = window_tree_get_target(item, &mut fs) {
@@ -2160,10 +2156,10 @@ unsafe fn window_tree_key(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut fsp: *mut cmd_find_state = &raw mut (*data).fs;
@@ -2217,10 +2213,10 @@ unsafe fn window_tree_key(
             (*data).offset += 1;
         }
         72 => {
-            mode_tree_expand((*data).data_ptr(), (*fsp).s as uint64_t);
-            mode_tree_expand((*data).data_ptr(), (*fsp).wl as uint64_t);
+            mode_tree_expand((*data).data_ptr(), (*fsp).s_ptr() as uint64_t);
+            mode_tree_expand((*data).data_ptr(), (*fsp).wl_ptr() as uint64_t);
             if mode_tree_set_current((*data).data_ptr(), (*wme).wp as uint64_t) == 0 {
-                mode_tree_set_current((*data).data_ptr(), (*fsp).wl as uint64_t);
+                mode_tree_set_current((*data).data_ptr(), (*fsp).wl_ptr() as uint64_t);
             }
         }
         109 if item.is_some() => {

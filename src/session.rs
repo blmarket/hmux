@@ -700,10 +700,10 @@ unsafe fn session_fire_window_changed(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -817,10 +817,10 @@ unsafe fn session_group_fire(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -1001,7 +1001,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
         (*wl_new).session = s;
         winlink_set_window(wl_new, (*wl).window_ptr());
         (*wl_new).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
-        if wl == marked_pane.wl {
+        if wl == marked_pane.wl_ptr() {
             marked_idx = (*wl_new).idx;
         }
         if wl == (*s).curw {
@@ -1030,8 +1030,8 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
     }
     crate::src::window::winlink_stack_clear(&mut old_lastw);
     if marked_idx != -(1 as ::core::ffi::c_int) {
-        marked_pane.wl = winlink_find_by_index(&raw mut (*s).windows, marked_idx);
-        if marked_pane.wl.is_null() {
+        marked_pane.set_wl(winlink_find_by_index(&raw mut (*s).windows, marked_idx));
+        if marked_pane.wl_ptr().is_null() {
             server_clear_marked();
         }
     }

@@ -168,9 +168,9 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let ft = format_create_defaults(
         std::ptr::null_mut(),
         std::ptr::null_mut(),
-        md.fs.s,
-        md.fs.wl,
-        md.fs.wp,
+        md.fs.s_ptr(),
+        md.fs.wl_ptr(),
+        md.fs.wp_ptr(),
     );
     let mut parsed = style::default();
     for (cell, option, override_style) in [
@@ -618,7 +618,7 @@ pub unsafe fn menu_display(
     let w = if fs.is_null() {
         (*(*(*c).session).curw).window_ptr()
     } else {
-        (*fs).w
+        (*fs).w_ptr()
     };
     let window = (*w).observer.clone();
     let sx = menu.width.wrapping_add(4);
@@ -1008,7 +1008,7 @@ mod tests {
                 let cancelled = Rc::new(Cell::new(0));
                 let callback_cancelled = Rc::clone(&cancelled);
                 let mut fs = cmd_find_state {
-                    w,
+                    w: (*w).observer.clone(),
                     ..Default::default()
                 };
                 menu_display(

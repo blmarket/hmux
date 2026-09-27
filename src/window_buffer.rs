@@ -238,9 +238,9 @@ unsafe fn window_buffer_build(
         );
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
-        s = (*data).fs.s;
-        wl = (*data).fs.wl;
-        wp = (*data).fs.wp;
+        s = (*data).fs.s_ptr();
+        wl = (*data).fs.wl_ptr();
+        wp = (*data).fs.wp_ptr();
     }
     let mut current_block_32: u64;
     i = 0 as u_int;
@@ -394,9 +394,9 @@ unsafe fn window_buffer_get_key(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;
     if cmd_find_valid_state(&(*data).fs) != 0 {
-        s = (*data).fs.s;
-        wl = (*data).fs.wl;
-        wp = (*data).fs.wp;
+        s = (*data).fs.s_ptr();
+        wl = (*data).fs.wl_ptr();
+        wp = (*data).fs.wp_ptr();
     }
     let Some(pb) = paste_get_name(&item.name) else {
         return KEYC_NONE;

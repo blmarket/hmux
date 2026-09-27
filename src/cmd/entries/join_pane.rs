@@ -476,7 +476,7 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut c: *mut client = cmdq_get_client(item);
-    let mut s: *mut session = (*target).s;
+    let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -646,9 +646,9 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut dst_idx: ::core::ffi::c_int = 0;
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    dst_s = (*target).s;
-    dst_wl = (*target).wl;
-    dst_wp = (*target).wp;
+    dst_s = (*target).s_ptr();
+    dst_wl = (*target).wl_ptr();
+    dst_wp = (*target).wp_ptr();
     dst_w = (*dst_wl).window_ptr();
     dst_idx = (*dst_wl).idx;
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_pane_entry) {
@@ -680,8 +680,8 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return cmd_join_pane_move(item, args, dst_wl, dst_wp);
         }
     }
-    src_wl = (*source).wl;
-    src_wp = (*source).wp;
+    src_wl = (*source).wl_ptr();
+    src_wp = (*source).wp_ptr();
     src_w = (*src_wl).window_ptr();
     if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));

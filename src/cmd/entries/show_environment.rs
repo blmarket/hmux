@@ -114,7 +114,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tflag.is_null() {
-        if (*target).s.is_null() {
+        if (*target).s_ptr().is_null() {
             cmdq_error(item, |out| {
                 out.write_all(b"no such session: ")?;
                 write_cstr(out, tflag)
@@ -125,7 +125,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     if args_has(args, 'g' as i32 as u_char) != 0 {
         env = global_environ.as_deref().expect("environment");
     } else {
-        if (*target).s.is_null() {
+        if (*target).s_ptr().is_null() {
             tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !tflag.is_null() {
                 cmdq_error(item, |out| {
@@ -137,7 +137,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
             }
             return CMD_RETURN_ERROR;
         }
-        env = (*(*target).s).environ.as_deref().expect("environment");
+        env = (*(*target).s_ptr()).environ.as_deref().expect("environment");
     }
     if !name.is_null() {
         envent = environ_find(env, name);

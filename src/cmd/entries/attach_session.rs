@@ -73,10 +73,10 @@ pub unsafe fn cmd_attach_session(
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
@@ -116,9 +116,9 @@ pub unsafe fn cmd_attach_session(
     if cmd_find_target(&raw mut target, item, tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CMD_RETURN_ERROR;
     }
-    s = target.s;
-    wl = target.wl;
-    wp = target.wp;
+    s = target.s_ptr();
+    wl = target.wl_ptr();
+    wp = target.wp_ptr();
     if !wl.is_null() {
         if !wp.is_null() {
             window_set_active_pane((*wp).window as *mut window, wp, 1 as ::core::ffi::c_int);

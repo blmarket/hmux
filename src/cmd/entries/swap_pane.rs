@@ -78,12 +78,12 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut yoff: u_int = 0;
     let mut src_idx: ::core::ffi::c_int = 0;
     let mut dst_idx: ::core::ffi::c_int = 0;
-    dst_w = (*(*target).wl).window_ptr();
-    dst_wp = (*target).wp;
-    dst_idx = (*(*target).wl).idx;
-    src_w = (*(*source).wl).window_ptr();
-    src_wp = (*source).wp;
-    src_idx = (*(*source).wl).idx;
+    dst_w = (*(*target).wl_ptr()).window_ptr();
+    dst_wp = (*target).wp_ptr();
+    dst_idx = (*(*target).wl_ptr()).idx;
+    src_w = (*(*source).wl_ptr()).window_ptr();
+    src_wp = (*source).wp_ptr();
+    src_idx = (*(*source).wl_ptr()).idx;
     if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;

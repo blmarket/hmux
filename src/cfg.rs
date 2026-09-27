@@ -116,10 +116,10 @@ pub unsafe fn load_cfg(
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
-            s: ::core::ptr::null_mut::<session>(),
-            wl: ::core::ptr::null_mut::<winlink>(),
-            w: ::core::ptr::null_mut::<window>(),
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
     };
@@ -206,10 +206,10 @@ pub unsafe fn load_cfg_from_buffer(
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
-            s: ::core::ptr::null_mut::<session>(),
-            wl: ::core::ptr::null_mut::<winlink>(),
-            w: ::core::ptr::null_mut::<window>(),
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
     };

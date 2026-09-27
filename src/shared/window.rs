@@ -50,6 +50,8 @@ pub struct winlinks {
 #[derive(Default)]
 #[repr(C)]
 pub struct winlink {
+    /// Observe this allocation independently of its current index/key.
+    pub(crate) observer: refbox::Weak<winlink>,
     pub idx: ::core::ffi::c_int,
     pub session: *mut session,
     pub window_owner: Option<WindowOwner>,
@@ -125,10 +127,22 @@ pub struct window_entry {
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window>>>,
 }
 
+/// Address identity only: never used to recover or dereference a model pointer.
+/// The ordered weak handles keep their control blocks allocated, preventing
+/// address reuse until the corresponding identity is removed from the index.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct WinlinkIdentity(usize);
+
+impl WinlinkIdentity {
+    pub(crate) fn of(link: *const winlink) -> Self {
+        Self(link.addr())
+    }
+}
+
 #[derive(Default)]
 pub struct WindowWinlinksStorage {
-    pub(crate) ordered: Vec<*mut winlink>,
-    pub(crate) positions: std::collections::HashMap<*mut winlink, usize>,
+    pub(crate) ordered: Vec<refbox::Weak<winlink>>,
+    pub(crate) positions: std::collections::HashMap<WinlinkIdentity, usize>,
 }
 
 #[derive(Default)]

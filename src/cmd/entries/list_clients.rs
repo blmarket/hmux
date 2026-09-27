@@ -67,7 +67,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         order_seq: &[],
     };
     if args_has(args, 't' as i32 as u_char) != 0 {
-        s = (*target).s;
+        s = (*target).s_ptr();
     } else {
         s = ::core::ptr::null_mut::<session>();
     }

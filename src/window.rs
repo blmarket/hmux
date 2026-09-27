@@ -71,6 +71,7 @@ use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
+use crate::src::shared::window::WinlinkIdentity;
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -325,8 +326,9 @@ pub unsafe fn window_winlinks_first(w: *mut window) -> *mut winlink {
     (*w).winlinks
         .storage
         .as_deref()
-        .and_then(|links| links.ordered.first().copied())
-        .unwrap_or(std::ptr::null_mut())
+        .and_then(|links| links.ordered.first())
+        .filter(|link| link.is_alive())
+        .map_or(std::ptr::null_mut(), |link| link.as_ptr().cast_mut())
 }
 
 /// Return the next winlink in `w` after `wl`, or null when it is no longer in
@@ -341,9 +343,10 @@ pub unsafe fn window_winlinks_next(w: *mut window, wl: *mut winlink) -> *mut win
     };
     links
         .positions
-        .get(&wl)
-        .and_then(|&position| links.ordered.get(position + 1).copied())
-        .unwrap_or(std::ptr::null_mut())
+        .get(&WinlinkIdentity::of(wl))
+        .and_then(|&position| links.ordered.get(position + 1))
+        .filter(|link| link.is_alive())
+        .map_or(std::ptr::null_mut(), |link| link.as_ptr().cast_mut())
 }
 
 /// Append a non-owning winlink handle to the window's association order.
@@ -351,12 +354,12 @@ pub unsafe fn window_winlinks_append(w: *mut window, wl: *mut winlink) {
     assert!(!w.is_null() && !wl.is_null());
     let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
     assert!(
-        !links.positions.contains_key(&wl),
+        !links.positions.contains_key(&WinlinkIdentity::of(wl)),
         "winlink is already present in this window"
     );
     let position = links.ordered.len();
-    links.ordered.push(wl);
-    links.positions.insert(wl, position);
+    links.ordered.push((*wl).observer.clone());
+    links.positions.insert(WinlinkIdentity::of(wl), position);
 }
 
 /// Remove a non-owning winlink handle from its window's association order.
@@ -369,11 +372,11 @@ pub unsafe fn window_winlinks_remove(w: *mut window, wl: *mut winlink) {
         .expect("window winlink collection must be alive");
     let position = links
         .positions
-        .remove(&wl)
+        .remove(&WinlinkIdentity::of(wl))
         .expect("winlink must belong to its window");
     links.ordered.remove(position);
     for (position, link) in links.ordered.iter().enumerate().skip(position) {
-        links.positions.insert(*link, position);
+        links.positions.insert(WinlinkIdentity::of(link.as_ptr()), position);
     }
     if links.ordered.is_empty() {
         (*w).winlinks.storage = None;
@@ -456,10 +459,10 @@ unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::f
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -493,10 +496,10 @@ unsafe fn window_fire_pane_changed(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -539,10 +542,10 @@ pub unsafe fn window_fire_pane_moved(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -602,10 +605,10 @@ unsafe fn window_fire_pane_mode_changed(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -650,10 +653,10 @@ unsafe fn window_fire_pane_prompt(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     let type_string = prompt_type_string(type_0);
@@ -693,6 +696,7 @@ pub unsafe fn winlink_find_by_index(
     mut idx: ::core::ffi::c_int,
 ) -> *mut winlink {
     let mut wl: winlink = winlink {
+        observer: Default::default(),
         idx: 0,
         session: ::core::ptr::null_mut::<session>(),
         window_owner: None,
@@ -759,6 +763,7 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
         return ::core::ptr::null_mut::<winlink>();
     }
     let owner = refbox::RefBox::new(winlink {
+        observer: Default::default(),
         idx,
         session: std::ptr::null_mut(),
         window_owner: None,
@@ -766,6 +771,7 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
         entry: winlink_entry { owner: None },
     });
     wl = owner.as_ptr() as *mut winlink;
+    (*wl).observer = owner.downgrade();
     let storage = (*wwl).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = storage.downgrade();
     let mut map = storage
@@ -1981,7 +1987,7 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
         ((*w).id) as u32,
         ((*wp).id) as u32
     ));
-    if wp == marked_pane.wp {
+    if wp == marked_pane.wp_ptr() {
         server_clear_marked();
     }
     if wp == (*w).modal_last {
@@ -2189,7 +2195,7 @@ pub unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh8 as usize] = '-' as i32 as ::core::ffi::c_char;
     }
-    if server_check_marked() != 0 && wl == marked_pane.wl {
+    if server_check_marked() != 0 && wl == marked_pane.wl_ptr() {
         let fresh9 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh9 as usize] = 'M' as i32 as ::core::ffi::c_char;
@@ -3048,10 +3054,10 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
     if sx == (*wp).sx && sy == (*wp).sy {

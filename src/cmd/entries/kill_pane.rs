@@ -47,7 +47,7 @@ pub static cmd_kill_pane_entry: cmd_entry = {
 unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
@@ -68,9 +68,9 @@ unsafe fn cmd_kill_pane_all(
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut loopwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut tmpwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     server_unzoom_window((*wl).window_ptr());

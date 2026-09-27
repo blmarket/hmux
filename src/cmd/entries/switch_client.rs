@@ -67,10 +67,10 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut tflag: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -108,9 +108,9 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     if cmd_find_target(&raw mut target, item, tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CMD_RETURN_ERROR;
     }
-    s = target.s;
-    wl = target.wl;
-    wp = target.wp;
+    s = target.s_ptr();
+    wl = target.wl_ptr();
+    wp = target.wp_ptr();
     if args_has(args, 'r' as i32 as u_char) != 0 {
         if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
             uid = proc_get_peer_uid((*c).peer);

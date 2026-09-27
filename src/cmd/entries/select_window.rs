@@ -120,8 +120,8 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut c: *mut client = cmdq_get_client(item);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wl: *mut winlink = (*target).wl;
-    let mut s: *mut session = (*target).s;
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut s: *mut session = (*target).s_ptr();
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;
@@ -166,7 +166,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 cmdq_error(item, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
             }
-            if (*current).s == s {
+            if (*current).s_ptr() == s {
                 cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
             }
             server_redraw_session(s);

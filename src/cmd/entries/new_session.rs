@@ -172,10 +172,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_has_session_entry) {
@@ -250,7 +250,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 if !sname.is_null() {
                     as_0 = session_find(std::ffi::CStr::from_ptr(sname)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
                 } else {
-                    as_0 = (*target).s;
+                    as_0 = (*target).s_ptr();
                 }
                 if !as_0.is_null() {
                     retval = cmd_attach_session(
@@ -274,7 +274,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             } else {
                 group = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                 if !group.is_null() {
-                    groupwith = (*target).s;
+                    groupwith = (*target).s_ptr();
                     if groupwith.is_null() {
                         sg = session_group_find(group);
                     } else {

@@ -113,10 +113,10 @@ static mut server_ev_tidy: event = event::new();
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
     current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-    s: ::core::ptr::null::<session>() as *mut session,
-    wl: ::core::ptr::null::<winlink>() as *mut winlink,
-    w: ::core::ptr::null::<window>() as *mut window,
-    wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+    s: std::rc::Weak::new(),
+    wl: refbox::Weak::new(),
+    w: std::rc::Weak::new(),
+    wp: std::rc::Weak::new(),
     idx: 0,
 };
 static mut message_next: u_int = 0;
@@ -129,12 +129,12 @@ pub unsafe fn server_set_marked(
     mut wp: *mut window_pane,
 ) {
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
-    marked_pane.s = s;
-    marked_pane.wl = wl;
+    marked_pane.set_s(s);
+    marked_pane.set_wl(wl);
     if !wl.is_null() {
-        marked_pane.w = (*wl).window_ptr();
+        marked_pane.set_w((*wl).window_ptr());
     }
-    marked_pane.wp = wp;
+    marked_pane.set_wp(wp);
 }
 pub unsafe fn server_clear_marked() {
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
@@ -147,10 +147,10 @@ pub unsafe fn server_is_marked(
     if s.is_null() || wl.is_null() || wp.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.s != s || marked_pane.wl != wl {
+    if marked_pane.s_ptr() != s || marked_pane.wl_ptr() != wl {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.wp != wp {
+    if marked_pane.wp_ptr() != wp {
         return 0 as ::core::ffi::c_int;
     }
     return server_check_marked();

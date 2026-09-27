@@ -149,8 +149,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut s: *mut session = (*tc).session;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -180,7 +180,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     format_add(
         ft,
         b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((*(*target).w).menu_last_px) as u32),
+        |out| write!(out, "{}", ((*(*target).w_ptr()).menu_last_px) as u32),
     );
     format_add(
         ft,
@@ -189,7 +189,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             write!(
                 out,
                 "{}",
-                ((*(*target).w).menu_last_py.wrapping_add(h)) as u32
+                ((*(*target).w_ptr()).menu_last_py.wrapping_add(h)) as u32
             )
         },
     );
@@ -539,9 +539,9 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut s: *mut session = (*tc).session;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut window: *mut window = (*target).w;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut window: *mut window = (*target).w_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -922,7 +922,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
-    let o = options_owner_ptr(&mut (*(*(*(*target).s).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let o = options_owner_ptr(&mut (*(*(*(*target).s_ptr()).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
         if std::ffi::CStr::from_ptr(args_get(&*(args), b'C').map_or(std::ptr::null(), |value| value.as_ptr())) == c"-" {
@@ -1030,7 +1030,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).s;
+    let mut s: *mut session = (*target).s_ptr();
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

@@ -194,7 +194,7 @@ fn cmd_choose_tree_args_parse(
 unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mode: &'static window_mode;
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));

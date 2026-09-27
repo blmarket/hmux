@@ -64,8 +64,8 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     };
     let mut argv_owner = Vec::new();
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = item;
     sc.s = s;

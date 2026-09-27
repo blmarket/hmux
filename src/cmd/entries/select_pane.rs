@@ -122,29 +122,29 @@ unsafe fn cmd_select_pane_marked_pane(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut s: *mut session = (*target).s;
+    let mut s: *mut session = (*target).s_ptr();
     if args_has(args, 'm' as i32 as u_char) != 0 && window_pane_is_visible(wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
     if server_check_marked() != 0 {
-        lwp = marked_pane.wp;
+        lwp = marked_pane.wp_ptr();
     }
     if args_has(args, 'M' as i32 as u_char) != 0 || server_is_marked(s, wl, wp) != 0 {
         server_clear_marked();
     } else {
         server_set_marked(s, wl, wp);
     }
-    mwp = marked_pane.wp;
+    mwp = marked_pane.wp_ptr();
     let mut ep = event_payload_create();
     if !mwp.is_null() {
         cmd_find_from_pane(&raw mut fs, mwp, 0 as ::core::ffi::c_int);
@@ -233,16 +233,16 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
-        s: ::core::ptr::null::<session>() as *mut session,
-        wl: ::core::ptr::null::<winlink>() as *mut winlink,
-        w: ::core::ptr::null::<window>() as *mut window,
-        wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        w: std::rc::Weak::new(),
+        wp: std::rc::Weak::new(),
         idx: 0,
     };
-    let mut wl: *mut winlink = (*target).wl;
+    let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
-    let mut s: *mut session = (*target).s;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

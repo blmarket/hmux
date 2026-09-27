@@ -104,10 +104,10 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -126,7 +126,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
                 == 0 as ::core::ffi::c_int
         {
-            wp = fs.wp;
+            wp = fs.wp_ptr();
         }
         if wp.is_null() {
             return;
@@ -161,8 +161,8 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut c: *mut client = cmdq_get_client(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut s: *mut session = (*target).s;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();

@@ -68,9 +68,9 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut wp: *mut window_pane = (*target).wp;
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut old_fd: ::core::ffi::c_int = 0;
     let mut pipe_fd: [::core::ffi::c_int; 2] = [0; 2];

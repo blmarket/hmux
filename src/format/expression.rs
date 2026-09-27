@@ -3589,7 +3589,7 @@ pub(crate) unsafe fn format_single_from_state_cstring(
     c: *mut client,
     fs: *mut cmd_find_state,
 ) -> CString {
-    format_single_cstring(item, fmt, c, (*fs).s, (*fs).wl, (*fs).wp)
+    format_single_cstring(item, fmt, c, (*fs).s_ptr(), (*fs).wl_ptr(), (*fs).wp_ptr())
 }
 pub(crate) unsafe fn format_single_from_target_cstring(
     item: *mut cmdq_item,

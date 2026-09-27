@@ -431,10 +431,10 @@ unsafe fn window_customize_get_tree(
         0 | 1 => return ::core::ptr::null_mut::<options>(),
         2 => return global_options,
         3 => return global_s_options,
-        4 => return options_owner_ptr(&mut (*(*fs).s).options).map_or(std::ptr::null_mut(), |options| options),
+        4 => return options_owner_ptr(&mut (*(*fs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         5 => return global_w_options,
-        6 => return options_owner_ptr(&mut (*(*fs).w).options).map_or(std::ptr::null_mut(), |options| options),
-        7 => return options_owner_ptr(&mut (*(*fs).wp).options).map_or(std::ptr::null_mut(), |options| options),
+        6 => return options_owner_ptr(&mut (*(*fs).w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        7 => return options_owner_ptr(&mut (*(*fs).wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         8 | 9 => return ::core::ptr::null_mut::<options>(),
         _ => {}
     }
@@ -446,8 +446,8 @@ unsafe fn window_customize_get_environment(
 ) -> Option<CustomizeEnvironment> {
     match scope {
         WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT => Some(CustomizeEnvironment::Global),
-        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.s.is_null() => {
-            Some(CustomizeEnvironment::session(fs.s))
+        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.s_ptr().is_null() => {
+            Some(CustomizeEnvironment::session(fs.s_ptr()))
         }
         _ => None,
     }
@@ -464,10 +464,10 @@ unsafe fn window_customize_check_item(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     if fsp.is_null() {
@@ -503,16 +503,16 @@ unsafe fn window_customize_scope_text(
     let mut idx: u_int = 0;
     match scope as ::core::ffi::c_uint {
         7 => {
-            idx = window_pane_index(fs.wp).expect("pane belongs to window ordering");
+            idx = window_pane_index(fs.wp_ptr()).expect("pane belongs to window ordering");
             CString::new(format!("pane {idx}")).expect("pane index contains no NUL")
         }
         4 | 9 => {
             let mut bytes = b"session ".to_vec();
-            bytes.extend_from_slice((*fs.s).name.as_bytes());
+            bytes.extend_from_slice((*fs.s_ptr()).name.as_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
         6 => {
-            CString::new(format!("window {}", (*fs.wl).idx)).expect("window index contains no NUL")
+            CString::new(format!("window {}", (*fs.wl_ptr()).idx)).expect("window index contains no NUL")
         }
         _ => CString::new(Vec::new()).expect("empty scope text"),
     }
@@ -1661,10 +1661,10 @@ unsafe fn window_customize_build(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -1717,7 +1717,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1732,9 +1732,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(&mut (*fs.w).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         ft,
         filter,
         &raw mut fs,
@@ -1747,7 +1747,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1762,9 +1762,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(&mut (*fs.w).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         ft,
         filter,
         &raw mut fs,
@@ -1785,7 +1785,7 @@ unsafe fn window_customize_build(
         b"Session Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_ENVIRONMENT,
         WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-        CustomizeEnvironment::session(fs.s),
+        CustomizeEnvironment::session(fs.s_ptr()),
         ft,
         filter,
         &raw mut fs,
@@ -1985,10 +1985,10 @@ unsafe fn window_customize_draw_option(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -2610,7 +2610,7 @@ write_cstr(out, unit)
                                                                                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                                                                                             ));
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                                                                                            xformat(&mut label, format_args!("Window value (from window {}): " , ((*fs.wl).idx) as u32));
+                                                                                                            xformat(&mut label, format_args!("Window value (from window {}): " , ((*fs.wl_ptr()).idx) as u32));
                                                                                                             if window_customize_write_value(ctx,
 (*s).cx,
 sx,
@@ -2713,10 +2713,10 @@ unsafe fn window_customize_draw_environment(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut text: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2952,7 +2952,7 @@ unsafe fn window_customize_init(
         hide_default: 0,
         prompt_flags: 0,
         item_list: Vec::new(),
-        fs: ::core::ptr::read(fs),
+        fs: (*fs).clone(),
         change: WINDOW_CUSTOMIZE_UNSET,
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
@@ -3243,10 +3243,10 @@ unsafe fn window_customize_set_environment(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
@@ -3771,10 +3771,10 @@ unsafe fn window_customize_set_option(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     if window_customize_check_item(data, item, &raw mut fs) == 0 {
@@ -4715,10 +4715,10 @@ unsafe fn window_customize_add_current(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let name = mode_tree_get_current_name(&*(*data).data_ptr());
@@ -4742,7 +4742,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4752,7 +4752,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4762,7 +4762,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4772,7 +4772,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4791,7 +4791,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-            CustomizeEnvironment::session(fs.s),
+            CustomizeEnvironment::session(fs.s_ptr()),
         );
         return 1 as ::core::ffi::c_int;
     }
@@ -5140,10 +5140,10 @@ mod item_owner_tests {
                 fs: cmd_find_state {
                     flags: 0,
                     current: std::ptr::null_mut(),
-                    s: std::ptr::null_mut(),
-                    wl: std::ptr::null_mut(),
-                    w: std::ptr::null_mut(),
-                    wp: std::ptr::null_mut(),
+                    s: Default::default(),
+                    wl: Default::default(),
+                    w: Default::default(),
+                    wp: Default::default(),
                     idx: 0,
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,

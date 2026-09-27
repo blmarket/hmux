@@ -147,25 +147,25 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if !c.is_null() {
         event_payload_set_client(&mut *ep, c);
     }
-    if !(*target).s.is_null() {
+    if !(*target).s_ptr().is_null() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).s,
+            (*target).s_ptr(),
         );
     }
-    if !(*target).w.is_null() {
+    if !(*target).w_ptr().is_null() {
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).w,
+            (*target).w_ptr(),
         );
     }
-    if !(*target).wl.is_null() {
+    if !(*target).wl_ptr().is_null() {
         event_payload_set_int(
             &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*target).wl).idx,
+            (*(*target).wl_ptr()).idx,
         );
     } else if (*target).idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
@@ -174,11 +174,11 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             (*target).idx,
         );
     }
-    if !(*target).wp.is_null() {
+    if !(*target).wp_ptr().is_null() {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).wp,
+            (*target).wp_ptr(),
         );
     }
     events_fire(argument.as_ptr(), ep);
@@ -193,10 +193,10 @@ unsafe fn cmd_set_hook_monitor_exec(
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
@@ -283,7 +283,7 @@ unsafe fn cmd_set_hook_monitor_exec(
                     }
                 }
                 if oo != global_options && oo != global_s_options && oo != global_w_options {
-                    s = (*target).s;
+                    s = (*target).s_ptr();
                 }
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     flags |= MONITOR_NOTIFY_TRUE;
@@ -438,7 +438,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                         if args_has(args, 'U' as i32 as u_char) != 0
                             && scope == OPTIONS_TABLE_WINDOW
                         {
-                            loop_0 = window_pane_first((*target).w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                            loop_0 = window_pane_first((*target).w_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                             loop {
                                 if loop_0.is_null() {
                                     current_block = 10095721787123848864;

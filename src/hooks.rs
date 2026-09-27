@@ -144,9 +144,9 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
         client_owner_ptr(&client_owner),
-        fs.s,
-        fs.wl,
-        fs.wp,
+        fs.s_ptr(),
+        fs.wl_ptr(),
+        fs.wp_ptr(),
     );
     format_merge(ft, (*hd).formats.as_ptr());
     let expanded = format_expand_cstring(ft, value.as_ptr());
@@ -161,10 +161,10 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
@@ -188,18 +188,18 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         oo = (*hd).oo;
         o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((*hd).name.as_ptr())).map_or(std::ptr::null_mut(), |entry| entry);
     } else {
-        if fs.s.is_null() {
+        if fs.s_ptr().is_null() {
             oo = global_s_options;
         } else {
-            oo = options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options);
+            oo = options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
         }
         o = options_get(oo, (*hd).name.as_ptr());
-        if o.is_null() && !fs.wp.is_null() {
-            oo = options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options);
+        if o.is_null() && !fs.wp_ptr().is_null() {
+            oo = options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
             o = options_get(oo, (*hd).name.as_ptr());
         }
-        if o.is_null() && !fs.wl.is_null() {
-            oo = options_owner_ptr(&mut (*(*fs.wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        if o.is_null() && !fs.wl_ptr().is_null() {
+            oo = options_owner_ptr(&mut (*(*fs.wl_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
             o = options_get(oo, (*hd).name.as_ptr());
         }
     }
@@ -423,7 +423,8 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
     }
 }
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
-    let wl = change.wl;
+    let mut link = change.wl.try_borrow_mut().ok();
+    let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
     let client_owner = change.c.as_ref().and_then(ClientOwner::upgrade);
     let c = client_owner_ptr(&client_owner);
     let session_owner = change.s.as_ref().and_then(Weak::upgrade);
@@ -433,10 +434,10 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut ep = event_payload_create();
@@ -519,6 +520,8 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             );
         }
     }
+    // Payload construction has finished reading the link. Dispatch may unlink it.
+    drop(link);
     events_fire(change.name.as_ptr(), ep);
     if let Some(owner) = session_owner {
         session_remove_ref(owner, c"hooks_monitor_cb");
@@ -550,10 +553,10 @@ pub unsafe fn hooks_monitor_add(
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut(),
-            s: ::core::ptr::null_mut(),
-            wl: ::core::ptr::null_mut(),
-            w: ::core::ptr::null_mut(),
-            wp: ::core::ptr::null_mut(),
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
             idx: 0,
         },
         type_0,
@@ -625,6 +628,49 @@ pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
 #[cfg(test)]
 mod hooks_events_tests {
     use super::*;
+
+    #[test]
+    fn monitor_dispatch_releases_link_borrow_before_reentrant_unlink() {
+        use crate::src::events::{events_add_sink, events_remove_sink};
+        use crate::src::window::{winlink_add, winlink_remove, winlink_set_window};
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        unsafe {
+            let session_owner = session::new();
+            let window_owner = window::new();
+            let s = rc::as_ptr(&session_owner);
+            let w = rc::as_ptr(&window_owner);
+            let wl = winlink_add(&raw mut (*s).windows, 2);
+            (*wl).session = s;
+            winlink_set_window(wl, w);
+            let change = monitor_change {
+                name: c"test-monitor-unlink",
+                value: c"changed",
+                last: None,
+                c: None,
+                s: Some(Rc::downgrade(&session_owner)),
+                wl: (*wl).observer.clone(),
+                wp: None,
+            };
+            let observer = change.wl.clone();
+            let calls = Rc::new(Cell::new(0));
+            let called = calls.clone();
+            let sink = events_add_sink(change.name, Rc::new(move |_, _| {
+                assert!(!observer.is_borrowed());
+                winlink_remove(&raw mut (*s).windows, wl);
+                assert!(!observer.is_alive());
+                called.set(called.get() + 1);
+            }));
+            hooks_monitor_cb(&change, std::ptr::null_mut());
+            assert_eq!(calls.get(), 1);
+            assert!(!change.wl.is_alive());
+            assert!(!change.wl.is_empty());
+            events_remove_sink(sink);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
 
     #[test]
     fn registry_owns_stable_c_names_and_deduplicates_by_bytes() {

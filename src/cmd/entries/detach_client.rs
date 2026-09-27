@@ -94,7 +94,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         msgtype = MSG_DETACH;
     }
     if args_has(args, 's' as i32 as u_char) != 0 {
-        s = (*source).s;
+        s = (*source).s_ptr();
         if s.is_null() {
             return CMD_RETURN_NORMAL;
         }

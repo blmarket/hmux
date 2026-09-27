@@ -1689,8 +1689,8 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> redraw_draw_ctx<'_> {
         default_gc: grid_cell::default(),
         flags: 0,
     };
-    if server_is_marked(s, (*s).curw, marked_pane.wp) != 0 {
-        dctx.marked = marked_pane.wp;
+    if server_is_marked(s, (*s).curw, marked_pane.wp_ptr()) != 0 {
+        dctx.marked = marked_pane.wp_ptr();
     }
     if options_get_number(options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options), c"status-position".as_ptr()) == 0 {
         dctx.flags |= REDRAW_STATUS_TOP;

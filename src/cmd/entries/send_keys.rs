@@ -91,9 +91,9 @@ unsafe fn cmd_send_keys_inject_key(
 ) -> *mut cmdq_item {
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut new_after: *mut cmdq_item = after;
     if args_has(args, 'K' as i32 as u_char) != 0 {
@@ -206,9 +206,9 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut wme: *mut window_mode_entry = (*wp).modes.active;

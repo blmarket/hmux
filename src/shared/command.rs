@@ -209,16 +209,104 @@ impl cmdq_list {
     }
 }
 
-#[derive(Copy, Clone, Default)]
+/// Saved, nonowning target identities. An empty observer means unspecified;
+/// an expired observer still identifies a target that has disappeared.
+/// Clone/drop these handles normally: this record must never be zeroed or
+/// bitwise-copied, including when embedded in a mode, prompt, or queue item.
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct cmd_find_state {
     pub flags: ::core::ffi::c_int,
     pub current: *mut cmd_find_state,
-    pub s: *mut session,
-    pub wl: *mut winlink,
-    pub w: *mut window,
-    pub wp: *mut window_pane,
+    pub s: std::rc::Weak<std::cell::UnsafeCell<session>>,
+    pub wl: refbox::Weak<winlink>,
+    pub w: std::rc::Weak<std::cell::UnsafeCell<window>>,
+    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub idx: ::core::ffi::c_int,
+}
+
+impl cmd_find_state {
+    /// Borrow a live target address for the translated, single-threaded callers.
+    ///
+    /// # Safety
+    /// The caller must keep the model alive throughout use of the returned pointer
+    /// and must re-resolve targets after callbacks that can destroy them.
+    pub unsafe fn s_ptr(&self) -> *mut session {
+        if self.s.strong_count() == 0 {
+            std::ptr::null_mut()
+        } else {
+            self.s.as_ptr().cast_mut().cast()
+        }
+    }
+
+    /// # Safety
+    /// A nonnull pointer must refer to a live, shared model allocation.
+    pub unsafe fn set_s(&mut self, ptr: *mut session) {
+        self.s = ptr
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    }
+
+    /// Borrow a live target address for the translated, single-threaded callers.
+    ///
+    /// # Safety
+    /// The caller must keep the model alive throughout use of the returned pointer
+    /// and must re-resolve targets after callbacks that can destroy them.
+    pub unsafe fn w_ptr(&self) -> *mut window {
+        if self.w.strong_count() == 0 {
+            std::ptr::null_mut()
+        } else {
+            self.w.as_ptr().cast_mut().cast()
+        }
+    }
+
+    /// # Safety
+    /// A nonnull pointer must refer to a live, shared model allocation.
+    pub unsafe fn set_w(&mut self, ptr: *mut window) {
+        self.w = ptr
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    }
+
+    /// Borrow a live target address for the translated, single-threaded callers.
+    ///
+    /// # Safety
+    /// The caller must keep the model alive throughout use of the returned pointer
+    /// and must re-resolve targets after callbacks that can destroy them.
+    pub unsafe fn wp_ptr(&self) -> *mut window_pane {
+        if self.wp.strong_count() == 0 {
+            std::ptr::null_mut()
+        } else {
+            self.wp.as_ptr().cast_mut().cast()
+        }
+    }
+
+    /// # Safety
+    /// A nonnull pointer must refer to a live, shared model allocation.
+    pub unsafe fn set_wp(&mut self, ptr: *mut window_pane) {
+        self.wp = ptr
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    }
+
+    /// # Safety
+    /// The caller must keep the winlink alive and uphold its borrowing rules
+    /// throughout pointer use. Re-resolve after callbacks that can remove it.
+    pub unsafe fn wl_ptr(&self) -> *mut winlink {
+        if self.wl.is_alive() {
+            self.wl.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+
+    /// # Safety
+    /// A nonnull pointer must refer to a live RefBox-owned winlink.
+    pub unsafe fn set_wl(&mut self, ptr: *mut winlink) {
+        self.wl = ptr
+            .as_ref()
+            .map_or_else(refbox::Weak::new, |value| value.observer.clone());
+    }
 }
 
 #[repr(C)]

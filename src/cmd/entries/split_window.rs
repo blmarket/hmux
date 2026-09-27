@@ -142,19 +142,19 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     };
     let mut argv_owner = Vec::new();
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut event: *mut key_event = cmdq_get_event(item);

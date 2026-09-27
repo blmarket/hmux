@@ -36,7 +36,7 @@ pub struct monitor_change<'a> {
     pub last: Option<&'a std::ffi::CStr>,
     pub c: Option<Weak<UnsafeCell<client>>>,
     pub s: Option<Weak<UnsafeCell<session>>>,
-    pub wl: *mut winlink,
+    pub wl: refbox::Weak<winlink>,
     pub wp: Option<Weak<UnsafeCell<window_pane>>>,
 }
 

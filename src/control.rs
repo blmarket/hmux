@@ -1442,7 +1442,12 @@ unsafe fn control_sub_change(change: &monitor_change) {
     if (*c).flags & crate::src::shared::client::CLIENT_DEAD as uint64_t != 0 { return; }
     let Some(session_owner) = change.s.as_ref().and_then(std::rc::Weak::upgrade) else { return };
     let s = crate::src::shared::rc::as_ptr(&session_owner);
-    let wl = change.wl;
+    let mut link = change.wl.try_borrow_mut().ok();
+    if !change.wl.is_empty() && link.is_none() {
+        session_remove_ref(session_owner, c"control_sub_change");
+        return;
+    }
+    let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
     let pane_owner = change.wp.as_ref().and_then(|pane| crate::src::window::window_pane_upgrade(pane));
     if change.wp.is_some() && pane_owner.is_none() {
         session_remove_ref(session_owner, c"control_sub_change");
@@ -1450,7 +1455,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
     }
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    if !wp.is_null() {
+    if !wp.is_null() && !wl.is_null() {
         w = (*wp).window as *mut window;
         control_notify_write(c, |out| {
             out.write_all(b"%subscription-changed ")?;

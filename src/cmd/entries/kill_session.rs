@@ -51,7 +51,7 @@ pub static cmd_kill_session_entry: cmd_entry = {
 unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).s;
+    let mut s: *mut session = (*target).s_ptr();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -97,7 +97,7 @@ unsafe fn cmd_kill_session_all(
     mut item: *mut cmdq_item,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s;
+    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s_ptr();
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sloop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);

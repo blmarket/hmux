@@ -64,9 +64,9 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut s: *mut session = (*target).s;
-    let mut wl: *mut winlink = (*target).wl;
-    let mut wp: *mut window_pane = (*target).wp;
+    let mut s: *mut session = (*target).s_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = item;
     sc.s = s;

@@ -43,12 +43,12 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut src: *mut session = (*source).s;
-    let mut dst: *mut session = (*target).s;
+    let mut src: *mut session = (*source).s_ptr();
+    let mut dst: *mut session = (*target).s_ptr();
     let mut sg_src: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut wl_src: *mut winlink = (*source).wl;
-    let mut wl_dst: *mut winlink = (*target).wl;
+    let mut wl_src: *mut winlink = (*source).wl_ptr();
+    let mut wl_dst: *mut winlink = (*target).wl_ptr();
     let mut w_src: *mut window = ::core::ptr::null_mut::<window>();
     let mut w_dst: *mut window = ::core::ptr::null_mut::<window>();
     sg_src = session_group_contains(src);
@@ -71,8 +71,8 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     window_winlinks_append(w_src, wl_dst);
     window_winlinks_append(w_dst, wl_src);
-    if marked_pane.wl == wl_src {
-        marked_pane.wl = wl_dst;
+    if marked_pane.wl_ptr() == wl_src {
+        marked_pane.set_wl(wl_dst);
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
         session_select(dst, (*wl_dst).idx);

@@ -10,12 +10,12 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields, their disposition, and the lifecycle reason. **84 fields were migrated;
-156 remain in scope; 72 external ABI/resource fields are excluded; 8 fields were
+fields, their disposition, and the lifecycle reason. **106 fields were migrated;
+134 remain in scope; 72 external ABI/resource fields are excluded; 8 fields were
 removed (three with the deleted integration test and five unused application fields).**
 
-The remaining 156 fields have been re-reviewed:
-**67 candidates, 41 requiring an access/teardown design, no removal candidates,
+The remaining 134 fields have been re-reviewed:
+**50 candidates, 36 requiring an access/teardown design, no removal candidates,
 and 48 retained raw for now.** These are pending decisions, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -98,10 +98,10 @@ The TSV now distinguishes four pending dispositions, all of which still identify
 raw fields in the source. The external report lists every field under its current
 review category, with a proposed representation, constraints and source evidence.
 
-- **Candidate (67):** existing Rc or RefBox ownership supports weak observers or
+- **Candidate (50):** existing Rc or RefBox ownership supports weak observers or
   weak index values. This includes mode-entry pane back-pointers and cached redraw
   fields, selected models, find-state model identities and model registries.
-- **Design (41):** a specific typed replacement is plausible, but needs explicit
+- **Design (36):** a specific typed replacement is plausible, but needs explicit
   access/cleanup semantics: close-aware mode-tree owners, stream handles, mixed
   owner/observer queue clients, screen/editor selectors, bounded input contexts,
   snapshots and stable IDs.
@@ -168,6 +168,54 @@ early returns, rejected upgrades, and source guard replacement. This preserves
 deferred cleanup without a wrapper or stored diagnostic labels. Regressions cover
 registry removal, early and normal monitor exits, and deferred physical expiration.
 
+## Find-state and model-observer follow-up
+
+Nine more raw fields now have typed representations:
+
+| Fields | Representation and access |
+| --- | --- |
+| `cmd_find_state.s`, `.w`, `.wp` | Empty-capable `std::rc::Weak<UnsafeCell<T>>`. Saved targets do not extend object lifetimes. Validation holds upgrades while checking registry and pane membership. |
+| `cmd_find_state.wl` | Empty-capable `refbox::Weak<winlink>`, cloned from a self-observer installed by `winlink_add`. Validation borrows the link and checks allocation identity at its current index; replacing a link at the same index does not revive a saved target. |
+| `monitor_change.wl` | `refbox::Weak<winlink>`. Consumers hold scoped borrows; hook payload construction completes and releases its borrow before event dispatch. |
+| `window_copy_cmd_state.s` | `Option<&UnsafeCell<session>>`, borrowed from an operation-local Rc. An outer dispatch function releases the Rc through `session_remove_ref` even when the inner operation returns early. |
+| `window_copy_cmd_state.wl` | `refbox::Weak<winlink>` for the optional command target. |
+| `WindowWinlinksStorage.ordered`, `.positions` | Ordered weak winlinks and `HashMap<WinlinkIdentity, usize>`. Identity keys contain addresses only and cannot be dereferenced. The ordered weak handles prevent address reuse while the keys remain indexed. |
+
+Find states are `Clone`, not `Copy`. Clearing uses assignment, selected-target
+copying preserves destination flags/current, and tree/customization modes clone
+instead of using `memcpy` or `ptr::read`. All enclosing records use Rust
+construction and destruction. An expired observer is invalid but remains distinct
+from an unspecified target until explicitly cleared.
+
+The translated call sites still use explicitly unsafe, liveness-checked pointer
+views. These views do not retain models and are not a general solution for
+reentrant access. Existing callback owners must remain in scope; new callback
+paths must hold upgrades or take snapshots and re-resolve after dispatch. No
+upgrade is created and immediately dropped just to return a raw address.
+
+The broader review keeps the following work explicit rather than treating all
+remaining model pointers as permanent raw fields:
+
+| Remaining group | Migration direction and constraint |
+| --- | --- |
+| Format-tree session/window/link/pane targets | Weak targets with guards or value snapshots scoped around lazy format callbacks. A tree-wide mutable model borrow would conflict with reentrant expansion. |
+| Client current/last session, session current link, winlink session | Weak identities, with logical session/link membership checks. Audit close notifications that inspect these relationships during removal. |
+| Pane-to-window, input-to-pane, window active/modal/zoom panes, mode-entry panes | Weak observers for normal operations plus explicit teardown access. Window and input final destruction can use these links after the parent's strong count has reached zero. |
+| Cached redraw scene/spans and layout pane links | Weak observers or resolved drawing snapshots, retaining cache-generation, layout-membership and destroyed-pane checks. Owning back-links would extend lifetimes or introduce cycles. |
+| Spawn context | Borrow retained model owners across synchronous spawning; observe links weakly and revalidate after spawn notifications. Mutable model references must not span callbacks that access the same models. |
+| Window index and session-group member collections | Weak values and stable identity checks. Removal must work without upgrading a model undergoing final Drop. |
+
+The inventory also reconciles thirteen stale dispositions already migrated by
+recent commits (monitor/client observers, session/pane indexes and mode-tree
+owners); these are not new code changes in this follow-up.
+
+Validation for this follow-up: `cargo test --workspace` passes **646 tests**.
+Seven focused tests pass under Valgrind: three find-state regressions, three
+window-link lifecycle tests, and monitor dispatch that unlinks its own target.
+There are no memory-access errors or definite/indirect leaks; the processes retain
+the existing 48-byte possibly-lost Rust test-harness allocation. The inventory
+coverage check reports **134** remaining in-scope fields and **72** exclusions.
+
 ## Validation
 
 `cargo test --workspace`: **601 passed** after the panes-mode session observer migration.
@@ -188,7 +236,7 @@ definite/indirect leaks.
 The panes-mode session follow-up passes both session guard/lifetime tests under
 Valgrind with no memory-access errors or definite/indirect leaks.
 The updated inventory coverage check passes
-for all **156** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
+for all **134** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or

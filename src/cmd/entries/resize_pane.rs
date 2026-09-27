@@ -68,8 +68,8 @@ pub static cmd_resize_pane_entry: cmd_entry = {
 unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).wp;
-    let mut wl: *mut winlink = (*target).wl;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
@@ -266,11 +266,11 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
 unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
-    let mut wp: *mut window_pane = (*target).wp;
-    let mut wl: *mut winlink = (*target).wl;
+    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
     let mut c: *mut client = cmdq_get_client(item);
-    let mut s: *mut session = (*target).s;
+    let mut s: *mut session = (*target).s_ptr();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }

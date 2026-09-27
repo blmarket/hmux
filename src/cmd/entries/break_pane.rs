@@ -130,10 +130,10 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut wl: *mut winlink = (*source).wl;
-    let mut src_s: *mut session = (*source).s;
-    let mut dst_s: *mut session = (*target).s;
-    let mut wp: *mut window_pane = (*source).wp;
+    let mut wl: *mut winlink = (*source).wl_ptr();
+    let mut src_s: *mut session = (*source).s_ptr();
+    let mut dst_s: *mut session = (*target).s_ptr();
+    let mut wp: *mut window_pane = (*source).wp_ptr();
     let mut w: *mut window = (*wl).window_ptr();
     let mut old_w: *mut window = w;
     let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -158,8 +158,8 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-        if !(*target).wl.is_null() {
-            idx = winlink_shuffle_up(dst_s, (*target).wl, before);
+        if !(*target).wl_ptr().is_null() {
+            idx = winlink_shuffle_up(dst_s, (*target).wl_ptr(), before);
         } else {
             idx = winlink_shuffle_up(dst_s, (*dst_s).curw, before);
         }

@@ -166,10 +166,10 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
-        w: ::core::ptr::null_mut::<window>(),
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
         idx: 0,
     };
     let mut cwd: *const ::core::ffi::c_char = (*wp)
@@ -470,7 +470,7 @@ pub unsafe fn spawn_pane(
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     let mut key: key_code = 0;
     if !item.is_null() {
-        ts = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s;
+        ts = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s_ptr();
         c = cmdq_get_client(item);
     } else {
         ts = s;

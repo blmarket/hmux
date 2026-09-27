@@ -273,16 +273,30 @@ pub const WINDOW_COPY_CMD_CLEAR_NEVER: window_copy_cmd_clear = 1;
 pub type window_copy_cmd_clear = ::core::ffi::c_uint;
 pub const WINDOW_COPY_CMD_CLEAR_EMACS_ONLY: window_copy_cmd_clear = 2;
 pub const WINDOW_COPY_CMD_CLEAR_ALWAYS: window_copy_cmd_clear = 0;
-pub struct window_copy_cmd_state {
+pub struct window_copy_cmd_state<'a> {
     pub wme: *mut window_mode_entry,
     pub args: *mut args,
     pub wargs: Option<Box<args>>,
     pub m: *mut mouse_event,
     pub c: *mut client,
-    pub s: *mut session,
-    pub wl: *mut winlink,
+    pub s: Option<&'a std::cell::UnsafeCell<session>>,
+    pub wl: refbox::Weak<winlink>,
 }
-impl window_copy_cmd_state {
+impl window_copy_cmd_state<'_> {
+    fn s_ptr(&self) -> *mut session {
+        self.s
+            .map_or(std::ptr::null_mut(), std::cell::UnsafeCell::get)
+    }
+
+    /// The caller must not keep this address across removal of the winlink.
+    unsafe fn wl_ptr(&self) -> *mut winlink {
+        if self.wl.is_alive() {
+            self.wl.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+
     fn parsed_args(&mut self) -> &mut args {
         self.wargs
             .as_deref_mut()
@@ -1474,7 +1488,7 @@ unsafe fn window_copy_cmd_append_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut s: *mut session = (*cs).s;
+    let mut s: *mut session = (*cs).s_ptr();
     if !s.is_null() {
         window_copy_append_selection(wme);
     }
@@ -1485,7 +1499,7 @@ unsafe fn window_copy_cmd_append_selection_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut s: *mut session = (*cs).s;
+    let mut s: *mut session = (*cs).s_ptr();
     if !s.is_null() {
         window_copy_append_selection(wme);
     }
@@ -1552,8 +1566,8 @@ unsafe fn window_copy_do_copy_end_of_line(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut c: *mut client = (*cs).c;
-    let mut s: *mut session = (*cs).s;
-    let mut wl: *mut winlink = (*cs).wl;
+    let mut s: *mut session = (*cs).s_ptr();
+    let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = (*wme).wp;
     let mut count: u_int = args_count((*cs).parsed_args());
     let mut np: u_int = (*wme).prefix;
@@ -1670,8 +1684,8 @@ unsafe fn window_copy_do_copy_line(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut c: *mut client = (*cs).c;
-    let mut s: *mut session = (*cs).s;
-    let mut wl: *mut winlink = (*cs).wl;
+    let mut s: *mut session = (*cs).s_ptr();
+    let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut count: u_int = args_count((*cs).parsed_args());
@@ -1786,8 +1800,8 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut c: *mut client = (*cs).c;
-    let mut s: *mut session = (*cs).s;
-    let mut wl: *mut winlink = (*cs).wl;
+    let mut s: *mut session = (*cs).s_ptr();
+    let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = (*wme).wp;
     let mut prefix: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -2518,7 +2532,7 @@ unsafe fn window_copy_cmd_next_word(mut cs: *mut window_copy_cmd_state) -> windo
     let mut np: u_int = (*wme).prefix;
     let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     separators = options_get_string(
-        options_owner_ptr(&mut (*(*cs).s).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*cs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
     while np != 0 as u_int {
@@ -2534,7 +2548,7 @@ unsafe fn window_copy_cmd_next_word_end(
     let mut np: u_int = (*wme).prefix;
     let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     separators = options_get_string(
-        options_owner_ptr(&mut (*(*cs).s).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*cs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
     while np != 0 as u_int {
@@ -2557,7 +2571,7 @@ unsafe fn window_copy_cmd_selection_mode(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut so: *mut options = options_owner_ptr(&mut (*(*cs).s).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut so: *mut options = options_owner_ptr(&mut (*(*cs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut sx: u_int = 0;
@@ -2731,7 +2745,7 @@ unsafe fn window_copy_cmd_previous_word(
     let mut np: u_int = (*wme).prefix;
     let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     separators = options_get_string(
-        options_owner_ptr(&mut (*(*cs).s).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*cs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
     while np != 0 as u_int {
@@ -2941,7 +2955,7 @@ unsafe fn window_copy_cmd_select_word(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut so: *mut options = options_owner_ptr(&mut (*(*cs).s).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut so: *mut options = options_owner_ptr(&mut (*(*cs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -3032,8 +3046,8 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut c: *mut client = (*cs).c;
-    let mut s: *mut session = (*cs).s;
-    let mut wl: *mut winlink = (*cs).wl;
+    let mut s: *mut session = (*cs).s_ptr();
+    let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = (*wme).wp;
     let mut command: Option<CString> = None;
     let mut prefix: Option<CString> = None;
@@ -3096,8 +3110,8 @@ unsafe fn window_copy_cmd_pipe_no_clear(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut c: *mut client = (*cs).c;
-    let mut s: *mut session = (*cs).s;
-    let mut wl: *mut winlink = (*cs).wl;
+    let mut s: *mut session = (*cs).s_ptr();
+    let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = (*wme).wp;
     let mut command: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -5048,12 +5062,27 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
 };
 pub const WINDOW_COPY_CMD_FLAG_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe fn window_copy_command(
-    mut wme: *mut window_mode_entry,
-    mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
-    mut args: *mut args,
-    mut m: *mut mouse_event,
+    wme: *mut window_mode_entry,
+    c: *mut client,
+    s: *mut session,
+    wl: *mut winlink,
+    args: *mut args,
+    m: *mut mouse_event,
+) {
+    let session_owner = s.as_ref().and_then(|s| s.observer.upgrade());
+    window_copy_command_with_session(wme, c, session_owner.as_deref(), wl, args, m);
+    if let Some(owner) = session_owner {
+        crate::src::session::session_remove_ref(owner, c"window_copy_command");
+    }
+}
+
+unsafe fn window_copy_command_with_session(
+    wme: *mut window_mode_entry,
+    c: *mut client,
+    s: Option<&std::cell::UnsafeCell<session>>,
+    wl: *mut winlink,
+    args: *mut args,
+    m: *mut mouse_event,
 ) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut wp: *mut window_pane = (*wme).wp;
@@ -5063,8 +5092,8 @@ unsafe fn window_copy_command(
         wargs: None,
         m: ::core::ptr::null_mut::<mouse_event>(),
         c: ::core::ptr::null_mut::<client>(),
-        s: ::core::ptr::null_mut::<session>(),
-        wl: ::core::ptr::null_mut::<winlink>(),
+        s: None,
+        wl: refbox::Weak::new(),
     };
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_NOTHING;
     let mut clear: window_copy_cmd_clear = WINDOW_COPY_CMD_CLEAR_NEVER;
@@ -5090,7 +5119,7 @@ unsafe fn window_copy_command(
     cs.m = m;
     cs.c = c;
     cs.s = s;
-    cs.wl = wl;
+    cs.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
     action = WINDOW_COPY_CMD_MOVE;
     i = 0 as u_int;
     while (i as usize)

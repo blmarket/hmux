@@ -139,44 +139,44 @@ impl Drop for event_payload {
 pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_state) {
     event_payload_free_target(ep);
     let target = &mut ep.target;
-    if !fs.s.is_null() {
+    if !fs.s_ptr().is_null() {
         ep.target_session = Some(session_add_ref(
-            fs.s,
+            fs.s_ptr(),
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         ));
-        target.s = fs.s;
+        target.s = fs.s.clone();
     }
-    if !fs.wl.is_null() {
-        target.idx = (*fs.wl).idx;
-        if target.s.is_null() {
+    if !fs.wl_ptr().is_null() {
+        target.idx = (*fs.wl_ptr()).idx;
+        if target.s_ptr().is_null() {
             ep.target_session = Some(session_add_ref(
-                (*fs.wl).session,
+                (*fs.wl_ptr()).session,
                 b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
             ));
-            target.s = (*fs.wl).session;
+            target.set_s((*fs.wl_ptr()).session);
         }
     } else {
         target.idx = -(1 as ::core::ffi::c_int);
     }
-    if !fs.w.is_null() {
+    if !fs.w_ptr().is_null() {
         ep.target_window = Some(window_add_ref(
-            fs.w,
+            fs.w_ptr(),
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         ));
-        target.w = fs.w;
-    } else if !fs.wl.is_null() {
+        target.w = fs.w.clone();
+    } else if !fs.wl_ptr().is_null() {
         ep.target_window = Some(window_add_ref(
-            (*fs.wl).window_ptr(),
+            (*fs.wl_ptr()).window_ptr(),
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         ));
-        target.w = (*fs.wl).window_ptr();
+        target.set_w((*fs.wl_ptr()).window_ptr());
     }
-    if !fs.wp.is_null() {
+    if !fs.wp_ptr().is_null() {
         ep.target_pane = Some(window_pane_add_ref(
-            fs.wp,
+            fs.wp_ptr(),
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         ));
-        target.wp = fs.wp;
+        target.wp = fs.wp.clone();
     }
 }
 pub unsafe fn event_payload_get_target(
@@ -187,20 +187,20 @@ pub unsafe fn event_payload_get_target(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut flags: ::core::ffi::c_int = fs.flags;
     if t.idx != -(1 as ::core::ffi::c_int)
-        && !t.s.is_null()
-        && !t.w.is_null()
-        && session_alive(t.s) != 0
+        && !t.s_ptr().is_null()
+        && !t.w_ptr().is_null()
+        && session_alive(t.s_ptr()) != 0
     {
-        wl = winlink_find_by_index(&raw mut (*t.s).windows, t.idx);
-        if !wl.is_null() && (*wl).window_ptr() != t.w {
+        wl = winlink_find_by_index(&raw mut (*t.s_ptr()).windows, t.idx);
+        if !wl.is_null() && (*wl).window_ptr() != t.w_ptr() {
             wl = ::core::ptr::null_mut::<winlink>();
         }
     }
     cmd_find_clear_state(fs, flags);
-    fs.s = t.s;
-    fs.w = t.w;
-    fs.wp = t.wp;
-    fs.wl = wl;
+    fs.set_s(t.s_ptr());
+    fs.set_w(t.w_ptr());
+    fs.set_wp(t.wp_ptr());
+    fs.set_wl(wl);
     fs.idx = if !wl.is_null() {
         (*wl).idx
     } else {
@@ -209,14 +209,14 @@ pub unsafe fn event_payload_get_target(
     if cmd_find_valid_state(&*fs) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if !wl.is_null() && !t.wp.is_null() && window_has_pane((*wl).window_ptr(), t.wp) != 0 {
-        cmd_find_from_winlink_pane(fs, wl, t.wp, flags);
+    if !wl.is_null() && !t.wp_ptr().is_null() && window_has_pane((*wl).window_ptr(), t.wp_ptr()) != 0 {
+        cmd_find_from_winlink_pane(fs, wl, t.wp_ptr(), flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }
-    if !t.wp.is_null()
-        && cmd_find_from_pane(fs, t.wp, flags) == 0 as ::core::ffi::c_int
+    if !t.wp_ptr().is_null()
+        && cmd_find_from_pane(fs, t.wp_ptr(), flags) == 0 as ::core::ffi::c_int
         && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
@@ -227,16 +227,16 @@ pub unsafe fn event_payload_get_target(
             return 1 as ::core::ffi::c_int;
         }
     }
-    if !t.s.is_null()
-        && !t.w.is_null()
-        && session_alive(t.s) != 0
-        && cmd_find_from_session_window(fs, t.s, t.w, flags) == 0 as ::core::ffi::c_int
+    if !t.s_ptr().is_null()
+        && !t.w_ptr().is_null()
+        && session_alive(t.s_ptr()) != 0
+        && cmd_find_from_session_window(fs, t.s_ptr(), t.w_ptr(), flags) == 0 as ::core::ffi::c_int
         && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !t.s.is_null() && session_alive(t.s) != 0 {
-        cmd_find_from_session(fs, t.s, flags);
+    if !t.s_ptr().is_null() && session_alive(t.s_ptr()) != 0 {
+        cmd_find_from_session(fs, t.s_ptr(), flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -671,7 +671,7 @@ mod tests {
 
             let mut payload = event_payload_create();
             let fs = cmd_find_state {
-                w: target,
+                w: (*target).observer.clone(),
                 ..Default::default()
             };
             event_payload_set_target(&mut payload, &fs);

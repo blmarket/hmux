@@ -1647,7 +1647,7 @@ unsafe fn window_panes_init(
     }
     source = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    s = (*target).s;
+    s = (*target).s_ptr();
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
             options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
@@ -1698,11 +1698,11 @@ unsafe fn window_panes_init(
         0 as ::core::ffi::c_int,
     ));
     if args_has(args, 's' as i32 as u_char) != 0 {
-        (*data).source_session = (*(*source).s).id;
-        (*data).source_window = (*(*source).w).id;
+        (*data).source_session = (*(*source).s_ptr()).id;
+        (*data).source_window = (*(*source).w_ptr()).id;
     } else {
-        (*data).source_session = (*(*target).s).id;
-        (*data).source_window = (*(*target).w).id;
+        (*data).source_session = (*(*target).s_ptr()).id;
+        (*data).source_window = (*(*target).w_ptr()).id;
     }
     (*data).delay = delay;
     (*data).ignore_keys = args_has(args, 'N' as i32 as u_char);
