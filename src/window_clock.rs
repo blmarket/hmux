@@ -694,7 +694,7 @@ unsafe fn window_clock_free(mut wme: *mut window_mode_entry) {
 unsafe fn window_clock_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
-    screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     window_clock_draw_screen(wme);
 }
 unsafe fn window_clock_key(

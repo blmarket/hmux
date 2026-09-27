@@ -486,7 +486,7 @@ unsafe fn popup_resize(c: *mut client, pd: *mut popup_data) {
     }
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_resize(
-            &raw mut (*pd).s,
+            &mut (*pd).s,
             (*pd).sx,
             (*pd).sy,
             0 as ::core::ffi::c_int,
@@ -496,7 +496,7 @@ unsafe fn popup_resize(c: *mut client, pd: *mut popup_data) {
         }
     } else if (*pd).sx > 2 as u_int && (*pd).sy > 2 as u_int {
         screen_resize(
-            &raw mut (*pd).s,
+            &mut (*pd).s,
             (*pd).sx.wrapping_sub(2 as u_int),
             (*pd).sy.wrapping_sub(2 as u_int),
             0 as ::core::ffi::c_int,
@@ -563,7 +563,7 @@ unsafe fn popup_handle_drag(mut c: *mut client, mut pd: *mut popup_data, mut m: 
         (*pd).psy = (*pd).sy;
         if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
             screen_resize(
-                &raw mut (*pd).s,
+                &mut (*pd).s,
                 (*pd).sx,
                 (*pd).sy,
                 0 as ::core::ffi::c_int,
@@ -573,7 +573,7 @@ unsafe fn popup_handle_drag(mut c: *mut client, mut pd: *mut popup_data, mut m: 
             }
         } else {
             screen_resize(
-                &raw mut (*pd).s,
+                &mut (*pd).s,
                 (*pd).sx.wrapping_sub(2 as u_int),
                 (*pd).sy.wrapping_sub(2 as u_int),
                 0 as ::core::ffi::c_int,
@@ -858,7 +858,7 @@ pub unsafe fn popup_modify(
             && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
         {
             screen_resize(
-                &raw mut (*pd).s,
+                &mut (*pd).s,
                 (*pd).sx,
                 (*pd).sy,
                 1 as ::core::ffi::c_int,
@@ -868,7 +868,7 @@ pub unsafe fn popup_modify(
             && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
         {
             screen_resize(
-                &raw mut (*pd).s,
+                &mut (*pd).s,
                 (*pd).sx.wrapping_sub(2 as u_int),
                 (*pd).sy.wrapping_sub(2 as u_int),
                 1 as ::core::ffi::c_int,

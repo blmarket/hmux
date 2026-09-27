@@ -665,7 +665,7 @@ pub unsafe fn mode_tree_free(mut mtd: *mut mode_tree_data) {
 }
 pub unsafe fn mode_tree_resize(mut mtd: *mut mode_tree_data, mut sx: u_int, mut sy: u_int) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;

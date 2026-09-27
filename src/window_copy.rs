@@ -461,7 +461,7 @@ unsafe fn window_copy_clone_screen(
         (wx, wy) = grid_wrap_position((*dst).grid(), *cx, *cy);
     }
     screen_resize_cursor(
-        dst,
+        &mut *dst,
         (*hint).grid().sx,
         (*hint).grid().sy,
         1 as ::core::ffi::c_int,
@@ -1371,42 +1371,43 @@ unsafe fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
 unsafe fn window_copy_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
-    let mut gd: *mut grid = (*(*data).backing).grid_mut();
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut wx: u_int = 0;
     let mut wy: u_int = 0;
     let mut reflow: ::core::ffi::c_int = 0;
-    screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
+    let gd = (*(*data).backing).grid();
     cx = (*data).cx;
-    if (*data).oy > (*gd).hsize.wrapping_add((*data).cy) {
-        (*data).oy = (*gd).hsize.wrapping_add((*data).cy);
+    if (*data).oy > gd.hsize.wrapping_add((*data).cy) {
+        (*data).oy = gd.hsize.wrapping_add((*data).cy);
     }
-    cy = (*gd)
+    cy = gd
         .hsize
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);
-    reflow = ((*gd).sx != sx) as ::core::ffi::c_int;
+    reflow = (gd.sx != sx) as ::core::ffi::c_int;
     if reflow != 0 {
-        (wx, wy) = grid_wrap_position(&*gd, cx, cy);
+        (wx, wy) = grid_wrap_position(gd, cx, cy);
     }
     screen_resize_cursor(
-        (*data).backing,
+        &mut *(*data).backing,
         sx,
         sy,
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
+    let gd = (*(*data).backing).grid();
     if reflow != 0 {
-        (cx, cy) = grid_unwrap_position(&*gd, wx, wy);
+        (cx, cy) = grid_unwrap_position(gd, wx, wy);
     }
     (*data).cx = cx;
-    if cy < (*gd).hsize {
+    if cy < gd.hsize {
         (*data).cy = 0 as u_int;
-        (*data).oy = (*gd).hsize.wrapping_sub(cy);
+        (*data).oy = gd.hsize.wrapping_sub(cy);
     } else {
-        (*data).cy = cy.wrapping_sub((*gd).hsize);
+        (*data).cy = cy.wrapping_sub(gd.hsize);
         (*data).oy = 0 as u_int;
     }
     window_copy_size_changed(wme);

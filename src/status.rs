@@ -344,7 +344,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         );
     }
     if (*sl).screen.grid().sx != width || (*sl).screen.grid().sy != lines {
-        screen_resize(&raw mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
+        screen_resize(&mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
         force = 1 as ::core::ffi::c_int;
         changed = force;
     }

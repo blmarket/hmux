@@ -3013,12 +3013,8 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
         (sx) as u32,
         (sy) as u32
     ));
-    screen_resize(
-        &raw mut (*wp).base,
-        sx,
-        sy,
-        (*wp).base.saved_grid.is_none() as ::core::ffi::c_int,
-    );
+    let reflow = (*wp).base.saved_grid.is_none() as ::core::ffi::c_int;
+    screen_resize(&mut (*wp).base, sx, sy, reflow);
     wme = (*wp).modes.active;
     if !wme.is_null() && (*(*wme).mode).resize.is_some() {
         (*(*wme).mode).resize.expect("non-null function pointer")(wme, sx, sy);

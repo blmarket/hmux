@@ -548,7 +548,7 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
 unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     let mut s: *mut screen = &raw mut (*data).screen;
-    screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     window_switch_build(data);
     window_switch_set_current(data, (*data).current);
     window_switch_draw_screen(wme);

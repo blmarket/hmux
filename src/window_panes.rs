@@ -1648,7 +1648,7 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_panes_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
-    screen_resize(&raw mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     window_panes_draw_screen(wme);
 }
 unsafe fn window_panes_run_command(

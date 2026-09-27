@@ -492,7 +492,7 @@ pub unsafe fn screen_write_stop(mut ctx: *mut screen_write_ctx) {
 }
 pub unsafe fn screen_write_reset(mut ctx: *mut screen_write_ctx) {
     let mut s: *mut screen = (*ctx).s;
-    screen_reset_tabs(s);
+    screen_reset_tabs(&mut *s);
     screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     (*s).mode = MODE_CURSOR | MODE_WRAP;
     if options_get_number(
