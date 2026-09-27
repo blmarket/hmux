@@ -1409,7 +1409,7 @@ pub unsafe fn tty_fake_bce(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx) {
+unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     let mut i: u_int = 0;
     if tty_large_region(ctx) != 0 || ctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
@@ -1440,7 +1440,7 @@ unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx) {
     ));
     i = ctx.orupper;
     while i <= ctx.orlower {
-        tty_draw_pane(tty, ctx, i);
+        tty_draw_pane(tty, ctx, s, i);
         i = i.wrapping_add(1);
     }
 }
@@ -1813,8 +1813,7 @@ unsafe fn tty_clear_pane_area(
         tty_clear_area(tty, ctx, y, ry, x, rx, bg);
     }
 }
-unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
-    let mut s: *mut screen = ctx.s;
+unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_int) {
     let mut nx: u_int = ctx.sx;
     let mut i: u_int = 0;
     let mut x: u_int = 0;
@@ -1847,7 +1846,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
-                    &*s,
+                    s,
                     (*rr).px.wrapping_sub(ctx.xoff as u_int),
                     py,
                     (*rr).nx,
@@ -1878,7 +1877,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
-                    &*s,
+                    s,
                     i.wrapping_add((*rr).px).wrapping_sub(x),
                     py,
                     (*rr).nx,
@@ -1891,7 +1890,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
         }
     }
 }
-pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut i: u_int = 0;
     let mut x: u_int = 0;
     let mut rx: u_int = 0;
@@ -1917,7 +1916,7 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx) {
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
-                    &*ctx.s,
+                    s,
                     ctx.ocx
                         .wrapping_add(i)
                         .wrapping_add((*rr).px)
@@ -2074,7 +2073,7 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
         ctx.set_client_cb = Some(set_client_cb);
     }
 }
-pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
@@ -2082,14 +2081,14 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
         || tty_term_has((*tty).term, TTYC_ICH) == 0 && tty_term_has((*tty).term, TTYC_ICH1) == 0
         || (*c).overlay_check.is_some()
     {
-        tty_draw_pane(tty, ctx, ctx.ocy);
+        tty_draw_pane(tty, ctx, s, ctx.ocy);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
     tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, ctx.data.count());
 }
-pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
@@ -2097,7 +2096,7 @@ pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx) {
         || tty_term_has((*tty).term, TTYC_DCH) == 0 && tty_term_has((*tty).term, TTYC_DCH1) == 0
         || (*c).overlay_check.is_some()
     {
-        tty_draw_pane(tty, ctx, ctx.ocy);
+        tty_draw_pane(tty, ctx, s, ctx.ocy);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
@@ -2108,7 +2107,7 @@ pub unsafe fn tty_cmd_clearcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
     tty_clear_pane_line(tty, ctx, ctx.ocy, ctx.ocx, ctx.data.count(), ctx.bg);
 }
-pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
@@ -2119,7 +2118,7 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx) {
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
     {
-        tty_redraw_region(tty, ctx);
+        tty_redraw_region(tty, ctx, s);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
@@ -2130,7 +2129,7 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx) {
     (*tty).cy = UINT_MAX as u_int;
     (*tty).cx = (*tty).cy;
 }
-pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
@@ -2141,7 +2140,7 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx) {
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
     {
-        tty_redraw_region(tty, ctx);
+        tty_redraw_region(tty, ctx, s);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
@@ -2152,7 +2151,7 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx) {
     (*tty).cy = UINT_MAX as u_int;
     (*tty).cx = (*tty).cy;
 }
-pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.ocy != ctx.orupper {
         return;
@@ -2167,7 +2166,7 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx) {
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
     {
-        tty_redraw_region(tty, ctx);
+        tty_redraw_region(tty, ctx, s);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
@@ -2180,7 +2179,7 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx) {
         tty_putcode_i(tty, TTYC_RIN, 1 as ::core::ffi::c_int);
     };
 }
-pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     let mut i: u_int = 0;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
@@ -2192,7 +2191,7 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx) {
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
     {
-        tty_redraw_region(tty, ctx);
+        tty_redraw_region(tty, ctx, s);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
@@ -2218,7 +2217,7 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx) {
         tty_putcode_i(tty, TTYC_INDN, ctx.data.count() as ::core::ffi::c_int);
     };
 }
-pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut i: u_int = 0;
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
@@ -2231,7 +2230,7 @@ pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx) {
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
     {
-        tty_redraw_region(tty, ctx);
+        tty_redraw_region(tty, ctx, s);
         return;
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
@@ -2320,8 +2319,7 @@ pub unsafe fn tty_cmd_alignmenttest(mut tty: *mut tty, ctx: &tty_ctx) {
         j = j.wrapping_add(1);
     }
 }
-pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
-    let mut s: *mut screen = ctx.s;
+pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -2351,9 +2349,9 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
         if vis < gc.data.width as u_int {
             tty_draw_line(
                 tty,
-                &*s,
-                (*s).cx,
-                (*s).cy,
+                s,
+                s.cx,
+                s.cy,
                 gc.data.width as u_int,
                 px,
                 py,
@@ -2381,7 +2379,7 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
         tty_invalidate(tty);
     }
 }
-pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
+pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut i: u_int = 0;
@@ -2406,7 +2404,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
             || (*tty).cx < (*tty).sx
             || (*tty).cy == (*tty).rlower
         {
-            tty_draw_pane(tty, ctx, ctx.ocy);
+            tty_draw_pane(tty, ctx, s, ctx.ocy);
         } else {
             ctx.redraw_cb.as_ref().expect("non-null redraw callback")(ctx);
         }

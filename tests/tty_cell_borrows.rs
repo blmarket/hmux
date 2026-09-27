@@ -52,7 +52,6 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             let mut screen = screen::empty();
             screen.grid = Some(grid_create(20, 2, 0));
             let ctx = tty_ctx {
-                s: &raw mut screen,
                 sx: 20,
                 sy: 2,
                 orlower: 1,
@@ -62,7 +61,7 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
                 },
                 ..Default::default()
             };
-            tty_cmd_cell(&raw mut terminal, &ctx, &source);
+            tty_cmd_cell(&raw mut terminal, &ctx, &screen, &source);
             assert_eq!(
                 evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default(),
                 expected

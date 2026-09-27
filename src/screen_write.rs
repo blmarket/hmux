@@ -330,7 +330,6 @@ unsafe fn screen_write_initctx(
     let mut s: *mut screen = ctx.s;
     let mut palette: *mut colour_palette = ::core::ptr::null_mut::<colour_palette>();
     *ttyctx = tty_ctx::default();
-    ttyctx.s = s;
     ttyctx.sx = (*s).grid().sx;
     ttyctx.sy = (*s).grid().sy;
     ttyctx.ocx = (*s).cx;
@@ -760,7 +759,7 @@ pub unsafe fn screen_write_fast_copy(
                 break;
             }
             ttyctx.flags &= TTY_CTX_OVERLAY_SYNC | TTY_CTX_SYNC;
-            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &gc), &mut ttyctx);
+            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &gc), &mut ttyctx);
             ttyctx.ocx = ttyctx.ocx.wrapping_add(1);
             (*s).cx = (*s).cx.wrapping_add(1);
             xx = xx.wrapping_add(1);
@@ -1338,11 +1337,11 @@ unsafe fn screen_write_redraw_line(
                     ttyctx.ocx = cx;
                     ttyctx.ocy = yy;
                     if ttyctx.data.count() != 1 as u_int {
-                        tty_write(|tty, ctx| tty_cmd_redrawline(tty, ctx), ttyctx);
+                        tty_write(|tty, ctx| tty_cmd_redrawline(tty, ctx, &*s), ttyctx);
                     } else {
                         grid_view_get_cell((*s).grid(), cx, yy, &mut gc);
                         if screen_write_cell_is_single(&gc) == 0 {
-                            tty_write(|tty, ctx| tty_cmd_redrawline(tty, ctx), ttyctx);
+                            tty_write(|tty, ctx| tty_cmd_redrawline(tty, ctx, &*s), ttyctx);
                         } else {
                             let cell =
                                 if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
@@ -1353,7 +1352,7 @@ unsafe fn screen_write_redraw_line(
                                     }
                                     &ngc
                                 };
-                            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, cell), ttyctx);
+                            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, cell), ttyctx);
                         }
                     }
                 }
@@ -1517,7 +1516,10 @@ pub unsafe fn screen_write_insertcharacter(
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-        tty_write(|tty, ctx| tty_cmd_insertcharacter(tty, ctx), &mut ttyctx);
+        tty_write(
+            |tty, ctx| tty_cmd_insertcharacter(tty, ctx, &*s),
+            &mut ttyctx,
+        );
         return;
     }
     screen_write_redraw_line(ctx, &mut ttyctx, (*s).cy, &mut r);
@@ -1556,7 +1558,10 @@ pub unsafe fn screen_write_deletecharacter(
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-        tty_write(|tty, ctx| tty_cmd_deletecharacter(tty, ctx), &mut ttyctx);
+        tty_write(
+            |tty, ctx| tty_cmd_deletecharacter(tty, ctx, &*s),
+            &mut ttyctx,
+        );
         return;
     }
     screen_write_redraw_line(ctx, &mut ttyctx, (*s).cy, &mut r);
@@ -1629,7 +1634,7 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
             return;
         }
         if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-            tty_write(|tty, ctx| tty_cmd_insertline(tty, ctx), &mut ttyctx);
+            tty_write(|tty, ctx| tty_cmd_insertline(tty, ctx, &*s), &mut ttyctx);
             return;
         }
         screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1664,7 +1669,7 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-        tty_write(|tty, ctx| tty_cmd_insertline(tty, ctx), &mut ttyctx);
+        tty_write(|tty, ctx| tty_cmd_insertline(tty, ctx, &*s), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1703,7 +1708,7 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
             return;
         }
         if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-            tty_write(|tty, ctx| tty_cmd_deleteline(tty, ctx), &mut ttyctx);
+            tty_write(|tty, ctx| tty_cmd_deleteline(tty, ctx, &*s), &mut ttyctx);
             return;
         }
         screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1734,7 +1739,7 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-        tty_write(|tty, ctx| tty_cmd_deleteline(tty, ctx), &mut ttyctx);
+        tty_write(|tty, ctx| tty_cmd_deleteline(tty, ctx, &*s), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1883,7 +1888,7 @@ pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_in
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-        tty_write(|tty, ctx| tty_cmd_reverseindex(tty, ctx), &mut ttyctx);
+        tty_write(|tty, ctx| tty_cmd_reverseindex(tty, ctx, &*s), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -2018,7 +2023,7 @@ pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_i
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || ctx.wp.is_null() {
-        tty_write(|tty, ctx| tty_cmd_scrolldown(tty, ctx), &mut ttyctx);
+        tty_write(|tty, ctx| tty_cmd_scrolldown(tty, ctx, &*s), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -2440,7 +2445,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     }
     ttyctx.data = tty_command_data::Count(ctx.scrolled);
     ttyctx.bg = ctx.bg;
-    tty_write(|tty, ctx| tty_cmd_scrollup(tty, ctx), &mut ttyctx);
+    tty_write(|tty, ctx| tty_cmd_scrollup(tty, ctx, &*s), &mut ttyctx);
     if !wp.is_null() {
         window_pane_scrollbar_redraw(wp);
     }
@@ -2564,7 +2569,10 @@ unsafe fn screen_write_collect_flush_line(
                                     &cl.data
                                         [w_start as usize..w_start as usize + w_length as usize],
                                 );
-                                tty_write(|tty, ctx| tty_cmd_cells(tty, ctx, &ci.gc), &mut ttyctx);
+                                tty_write(
+                                    |tty, ctx| tty_cmd_cells(tty, ctx, &*s, &ci.gc),
+                                    &mut ttyctx,
+                                );
                             }
                             items = items.wrapping_add(1);
                             written = 1 as ::core::ffi::c_int;
@@ -3091,7 +3099,10 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_cell");
         ttyctx.data = tty_command_data::Count(width);
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
-            tty_write(|tty, ctx| tty_cmd_insertcharacter(tty, ctx), &mut ttyctx);
+            tty_write(
+                |tty, ctx| tty_cmd_insertcharacter(tty, ctx, &*s),
+                &mut ttyctx,
+            );
         }
     }
     if skip != 0 || screen_write_should_draw_line(ctx, (*s).cy) == 0 {
@@ -3116,7 +3127,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     }
     if vis >= width {
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
-            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &tmp_gc), &mut ttyctx);
+            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &tmp_gc), &mut ttyctx);
         }
         return;
     }
@@ -3132,7 +3143,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
             while n < (*ri).nx {
                 ttyctx.ocx =
                     ((*ri).px as ::core::ffi::c_int - xoff + n as ::core::ffi::c_int) as u_int;
-                tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &tmp_gc), &mut ttyctx);
+                tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &tmp_gc), &mut ttyctx);
                 n = n.wrapping_add(1);
             }
         }
@@ -3288,7 +3299,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         ttyctx.flags |= TTY_CTX_CELL_INVALIDATE;
     }
     if screen_write_should_draw_line(ctx, cy) != 0 {
-        tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &last), &mut ttyctx);
+        tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &last), &mut ttyctx);
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
     return 1 as ::core::ffi::c_int;

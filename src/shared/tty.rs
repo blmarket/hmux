@@ -9,7 +9,6 @@ use super::grid::grid_cell;
 use super::hyperlinks::hyperlinks;
 use super::key::key_code;
 use super::mouse::mouse_event;
-use super::screen::screen;
 use super::terminal::termios;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;
@@ -414,9 +413,9 @@ pub struct tty_term_entry {
     pub le_prev: *mut *mut tty_term,
 }
 
+/// Command metadata; screen and cell borrows are supplied only at dispatch.
 #[derive(Default)]
 pub struct tty_ctx<'a> {
-    pub s: *mut screen,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
     pub flags: ::core::ffi::c_int,
