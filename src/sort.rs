@@ -1,7 +1,4 @@
 use crate::src::ffi::libc::{strcasecmp, strcmp};
-use crate::src::key_bindings::{
-    key_bindings_first, key_bindings_first_table, key_bindings_next, key_bindings_next_table,
-};
 use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::session::sessions;
@@ -299,26 +296,26 @@ unsafe fn sort_winlink_cmp(
     return sort_ordering(result, sort_crit.reversed);
 }
 unsafe fn sort_key_binding_cmp(
-    a: *mut key_binding,
-    b: *mut key_binding,
+    a: &key_binding,
+    b: &key_binding,
     sort_crit: &sort_criteria,
 ) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
-            result = (*a).key.wrapping_sub((*b).key) as ::core::ffi::c_int;
+            result = a.key.wrapping_sub(b.key) as ::core::ffi::c_int;
         }
         3 => {
-            result = ((*a).key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS)
-                .wrapping_sub((*b).key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS)
+            result = (a.key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS)
+                .wrapping_sub(b.key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS)
                 as ::core::ffi::c_int;
         }
         4 => {
             result = (strcasecmp(
-                (*a).tablename
+                a.tablename
                     .as_ref()
                     .map_or(::core::ptr::null(), |s| s.as_ptr()),
-                (*b).tablename
+                b.tablename
                     .as_ref()
                     .map_or(::core::ptr::null(), |s| s.as_ptr()),
             ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
@@ -327,10 +324,10 @@ unsafe fn sort_key_binding_cmp(
     }
     if result == 0 as ::core::ffi::c_int {
         result = (strcasecmp(
-            (*a).tablename
+            a.tablename
                 .as_ref()
                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
-            (*b).tablename
+            b.tablename
                 .as_ref()
                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
         ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
@@ -529,37 +526,34 @@ pub unsafe fn sort_get_winlinks_session(
     });
     l
 }
-pub unsafe fn sort_get_key_bindings(sort_crit: *mut sort_criteria) -> Vec<*mut key_binding> {
-    let mut bindings = Vec::new();
-    let mut table = key_bindings_first_table();
-    while !table.is_null() {
-        let mut bd = key_bindings_first(table);
-        while !bd.is_null() {
-            bindings.push(bd);
-            bd = key_bindings_next(bd);
-        }
-        table = key_bindings_next_table(table);
-    }
-    sort_by_criteria(&mut bindings, &*sort_crit, |a, b, criteria| unsafe {
-        sort_key_binding_cmp(*a, *b, criteria)
+pub unsafe fn sort_get_key_bindings<'a>(
+    tables: &'a [std::rc::Rc<std::cell::UnsafeCell<key_table>>],
+    sort_crit: &sort_criteria,
+) -> Vec<&'a key_binding> {
+    let mut bindings: Vec<_> = tables
+        .iter()
+        .flat_map(|table| {
+            (&*crate::src::shared::rc::as_ptr(table))
+                .key_bindings
+                .iter()
+        })
+        .collect();
+    sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| unsafe {
+        sort_key_binding_cmp(a, b, criteria)
     });
     bindings
 }
-pub unsafe fn sort_get_key_bindings_table(
-    table: *mut key_table,
-    sort_crit: *mut sort_criteria,
-) -> Vec<*mut key_binding> {
-    let mut bindings = Vec::new();
-    if table.is_null() {
-        return bindings;
-    }
-    let mut bd = key_bindings_first(table);
-    while !bd.is_null() {
-        bindings.push(bd);
-        bd = key_bindings_next(bd);
-    }
-    sort_by_criteria(&mut bindings, &*sort_crit, |a, b, criteria| unsafe {
-        sort_key_binding_cmp(*a, *b, criteria)
+
+pub unsafe fn sort_get_key_bindings_table<'a>(
+    table: Option<&'a key_table>,
+    sort_crit: &sort_criteria,
+) -> Vec<&'a key_binding> {
+    let mut bindings: Vec<_> = table
+        .into_iter()
+        .flat_map(|table| table.key_bindings.iter())
+        .collect();
+    sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| unsafe {
+        sort_key_binding_cmp(a, b, criteria)
     });
     bindings
 }

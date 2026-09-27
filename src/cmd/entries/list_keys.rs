@@ -5,7 +5,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
-use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat};
+use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_bindings_tables};
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
@@ -82,38 +82,33 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     }
     key_string_format(prefix, false)
 }
-unsafe fn cmd_list_keys_get_width(bindings: &[*mut key_binding]) -> u_int {
+unsafe fn cmd_list_keys_get_width(bindings: &[&key_binding]) -> u_int {
     bindings
         .iter()
         .map(|&bd| {
-            let key_string = key_string_format((*bd).key, false);
+            let key_string = key_string_format(bd.key, false);
             utf8_cstrwidth(&key_string)
         })
         .max()
         .unwrap_or(0)
 }
-unsafe fn cmd_list_keys_get_table_width(bindings: &[*mut key_binding]) -> u_int {
+unsafe fn cmd_list_keys_get_table_width(bindings: &[&key_binding]) -> u_int {
     bindings
         .iter()
-        .map(|&bd| {
-            (*bd)
-                .tablename
-                .as_ref()
-                .map_or(0, |s| utf8_cstrwidth(s))
-        })
+        .map(|&bd| bd.tablename.as_ref().map_or(0, |s| utf8_cstrwidth(s)))
         .max()
         .unwrap_or(0)
 }
-unsafe fn cmd_list_keys_get_root_and_prefix(
-    sort_crit: *mut sort_criteria,
-) -> Vec<*mut key_binding> {
-    let tables: [*const ::core::ffi::c_char; 2] = [
-        b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
-        b"root\0" as *const u8 as *const ::core::ffi::c_char,
-    ];
+unsafe fn cmd_list_keys_get_root_and_prefix<'a>(
+    tables: &'a [std::rc::Rc<std::cell::UnsafeCell<key_table>>],
+    sort_crit: &sort_criteria,
+) -> Vec<&'a key_binding> {
     let mut bindings = Vec::new();
-    for name in tables {
-        let table = key_bindings_get_table(name, 0);
+    for name in [c"prefix", c"root"] {
+        let table = tables
+            .iter()
+            .map(|table| &*crate::src::shared::rc::as_ptr(table))
+            .find(|table| table.name.as_c_str() == name);
         bindings.extend(sort_get_key_bindings_table(table, sort_crit));
     }
     bindings
@@ -122,12 +117,12 @@ unsafe fn cmd_list_keys_filter_key_list(
     filter_notes: ::core::ffi::c_int,
     filter_key: ::core::ffi::c_int,
     only: key_code,
-    bindings: &mut Vec<*mut key_binding>,
+    bindings: &mut Vec<&key_binding>,
 ) {
     bindings.retain(|&bd| {
-        let key = ((*bd).key as ::core::ffi::c_ulonglong & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
+        let key = (bd.key as ::core::ffi::c_ulonglong & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
             as key_code;
-        (filter_key == 0 || only == key) && (filter_notes == 0 || !(*bd).note.is_none())
+        (filter_key == 0 || only == key) && (filter_notes == 0 || !bd.note.is_none())
     });
 }
 unsafe fn cmd_list_keys_format_add_key_binding(
@@ -197,7 +192,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         |out| write_cstr(out, key_string.as_ptr()),
     );
     let command = cmd_list_print_cstring(
-        &*bd.cmdlist,
+        &*bd.cmdlist(),
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
     format_add(
@@ -264,12 +259,13 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if template.is_null() {
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }
+    let tables = key_bindings_tables();
     let mut bindings = if !table.is_null() {
-        sort_get_key_bindings_table(table, &raw mut sort_crit)
+        sort_get_key_bindings_table(table.as_ref(), &sort_crit)
     } else if notes_only != 0 {
-        cmd_list_keys_get_root_and_prefix(&raw mut sort_crit)
+        cmd_list_keys_get_root_and_prefix(&tables, &sort_crit)
     } else {
-        sort_get_key_bindings(&raw mut sort_crit)
+        sort_get_key_bindings(&tables, &sort_crit)
     };
     filter_notes =
         (notes_only != 0 && args_has(args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -308,16 +304,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     format_add(
         ft,
         b"key_has_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                (key_bindings_has_repeat(
-                    bindings.as_mut_ptr(),
-                    u_int::try_from(bindings.len()).expect("too many key bindings to list"),
-                )) as i32
-            )
-        },
+        |out| write!(out, "{}", (key_bindings_has_repeat(&bindings)) as i32),
     );
     format_add(
         ft,

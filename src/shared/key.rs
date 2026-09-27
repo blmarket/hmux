@@ -1510,42 +1510,76 @@ pub struct key_table_entry {
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut key_table>>>,
 }
 
-#[repr(C)]
+/// Each table owns its bindings; the map is allocated only when first populated.
+#[derive(Default)]
 pub struct key_bindings {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u64, *mut key_binding>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<key_code, Box<key_binding>>>>,
 }
 
-impl Default for key_bindings {
-    fn default() -> Self {
-        Self { storage: None }
+impl key_bindings {
+    pub fn get(&self, key: key_code) -> Option<&key_binding> {
+        self.storage.as_ref()?.get(&key).map(Box::as_ref)
+    }
+
+    pub fn get_mut(&mut self, key: key_code) -> Option<&mut key_binding> {
+        self.storage.as_mut()?.get_mut(&key).map(Box::as_mut)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &key_binding> {
+        self.storage
+            .iter()
+            .flat_map(|map| map.values().map(Box::as_ref))
+    }
+
+    pub fn insert(&mut self, binding: Box<key_binding>) {
+        self.storage
+            .get_or_insert_with(Box::default)
+            .insert(binding.key, binding);
+    }
+
+    pub fn remove(&mut self, key: key_code) -> Option<Box<key_binding>> {
+        let map = self.storage.as_mut()?;
+        let binding = map.remove(&key);
+        if map.is_empty() {
+            self.storage = None;
+        }
+        binding
     }
 }
 
-#[repr(C)]
 pub struct key_binding {
     pub key: key_code,
-    pub cmdlist: *mut cmd_list,
+    pub commands: std::rc::Rc<std::cell::UnsafeCell<cmd_list>>,
     pub note: Option<std::ffi::CString>,
-    pub tablename: Option<::std::ffi::CString>,
+    pub tablename: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
-    pub entry: key_binding_entry,
 }
 
 impl key_binding {
-    pub fn empty() -> Self {
-        Self {
-            key: Default::default(),
-            cmdlist: Default::default(),
-            note: Default::default(),
-            tablename: Default::default(),
-            flags: Default::default(),
-            entry: key_binding_entry { owner: None },
+    /// Borrow the retained command list for the remaining legacy command APIs.
+    pub fn cmdlist(&self) -> *mut cmd_list {
+        super::rc::as_ptr(&self.commands)
+    }
+
+    /// Release the binding borrow before queueing or calling code that can
+    /// replace the binding or remove its table.
+    pub fn command(&self) -> KeyBindingCommand {
+        KeyBindingCommand {
+            key: self.key,
+            commands: std::rc::Rc::clone(&self.commands),
+            flags: self.flags,
         }
     }
 }
 
-#[repr(C)]
-pub struct key_binding_entry {
-    /// Weak traversal handle into the key binding index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u64, *mut key_binding>>>,
+pub struct KeyBindingCommand {
+    pub key: key_code,
+    pub commands: std::rc::Rc<std::cell::UnsafeCell<cmd_list>>,
+    pub flags: ::core::ffi::c_int,
+}
+
+impl KeyBindingCommand {
+    pub fn cmdlist(&self) -> *mut cmd_list {
+        super::rc::as_ptr(&self.commands)
+    }
 }

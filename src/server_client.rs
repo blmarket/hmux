@@ -797,7 +797,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_event, key_table};
+use crate::src::shared::key::{KeyBindingCommand, key_event, key_table};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{SIZE_MAX, UINT_MAX};
 use crate::src::shared::mouse::{
@@ -2541,11 +2541,11 @@ unsafe fn server_client_update_latest(mut c: *mut client) {
         c,
     );
 }
-unsafe fn server_client_repeat_time(mut c: *mut client, mut bd: *mut key_binding) -> u_int {
+unsafe fn server_client_repeat_time(mut c: *mut client, bd: &KeyBindingCommand) -> u_int {
     let mut s: *mut session = (*c).session;
     let mut repeat: u_int = 0;
     let mut initial: u_int = 0;
-    if !(*bd).flags & KEY_BINDING_REPEAT != 0 {
+    if !bd.flags & KEY_BINDING_REPEAT != 0 {
         return 0 as u_int;
     }
     repeat = options_get_number(
@@ -2555,7 +2555,7 @@ unsafe fn server_client_repeat_time(mut c: *mut client, mut bd: *mut key_binding
     if repeat == 0 as u_int {
         return 0 as u_int;
     }
-    if !(*c).flags & CLIENT_REPEAT as uint64_t != 0 || (*bd).key != (*c).last_key {
+    if !(*c).flags & CLIENT_REPEAT as uint64_t != 0 || bd.key != (*c).last_key {
         initial = options_get_number(
             (*s).options,
             b"initial-repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2627,7 +2627,7 @@ unsafe fn server_client_key_callback(
     };
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut first: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
+    let mut bd: Option<KeyBindingCommand> = None;
     let mut repeat: u_int = 0;
     let mut flags: uint64_t = 0;
     let mut prefix_delay: uint64_t = 0;
@@ -2833,7 +2833,7 @@ unsafe fn server_client_key_callback(
                                     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
                                         log_debug(format_args!("currently repeating"));
                                     }
-                                    bd = key_bindings_get(table, key0);
+                                    bd = key_bindings_get(&*table, key0).map(|bd| bd.command());
                                     prefix_delay = options_get_number(
                                         global_options,
                                         b"prefix-timeout\0" as *const u8
@@ -2847,9 +2847,9 @@ unsafe fn server_client_key_callback(
                                         ) == 0 as ::core::ffi::c_int
                                         && server_client_key_table_activity_diff(c) > prefix_delay
                                     {
-                                        if !bd.is_null()
+                                        if bd.is_some()
                                             && (*c).flags & CLIENT_REPEAT as uint64_t != 0
-                                            && (*bd).flags & KEY_BINDING_REPEAT != 0
+                                            && bd.as_ref().unwrap().flags & KEY_BINDING_REPEAT != 0
                                         {
                                             log_debug(format_args!(
                                                 "prefix timeout ignored, repeat is active"
@@ -2866,9 +2866,9 @@ unsafe fn server_client_key_callback(
                                             continue '_table_changed;
                                         }
                                     }
-                                    if !bd.is_null() {
+                                    if bd.is_some() {
                                         if (*c).flags & CLIENT_REPEAT as uint64_t != 0
-                                            && !(*bd).flags & KEY_BINDING_REPEAT != 0
+                                            && !bd.as_ref().unwrap().flags & KEY_BINDING_REPEAT != 0
                                         {
                                             current_block = 5891011138178424807;
                                             break;
@@ -2940,10 +2940,11 @@ unsafe fn server_client_key_callback(
                                             )
                                         ));
                                         crate::src::shared::rc::retain(table);
-                                        repeat = server_client_repeat_time(c, bd);
+                                        let bd = bd.take().expect("matched binding");
+                                        repeat = server_client_repeat_time(c, &bd);
                                         if repeat != 0 as u_int {
                                             (*c).flags |= CLIENT_REPEAT as uint64_t;
-                                            (*c).last_key = (*bd).key;
+                                            (*c).last_key = bd.key;
                                             tv.tv_sec =
                                                 repeat.wrapping_div(1000 as u_int) as __time_t;
                                             tv.tv_usec = (repeat.wrapping_rem(1000 as u_int)

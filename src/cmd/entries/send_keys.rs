@@ -21,7 +21,7 @@ use crate::src::shared::command::{
 };
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_event, key_table};
+use crate::src::shared::key::{key_event, key_table};
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
@@ -95,7 +95,6 @@ unsafe fn cmd_send_keys_inject_key(
     let mut wp: *mut window_pane = (*target).wp;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut new_after: *mut cmdq_item = after;
     if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_null() {
@@ -130,10 +129,16 @@ unsafe fn cmd_send_keys_inject_key(
         (*(*wme).mode).key_table.expect("non-null function pointer")(wme),
         1 as ::core::ffi::c_int,
     );
-    bd = key_bindings_get(table, key & !KEYC_MASK_FLAGS);
-    if !bd.is_null() {
+    let command = key_bindings_get(&*table, key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
+    if let Some(command) = command {
         crate::src::shared::rc::retain(table);
-        after = key_bindings_dispatch(bd, after, tc, ::core::ptr::null_mut::<key_event>(), target);
+        after = key_bindings_dispatch(
+            command,
+            after,
+            tc,
+            ::core::ptr::null_mut::<key_event>(),
+            target,
+        );
         key_bindings_unref_table(table);
     }
     return after;

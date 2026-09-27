@@ -9,7 +9,7 @@ use std::rc::Rc;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
-use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
+use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, __ctype_toupper_loc, memcpy, strchr, strcmp, strcspn, strlcat, strlen,
@@ -26,9 +26,9 @@ use crate::src::hooks::{
     hooks_monitor_to_cstring,
 };
 use crate::src::key_bindings::{
-    key_bindings_add, key_bindings_first, key_bindings_first_table, key_bindings_get,
-    key_bindings_get_default, key_bindings_get_table, key_bindings_next, key_bindings_next_table,
-    key_bindings_remove, key_bindings_reset, key_bindings_set_note,
+    key_bindings_add, key_bindings_first_table, key_bindings_get, key_bindings_get_default,
+    key_bindings_get_table, key_bindings_next_table, key_bindings_remove, key_bindings_reset,
+    key_bindings_set_note,
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::mode_tree::{
@@ -414,33 +414,13 @@ unsafe fn window_customize_check_item(
     }
     return (item.oo == window_customize_get_tree(item.scope, fsp)) as ::core::ffi::c_int;
 }
-unsafe fn window_customize_get_key(
+unsafe fn window_customize_get_key_table(
     item: &window_customize_itemdata,
-    mut ktp: *mut *mut key_table,
-    mut bdp: *mut *mut key_binding,
-) -> ::core::ffi::c_int {
-    let mut kt: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    kt = key_bindings_get_table(
-        (item.table)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        0 as ::core::ffi::c_int,
-    );
-    if kt.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    bd = key_bindings_get(kt, item.key);
-    if bd.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    if !ktp.is_null() {
-        *ktp = kt;
-    }
-    if !bdp.is_null() {
-        *bdp = bd;
-    }
-    return 1 as ::core::ffi::c_int;
+) -> Option<Rc<std::cell::UnsafeCell<key_table>>> {
+    let table = key_bindings_get_table(item.table.as_ref()?.as_ptr(), 0);
+    let table_ref = table.as_ref()?;
+    key_bindings_get(table_ref, item.key)?;
+    crate::src::shared::rc::downgrade(table).upgrade()
 }
 unsafe fn window_customize_scope_text(
     scope: window_customize_scope,
@@ -790,10 +770,10 @@ unsafe fn window_customize_set_command_value(
     s: *const ::core::ffi::c_char,
     cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return -(1 as ::core::ffi::c_int);
-    }
+    };
+    let kt = crate::src::shared::rc::as_ptr(&table);
     let pr = cmd_parse_from_string(
         CStr::from_ptr(s),
         ::core::ptr::null_mut::<cmd_parse_input>(),
@@ -804,18 +784,22 @@ unsafe fn window_customize_set_command_value(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    cmd_list_free((*bd).cmdlist);
-    (*bd).cmdlist = pr.cmdlist;
+    let Some(bd) = (*kt).key_bindings.get_mut(item.key) else {
+        crate::src::cmd::cmd_list_free(pr.cmdlist);
+        return -1;
+    };
+    bd.commands = crate::src::shared::rc::take(pr.cmdlist);
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_customize_set_note_value(
     item: &window_customize_itemdata,
     mut s: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return -(1 as ::core::ffi::c_int);
-    }
+    };
+    let kt = crate::src::shared::rc::as_ptr(&table);
+    let bd = (*kt).key_bindings.get_mut(item.key).expect("live binding");
     if *s as ::core::ffi::c_int == '\0' as i32 {
         key_bindings_set_note(bd, None);
     } else {
@@ -898,48 +882,16 @@ unsafe fn window_customize_option_is_changed(
     drop(default_value);
     return changed;
 }
-unsafe fn window_customize_key_is_changed(
-    mut kt: *mut key_table,
-    mut bd: *mut key_binding,
-) -> ::core::ffi::c_int {
-    let mut default_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    default_bd = key_bindings_get_default(kt, (*bd).key);
-    if default_bd.is_null() {
-        return 1 as ::core::ffi::c_int;
+unsafe fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> ::core::ffi::c_int {
+    let Some(default_bd) = key_bindings_get_default(kt, bd.key) else {
+        return 1;
+    };
+    if bd.flags != default_bd.flags || bd.note != default_bd.note {
+        return 1;
     }
-    if (*bd).flags != (*default_bd).flags {
-        return 1 as ::core::ffi::c_int;
-    }
-    if ((*bd).note
-        == if (NULL as *const ::core::ffi::c_char).is_null() {
-            None
-        } else {
-            Some(::std::ffi::CStr::from_ptr(NULL as *const ::core::ffi::c_char).to_owned())
-        }) as ::core::ffi::c_int
-        != ((*default_bd).note
-            == if (NULL as *const ::core::ffi::c_char).is_null() {
-                None
-            } else {
-                Some(::std::ffi::CStr::from_ptr(NULL as *const ::core::ffi::c_char).to_owned())
-            }) as ::core::ffi::c_int
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    if !(*bd).note.is_none()
-        && strcmp(
-            ((*bd).note)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*default_bd).note)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) != 0 as ::core::ffi::c_int
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    let cmd = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
-    let default_cmd = cmd_list_print_cstring(&*(*default_bd).cmdlist, 0);
-    return (cmd.as_bytes() != default_cmd.as_bytes()) as ::core::ffi::c_int;
+    let cmd = cmd_list_print_cstring(&*bd.cmdlist(), 0);
+    let default_cmd = cmd_list_print_cstring(&*default_bd.cmdlist(), 0);
+    (cmd.as_bytes() != default_cmd.as_bytes()) as ::core::ffi::c_int
 }
 unsafe fn window_customize_build_array(
     mut data: *mut window_customize_modedata,
@@ -1299,7 +1251,6 @@ unsafe fn window_customize_build_keys(
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
 ) {
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
     title_bytes.extend_from_slice((*kt).name.as_bytes());
@@ -1335,25 +1286,24 @@ unsafe fn window_customize_build_keys(
         b"is_environment\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(b"0"),
     );
-    bd = key_bindings_first(kt);
-    while !bd.is_null() {
-        if (*data).hide_default != 0 && window_customize_key_is_changed(kt, bd) == 0 {
-            bd = key_bindings_next(bd);
+    for bd in (*kt).key_bindings.iter() {
+        if (*data).hide_default != 0 && window_customize_key_is_changed(&*kt, bd) == 0 {
+            continue;
         } else {
-            let key_string = key_string_format((*bd).key, false);
+            let key_string = key_string_format(bd.key, false);
             format_add(
                 ft,
                 b"key\0" as *const u8 as *const ::core::ffi::c_char,
                 |out| write_cstr(out, key_string.as_ptr()),
             );
-            if !(*bd).note.is_none() {
+            if !bd.note.is_none() {
                 format_add(
                     ft,
                     b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
                     |out| {
                         write_cstr(
                             out,
-                            ((*bd).note)
+                            (bd.note)
                                 .as_ref()
                                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         )
@@ -1363,7 +1313,6 @@ unsafe fn window_customize_build_keys(
             if !filter.is_null() {
                 let expanded = format_expand_cstring(ft, filter);
                 if format_true(expanded.as_ptr()) == 0 {
-                    bd = key_bindings_next(bd);
                     continue;
                 }
             }
@@ -1373,8 +1322,8 @@ unsafe fn window_customize_build_keys(
                     type_0: WINDOW_CUSTOMIZE_ITEM_KEY,
                     scope: WINDOW_CUSTOMIZE_KEY,
                     table: Some((*kt).name.clone()),
-                    key: (*bd).key,
-                    name: Some(key_string_format((*bd).key, false)),
+                    key: bd.key,
+                    name: Some(key_string_format(bd.key, false)),
                     ..window_customize_itemdata::new()
                 },
             );
@@ -1383,18 +1332,18 @@ unsafe fn window_customize_build_keys(
                 (*data).data,
                 Some(&top),
                 ModeTreeItemData::Customize(Rc::clone(&item_owner)),
-                window_customize_key_tag(bd.cast(), 0),
+                window_customize_key_tag(std::ptr::from_ref(bd).cast(), 0),
                 &expanded,
                 None,
                 0 as ::core::ffi::c_int,
             );
-            let tmp = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
+            let tmp = cmd_list_print_cstring(&*bd.cmdlist(), 0);
             let text = window_customize_key_detail(tmp.as_bytes());
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
                 ModeTreeItemData::Customize(Rc::clone(&item_owner)),
-                window_customize_key_tag(bd.cast(), 1),
+                window_customize_key_tag(std::ptr::from_ref(bd).cast(), 1),
                 c"Command",
                 Some(&text),
                 -(1 as ::core::ffi::c_int),
@@ -1402,10 +1351,10 @@ unsafe fn window_customize_build_keys(
             mode_tree_draw_as_parent(&mti);
             mode_tree_no_tag(&mti);
             drop(text);
-            let text = if !(*bd).note.is_none() {
+            let text = if !bd.note.is_none() {
                 window_customize_key_detail(
                     CStr::from_ptr(
-                        ((*bd).note)
+                        (bd.note)
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     )
@@ -1418,7 +1367,7 @@ unsafe fn window_customize_build_keys(
                 (*data).data,
                 Some(&child),
                 ModeTreeItemData::Customize(Rc::clone(&item_owner)),
-                window_customize_key_tag(bd.cast(), 2),
+                window_customize_key_tag(std::ptr::from_ref(bd).cast(), 2),
                 c"Note",
                 Some(&text),
                 -(1 as ::core::ffi::c_int),
@@ -1426,7 +1375,7 @@ unsafe fn window_customize_build_keys(
             mode_tree_draw_as_parent(&mti);
             mode_tree_no_tag(&mti);
             drop(text);
-            let flag = if (*bd).flags & KEY_BINDING_REPEAT != 0 {
+            let flag = if bd.flags & KEY_BINDING_REPEAT != 0 {
                 b"on".as_slice()
             } else {
                 b"off".as_slice()
@@ -1436,7 +1385,7 @@ unsafe fn window_customize_build_keys(
                 (*data).data,
                 Some(&child),
                 ModeTreeItemData::Customize(Rc::clone(&item_owner)),
-                window_customize_key_tag(bd.cast(), 3),
+                window_customize_key_tag(std::ptr::from_ref(bd).cast(), 3),
                 c"Repeat",
                 Some(&text),
                 -(1 as ::core::ffi::c_int),
@@ -1445,7 +1394,6 @@ unsafe fn window_customize_build_keys(
             mode_tree_no_tag(&mti);
             drop(text);
             count = count.wrapping_add(1);
-            bd = key_bindings_next(bd);
         }
     }
     format_free(ft);
@@ -1764,15 +1712,14 @@ unsafe fn window_customize_draw_key(
     let mut s: *mut screen = (*ctx).s;
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*s).cy;
-    let mut kt: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut default_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut period: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    if window_customize_get_key(item, &raw mut kt, &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return;
-    }
-    note = ((*bd).note)
+    };
+    let kt = crate::src::shared::rc::as_ptr(&table);
+    let bd = (*kt).key_bindings.get(item.key).expect("live binding");
+    note = (bd.note)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     if note.is_null() {
@@ -1834,7 +1781,7 @@ unsafe fn window_customize_draw_key(
         |out| {
             write_cstr(
                 out,
-                if (*bd).flags & KEY_BINDING_REPEAT != 0 {
+                if bd.flags & KEY_BINDING_REPEAT != 0 {
                     b"on\0" as *const u8 as *const ::core::ffi::c_char
                 } else {
                     b"off\0" as *const u8 as *const ::core::ffi::c_char
@@ -1854,7 +1801,7 @@ unsafe fn window_customize_draw_key(
     if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
-    let cmd = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
+    let cmd = cmd_list_print_cstring(&*bd.cmdlist(), 0);
     if window_customize_write_value(
         ctx,
         cx,
@@ -1867,9 +1814,8 @@ unsafe fn window_customize_draw_key(
     {
         return;
     }
-    default_bd = key_bindings_get_default(kt, (*bd).key);
-    if !default_bd.is_null() {
-        let default_cmd = cmd_list_print_cstring(&*(*default_bd).cmdlist, 0);
+    if let Some(default_bd) = key_bindings_get_default(&*kt, bd.key) {
+        let default_cmd = cmd_list_print_cstring(&*default_bd.cmdlist(), 0);
         if cmd.as_bytes() != default_cmd.as_bytes()
             && window_customize_write_value(
                 ctx,
@@ -3509,7 +3455,6 @@ unsafe fn window_customize_start_edit(
 ) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let value: Cow<'_, CStr>;
     let mut edit_type: window_customize_edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     if !(*data).editor.is_null() {
@@ -3542,27 +3487,19 @@ unsafe fn window_customize_start_edit(
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         let name = mode_tree_get_current_name(&*(*data).data);
-        if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd)
-            == 0
-        {
+        let Some(table) = window_customize_get_key_table(item) else {
             return;
-        }
+        };
+        let kt = crate::src::shared::rc::as_ptr(&table);
+        let bd = (*kt).key_bindings.get(item.key).expect("live binding");
         if name.as_ref() == c"Command" {
             value = Cow::Owned(cmd_list_print_cstring(
-                &*(*bd).cmdlist,
+                &*bd.cmdlist(),
                 0 as ::core::ffi::c_int,
             ));
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_COMMAND;
         } else if name.as_ref() == c"Note" {
-            value = Cow::Borrowed(if (*bd).note.is_none() {
-                c""
-            } else {
-                CStr::from_ptr(
-                    ((*bd).note)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
-            });
+            value = Cow::Owned(bd.note.clone().unwrap_or_default());
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_NOTE;
         } else {
             return;
@@ -4022,13 +3959,13 @@ unsafe fn window_customize_set_command_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return PROMPT_CLOSE;
-    }
+    };
+    let kt = crate::src::shared::rc::as_ptr(&table);
     let mut pr = cmd_parse_from_string(
         CStr::from_ptr(s),
         ::core::ptr::null_mut::<cmd_parse_input>(),
@@ -4054,8 +3991,11 @@ unsafe fn window_customize_set_command_callback(
             return PROMPT_CLOSE;
         }
         1 | _ => {
-            cmd_list_free((*bd).cmdlist);
-            (*bd).cmdlist = pr.cmdlist;
+            let Some(bd) = (*kt).key_bindings.get_mut(item.key) else {
+                crate::src::cmd::cmd_list_free(pr.cmdlist);
+                return PROMPT_CLOSE;
+            };
+            bd.commands = crate::src::shared::rc::take(pr.cmdlist);
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
             (*(*data).wp).flags |= PANE_REDRAW;
@@ -4072,13 +4012,14 @@ unsafe fn window_customize_set_note_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return PROMPT_CLOSE;
-    }
+    };
+    let kt = crate::src::shared::rc::as_ptr(&table);
+    let bd = (*kt).key_bindings.get_mut(item.key).expect("live binding");
     key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
@@ -4099,17 +4040,18 @@ unsafe fn window_customize_set_key(
     item: &window_customize_itemdata,
 ) {
     let mut key: key_code = item.key;
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return;
-    }
+    };
+    let kt = crate::src::shared::rc::as_ptr(&table);
+    let bd = (*kt).key_bindings.get_mut(item.key).expect("live binding");
     let s = mode_tree_get_current_name(&*(*data).data);
     if s.as_ref() == c"Repeat" {
-        (*bd).flags ^= KEY_BINDING_REPEAT;
+        bd.flags ^= KEY_BINDING_REPEAT;
     } else if s.as_ref() == c"Command" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
-        let value = cmd_list_print_cstring(&*(*bd).cmdlist, 0 as ::core::ffi::c_int);
+        let value = cmd_list_print_cstring(&*bd.cmdlist(), 0 as ::core::ffi::c_int);
         let mut new_item = window_customize_new_item();
 
         new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
@@ -4135,6 +4077,7 @@ unsafe fn window_customize_set_key(
             freecb,
         );
     } else if s.as_ref() == c"Note" {
+        let note = bd.note.clone().unwrap_or_default();
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
         let mut new_item = window_customize_new_item();
@@ -4155,7 +4098,7 @@ unsafe fn window_customize_set_key(
             (*data).data,
             c,
             &prompt,
-            Some((*bd).note.as_deref().unwrap_or(c"")),
+            Some(&note),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
             inputcb,
@@ -4304,44 +4247,44 @@ unsafe fn window_customize_add_key(
     );
 }
 unsafe fn window_customize_unset_key(
-    mut data: *mut window_customize_modedata,
+    data: *mut window_customize_modedata,
     item: &Rc<window_customize_itemdata>,
 ) {
-    let mut kt: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    if window_customize_get_key(item, &raw mut kt, &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
         return;
-    }
+    };
+    let name = (&*crate::src::shared::rc::as_ptr(&table)).name.clone();
     if mode_tree_get_current(&*(*data).data)
         .as_customize()
         .is_some_and(|current| Rc::ptr_eq(item, current))
     {
-        mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
+        mode_tree_up((*data).data, 0);
     }
-    key_bindings_remove(((*kt).name).as_ptr().cast_mut(), (*bd).key);
+    key_bindings_remove(name.as_ptr(), item.key);
 }
 unsafe fn window_customize_reset_key(
-    mut data: *mut window_customize_modedata,
+    data: *mut window_customize_modedata,
     item: &Rc<window_customize_itemdata>,
 ) {
-    let mut kt: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut dd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    if window_customize_get_key(item, &raw mut kt, &raw mut bd) == 0 {
+    let Some(table) = window_customize_get_key_table(item) else {
+        return;
+    };
+    let table_ref = &*crate::src::shared::rc::as_ptr(&table);
+    let bd = key_bindings_get(table_ref, item.key).expect("live binding");
+    let default = key_bindings_get_default(table_ref, item.key);
+    if default.is_some_and(|default| Rc::ptr_eq(&bd.commands, &default.commands)) {
         return;
     }
-    dd = key_bindings_get_default(kt, (*bd).key);
-    if !dd.is_null() && (*bd).cmdlist == (*dd).cmdlist {
-        return;
-    }
-    if dd.is_null()
+    let has_default = default.is_some();
+    let name = table_ref.name.clone();
+    if !has_default
         && mode_tree_get_current(&*(*data).data)
             .as_customize()
             .is_some_and(|current| Rc::ptr_eq(item, current))
     {
-        mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
+        mode_tree_up((*data).data, 0);
     }
-    key_bindings_reset(((*kt).name).as_ptr().cast_mut(), (*bd).key);
+    key_bindings_reset(name.as_ptr(), item.key);
 }
 unsafe fn window_customize_change_each(
     mut data: *mut window_customize_modedata,
