@@ -927,7 +927,7 @@ mod status_screen_tests {
             assert_eq!(c.status.active_screen() as *mut screen, base);
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'B';
-            grid_set_cell(base_grid, 0, 0, &cell);
+            grid_set_cell(&mut *base_grid, 0, 0, &cell);
 
             // A prompt and a message share one temporary screen.
             status_push_screen(&mut *c);
@@ -936,7 +936,7 @@ mod status_screen_tests {
             assert_ne!(temporary, base);
             assert_ne!(temporary_grid, base_grid);
             cell.data.data[0] = b'T';
-            grid_set_cell(temporary_grid, 0, 0, &cell);
+            grid_set_cell(&mut *temporary_grid, 0, 0, &cell);
             status_push_screen(&mut *c);
             assert_eq!(c.status.screen_users, 2);
             assert_eq!(c.status.active_screen() as *mut screen, temporary);

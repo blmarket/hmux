@@ -911,7 +911,7 @@ pub unsafe fn screen_write_fast_copy(
             if xx.wrapping_add(gc.data.width as u_int) > px.wrapping_add(nx) {
                 break;
             }
-            grid_view_set_cell((*s).grid, (*s).cx, (*s).cy, &raw mut gc);
+            grid_view_set_cell(&mut *((*s).grid), (*s).cx, (*s).cy, &gc);
             if !window_position_is_visible(&r, (xoff as u_int).wrapping_add((*s).cx)) {
                 break;
             }
@@ -1869,7 +1869,7 @@ pub unsafe fn screen_write_alignmenttest(mut ctx: *mut screen_write_ctx) {
     while yy < (*(*s).grid).sy {
         xx = 0 as u_int;
         while xx < (*(*s).grid).sx {
-            grid_view_set_cell((*s).grid, xx, yy, &raw mut gc);
+            grid_view_set_cell(&mut *((*s).grid), xx, yy, &gc);
             xx = xx.wrapping_add(1);
         }
         yy = yy.wrapping_add(1);
@@ -3840,7 +3840,7 @@ unsafe fn screen_write_clear_cell(mut gd: *mut grid, mut px: u_int, mut py: u_in
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     gc.bg = bg;
-    grid_view_set_cell(gd, px, py, &raw mut gc);
+    grid_view_set_cell(&mut *gd, px, py, &gc);
 }
 unsafe fn screen_write_insert_clears(mut ctx: *mut screen_write_ctx, mut px: u_int, mut nx: u_int) {
     let mut s: *mut screen = (*ctx).s;
@@ -3962,14 +3962,8 @@ pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
             bnx = (*s).cx.wrapping_sub(xx);
         }
     }
-    grid_view_set_cells(
-        (*s).grid,
-        (*s).cx,
-        (*s).cy,
-        &raw mut (*ci).gc,
-        (*cl).data.as_mut_ptr().offset((*ci).x as isize),
-        (*ci).used as size_t,
-    );
+    let bytes = &(&(*cl).data)[(*ci).x as usize..(*ci).x as usize + (*ci).used as usize];
+    grid_view_set_cells(&mut *(*s).grid, (*s).cx, (*s).cy, &(*ci).gc, bytes);
     if bnx != 0 as u_int {
         screen_write_insert_clears(ctx, bx, bnx);
     }
@@ -4224,11 +4218,12 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
             (xx) as u32,
             ((*s).cy) as u32
         ));
-        grid_view_set_padding(gd, xx, (*s).cy, (*gc).bg);
+        grid_view_set_padding(&mut *gd, xx, (*s).cy, (*gc).bg);
         skip = 0 as ::core::ffi::c_int;
         xx = xx.wrapping_add(1);
     }
     if skip != 0 {
+        gl = grid_get_line(gd, (*gd).hsize.wrapping_add((*s).cy));
         if (*s).cx >= (*gl).cellsize as u_int {
             skip = grid_cells_equal(&*gc, &grid_default_cell) as ::core::ffi::c_int;
         } else {
@@ -4264,7 +4259,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
         tmp_gc.flags = (tmp_gc.flags as ::core::ffi::c_int | GRID_FLAG_SELECTED) as u_char;
-        grid_view_set_cell(gd, (*s).cx, (*s).cy, &raw mut tmp_gc);
+        grid_view_set_cell(&mut *gd, (*s).cx, (*s).cy, &tmp_gc);
     } else if selected == 0 && (*gc).flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
         memcpy(
             &raw mut tmp_gc as *mut ::core::ffi::c_void,
@@ -4272,9 +4267,9 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
         tmp_gc.flags = (tmp_gc.flags as ::core::ffi::c_int & !GRID_FLAG_SELECTED) as u_char;
-        grid_view_set_cell(gd, (*s).cx, (*s).cy, &raw mut tmp_gc);
+        grid_view_set_cell(&mut *gd, (*s).cx, (*s).cy, &tmp_gc);
     } else if skip == 0 {
-        grid_view_set_cell(gd, (*s).cx, (*s).cy, gc);
+        grid_view_set_cell(&mut *gd, (*s).cx, (*s).cy, &*gc);
     }
     if selected != 0 {
         skip = 0 as ::core::ffi::c_int;
@@ -4546,9 +4541,9 @@ unsafe fn screen_write_combine(
     } else {
         force_wide = 0 as ::core::ffi::c_int;
     }
-    grid_view_set_cell(gd, cx.wrapping_sub(n), cy, &raw mut last);
+    grid_view_set_cell(&mut *gd, cx.wrapping_sub(n), cy, &last);
     if force_wide != 0 {
-        grid_view_set_padding(gd, cx.wrapping_sub(1 as u_int), cy, last.bg);
+        grid_view_set_padding(&mut *gd, cx.wrapping_sub(1 as u_int), cy, last.bg);
     }
     if !wp.is_null() {
         xoff = (*wp).xoff;

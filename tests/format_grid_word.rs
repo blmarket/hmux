@@ -27,23 +27,23 @@ fn grid_word_collects_wide_cells_and_returns_owned_strings() {
         let mut cell = grid_default_cell;
         for (x, byte) in [(0, b'H'), (1, b'i'), (2, b' ')] {
             cell.data.data[0] = byte;
-            grid_set_cell(gd, x, 0, &cell);
+            grid_set_cell(&mut *gd, x, 0, &cell);
         }
         cell.data.data[..3].copy_from_slice("漢".as_bytes());
         cell.data.size = 3;
         cell.data.have = 3;
         cell.data.width = 2;
-        grid_set_cell(gd, 3, 0, &cell);
-        grid_set_padding(gd, 4, 0, cell.bg);
+        grid_set_cell(&mut *gd, 3, 0, &cell);
+        grid_set_padding(&mut *gd, 4, 0, cell.bg);
 
         cell.data.data = [0; 32];
         cell.data.data[0] = b'Z';
         cell.data.size = 1;
         cell.data.have = 1;
         cell.data.width = 1;
-        grid_set_cell(gd, 5, 0, &cell);
+        grid_set_cell(&mut *gd, 5, 0, &cell);
         cell.data.data[0] = b' ';
-        grid_set_cell(gd, 6, 0, &cell);
+        grid_set_cell(&mut *gd, 6, 0, &cell);
 
         let first = format_grid_word(&*gd, 1, 0).unwrap();
         let second = format_grid_word(&*gd, 3, 0).unwrap();

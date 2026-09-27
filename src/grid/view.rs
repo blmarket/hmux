@@ -8,31 +8,25 @@ use crate::src::shared::grid::*;
 pub unsafe fn grid_view_get_cell(gd: &grid, px: u_int, py: u_int, gc: &mut grid_cell) {
     grid_get_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
-pub unsafe fn grid_view_set_cell(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut gc: *const grid_cell,
-) {
-    grid_set_cell(gd, px, (*gd).hsize.wrapping_add(py), gc);
+pub unsafe fn grid_view_set_cell(gd: &mut grid, mut px: u_int, mut py: u_int, gc: &grid_cell) {
+    grid_set_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
 pub unsafe fn grid_view_set_padding(
-    mut gd: *mut grid,
+    gd: &mut grid,
     mut px: u_int,
     mut py: u_int,
     mut bg: ::core::ffi::c_int,
 ) {
-    grid_set_padding(gd, px, (*gd).hsize.wrapping_add(py), bg);
+    grid_set_padding(gd, px, gd.hsize.wrapping_add(py), bg);
 }
 pub unsafe fn grid_view_set_cells(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut gc: *const grid_cell,
-    mut s: *const ::core::ffi::c_char,
-    mut slen: size_t,
+    gd: &mut grid,
+    px: u_int,
+    py: u_int,
+    gc: &grid_cell,
+    bytes: &[std::ffi::c_char],
 ) {
-    grid_set_cells(gd, px, (*gd).hsize.wrapping_add(py), gc, s, slen);
+    grid_set_cells(gd, px, gd.hsize.wrapping_add(py), gc, bytes);
 }
 pub unsafe fn grid_view_clear_history(mut gd: *mut grid, mut bg: u_int) {
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
@@ -79,7 +73,7 @@ pub unsafe fn grid_view_clear(
 ) {
     px = px;
     py = (*gd).hsize.wrapping_add(py);
-    grid_clear(gd, px, py, nx, ny, bg);
+    grid_clear(&mut *gd, px, py, nx, ny, bg);
 }
 pub unsafe fn grid_view_scroll_region_up(
     mut gd: *mut grid,
@@ -162,11 +156,12 @@ pub unsafe fn grid_view_insert_lines_region(
         ny2,
         bg,
     );
+    let width = (*gd).sx;
     grid_clear(
-        gd,
+        &mut *gd,
         0 as u_int,
         py.wrapping_add(ny2),
-        (*gd).sx,
+        width,
         ny.wrapping_sub(ny2),
         bg,
     );
@@ -187,7 +182,8 @@ pub unsafe fn grid_view_delete_lines(
         sy.wrapping_sub(py).wrapping_sub(ny),
         bg,
     );
-    grid_clear(gd, 0 as u_int, sy.wrapping_sub(ny), (*gd).sx, ny, bg);
+    let width = (*gd).sx;
+    grid_clear(&mut *gd, 0 as u_int, sy.wrapping_sub(ny), width, ny, bg);
 }
 pub unsafe fn grid_view_delete_lines_region(
     mut gd: *mut grid,
@@ -204,11 +200,12 @@ pub unsafe fn grid_view_delete_lines_region(
         .wrapping_sub(py)
         .wrapping_sub(ny);
     grid_move_lines(&mut *gd, py, py.wrapping_add(ny), ny2, bg);
+    let width = (*gd).sx;
     grid_clear(
-        gd,
+        &mut *gd,
         0 as u_int,
         py.wrapping_add(ny2),
-        (*gd).sx,
+        width,
         ny.wrapping_sub(ny2),
         bg,
     );
@@ -225,10 +222,10 @@ pub unsafe fn grid_view_insert_cells(
     py = (*gd).hsize.wrapping_add(py);
     sx = (*gd).sx;
     if px >= sx.wrapping_sub(1 as u_int) {
-        grid_clear(gd, px, py, 1 as u_int, 1 as u_int, bg);
+        grid_clear(&mut *gd, px, py, 1 as u_int, 1 as u_int, bg);
     } else {
         grid_move_cells(
-            gd,
+            &mut *gd,
             px.wrapping_add(nx),
             px,
             py,
@@ -249,14 +246,14 @@ pub unsafe fn grid_view_delete_cells(
     py = (*gd).hsize.wrapping_add(py);
     sx = (*gd).sx;
     grid_move_cells(
-        gd,
+        &mut *gd,
         px,
         px.wrapping_add(nx),
         py,
         sx.wrapping_sub(px).wrapping_sub(nx),
         bg,
     );
-    grid_clear(gd, sx.wrapping_sub(nx), py, nx, 1 as u_int, bg);
+    grid_clear(&mut *gd, sx.wrapping_sub(nx), py, nx, 1 as u_int, bg);
 }
 pub unsafe fn grid_view_string_cells_bytes(gd: *mut grid, py: u_int, nx: u_int) -> Vec<u8> {
     let px: u_int = 0 as u_int;

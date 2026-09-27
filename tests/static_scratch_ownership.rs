@@ -109,12 +109,12 @@ fn capture_attributes_continue_across_lines_but_not_between_captures() {
         let mut cell = grid_default_cell;
         cell.fg = 1;
         cell.data.data[0] = b'A';
-        grid_set_cell(grid, 0, 0, &cell);
+        grid_set_cell(&mut *grid, 0, 0, &cell);
         cell.data.data[0] = b'B';
-        grid_set_cell(grid, 0, 1, &cell);
+        grid_set_cell(&mut *grid, 0, 1, &cell);
         cell.fg = 4;
         cell.data.data[0] = b'C';
-        grid_set_cell(grid, 0, 2, &cell);
+        grid_set_cell(&mut *grid, 0, 2, &cell);
         let flags = GRID_STRING_WITH_SEQUENCES;
         let mut first = grid_default_cell;
         let mut second = grid_default_cell;

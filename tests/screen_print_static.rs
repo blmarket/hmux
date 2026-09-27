@@ -12,7 +12,7 @@ fn screen_print_reuses_its_static_result_across_filtered_lines() {
         let mut cell = grid_default_cell;
         for (column, byte) in [(0, b'A'), (1, b'B')] {
             cell.data.data[0] = byte;
-            grid_set_cell(grid, column, 0, &cell);
+            grid_set_cell(&mut *grid, column, 0, &cell);
         }
 
         let first = screen_print(&raw mut screen, 0);
