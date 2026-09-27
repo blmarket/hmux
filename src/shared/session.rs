@@ -102,6 +102,17 @@ pub struct SessionOwner {
 }
 
 impl SessionOwner {
+    /// Upgrade an observer into an operation guard with deferred release.
+    pub(crate) fn upgrade(
+        observer: &std::rc::Weak<std::cell::UnsafeCell<session>>,
+        release_from: &'static std::ffi::CStr,
+    ) -> Option<Self> {
+        Some(Self {
+            owner: Some(observer.upgrade()?),
+            release_from,
+        })
+    }
+
     /// Retain a live session, preserving null as absence.
     ///
     /// # Safety

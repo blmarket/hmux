@@ -10,12 +10,12 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields, their disposition, and the lifecycle reason. **83 fields were migrated;
-157 remain in scope; 72 external ABI/resource fields are excluded; 8 fields were
+fields, their disposition, and the lifecycle reason. **84 fields were migrated;
+156 remain in scope; 72 external ABI/resource fields are excluded; 8 fields were
 removed (three with the deleted integration test and five unused application fields).**
 
-The remaining 157 fields have been re-reviewed:
-**68 candidates, 41 requiring an access/teardown design, no removal candidates,
+The remaining 156 fields have been re-reviewed:
+**67 candidates, 41 requiring an access/teardown design, no removal candidates,
 and 48 retained raw for now.** These are pending decisions, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -98,7 +98,7 @@ The TSV now distinguishes four pending dispositions, all of which still identify
 raw fields in the source. The external report lists every field under its current
 review category, with a proposed representation, constraints and source evidence.
 
-- **Candidate (68):** existing Rc or RefBox ownership supports weak observers or
+- **Candidate (67):** existing Rc or RefBox ownership supports weak observers or
   weak index values. This includes mode-entry pane back-pointers and cached redraw
   fields, selected models, find-state model identities and model registries.
 - **Design (41):** a specific typed replacement is plausible, but needs explicit
@@ -159,9 +159,16 @@ Empty indexes remain owned by their head; client teardown verifies the map is
 empty. Removed the source-file callback fixture that assigned a stack file to
 the queue's Rc-file observer. Other production-shaped lifecycle fixtures remain.
 
+The panes mode's session observer now stores `Weak<UnsafeCell<session>>`.
+Drawing and source selection retain operation guards through all session uses;
+the source resolver passes its guard to the caller alongside its output pointers.
+Removed sessions are rejected even while their allocations survive, and guards
+use the existing deferred session release policy. A regression covers both
+registry removal and physical expiration.
+
 ## Validation
 
-`cargo test --workspace`: **600 passed** after the file index and wait observer migration.
+`cargo test --workspace`: **601 passed** after the panes-mode session observer migration.
 The lifecycle checks include pane logical destruction while an operation guard
 retains its allocation, and queued tree refresh dispatch/cancellation with an
 expired parent or closed mode.
@@ -176,8 +183,10 @@ The file-index/wait follow-up passes eight focused Valgrind tests covering
 completion with outstanding guards, final-drop unlinking, index replacement,
 pane input, and source/load-buffer callbacks, without memory-access errors or
 definite/indirect leaks.
+The panes-mode session follow-up passes both session guard/lifetime tests under
+Valgrind with no memory-access errors or definite/indirect leaks.
 The updated inventory coverage check passes
-for all **157** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
+for all **156** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -209,11 +218,11 @@ pointers.
 ## Review status
 
 The earlier conclusion that all eligible fields had been migrated is superseded.
-The current implementation has 83 migrated fields and eight deleted fields.
-The weak-handle review still has 68 concrete candidates and 41 design-dependent possibilities. No
+The current implementation has 84 migrated fields and eight deleted fields.
+The weak-handle review still has 67 concrete candidates and 41 design-dependent possibilities. No
 candidate has been counted as migrated merely because its proposed type exists.
 
-The scanner verifies all 157 remaining declarations, including pending candidates,
+The scanner verifies all 156 remaining declarations, including pending candidates,
 against the TSV and checks the 72 explicit exclusions. It does not prove that a
 candidate implementation is safe. Follow-up work must verify the producer's real
 owner, guard lifetime, null/expiration behavior, reentrant invalidation, identity
