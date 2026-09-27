@@ -919,16 +919,16 @@ unsafe fn redraw_mark_menu(mut bctx: *mut redraw_build_ctx) {
     if md.is_null() {
         return;
     }
-    sx = menu_width(md);
-    sy = menu_height(md);
+    sx = menu_width(&*md);
+    sy = menu_height(&*md);
     py = 0 as u_int;
     while py < sy {
         px = 0 as u_int;
         while px < sx {
             if !(redraw_window_to_scene(
                 bctx,
-                menu_x(md).wrapping_add(px) as ::core::ffi::c_int,
-                menu_y(md).wrapping_add(py) as ::core::ffi::c_int,
+                menu_x(&*md).wrapping_add(px) as ::core::ffi::c_int,
+                menu_y(&*md).wrapping_add(py) as ::core::ffi::c_int,
                 &raw mut x,
                 &raw mut y,
             ) == 0)
@@ -1654,7 +1654,7 @@ unsafe fn redraw_draw_menu_span(
 ) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut tty: *mut tty = &raw mut (*(*scene).c).tty;
-    let mut s: *mut screen = menu_screen((*span).data.c2rust_unnamed.m.md);
+    let s = menu_screen(&*(*span).data.c2rust_unnamed.m.md);
     let mut px: u_int = 0;
     px = (*span)
         .data
@@ -1664,7 +1664,7 @@ unsafe fn redraw_draw_menu_span(
         .wrapping_add(x.wrapping_sub((*span).x));
     tty_draw_line(
         tty,
-        &*s,
+        s,
         px,
         (*span).data.c2rust_unnamed.m.py,
         n,

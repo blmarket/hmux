@@ -339,31 +339,28 @@ pub unsafe fn menu_destroy(mut w: *mut window) {
     menu_free_data((*w).menu);
     (*w).menu = ::core::ptr::null_mut::<menu_data>();
 }
-pub unsafe fn menu_get_cursor(mut md: *mut menu_data, mut cx: *mut u_int, mut cy: *mut u_int) {
-    *cx = (*md).px.wrapping_add(2 as u_int);
-    if (*md).choice == -(1 as ::core::ffi::c_int) {
-        *cy = (*md).py;
+pub fn menu_get_cursor(md: &menu_data) -> (u_int, u_int) {
+    let cy = if md.choice == -1 {
+        md.py
     } else {
-        *cy = (*md)
-            .py
-            .wrapping_add(1 as u_int)
-            .wrapping_add((*md).choice as u_int);
+        md.py.wrapping_add(1).wrapping_add(md.choice as u_int)
     };
+    (md.px.wrapping_add(2), cy)
 }
-pub unsafe fn menu_screen(mut md: *mut menu_data) -> *mut screen {
-    return &raw mut (*md).s;
+pub fn menu_screen(md: &menu_data) -> &screen {
+    &md.s
 }
-pub unsafe fn menu_width(mut md: *mut menu_data) -> u_int {
-    return (*md).menu.width.wrapping_add(4 as u_int);
+pub fn menu_width(md: &menu_data) -> u_int {
+    md.menu.width.wrapping_add(4)
 }
-pub unsafe fn menu_height(mut md: *mut menu_data) -> u_int {
-    return (*md).menu.count.wrapping_add(2 as u_int);
+pub fn menu_height(md: &menu_data) -> u_int {
+    md.menu.count.wrapping_add(2)
 }
-pub unsafe fn menu_x(mut md: *mut menu_data) -> u_int {
-    return (*md).px;
+pub fn menu_x(md: &menu_data) -> u_int {
+    md.px
 }
-pub unsafe fn menu_y(mut md: *mut menu_data) -> u_int {
-    return (*md).py;
+pub fn menu_y(md: &menu_data) -> u_int {
+    md.py
 }
 #[derive(Debug, PartialEq, Eq)]
 enum MenuKeyAction {
@@ -626,34 +623,27 @@ pub unsafe fn menu_key(
     cmdq_free_state(state);
     1
 }
-pub unsafe fn menu_resize(mut md: *mut menu_data, mut w: *mut window) {
-    let mut nx: u_int = 0;
-    let mut ny: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if md.is_null() {
-        return;
-    }
-    nx = (*md).px;
-    ny = (*md).py;
-    sx = (*md).menu.width.wrapping_add(4 as u_int);
-    sy = (*md).menu.count.wrapping_add(2 as u_int);
-    if nx.wrapping_add(sx) > (*w).sx {
-        if (*w).sx <= sx {
-            nx = 0 as u_int;
+pub fn menu_resize(md: &mut menu_data, window_width: u_int, window_height: u_int) {
+    let mut nx = md.px;
+    let mut ny = md.py;
+    let sx = menu_width(md);
+    let sy = menu_height(md);
+    if nx.wrapping_add(sx) > window_width {
+        if window_width <= sx {
+            nx = 0;
         } else {
-            nx = (*w).sx.wrapping_sub(sx);
+            nx = window_width.wrapping_sub(sx);
         }
     }
-    if ny.wrapping_add(sy) > (*w).sy {
-        if (*w).sy <= sy {
-            ny = 0 as u_int;
+    if ny.wrapping_add(sy) > window_height {
+        if window_height <= sy {
+            ny = 0;
         } else {
-            ny = (*w).sy.wrapping_sub(sy);
+            ny = window_height.wrapping_sub(sy);
         }
     }
-    (*md).px = nx;
-    (*md).py = ny;
+    md.px = nx;
+    md.py = ny;
 }
 pub unsafe fn menu_display(
     menu: Box<menu>,

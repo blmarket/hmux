@@ -1209,7 +1209,7 @@ pub unsafe fn window_resize(
     (*w).sx = sx;
     (*w).sy = sy;
     if !(*w).menu.is_null() {
-        menu_resize((*w).menu, w);
+        menu_resize(&mut *(*w).menu, sx, sy);
         server_redraw_window(w);
     }
     if xpixel != -(1 as ::core::ffi::c_int) {

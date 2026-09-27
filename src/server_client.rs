@@ -3677,7 +3677,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut wp: *mut window_pane = (*w).active;
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
+    let mut s: *const screen = std::ptr::null();
     let mut oo: *mut options = (*(*c).session).options;
     let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cursor: ::core::ffi::c_int = 0;
@@ -3705,8 +3705,8 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
             }
         }
     } else if !(*w).menu.is_null() {
-        menu_get_cursor((*w).menu, &raw mut cx, &raw mut cy);
-        s = menu_screen((*w).menu);
+        (cx, cy) = menu_get_cursor(&*(*w).menu);
+        s = menu_screen(&*(*w).menu);
     } else if !wp.is_null() && (*c).prompt.is_none() {
         s = (*wp).screen;
     } else {
@@ -3815,7 +3815,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     } else {
         mode &= !CURSOR_MODES;
         mode |= (*tty).mode & CURSOR_MODES;
-        s = ::core::ptr::null_mut::<screen>();
+        s = std::ptr::null();
     }
     if options_get_number(oo, b"mouse\0" as *const u8 as *const ::core::ffi::c_char) != 0 {
         if (*c).overlay_draw.is_none() && (*w).menu.is_null() {
