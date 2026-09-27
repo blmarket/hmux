@@ -7668,7 +7668,7 @@ unsafe fn window_copy_mouse_in_selection(
     cursorx = window_copy_cursor_offset(wme, (*data).cx, sx);
     cursory = (*data).cy;
     if x != cursorx || y != cursory {
-        if screen_check_selection(&raw mut (*data).screen, x, y) == 0 {
+        if screen_check_selection(&(*data).screen, x, y) == 0 {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -7814,7 +7814,7 @@ unsafe fn window_copy_set_selection(
     if startrelpos == endrelpos
         && startrelpos != WINDOW_COPY_REL_POS_ON_SCREEN as ::core::ffi::c_int
     {
-        screen_hide_selection(s);
+        screen_hide_selection(&mut *s);
         return 0 as ::core::ffi::c_int;
     }
     ft = format_create_defaults(
@@ -7841,7 +7841,7 @@ unsafe fn window_copy_set_selection(
         endsx = window_copy_cursor_offset(wme, endsx, (*s).grid().sx);
     }
     screen_set_selection(
-        s,
+        &mut *s,
         sx,
         sy,
         endsx,
@@ -7849,7 +7849,7 @@ unsafe fn window_copy_set_selection(
         (*data).rectflag as u_int,
         clipx,
         (*data).modekeys,
-        &raw mut gc,
+        &gc,
     );
     if (*data).rectflag != 0 && may_redraw != 0 {
         cy = (*data).cy;
@@ -8246,7 +8246,7 @@ unsafe fn window_copy_clear_selection(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
-    screen_clear_selection(&raw mut (*data).screen);
+    screen_clear_selection(&mut (*data).screen);
     (*data).cursordrag = CURSORDRAG_NONE;
     (*data).lineflag = LINE_SEL_NONE;
     (*data).selflag = SEL_CHAR;

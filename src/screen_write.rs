@@ -1671,7 +1671,9 @@ unsafe fn screen_write_redraw_line(
                             if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
                                 (*ttyctx).cell = &raw mut gc;
                             } else {
-                                screen_select_cell(s, &raw mut ngc, &raw mut gc);
+                                if let Some(selected) = screen_select_cell(&*s, &gc) {
+                                    ngc = selected;
+                                }
                                 (*ttyctx).cell = &raw mut ngc;
                             }
                             tty_write(
@@ -4231,7 +4233,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
             }
         }
     }
-    selected = screen_check_selection(s, (*s).cx, (*s).cy);
+    selected = screen_check_selection(&*s, (*s).cx, (*s).cy);
     if selected != 0 && !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
         memcpy(
             &raw mut tmp_gc as *mut ::core::ffi::c_void,
@@ -4301,7 +4303,9 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         return;
     }
     if selected != 0 {
-        screen_select_cell(s, &raw mut tmp_gc, gc);
+        if let Some(selected) = screen_select_cell(&*s, &*gc) {
+            tmp_gc = selected;
+        }
     } else {
         memcpy(
             &raw mut tmp_gc as *mut ::core::ffi::c_void,

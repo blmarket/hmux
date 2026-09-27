@@ -275,7 +275,8 @@ pub unsafe fn tty_draw_line(
                     &raw mut gc as *const ::core::ffi::c_void,
                     ::core::mem::size_of::<grid_cell>() as size_t,
                 );
-                if screen_select_cell(s, &raw mut ngc, &raw mut gc) != 0 {
+                if let Some(selected) = screen_select_cell(&*s, &gc) {
+                    ngc = selected;
                     bg = ngc.bg as u_int;
                 }
             }
@@ -341,7 +342,8 @@ pub unsafe fn tty_draw_line(
                                     gcp as *const ::core::ffi::c_void,
                                     ::core::mem::size_of::<grid_cell>() as size_t,
                                 );
-                                if screen_select_cell(s, &raw mut ngc, gcp) != 0 {
+                                if let Some(selected) = screen_select_cell(&*s, &*gcp) {
+                                    ngc = selected;
                                     gcp = &raw mut ngc;
                                 }
                             }

@@ -82,7 +82,7 @@ pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
     let hsize = (*s).grid().hsize;
     let sy = (*s).grid().sy;
     grid_clear_lines((*s).grid_mut(), hsize, sy, 8);
-    screen_clear_selection(s);
+    screen_clear_selection(&mut *s);
     screen_free_titles(s);
     screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
     screen_reset_hyperlinks(s);
@@ -427,16 +427,16 @@ unsafe fn screen_resize_y(
     (*s).rupper = 0 as u_int;
     (*s).rlower = (*s).grid().sy.wrapping_sub(1 as u_int);
 }
-pub unsafe fn screen_set_selection(
-    mut s: *mut screen,
-    mut sx: u_int,
-    mut sy: u_int,
-    mut ex: u_int,
-    mut ey: u_int,
-    mut rectangle: u_int,
-    mut clipx: u_int,
-    mut modekeys: ::core::ffi::c_int,
-    mut gc: *mut grid_cell,
+pub fn screen_set_selection(
+    s: &mut screen,
+    sx: u_int,
+    sy: u_int,
+    ex: u_int,
+    ey: u_int,
+    rectangle: u_int,
+    clipx: u_int,
+    modekeys: ::core::ffi::c_int,
+    gc: &grid_cell,
 ) {
     let selection = screen_sel {
         hidden: 0,
@@ -449,159 +449,145 @@ pub unsafe fn screen_set_selection(
         clipx,
         cell: *gc,
     };
-    if let Some(existing) = (*s).sel.as_mut() {
+    if let Some(existing) = s.sel.as_mut() {
         **existing = selection;
     } else {
-        (*s).sel = Some(Box::new(selection));
+        s.sel = Some(Box::new(selection));
     }
 }
-pub unsafe fn screen_clear_selection(mut s: *mut screen) {
-    drop((*s).sel.take());
+pub fn screen_clear_selection(s: &mut screen) {
+    drop(s.sel.take());
 }
-pub unsafe fn screen_hide_selection(mut s: *mut screen) {
-    if let Some(selection) = (*s).sel.as_mut() {
+pub fn screen_hide_selection(s: &mut screen) {
+    if let Some(selection) = s.sel.as_mut() {
         selection.hidden = 1;
     }
 }
-pub unsafe fn screen_check_selection(
-    mut s: *mut screen,
-    mut px: u_int,
-    mut py: u_int,
-) -> ::core::ffi::c_int {
-    let Some(sel) = (*s).sel.as_ref() else {
+pub fn screen_check_selection(s: &screen, px: u_int, py: u_int) -> ::core::ffi::c_int {
+    let Some(sel) = s.sel.as_ref() else {
         return 0;
     };
     let mut xx: u_int = 0;
     if sel.hidden != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if px < (*sel).clipx {
+    if px < sel.clipx {
         return 0 as ::core::ffi::c_int;
     }
-    if (*sel).rectangle != 0 {
-        if (*sel).sy < (*sel).ey {
-            if py < (*sel).sy || py > (*sel).ey {
+    if sel.rectangle != 0 {
+        if sel.sy < sel.ey {
+            if py < sel.sy || py > sel.ey {
                 return 0 as ::core::ffi::c_int;
             }
-        } else if (*sel).sy > (*sel).ey {
-            if py > (*sel).sy || py < (*sel).ey {
+        } else if sel.sy > sel.ey {
+            if py > sel.sy || py < sel.ey {
                 return 0 as ::core::ffi::c_int;
             }
-        } else if py != (*sel).sy {
+        } else if py != sel.sy {
             return 0 as ::core::ffi::c_int;
         }
-        if (*sel).ex < (*sel).sx {
-            if px < (*sel).ex {
+        if sel.ex < sel.sx {
+            if px < sel.ex {
                 return 0 as ::core::ffi::c_int;
             }
-            if px > (*sel).sx {
+            if px > sel.sx {
                 return 0 as ::core::ffi::c_int;
             }
         } else {
-            if px < (*sel).sx {
+            if px < sel.sx {
                 return 0 as ::core::ffi::c_int;
             }
-            if px > (*sel).ex {
+            if px > sel.ex {
                 return 0 as ::core::ffi::c_int;
             }
         }
-    } else if (*sel).sy < (*sel).ey {
-        if py < (*sel).sy || py > (*sel).ey {
+    } else if sel.sy < sel.ey {
+        if py < sel.sy || py > sel.ey {
             return 0 as ::core::ffi::c_int;
         }
-        if py == (*sel).sy && px < (*sel).sx {
+        if py == sel.sy && px < sel.sx {
             return 0 as ::core::ffi::c_int;
         }
-        if (*sel).modekeys == MODEKEY_EMACS {
-            xx = if (*sel).ex == 0 as u_int {
+        if sel.modekeys == MODEKEY_EMACS {
+            xx = if sel.ex == 0 as u_int {
                 0 as u_int
             } else {
-                (*sel).ex.wrapping_sub(1 as u_int)
+                sel.ex.wrapping_sub(1 as u_int)
             };
         } else {
-            xx = (*sel).ex;
+            xx = sel.ex;
         }
-        if py == (*sel).ey && px > xx {
+        if py == sel.ey && px > xx {
             return 0 as ::core::ffi::c_int;
         }
-    } else if (*sel).sy > (*sel).ey {
-        if py > (*sel).sy || py < (*sel).ey {
+    } else if sel.sy > sel.ey {
+        if py > sel.sy || py < sel.ey {
             return 0 as ::core::ffi::c_int;
         }
-        if py == (*sel).ey && px < (*sel).ex {
+        if py == sel.ey && px < sel.ex {
             return 0 as ::core::ffi::c_int;
         }
-        if (*sel).modekeys == MODEKEY_EMACS {
-            xx = (*sel).sx.wrapping_sub(1 as u_int);
+        if sel.modekeys == MODEKEY_EMACS {
+            xx = sel.sx.wrapping_sub(1 as u_int);
         } else {
-            xx = (*sel).sx;
+            xx = sel.sx;
         }
-        if py == (*sel).sy && ((*sel).sx == 0 as u_int || px > xx) {
+        if py == sel.sy && (sel.sx == 0 as u_int || px > xx) {
             return 0 as ::core::ffi::c_int;
         }
     } else {
-        if py != (*sel).sy {
+        if py != sel.sy {
             return 0 as ::core::ffi::c_int;
         }
-        if (*sel).ex < (*sel).sx {
-            if (*sel).modekeys == MODEKEY_EMACS {
-                xx = (*sel).sx.wrapping_sub(1 as u_int);
+        if sel.ex < sel.sx {
+            if sel.modekeys == MODEKEY_EMACS {
+                xx = sel.sx.wrapping_sub(1 as u_int);
             } else {
-                xx = (*sel).sx;
+                xx = sel.sx;
             }
-            if px > xx || px < (*sel).ex {
+            if px > xx || px < sel.ex {
                 return 0 as ::core::ffi::c_int;
             }
         } else {
-            if (*sel).modekeys == MODEKEY_EMACS {
-                xx = if (*sel).ex == 0 as u_int {
+            if sel.modekeys == MODEKEY_EMACS {
+                xx = if sel.ex == 0 as u_int {
                     0 as u_int
                 } else {
-                    (*sel).ex.wrapping_sub(1 as u_int)
+                    sel.ex.wrapping_sub(1 as u_int)
                 };
             } else {
-                xx = (*sel).ex;
+                xx = sel.ex;
             }
-            if px < (*sel).sx || px > xx {
+            if px < sel.sx || px > xx {
                 return 0 as ::core::ffi::c_int;
             }
         }
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn screen_select_cell(
-    mut s: *mut screen,
-    mut dst: *mut grid_cell,
-    mut src: *const grid_cell,
-) -> ::core::ffi::c_int {
-    let Some(selection) = (*s).sel.as_ref() else {
-        return 0;
+pub fn screen_select_cell(s: &screen, src: &grid_cell) -> Option<grid_cell> {
+    let Some(selection) = s.sel.as_ref() else {
+        return None;
     };
     if selection.hidden != 0 {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
-    memcpy(
-        dst as *mut ::core::ffi::c_void,
-        &raw const selection.cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    if (*dst).fg == 8 as ::core::ffi::c_int || (*dst).fg == 9 as ::core::ffi::c_int {
-        (*dst).fg = (*src).fg;
+    let mut dst = selection.cell;
+    if dst.fg == 8 as ::core::ffi::c_int || dst.fg == 9 as ::core::ffi::c_int {
+        dst.fg = src.fg;
     }
-    if (*dst).bg == 8 as ::core::ffi::c_int || (*dst).bg == 9 as ::core::ffi::c_int {
-        (*dst).bg = (*src).bg;
+    if dst.bg == 8 as ::core::ffi::c_int || dst.bg == 9 as ::core::ffi::c_int {
+        dst.bg = src.bg;
     }
-    (*dst).data = utf8_copy(&(*src).data);
-    (*dst).flags = (*src).flags;
-    if (*dst).attr as ::core::ffi::c_int & GRID_ATTR_NOATTR != 0 {
-        (*dst).attr = ((*dst).attr as ::core::ffi::c_int
-            | (*src).attr as ::core::ffi::c_int & GRID_ATTR_CHARSET)
-            as u_short;
+    dst.data = utf8_copy(&src.data);
+    dst.flags = src.flags;
+    if dst.attr as ::core::ffi::c_int & GRID_ATTR_NOATTR != 0 {
+        dst.attr = (dst.attr as ::core::ffi::c_int
+            | src.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET) as u_short;
     } else {
-        (*dst).attr =
-            ((*dst).attr as ::core::ffi::c_int | (*src).attr as ::core::ffi::c_int) as u_short;
+        dst.attr = (dst.attr as ::core::ffi::c_int | src.attr as ::core::ffi::c_int) as u_short;
     }
-    return 1 as ::core::ffi::c_int;
+    Some(dst)
 }
 unsafe fn screen_reflow(
     mut s: *mut screen,
