@@ -82,7 +82,8 @@ use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_tree_modedata {
-    observer: Weak<UnsafeCell<window_tree_modedata>>,
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
+    pub(crate) observer: Weak<UnsafeCell<window_tree_modedata>>,
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
@@ -2174,7 +2175,7 @@ unsafe fn window_tree_key(
     let mut ns: *mut session = ::core::ptr::null_mut::<session>();
     let mut nwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mode = crate::src::shared::rc::downgrade(data);
+    let mode = (*data).observer.clone();
     let mut selection = mode_tree_get_current(&*(*data).data_ptr());
     finished = mode_tree_key((*data).data.as_ref().expect("mode tree owner").clone(), c, &raw mut key, m, &raw mut x, &raw mut y);
     let Some(_mode_owner) = mode.upgrade() else {

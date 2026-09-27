@@ -161,7 +161,7 @@ unsafe fn window_panes_get_source(
         return 0 as ::core::ffi::c_int;
     }
     s = session_find_by_id((*data).source_session);
-    let next_owner = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
+    let next_owner = if s.is_null() { None } else { (*s).observer.upgrade() };
     if let Some(owner) = std::mem::replace(session_owner, next_owner) {
         session_remove_ref(owner, c"window_panes_get_source");
     }
@@ -1686,7 +1686,7 @@ unsafe fn window_panes_init(
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = window_pane_weak(wp);
-    (*data).session = rc::downgrade(s);
+    (*data).session = (*s).observer.clone();
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
     (*data).screen.mode &= !MODE_CURSOR;
     (*data).state = Some(args_make_commands_prepare(
@@ -1934,7 +1934,7 @@ mod session_observer_tests {
             let session = rc::as_ptr(&owner);
             (*session).name = c"panes-mode-session".to_owned();
             sessions_insert(&raw mut sessions, owner);
-            let observer = rc::downgrade(session);
+            let observer = (*session).observer.clone();
             let mut mode = window_panes_modedata {
                 wp: Weak::new(),
                 session: observer.clone(),
@@ -1949,7 +1949,7 @@ mod session_observer_tests {
                 zoomed: 0,
                 areas: Vec::new(),
             };
-            assert_eq!(rc::strong_count(session), 1);
+            assert_eq!((*session).observer.strong_count(), 1);
             let guard = window_panes_session(&mut mode).unwrap();
             assert_eq!(rc::as_ptr(&guard), session);
             let owner = sessions_remove(&raw mut sessions, session).unwrap();

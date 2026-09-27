@@ -108,7 +108,7 @@ fn close_notification_can_retain_the_last_window_reference() {
     unsafe {
         let w_owner = window::new();
         let w = rc::as_ptr(&w_owner);
-        let weak = rc::downgrade(w);
+        let weak = Rc::downgrade(&w_owner);
         let notified = Rc::new(Cell::new(false));
         let observed = notified.clone();
         let retained = Rc::new(std::cell::RefCell::new(None));
@@ -123,7 +123,7 @@ fn close_notification_can_retain_the_last_window_reference() {
         window_remove_ref(w_owner, c"original owner".as_ptr());
         assert!(notified.get());
         assert!(weak.upgrade().is_some());
-        assert_eq!(rc::strong_count(w), 1);
+        assert_eq!(weak.strong_count(), 1);
         events_remove_sink(sink);
         window_remove_ref(retained.borrow_mut().take().unwrap(), c"callback owner".as_ptr());
         assert!(weak.upgrade().is_none());
@@ -142,10 +142,10 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         let link = winlink_add(&mut links, 0);
         let w_owner = window::new();
         let w = rc::as_ptr(&w_owner);
-        let weak = rc::downgrade(w);
+        let weak = Rc::downgrade(&w_owner);
         winlink_set_window(link, w);
         window_remove_ref(w_owner, c"creator".as_ptr());
-        assert_eq!(rc::strong_count(w), 1);
+        assert_eq!(weak.strong_count(), 1);
         let count = Rc::new(Cell::new(0));
         let calls = count.clone();
         let retained = Rc::new(std::cell::RefCell::new(None));
@@ -158,7 +158,7 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         winlink_remove(&mut links, link);
         assert_eq!(count.get(), 1);
         assert!(links.storage.is_none());
-        assert_eq!(rc::strong_count(w), 1);
+        assert_eq!(weak.strong_count(), 1);
         events_remove_sink(sink);
         window_remove_ref(retained.borrow_mut().take().unwrap(), c"close observer".as_ptr());
         assert!(weak.upgrade().is_none());

@@ -51,7 +51,10 @@ pub unsafe fn key_bindings_get_table(
     }
     let mut value = key_table::empty();
     value.name = name.to_owned();
-    let table = std::rc::Rc::new(std::cell::UnsafeCell::new(value));
+    let table = std::rc::Rc::new_cyclic(|observer| {
+        value.observer = observer.clone();
+        std::cell::UnsafeCell::new(value)
+    });
     key_tables_insert(&raw mut key_tables, table.clone());
     Some(table)
 }
@@ -75,7 +78,7 @@ pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::UnsafeCell<key
     let mut table = key_bindings_first_table();
     while !table.is_null() {
         tables.push(
-            crate::src::shared::rc::downgrade(table)
+            (*table).observer
                 .upgrade()
                 .expect("live key table"),
         );
@@ -1078,7 +1081,7 @@ mod ownership_tests {
             key_bindings_add(name, 65, std::ptr::null(), 1, Some(original));
             let table_owner = key_bindings_get_table(name.as_ptr(), 0).unwrap();
             let table = rc::as_ptr(&table_owner);
-            let table_lifetime = rc::downgrade(table);
+            let table_lifetime = (*table).observer.clone();
             let retained_table = table_lifetime.upgrade().unwrap();
             let command = key_bindings_get(&*table, 65).unwrap().command();
             key_bindings_add(name, 65, std::ptr::null(), 0, Some(cmd_list_new()));

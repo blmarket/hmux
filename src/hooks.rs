@@ -291,7 +291,7 @@ unsafe fn hooks_insert_event(
         fs: cmd_find_state::default(),
         formats,
         oo,
-        client: if c.is_null() { Weak::new() } else { rc::downgrade(c) },
+        client: if c.is_null() { Weak::new() } else { (*c).observer.clone() },
         expand,
     };
     event_payload_get_target(ep, &mut hd.fs);
@@ -381,7 +381,7 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
         oo: std::ptr::null_mut(),
         client: {
             let client = cmdq_get_client(item);
-            if client.is_null() { Weak::new() } else { rc::downgrade(client) }
+            if client.is_null() { Weak::new() } else { (*client).observer.clone() }
         },
         expand: 0,
     };

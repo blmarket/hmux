@@ -146,6 +146,7 @@ pub struct window_pane_prompt {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub id: u_int,
     pub active_point: u_int,

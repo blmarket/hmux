@@ -1174,7 +1174,7 @@ pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) -
 }
 unsafe fn window_before_release(w: *mut window, from: *const ::core::ffi::c_char) {
     // Notify while a strong reference still exists: callbacks may retain w.
-    if crate::src::shared::rc::strong_count(w) == 1 {
+    if (*w).observer.strong_count() == 1 {
         events_fire_window(c"window-closed".as_ptr(), w);
     }
     log_debug(format_args!(
@@ -3331,7 +3331,7 @@ pub unsafe fn window_pane_set_prompt(
         c: if c.is_null() {
             Weak::new()
         } else {
-            crate::src::shared::rc::downgrade(c)
+            (*c).observer.clone()
         },
         inputcb,
         freecb,
@@ -3426,7 +3426,7 @@ pub unsafe fn window_pane_prompt_key(
         wpp.try_borrow_mut().expect("live prompt callback record").c = if c.is_null() {
             Weak::new()
         } else {
-            crate::src::shared::rc::downgrade(c)
+            (*c).observer.clone()
         };
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -4097,7 +4097,7 @@ pub unsafe fn window_pane_start_input(
     let mut cdata = Box::new(window_pane_input_data {
         item: NonNull::new(item).expect("pane input command"),
         client: Some(
-            crate::src::shared::rc::downgrade(c)
+            (*c).observer
                 .upgrade()
                 .expect("live pane input client"),
         ),
@@ -4808,9 +4808,9 @@ mod pane_input_owner_tests {
         let file = rc::as_ptr(&owner);
         (*file).wait_item = item;
         (*file).wait_client = Some(Rc::downgrade(client));
-        data.file = rc::downgrade(file);
+        data.file = (*file).observer.clone();
         (*file).cb = data.into_callback();
-        item.wait_file = Some(rc::downgrade(file));
+        item.wait_file = Some((*file).observer.clone());
         item.flags = CMDQ_WAITING;
         owner
     }
@@ -4823,7 +4823,7 @@ mod pane_input_owner_tests {
             let mut item = cmdq_item::empty();
             let owner = waiting_input(&mut item, &client);
             let file = rc::as_ptr(&owner);
-            let file_observer = rc::downgrade(file);
+            let file_observer = (*file).observer.clone();
             // Cancellation was already requested. Further progress must drain
             // the bytes and keep waiting until the peer sends its terminal event.
             (*file).closed = 1;
@@ -4835,7 +4835,7 @@ mod pane_input_owner_tests {
             assert_ne!(item.flags & CMDQ_WAITING, 0);
             assert!((*file).cb.is_some());
             assert_eq!(
-                rc::strong_count(file),
+                (*file).observer.strong_count(),
                 1,
                 "the callback only weakly observes its file"
             );
@@ -4879,7 +4879,7 @@ mod pane_input_owner_tests {
                 let file = rc::as_ptr(&file_owner);
                 assert!(!file.is_null());
                 assert!((*file).cb.is_some());
-                let file_observer = rc::downgrade(file);
+                let file_observer = (*file).observer.clone();
                 drop(owner);
                 if cancel {
                     crate::src::file::file_cancel_cmdq_wait(file);
@@ -4910,7 +4910,7 @@ mod pane_input_owner_tests {
                 let mut item = cmdq_item::empty();
                 let owner = waiting_input(&mut item, &client);
             let file = rc::as_ptr(&owner);
-                let file_observer = rc::downgrade(file);
+                let file_observer = (*file).observer.clone();
                 (*file).error = libc::EBADF;
                     drop(client);
                 file_fire_done(file);
@@ -4941,7 +4941,7 @@ mod pane_stream_lifecycle_tests {
             (*pane).fd = -1;
             (*pane).pipe_fd = -1;
             let observer = window_pane_weak(pane);
-            assert_eq!(rc::strong_count(pane), 1);
+            assert_eq!((*pane).observer.strong_count(), 1);
             let guard = window_pane_upgrade(&observer).unwrap();
             assert_eq!(rc::as_ptr(&guard), pane);
 
@@ -5018,8 +5018,8 @@ mod zoom_teardown_tests {
         (*pane).screen = &raw mut (*pane).base;
         (*pane).flags = PANE_ZOOMED;
         (*w).active = pane;
-        (*w).panes.push_back(rc::downgrade(pane));
-        (*w).z_index.push_back(rc::downgrade(pane));
+        (*w).panes.push_back((*pane).observer.clone());
+        (*w).z_index.push_back((*pane).observer.clone());
         let mut saved = layout_create_cell();
         layout_set_size(&mut *saved, 40, 24, 0, 0);
         layout_make_leaf(&mut *saved, pane);
@@ -5039,13 +5039,14 @@ mod zoom_teardown_tests {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
             let pane = (*w).active;
-            let tree_owner = std::rc::Rc::new(std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
+            let tree_owner = std::rc::Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
+                observer: observer.clone(),
                 wp: window_pane_weak(pane),
                 zoomed: 0,
                 ..Default::default()
             }));
             let tree = rc::as_ptr(&tree_owner);
-            let observed = rc::downgrade(tree);
+            let observed = (*tree).observer.clone();
             (*pane).flags |= PANE_DESTROYED;
             assert!(window_pane_upgrade(&(*tree).wp).is_none());
 
@@ -5063,8 +5064,8 @@ mod zoom_teardown_tests {
             for typed in [false, true] {
                 let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
-                let observer = rc::downgrade(w);
-                let pane_observer = rc::downgrade((*w).active);
+                let observer = (*w).observer.clone();
+                let pane_observer = (*(*w).active).observer.clone();
                 let resized = Rc::new(Cell::new(0));
                 let resize_count = resized.clone();
                 let resize_sink = events_add_sink(

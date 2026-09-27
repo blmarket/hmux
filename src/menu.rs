@@ -620,7 +620,7 @@ pub unsafe fn menu_display(
     } else {
         (*fs).w
     };
-    let window = crate::src::shared::rc::downgrade(w);
+    let window = (*w).observer.clone();
     let sx = menu.width.wrapping_add(4);
     let sy = menu.count.wrapping_add(2);
     if sx >= (*w).sx {

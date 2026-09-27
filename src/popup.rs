@@ -382,7 +382,7 @@ impl PopupRenderSnapshot {
             client: if client_owner_ptr(&(*pd).c).is_null() {
                 Weak::new()
             } else {
-                crate::src::shared::rc::downgrade(client_owner_ptr(&(*pd).c))
+                (*client_owner_ptr(&(*pd).c)).observer.clone()
             },
             palette: (*pd).palette.downgrade(),
             defaults: (*pd).defaults,
@@ -1404,7 +1404,7 @@ mod tests {
         unsafe {
             let client_owner = client::new();
             let c = rc::as_ptr(&client_owner);
-            let client_observer = rc::downgrade(c);
+            let client_observer = (*c).observer.clone();
             let mut item = Box::new(cmdq_item::empty());
             item.client = c;
             item.flags = CMDQ_WAITING;

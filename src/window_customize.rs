@@ -115,6 +115,8 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
 
 #[repr(C)]
 pub struct window_customize_modedata {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
+    pub(crate) observer: Weak<std::cell::UnsafeCell<window_customize_modedata>>,
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
@@ -177,7 +179,7 @@ enum CustomizeEnvironment {
 
 impl CustomizeEnvironment {
     unsafe fn session(s: *mut session) -> Self {
-        Self::Session(crate::src::shared::rc::downgrade(s))
+        Self::Session((*s).observer.clone())
     }
 
     fn matches(&self, other: &Self) -> bool {
@@ -2935,7 +2937,8 @@ unsafe fn window_customize_init(
     } else {
         CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
     };
-    let owner = Rc::new(std::cell::UnsafeCell::new(window_customize_modedata {
+    let owner = Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(window_customize_modedata {
+        observer: observer.clone(),
         wp: window_pane_weak(wp),
         dead: 0,
         data: None,
@@ -3295,7 +3298,7 @@ unsafe fn window_customize_set_environment(
     let value = envent.unwrap().value.clone().unwrap_or_default();
     let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
-        mode: crate::src::shared::rc::downgrade(data)
+        mode: (*data).observer
             .upgrade()
             .expect("live customize mode"),
     });
@@ -3427,7 +3430,7 @@ unsafe fn window_customize_add_option(
     new_item.oo = oo;
     let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
-        mode: crate::src::shared::rc::downgrade(data)
+        mode: (*data).observer
             .upgrade()
             .expect("live customize mode"),
     });
@@ -3530,7 +3533,7 @@ unsafe fn window_customize_add_environment(
     new_item.environ = Some(target);
     let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
-        mode: crate::src::shared::rc::downgrade(data)
+        mode: (*data).observer
             .upgrade()
             .expect("live customize mode"),
     });
@@ -3893,7 +3896,7 @@ unsafe fn window_customize_set_option(
         }
         let owner = RefBox::new(CustomizePromptItem {
             item: new_item,
-            mode: crate::src::shared::rc::downgrade(data)
+            mode: (*data).observer
                 .upgrade()
                 .expect("live customize mode"),
         });
@@ -4031,7 +4034,7 @@ unsafe fn window_customize_set_array_key(
     window_customize_set_item_array_key(&mut *new_item, item.array_key.as_deref());
     let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
-        mode: crate::src::shared::rc::downgrade(data)
+        mode: (*data).observer
             .upgrade()
             .expect("live customize mode"),
     });
@@ -4268,7 +4271,7 @@ unsafe fn window_customize_set_key(
         new_item.key = key;
         let owner = RefBox::new(CustomizePromptItem {
             item: new_item,
-            mode: crate::src::shared::rc::downgrade(data)
+            mode: (*data).observer
                 .upgrade()
                 .expect("live customize mode"),
         });
@@ -4296,7 +4299,7 @@ unsafe fn window_customize_set_key(
         new_item.key = key;
         let owner = RefBox::new(CustomizePromptItem {
             item: new_item,
-            mode: crate::src::shared::rc::downgrade(data)
+            mode: (*data).observer
                 .upgrade()
                 .expect("live customize mode"),
         });
@@ -4439,7 +4442,7 @@ unsafe fn window_customize_add_key(
     window_customize_set_table(&mut *new_item, Some(table));
     let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
-        mode: crate::src::shared::rc::downgrade(data)
+        mode: (*data).observer
             .upgrade()
             .expect("live customize mode"),
     });
@@ -4937,7 +4940,7 @@ unsafe fn window_customize_key(
                     prompt_bytes.extend_from_slice(b" to default? ");
                     let reset_prompt =
                         CString::new(prompt_bytes).expect("C string parts have no NUL");
-                    let owner = crate::src::shared::rc::downgrade(data)
+                    let owner = (*data).observer
                         .upgrade()
                         .expect("live customize mode");
                     let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
@@ -4962,7 +4965,7 @@ unsafe fn window_customize_key(
                 if !(tagged == 0 as u_int) {
                     let reset_prompt = CString::new(format!("Reset {tagged} tagged to default? "))
                         .expect("formatted number has no NUL");
-                    let owner = crate::src::shared::rc::downgrade(data)
+                    let owner = (*data).observer
                         .upgrade()
                         .expect("live customize mode");
                     let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
@@ -5010,7 +5013,7 @@ unsafe fn window_customize_key(
                     prompt_bytes.extend_from_slice(b"? ");
                     let prompt =
                         CString::new(prompt_bytes).expect("C strings have no interior NUL");
-                    let owner = crate::src::shared::rc::downgrade(data)
+                    let owner = (*data).observer
                         .upgrade()
                         .expect("live customize mode");
                     let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
@@ -5034,7 +5037,7 @@ unsafe fn window_customize_key(
                 tagged = mode_tree_count_tagged((*data).data_ptr());
                 if !(tagged == 0 as u_int) {
                     let prompt = CString::new(format!("Unset {tagged} tagged? ")).unwrap();
-                    let owner = crate::src::shared::rc::downgrade(data)
+                    let owner = (*data).observer
                         .upgrade()
                         .expect("live customize mode");
                     let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
@@ -5128,7 +5131,8 @@ mod item_owner_tests {
             PROMPT_CONTINUE
         }
         unsafe {
-            let owner = Rc::new(std::cell::UnsafeCell::new(window_customize_modedata {
+            let owner = Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(window_customize_modedata {
+        observer: observer.clone(),
                 wp: Weak::new(),
                 dead: 0,
                 data: None,
@@ -5167,7 +5171,7 @@ mod item_owner_tests {
                 window_customize_add_item(&mut (*data).item_list, window_customize_itemdata::new());
             }
             assert!(first_owner.is(&(&(*data).item_list)[0]));
-            let mode_observer = crate::src::shared::rc::downgrade(data);
+            let mode_observer = (*data).observer.clone();
             let prompt_owner = RefBox::new(CustomizePromptItem {
                 item: window_customize_copy_item(&snapshot),
                 mode: mode_observer.upgrade().unwrap(),
@@ -5303,7 +5307,7 @@ mod environment_lifetime_tests {
                 Some(c"value")
             );
             assert!(target.resolve().is_some());
-            let lifetime = rc::downgrade(session);
+            let lifetime = (*session).observer.clone();
             drop(guard);
             assert!(lifetime.upgrade().is_some());
             crate::src::reactor::event_loop();
@@ -5331,7 +5335,7 @@ mod environment_lifetime_tests {
             assert!(guard.get().unwrap().find(c"NAME").is_none());
             drop((*session).environ.take());
             assert!(guard.get().is_none());
-            let lifetime = rc::downgrade(session);
+            let lifetime = (*session).observer.clone();
             drop(guard);
             drop(owner);
             assert!(lifetime.upgrade().is_some());

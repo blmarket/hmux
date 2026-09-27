@@ -556,8 +556,8 @@ mod tests {
             let second_owner = window::new();
         let second = rc::as_ptr(&second_owner);
             (*second).id = 22;
-            let first_observer = rc::downgrade(first);
-            let second_observer = rc::downgrade(second);
+            let first_observer = (*first).observer.clone();
+            let second_observer = (*second).observer.clone();
             let closed = Rc::new(RefCell::new(Vec::new()));
             let observed = closed.clone();
             let sink = events_add_sink(
@@ -651,9 +651,9 @@ mod tests {
             let target_owner = window::new();
         let target = rc::as_ptr(&target_owner);
             (*target).id = 33;
-            let first_observer = rc::downgrade(first);
-            let second_observer = rc::downgrade(second);
-            let target_observer = rc::downgrade(target);
+            let first_observer = (*first).observer.clone();
+            let second_observer = (*second).observer.clone();
+            let target_observer = (*target).observer.clone();
             let target_during_cleanup = target_observer.clone();
             let closed = Rc::new(RefCell::new(Vec::new()));
             let observed = closed.clone();
@@ -702,7 +702,7 @@ mod tests {
             let window_owner = window::new();
         let window = rc::as_ptr(&window_owner);
             (*window).id = 44;
-            let observer = rc::downgrade(window);
+            let observer = (*window).observer.clone();
             let observed = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
             for _ in 0..2 {

@@ -1012,7 +1012,7 @@ pub unsafe fn args_make_commands_prepare(
     state.pi.c = tc;
     if !state.pi.c.is_null() {
         state.client = Some(
-            crate::src::shared::rc::downgrade(state.pi.c)
+            (*state.pi.c).observer
                 .upgrade()
                 .expect("live command client"),
         );

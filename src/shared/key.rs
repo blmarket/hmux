@@ -1485,6 +1485,8 @@ impl key_event {
 
 #[repr(C)]
 pub struct key_table {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<key_table>>,
     pub name: std::ffi::CString,
     pub activity_time: timeval,
     pub key_bindings: key_bindings,
@@ -1495,6 +1497,7 @@ pub struct key_table {
 impl key_table {
     pub fn empty() -> Self {
         Self {
+            observer: std::rc::Weak::new(),
             name: Default::default(),
             activity_time: Default::default(),
             key_bindings: key_bindings::default(),

@@ -361,7 +361,7 @@ unsafe fn window_client_build(
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize];
         if !((*c).session.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            let client_owner = crate::src::shared::rc::downgrade(c)
+            let client_owner = (*c).observer
                 .upgrade()
                 .expect("live sorted client");
             window_client_add_item(&mut (*data).items, &client_owner);

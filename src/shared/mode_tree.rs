@@ -24,6 +24,8 @@ pub struct mode_tree_help_info {
 }
 
 pub struct mode_tree_data {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
+    pub(crate) observer: Weak<UnsafeCell<mode_tree_data>>,
     pub dead: ::core::ffi::c_int,
     pub zoomed: ::core::ffi::c_int,
     pub wp: Weak<UnsafeCell<window_pane>>,
@@ -65,6 +67,7 @@ pub struct mode_tree_data {
 impl Default for mode_tree_data {
     fn default() -> Self {
         Self {
+            observer: Weak::new(),
             dead: 0,
             zoomed: 0,
             wp: Weak::new(),

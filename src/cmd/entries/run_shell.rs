@@ -245,7 +245,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
-    cdata.s = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
+    cdata.s = if s.is_null() { None } else { (*s).observer.upgrade() };
     if !delay.is_null() {
         // The pinned tmux build treats negative, nonfinite and out-of-range
         // delays as expired. Rust's saturating float casts would instead turn

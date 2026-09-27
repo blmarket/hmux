@@ -69,6 +69,7 @@ pub struct winlink_entry {
 #[repr(C)]
 /// Rc-owned window record; retain/release preserves pre-close notifications.
 pub struct window {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window>>,
     pub id: u_int,
     pub latest: *mut ::core::ffi::c_void,

@@ -108,7 +108,7 @@ pub(crate) unsafe fn cmdq_set_wait_file(item: &mut cmdq_item, cf: *mut client_fi
         item.wait_file.is_none(),
         "queue item already owns a file wait"
     );
-    item.wait_file = Some(crate::src::shared::rc::downgrade(cf));
+    item.wait_file = Some((*cf).observer.clone());
 }
 
 pub(crate) fn cmdq_clear_wait_file(item: &mut cmdq_item, cf: *mut client_file) {

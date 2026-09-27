@@ -223,7 +223,10 @@ unsafe fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
     }
 }
 fn mode_tree_alloc_data() -> std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>> {
-    Rc::new(UnsafeCell::new(mode_tree_data::default()))
+    Rc::new_cyclic(|observer| UnsafeCell::new(mode_tree_data {
+        observer: observer.clone(),
+        ..Default::default()
+    }))
 }
 
 #[inline]
@@ -235,7 +238,7 @@ unsafe fn mode_tree_clear_lines(mut mtd: *mut mode_tree_data) {
     (*mtd).lines = Vec::new();
 }
 unsafe fn mode_tree_build_lines(mtd: *mut mode_tree_data, items: &[ModeTreeItemRef], depth: u_int) {
-    let _tree = crate::src::shared::rc::downgrade(mtd)
+    let _tree = (*mtd).observer
         .upgrade()
         .expect("live mode tree");
     (*mtd).depth = depth;
@@ -466,7 +469,7 @@ pub unsafe fn mode_tree_each_tagged(
     key: key_code,
     current: i32,
 ) {
-    let _tree = crate::src::shared::rc::downgrade(mtd)
+    let _tree = (*mtd).observer
         .upgrade()
         .expect("live mode tree");
     let mut fired = false;
@@ -585,7 +588,7 @@ unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
     }
 }
 pub unsafe fn mode_tree_build(mut mtd: *mut mode_tree_data) {
-    let _tree = crate::src::shared::rc::downgrade(mtd)
+    let _tree = (*mtd).observer
         .upgrade()
         .expect("live mode tree");
     let mut s: *mut screen = &raw mut (*mtd).screen;
@@ -1431,7 +1434,7 @@ pub unsafe fn mode_tree_set_prompt(
         c: if c.is_null() {
             Weak::new()
         } else {
-            crate::src::shared::rc::downgrade(c)
+            (*c).observer.clone()
         },
         inputcb,
         freecb,
@@ -1513,7 +1516,7 @@ fn mode_tree_search_previous(
 }
 
 unsafe fn mode_tree_search(mtd: *mut mode_tree_data, forward: bool) -> Option<ModeTreeItemRef> {
-    let _tree = crate::src::shared::rc::downgrade(mtd)
+    let _tree = (*mtd).observer
         .upgrade()
         .expect("live mode tree");
     let search = (*mtd).search.clone()?;
@@ -1692,10 +1695,10 @@ unsafe fn mode_tree_display_menu(
     let mut menu = menu_create(&title);
     menu_add_items(&mut menu, items, c);
     drop(title);
-    let tree = crate::src::shared::rc::downgrade(mtd)
+    let tree = (*mtd).observer
         .upgrade()
         .expect("live mode tree");
-    let client = crate::src::shared::rc::downgrade(c);
+    let client = (*c).observer.clone();
     if x >= (*menu)
         .width
         .wrapping_add(4 as u_int)
@@ -1904,14 +1907,14 @@ pub unsafe fn mode_tree_key(
         return 1 as ::core::ffi::c_int;
     }
     if let Some(prompt) = (*mtd).prompt.as_ref().map(|prompt| prompt.downgrade()) {
-        let tree = crate::src::shared::rc::downgrade(mtd);
+        let tree = (*mtd).observer.clone();
         redraw = 0 as ::core::ffi::c_int;
         let mtp = (*mtd).prompt_data.clone();
         if let Some(mtp) = &mtp {
             mtp.try_borrow_mut().expect("live prompt callback record").c = if c.is_null() {
                 Weak::new()
             } else {
-                crate::src::shared::rc::downgrade(c)
+                (*c).observer.clone()
             };
         }
         if *key & KEYC_MASK_KEY == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -2593,7 +2596,7 @@ mod pane_observer_tests {
             let pane = window_pane::new();
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
-            let tree_observer = rc::downgrade(tree);
+            let tree_observer = (*tree).observer.clone();
             (*tree).wp = Rc::downgrade(&pane);
             assert_eq!(Rc::strong_count(&pane), 1);
             drop(pane);
@@ -2776,7 +2779,7 @@ mod menu_callback_owner_tests {
             unsafe {
                 let mtd_owner = mode_tree_alloc_data();
             let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
-                let observer = rc::downgrade(mtd);
+                let observer = (*mtd).observer.clone();
                 (*mtd).zoomed = 1;
                 one_line(&observer.upgrade().unwrap());
                 let calls = Rc::new(Cell::new(0));
@@ -2833,7 +2836,7 @@ mod row_owner_tests {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
-            let observer = rc::downgrade(tree);
+            let observer = (*tree).observer.clone();
             (*tree).zoomed = 1;
             let parent = mode_tree_add(tree, None, ModeTreeItemData::None, 1, c"parent", None, 1);
             let name = CString::new(b"child \xff".to_vec()).unwrap();
@@ -2924,7 +2927,7 @@ mod row_owner_tests {
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
             (*tree).zoomed = 1;
-            let observer = rc::downgrade(tree);
+            let observer = (*tree).observer.clone();
             let first = mode_tree_add(tree, None, ModeTreeItemData::None, 1, c"first", None, 1);
             first.borrow_mut().tagged = 1;
             mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);

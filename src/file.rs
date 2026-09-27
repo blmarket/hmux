@@ -120,7 +120,7 @@ unsafe fn file_set_cmdq_wait(
     assert!(!item.is_null());
     assert!(owner.wait_item.is_null());
     owner.wait_item = item;
-    owner.wait_client = (!(*item).client.is_null()).then(|| rc::downgrade((*item).client));
+    owner.wait_client = (!(*item).client.is_null()).then(|| (*(*item).client).observer.clone());
     owner.cancel_data = cancel_cb;
     cmdq_set_wait_file(&mut *item, cf);
 }
@@ -572,7 +572,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, None);
     cf = rc::as_ptr(&transfer_owner);
     file_set_cmdq_wait(cf, item, cancel_cb);
-    (*cf).cb = callback(crate::src::shared::rc::downgrade(cf));
+    (*cf).cb = callback((*cf).observer.clone());
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;

@@ -410,7 +410,7 @@ pub unsafe fn session_add_ref(s: *mut session, from: *const ::core::ffi::c_char)
         "session_add_ref",
         log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
         log_cstr((from) as *const _),
-        crate::src::shared::rc::strong_count(s) as ::core::ffi::c_int
+        (*s).observer.strong_count() as ::core::ffi::c_int
     ));
     owner
 }
@@ -649,10 +649,10 @@ pub unsafe fn session_is_linked(mut s: *mut session, mut w: *mut window) -> ::co
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if !sg.is_null() {
-        return (crate::src::shared::rc::strong_count(w) != session_group_count(sg) as usize)
+        return ((*w).observer.strong_count() != session_group_count(sg) as usize)
             as ::core::ffi::c_int;
     }
-    return (crate::src::shared::rc::strong_count(w) != 1) as ::core::ffi::c_int;
+    return ((*w).observer.strong_count() != 1) as ::core::ffi::c_int;
 }
 unsafe fn session_next_alert(mut wl: *mut winlink) -> *mut winlink {
     while !wl.is_null() {

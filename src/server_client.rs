@@ -3155,7 +3155,7 @@ unsafe fn server_client_handle_menu_key(
     let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) else {
         return 0;
     };
-    let window = crate::src::shared::rc::downgrade(w);
+    let window = (*w).observer.clone();
     if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
         || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -5444,9 +5444,9 @@ mod key_event_owner_tests {
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
             queued.client = pointer;
             drop(QueuedKeyEvent(queued, Some(owner.clone())));
-            assert_eq!(crate::src::shared::rc::strong_count(pointer), 2);
+            assert_eq!((*pointer).observer.strong_count(), 2);
             crate::src::reactor::event_loop();
-            assert_eq!(crate::src::shared::rc::strong_count(pointer), 1);
+            assert_eq!((*pointer).observer.strong_count(), 1);
         }
     }
 }

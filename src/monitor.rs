@@ -74,7 +74,7 @@ unsafe fn monitor_get_session(ms: *mut monitor_set, c: *mut client) -> Option<Rc
             return None;
         }
     };
-    if s.is_null() { None } else { rc::downgrade(s).upgrade() }
+    if s.is_null() { None } else { (*s).observer.upgrade() }
 }
 
 unsafe fn monitor_create_formats(
@@ -149,9 +149,9 @@ unsafe fn monitor_report(
     (*me).fire_count = (*me).fire_count.wrapping_add(1);
     (*me).fire_time = current_time;
     change.c = (*ms).client.clone();
-    change.s = (!s.is_null()).then(|| rc::downgrade(s));
+    change.s = (!s.is_null()).then(|| (*s).observer.clone());
     change.wl = wl;
-    change.wp = (!wp.is_null()).then(|| rc::downgrade(wp));
+    change.wp = (!wp.is_null()).then(|| (*wp).observer.clone());
     // The callback may destroy the monitor set while it is running.
     let callback = (*ms).cb.clone();
     callback(&change);
@@ -649,13 +649,13 @@ unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
 pub unsafe fn monitor_create_client(mut c: *mut client, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
-    (*ms).client = (!c.is_null()).then(|| rc::downgrade(c));
+    (*ms).client = (!c.is_null()).then(|| (*c).observer.clone());
     return ms as *mut monitor_set;
 }
 pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
-    (*ms).session = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
+    (*ms).session = if s.is_null() { None } else { (*s).observer.upgrade() };
     return ms;
 }
 unsafe fn monitor_clear(mut ms: *mut monitor_set) {
@@ -1186,7 +1186,7 @@ mod last_owner_tests {
             let session = rc::as_ptr(&owner);
             (*session).name = c"monitor-release-test".to_owned();
             sessions_insert(&raw mut sessions, owner);
-            let observer = rc::downgrade(session);
+            let observer = (*session).observer.clone();
             let set = monitor_create_session(session, std::rc::Rc::new(|_| {}));
             let mut item = monitor_item::empty();
             item.id = u32::MAX;

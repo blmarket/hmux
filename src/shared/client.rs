@@ -118,6 +118,7 @@ mod tests {
 }
 
 pub struct client {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub name: Option<std::ffi::CString>,
     pub peer: *mut tmuxpeer,
@@ -281,6 +282,7 @@ pub struct client_files {
 }
 
 pub struct client_file {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
     pub c: Option<ClientOwner>,
     pub peer: *mut tmuxpeer,
@@ -411,7 +413,7 @@ mod retained_client_tests {
             for cancel in [false, true] {
                 let initial = client::new();
                 let ptr = rc::as_ptr(&initial);
-                let observer = rc::downgrade(ptr);
+                let observer = (*ptr).observer.clone();
                 let owner = ClientOwner::retain(ptr).unwrap();
                 drop(initial);
                 assert_eq!(owner.as_ptr(), ptr);

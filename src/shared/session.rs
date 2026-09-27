@@ -9,6 +9,7 @@ use super::window::{winlink, winlink_stack, winlinks};
 
 #[repr(C)]
 pub struct session {
+    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub id: u_int,
     pub name: std::ffi::CString,
@@ -140,10 +141,11 @@ mod retained_session_tests {
     fn final_reference_release_defers_cleanup_until_dispatch_or_cancellation() {
         unsafe {
             for cancel in [false, true] {
-                let ptr = rc::new(session::empty());
-                let observer = rc::downgrade(ptr);
+                let initial = session::new();
+                let ptr = rc::as_ptr(&initial);
+                let observer = (*ptr).observer.clone();
                 let owner = observer.upgrade().unwrap();
-                rc::release(ptr);
+                drop(initial);
                 assert_eq!(rc::as_ptr(&owner), ptr);
                 crate::src::session::session_remove_ref(owner, c"owner-test");
                 assert_eq!(observer.strong_count(), 1);

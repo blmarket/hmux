@@ -273,7 +273,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             None
         } else {
             Some(
-                crate::src::shared::rc::downgrade(c)
+                (*c).observer
                     .upgrade()
                     .expect("live source-file client"),
             )
