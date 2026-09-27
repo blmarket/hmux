@@ -1144,7 +1144,7 @@ unsafe fn server_client_is_default_key_table(
         server_client_get_key_table(c),
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
+pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<std::cell::UnsafeCell<client>> {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
@@ -1198,12 +1198,12 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
         move |_, _| unsafe { server_client_exit_timer(c as *mut ::core::ffi::c_void) },
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
-    clients.push_back(owner);
+    clients.push_back(owner.clone());
     log_debug(format_args!(
         "new client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
-    return c;
+    owner
 }
 pub unsafe fn server_client_open(mut c: *mut client) -> Result<(), CString> {
     let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();

@@ -314,7 +314,8 @@ pub(crate) unsafe fn server_start(
         }
     }
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
-        c = server_client_create(fd);
+        let owner = server_client_create(fd);
+        c = owner.get();
     } else {
         options_set_number(
             global_options,
@@ -543,7 +544,8 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
         close(newfd);
         return;
     }
-    c = server_client_create(newfd);
+    let owner = server_client_create(newfd);
+    c = owner.get();
     if server_acl_join(c) == 0 {
         server_client_set_exit_message(&mut *c, Some(CString::new("access not allowed").unwrap()));
         (*c).retval = 1 as ::core::ffi::c_int;
