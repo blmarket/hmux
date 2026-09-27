@@ -1039,7 +1039,9 @@ pub(super) unsafe fn format_add_window_neighbour(
     format_add(nft, key.as_ptr(), |out| {
         write!(out, "{}", ((wl == (*s).curw) as ::core::ffi::c_int) as i32)
     });
-    o = options_first(options_owner_ptr(&mut (*(*wl).window_ptr()).options));
+    let o_root = options_owner_ptr(&mut (*(*wl).window_ptr()).options);
+    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+    o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
         oname = options_name(&*(o)).as_ptr();
         if *oname as ::core::ffi::c_int == '@' as i32 {
@@ -1052,7 +1054,7 @@ pub(super) unsafe fn format_add_window_neighbour(
             );
             format_add_cstr(nft, &prefixed, &oval);
         }
-        o = options_next(o);
+        o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     }
 }
 pub(super) unsafe fn format_loop_windows(
@@ -1403,7 +1405,7 @@ pub(super) unsafe fn format_loop_add_option(
             )
         },
     );
-    if options_next(o).is_null() {
+    if !crate::src::options::options_iter(&*(*o).owner).any(|entry| entry.name.as_bytes() > (*o).name.as_bytes()) {
         format_add(
             nft,
             b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1557,7 +1559,7 @@ pub(super) unsafe fn format_loop_add_array_item(
             )
         },
     );
-    if options_array_next(a).is_null() && options_next(o).is_null() {
+    if options_array_next(a).is_null() && !crate::src::options::options_iter(&*(*o).owner).any(|entry| entry.name.as_bytes() > (*o).name.as_bytes()) {
         format_add(
             nft,
             b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1629,7 +1631,9 @@ pub(super) unsafe fn format_loop_options(
     if oo.is_null() {
         return c"".to_owned();
     }
-    o = options_first(oo);
+    let o_root = oo;
+    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+    o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
         n = 0 as u_int;
         if options_is_array(o) != 0 {
@@ -1642,7 +1646,7 @@ pub(super) unsafe fn format_loop_options(
         if options_is_array(o) == 0 || n == 0 as u_int {
             format_loop_add_option(es, fmt, &mut buffer, o, n, i);
             i = i.wrapping_add(1);
-            o = options_next(o);
+            o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         } else {
             a = options_array_first(o);
             while !a.is_null() {
@@ -1650,7 +1654,7 @@ pub(super) unsafe fn format_loop_options(
                 i = i.wrapping_add(1);
                 a = options_array_next(a);
             }
-            o = options_next(o);
+            o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         }
     }
     CString::new(buffer).expect("format loop output contains no NUL")

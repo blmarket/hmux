@@ -257,11 +257,11 @@ impl Drop for options {
     fn drop(&mut self) {
         unsafe {
             // Preserve value-before-monitor cleanup and the existing key order.
-            let mut entry = options_first(self);
-            while !entry.is_null() {
-                let next = options_next(entry);
-                options_remove(entry);
-                entry = next;
+            let names: Vec<_> = options_iter(self).map(|entry| entry.name.clone()).collect();
+            for name in names {
+                if let Some(entry) = options_get_only_mut(self, &name) {
+                    options_remove(entry);
+                }
             }
         }
     }
@@ -273,22 +273,11 @@ pub unsafe fn options_get_parent(mut oo: *mut options) -> *mut options {
 pub unsafe fn options_set_parent(mut oo: *mut options, mut parent: *mut options) {
     (*oo).parent = parent;
 }
-pub unsafe fn options_first(mut oo: *mut options) -> *mut options_entry {
-    (*oo)
-        .tree
-        .values_mut()
-        .next()
-        .map(|entry| &mut **entry as *mut options_entry)
-        .unwrap_or(std::ptr::null_mut())
+pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = &options_entry> {
+    oo.tree.values().map(Box::as_ref)
 }
-pub unsafe fn options_next(mut o: *mut options_entry) -> *mut options_entry {
-    let key = (*o).name.as_bytes();
-    (*(*o).owner)
-        .tree
-        .range_mut::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
-        .next()
-        .map(|(_, entry)| &mut **entry as *mut options_entry)
-        .unwrap_or(std::ptr::null_mut())
+pub fn options_iter_mut(oo: &mut options) -> impl DoubleEndedIterator<Item = &mut options_entry> {
+    oo.tree.values_mut().map(Box::as_mut)
 }
 pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
     let key = if oo.tree.contains_key(name.to_bytes()) {

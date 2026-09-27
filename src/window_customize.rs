@@ -44,10 +44,9 @@ use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_first, options_array_get, options_array_get_index, options_array_item_key,
     options_array_next, options_array_set, options_create, options_default,
-    options_default_to_cstring, options_first, options_free, options_from_string, options_get,
+    options_default_to_cstring, options_free, options_from_string, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
-    options_get_only, options_get_parent, options_match_owned, options_name, options_next,
-    options_owner, options_push_changes, options_remove_or_default, options_set_number,
+    options_get_only, options_get_parent, options_match_owned, options_name, options_owner, options_push_changes, options_remove_or_default, options_set_number,
     options_set_string, options_to_cstring, options_to_string,
 };
 use crate::src::screen_write::{
@@ -1228,14 +1227,16 @@ unsafe fn window_customize_build_option(
     return (1 as u_int).wrapping_add(window_customize_build_array(data, &top, scope, o, ft));
 }
 unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
-    let mut o = options_first(oo);
+    let o_root = oo;
+    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+    let mut o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
         let name = CStr::from_ptr(options_name(&*(o)).as_ptr());
         if name.to_bytes().first() == Some(&b'@') && !list.iter().any(|entry| entry == name) {
             // Later row builders can call format callbacks before the list is exhausted.
             list.push(name.to_owned());
         }
-        o = options_next(o);
+        o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     }
 }
 unsafe fn window_customize_build_options(
@@ -1299,11 +1300,13 @@ unsafe fn window_customize_build_options(
         ));
     }
     drop(list);
-    loop_0 = options_first(oo0);
+    let loop_0_root = oo0;
+    let mut loop_0_names = crate::src::options::options_iter(&*loop_0_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+    loop_0 = loop_0_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *loop_0_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !loop_0.is_null() {
         name = options_name(&*(loop_0)).as_ptr();
         if *name as ::core::ffi::c_int == '@' as i32 {
-            loop_0 = options_next(loop_0);
+            loop_0 = loop_0_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *loop_0_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         } else {
             if !oo2.is_null() {
                 o = options_get(oo2, name);
@@ -1322,7 +1325,7 @@ unsafe fn window_customize_build_options(
             count = count.wrapping_add(window_customize_build_option(
                 data, &top, scope, o, ft, filter, fs, type_0,
             ));
-            loop_0 = options_next(loop_0);
+            loop_0 = loop_0_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *loop_0_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         }
     }
     if (*data).hide_default != 0 && count == 0 as u_int {

@@ -8,7 +8,7 @@ use std::ptr::{null, null_mut};
 fn ordered_names_survive_updates_and_removal() {
     unsafe {
         let oo = options_create(null_mut());
-        assert!(options_first(oo).is_null());
+        assert!(options_iter(&*oo).next().is_none());
         let mut names: Vec<Vec<u8>> = (0..128)
             .rev()
             .map(|i| format!("@key-{i:03}").into_bytes())
@@ -30,17 +30,15 @@ fn ordered_names_survive_updates_and_removal() {
             );
         }
         names.sort();
-        let mut entry = options_first(oo);
-        for name in &names {
+        let keys: Vec<_> = options_iter(&*oo).map(|entry| entry.name.clone()).collect();
+        for (name, key) in names.iter().zip(keys) {
+            let entry = std::ptr::from_mut(options_get_only_mut(&mut *oo, &key).unwrap());
             assert!(!entry.is_null());
             assert_eq!(CStr::from_ptr(options_name(&*(entry)).as_ptr()).to_bytes(), name);
             assert_eq!(CStr::from_ptr((*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())), c"updated");
-            let next = options_next(entry);
             assert_eq!(options_remove_or_default(entry, null(), null_mut()), 0);
-            entry = next;
         }
-        assert!(entry.is_null());
-        assert!(options_first(oo).is_null());
+        assert!(options_iter(&*oo).next().is_none());
         assert!(hmux2::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(c"@key-000".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry).is_null());
         // Repopulate so destruction also exercises nonempty storage.
         options_set_string(oo, c"@again".as_ptr(), 0, |out| out.write_all(b"value"));

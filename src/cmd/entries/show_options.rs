@@ -12,10 +12,9 @@ use crate::src::hooks::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_first, options_array_item_key, options_array_next, options_first, options_get,
+    options_array_first, options_array_item_key, options_array_next, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
-    options_is_array, options_is_string, options_match_owned, options_name, options_next,
-    options_scope_from_flags, options_scope_from_name, options_to_cstring, OptionMatchFailure,
+    options_is_array, options_is_string, options_match_owned, options_name, options_scope_from_flags, options_scope_from_name, options_to_cstring, OptionMatchFailure,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -152,10 +151,12 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
             && args_has(args, 'B' as i32 as u_char) != 0
         {
-            o = options_first(oo);
+            let o_root = oo;
+            let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+            o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
             while !o.is_null() {
                 cmd_show_hooks_print_monitor(self_0, item, o);
-                o = options_next(o);
+                o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
             }
             return CMD_RETURN_NORMAL;
         }
@@ -533,7 +534,9 @@ unsafe fn cmd_show_options_all(
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut parent: ::core::ffi::c_int = 0;
     let mut is_user_hook: ::core::ffi::c_int = 0;
-    o = options_first(oo);
+    let o_root = oo;
+    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+    o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
         if options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() {
             name = options_name(&*(o)).as_ptr();
@@ -563,7 +566,7 @@ unsafe fn cmd_show_options_all(
                 );
             }
         }
-        o = options_next(o);
+        o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     }
     let mut current_block_25: u64;
     oe = &raw const options_table as *const options_table_entry;
