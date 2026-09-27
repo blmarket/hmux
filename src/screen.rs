@@ -23,7 +23,6 @@ pub use crate::src::shared::screen::{
     MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
-use crate::src::shared::screen_write::screen_write_cline;
 use crate::src::shared::tty::tty;
 use crate::src::style::style_apply;
 use crate::src::text::utf8::{utf8_copy, utf8_to_data};
@@ -49,7 +48,7 @@ pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlim
     s.default_ccolour = -(1 as ::core::ffi::c_int);
     s.tabs = Vec::new();
     s.sel = None;
-    s.write_list = ::core::ptr::null_mut::<screen_write_cline>();
+    s.write_list = None;
     s.hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
     screen_reinit(s, 1 as ::core::ffi::c_int);
 }
@@ -95,7 +94,7 @@ pub unsafe fn screen_free(s: &mut screen) {
     s.tabs = Vec::new();
     s.path = None;
     s.title = CString::default();
-    if !s.write_list.is_null() {
+    if s.write_list.is_some() {
         screen_write_free_list(s);
     }
     drop(s.saved_grid.take());
@@ -280,7 +279,7 @@ pub unsafe fn screen_resize_cursor(
 ) {
     let mut cx: u_int = s.cx;
     let mut cy: u_int = s.grid().hsize.wrapping_add(s.cy);
-    let had_write_list = !s.write_list.is_null();
+    let had_write_list = s.write_list.is_some();
     if had_write_list {
         screen_write_free_list(s);
     }

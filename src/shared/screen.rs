@@ -46,12 +46,24 @@ pub struct screen {
     pub saved_flags: ::core::ffi::c_int,
     pub tabs: Vec<bitstr_t>,
     pub sel: Option<Box<screen_sel>>,
-    pub write_list: *mut screen_write_cline,
+    pub write_list: Option<Box<[screen_write_cline]>>,
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
 }
 
 impl screen {
+    pub(crate) fn write_rows(&self) -> &[screen_write_cline] {
+        self.write_list
+            .as_deref()
+            .expect("screen write rows are initialized")
+    }
+
+    pub(crate) fn write_rows_mut(&mut self) -> &mut [screen_write_cline] {
+        self.write_list
+            .as_deref_mut()
+            .expect("screen write rows are initialized")
+    }
+
     pub fn grid(&self) -> &grid {
         self.grid.as_deref().expect("screen is initialized")
     }

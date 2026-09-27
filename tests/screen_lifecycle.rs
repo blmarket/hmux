@@ -63,12 +63,12 @@ fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
         assert!(hyperlinks_get(&*s.hyperlinks, link).is_none());
         grid_get_cell(s.grid(), 0, 0, &mut cell);
         assert_eq!(cell.data.data[0], b' ');
-        assert!(!s.write_list.is_null());
+        assert!(s.write_list.is_some());
 
         screen_free(&mut s);
         assert!(s.grid.is_none());
         assert!(s.saved_grid.is_none());
-        assert!(s.write_list.is_null());
+        assert!(s.write_list.is_none());
         assert!(s.hyperlinks.is_null());
         assert!(s.title.is_empty());
         assert!(s.path.is_none());
