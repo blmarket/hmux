@@ -302,52 +302,24 @@ unsafe fn window_buffer_draw(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut pdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut start: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut buf = Vec::<u8>::new();
-    let mut psize: size_t = 0;
-    let mut i: u_int = 0;
-    let mut cx: u_int = (*(*ctx).s).cx;
-    let mut cy: u_int = (*(*ctx).s).cy;
-    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
-    if pb.is_null() {
+    let item = &*(itemdata as *const window_buffer_itemdata);
+    let cx = (*(*ctx).s).cx;
+    let cy = (*(*ctx).s).cy;
+    let Some(pb) = paste_get_name(item.name.as_ptr()).as_ref() else {
         return;
-    }
-    end = paste_buffer_data(pb, &raw mut psize);
-    pdata = end;
-    i = 0 as u_int;
-    while i < sy {
-        start = end;
-        while end != pdata.offset(psize as isize) && *end as ::core::ffi::c_int != '\n' as i32 {
-            end = end.offset(1);
-        }
-        let line_len = end.offset_from(start) as size_t;
-        buf.resize(4 * (line_len + 1), 0);
-        utf8_strvis(
-            buf.as_mut_ptr().cast(),
-            start,
-            line_len,
-            VIS_OCTAL | VIS_CSTYLE | VIS_TAB,
-        );
-        if buf[0] != 0 {
-            screen_write_cursormove(
-                ctx,
-                cx as ::core::ffi::c_int,
-                cy.wrapping_add(i) as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-            );
+    };
+    let data = &pb.data.as_deref().unwrap_or(&[])[..pb.size];
+    let mut buf = Vec::<u8>::new();
+    for (row, line) in data.split(|&byte| byte == b'\n').take(sy as usize).enumerate() {
+        buf.resize(4 * (line.len() + 1), 0);
+        utf8_strvis(&mut buf, line, VIS_OCTAL | VIS_CSTYLE | VIS_TAB);
+        let escaped = CStr::from_bytes_until_nul(&buf).expect("escaped line is terminated");
+        if !escaped.is_empty() {
+            screen_write_cursormove(ctx, cx as i32, cy.wrapping_add(row as u_int) as i32, 0);
             screen_write_nputs(ctx, sx as ssize_t, &raw const grid_default_cell, |out| {
-                write_cstr(out, buf.as_ptr().cast::<::core::ffi::c_char>())
+                out.write_all(escaped.to_bytes())
             });
         }
-        if end == pdata.offset(psize as isize) {
-            break;
-        }
-        end = end.offset(1);
-        i = i.wrapping_add(1);
     }
 }
 unsafe fn window_buffer_find(

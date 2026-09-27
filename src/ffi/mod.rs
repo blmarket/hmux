@@ -10,3 +10,4 @@ pub mod resolv;
 pub mod systemd;
 pub mod utempter;
 pub mod utf8proc;
+pub mod vis;

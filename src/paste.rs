@@ -513,17 +513,15 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
     let len = pb.size.min(width);
     let mut buffer = vec![0u8; len * 8 + 4];
     let used = utf8_strvis(
-        buffer.as_mut_ptr().cast(),
-        pb.data.as_ref().map_or(::core::ptr::null_mut(), |value| {
-            value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
-        }),
-        len,
+        &mut buffer,
+        &pb.data.as_deref().unwrap_or(&[])[..len],
         flags,
     );
     if pb.size > width || used > width {
         buffer[width..width + 4].copy_from_slice(b"...\0");
     }
-    let length = CStr::from_ptr(buffer.as_ptr().cast())
+    let length = CStr::from_bytes_until_nul(&buffer)
+        .expect("sample contains a terminating NUL")
         .to_bytes_with_nul()
         .len();
     buffer.truncate(length);

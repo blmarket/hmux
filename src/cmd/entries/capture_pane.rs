@@ -114,26 +114,17 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
         us: 0,
         link: 0,
     };
-    let mut c: [::core::ffi::c_char; 33] = [0; 33];
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut iid: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flags: u_int = 0;
     grid_get_cell(gd, xx, yy, &raw mut gc);
-    memcpy(
-        &raw mut c as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
-        &raw mut gc.data.data as *mut u_char as *const ::core::ffi::c_void,
-        gc.data.size as size_t,
-    );
-    c[gc.data.size as usize] = '\0' as i32 as ::core::ffi::c_char;
-    let source_len = CStr::from_ptr(c.as_ptr()).to_bytes().len();
-    // Match utf8_stravis's maximum expansion without allocating a C buffer.
-    let mut data = vec![0u8; 4 * (source_len + 1)];
-    let data_len = utf8_strvis(
-        data.as_mut_ptr().cast(),
-        c.as_ptr(),
-        source_len,
-        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
-    );
+    let bytes = &gc.data.data[..gc.data.size as usize];
+    let source = &bytes[..bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len())];
+    let mut data = vec![0u8; 4 * (source.len() + 1)];
+    let data_len = utf8_strvis(&mut data, source, VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL);
     data.truncate(data_len);
     let (link, linkid) = if gc.link != 0 as u_int
         && hyperlinks_get(

@@ -838,7 +838,7 @@ pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
             .and_then(|n| n.checked_add(1))
             .expect("escaped argument too long")
     ];
-    let length = utf8_strvis(escaped.as_mut_ptr().cast(), s.as_ptr(), source.len(), flags);
+    let length = utf8_strvis(&mut escaped, source, flags);
     escaped.truncate(length);
 
     let mut result = Vec::with_capacity(escaped.len() + 3);

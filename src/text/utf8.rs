@@ -1,20 +1,19 @@
 use crate::src::compat::utf8proc::utf8proc_wcwidth;
-use crate::src::compat::vis::vis;
-use crate::src::ffi::libc::{__ctype_b_loc, strlen};
+use crate::src::ffi::libc::strlen;
+use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
 };
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::ctype::_ISalpha;
 use crate::src::shared::grid::*;
 use crate::src::shared::options::{options_array_item, options_entry};
 use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
-use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
+use crate::src::text::utf8_decode::{DecodeResult, decode_utf8};
 use crate::src::text::utf8_width::parse_width_override;
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
@@ -299,86 +298,49 @@ pub unsafe fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
         _ => UTF8_MORE,
     }
 }
-pub unsafe fn utf8_strvis(
-    mut dst: *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut flag: ::core::ffi::c_int,
-) -> size_t {
-    let mut ud: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
-    let mut start: *const ::core::ffi::c_char = dst;
-    let mut end: *const ::core::ffi::c_char = src.offset(len as isize);
-    let mut more: utf8_state = UTF8_MORE;
-    let mut i: size_t = 0;
-    while src < end {
-        more = utf8_open(&mut ud, *src as u_char);
-        if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            loop {
-                src = src.offset(1);
-                if !(src < end
-                    && more as ::core::ffi::c_uint
-                        == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    break;
-                }
-                more = utf8_append(&mut ud, *src as u_char);
+pub unsafe fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
+    let capacity = src
+        .len()
+        .checked_mul(4)
+        .and_then(|size| size.checked_add(1))
+        .expect("escaped UTF-8 string is too large");
+    assert!(dst.len() >= capacity, "escape destination is too small");
+    let mut cell = utf8_data::default();
+    let mut offset = 0;
+    let mut written = 0;
+    while offset < src.len() {
+        let start = offset;
+        let mut more = utf8_open(&mut cell, src[offset]);
+        if more == UTF8_MORE {
+            offset += 1;
+            while offset < src.len() && more == UTF8_MORE {
+                more = utf8_append(&mut cell, src[offset]);
+                offset += 1;
             }
-            if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                i = 0 as size_t;
-                while i < ud.size as size_t {
-                    let fresh3 = dst;
-                    dst = dst.offset(1);
-                    *fresh3 = ud.data[i as usize] as ::core::ffi::c_char;
-                    i = i.wrapping_add(1);
-                }
+            if more == UTF8_DONE {
+                let size = cell.size as usize;
+                dst[written..written + size].copy_from_slice(&cell.data[..size]);
+                written += size;
                 continue;
-            } else {
-                src = src.offset(-(ud.have as ::core::ffi::c_int as isize));
             }
+            offset = start;
         }
-        if flag & VIS_DQ != 0
-            && *src.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '$' as i32
-            && src < end.offset(-(1 as ::core::ffi::c_int as isize))
-        {
-            if *(*__ctype_b_loc()).offset(*src.offset(1 as ::core::ffi::c_int as isize) as u_char
-                as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                & _ISalpha as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                != 0
-                || *src.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '_' as i32
-                || *src.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '{' as i32
-            {
-                let fresh4 = dst;
-                dst = dst.offset(1);
-                *fresh4 = '\\' as i32 as ::core::ffi::c_char;
+        let next = src.get(offset + 1).copied();
+        if flag & VIS_DQ != 0 && src[offset] == b'$' && next.is_some() {
+            let next = next.unwrap();
+            if is_alpha(next) || matches!(next, b'_' | b'{') {
+                dst[written] = b'\\';
+                written += 1;
             }
-            let fresh5 = dst;
-            dst = dst.offset(1);
-            *fresh5 = '$' as i32 as ::core::ffi::c_char;
-        } else if src < end.offset(-(1 as ::core::ffi::c_int as isize)) {
-            dst = vis(
-                dst,
-                *src.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-                flag,
-                *src.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-            );
-        } else if src < end {
-            dst = vis(
-                dst,
-                *src.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-                flag,
-                '\0' as i32,
-            );
+            dst[written] = b'$';
+            written += 1;
+        } else {
+            written += vis_into(&mut dst[written..], src[offset], flag, next.unwrap_or(0));
         }
-        src = src.offset(1);
+        offset += 1;
     }
-    *dst = '\0' as i32 as ::core::ffi::c_char;
-    return dst.offset_from(start) as ::core::ffi::c_long as size_t;
+    dst[written] = 0;
+    written
 }
 /// Escape a C string using the same byte conversion as `utf8_strvis`, with
 /// the result owned by Rust.
@@ -391,8 +353,7 @@ pub(crate) fn utf8_stravis_cstring(src: &CStr, flag: i32) -> CString {
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 string is too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len =
-        unsafe { utf8_strvis(buffer.as_mut_ptr().cast(), src.as_ptr(), source_len, flag) };
+    let escaped_len = unsafe { utf8_strvis(&mut buffer, src.to_bytes(), flag) };
     buffer.truncate(escaped_len + 1);
     CString::from_vec_with_nul(buffer).expect("utf8_strvis output has no interior NUL")
 }
@@ -408,14 +369,7 @@ pub(crate) fn utf8_stravisx_bytes(src: &[u8], flag: ::core::ffi::c_int) -> Vec<u
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 bytes are too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len = unsafe {
-        utf8_strvis(
-            buffer.as_mut_ptr().cast(),
-            src.as_ptr().cast(),
-            src.len(),
-            flag,
-        )
-    };
+    let escaped_len = unsafe { utf8_strvis(&mut buffer, src, flag) };
     buffer.truncate(escaped_len);
     buffer
 }
@@ -774,6 +728,41 @@ mod tests {
 
             let bytes = utf8_stravisx_bytes(b"a\0b", crate::src::shared::vis::VIS_OCTAL);
             assert_eq!(bytes, b"a\\000b");
+        }
+    }
+
+    #[test]
+    fn escaping_preserves_lookahead_and_retries_invalid_utf8_bytes() {
+        use crate::src::compat::vis::VIS_ALL;
+        use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
+
+        for (source, flags, expected) in [
+            (
+                &b"$a $_ ${ $1 $! $"[..],
+                VIS_DQ,
+                &b"\\$a \\$_ \\${ $1 $! $"[..],
+            ),
+            (&b"\x007\x008"[..], VIS_CSTYLE, &b"\\0007\\08"[..]),
+            ("é界🦀".as_bytes(), VIS_ALL | VIS_OCTAL, "é界🦀".as_bytes()),
+            (&b"\xe2(\xa1"[..], VIS_OCTAL, &b"\\342(\\241"[..]),
+            (&b"\xf0\x9f\x92"[..], VIS_OCTAL, &b"\\360\\237\\222"[..]),
+        ] {
+            assert_eq!(utf8_stravisx_bytes(source, flags), expected);
+        }
+    }
+
+    #[test]
+    fn escaping_terminates_reused_and_exact_capacity_buffers() {
+        use crate::src::shared::vis::VIS_OCTAL;
+
+        unsafe {
+            let mut output = [0x55; 9];
+            assert_eq!(utf8_strvis(&mut output, &[0xff, 0xff], VIS_OCTAL), 8);
+            assert_eq!(&output, b"\\377\\377\0");
+            assert_eq!(utf8_strvis(&mut output, b"a", VIS_OCTAL), 1);
+            assert_eq!(CStr::from_bytes_until_nul(&output).unwrap(), c"a");
+            assert_eq!(utf8_strvis(&mut output[..1], &[], VIS_OCTAL), 0);
+            assert_eq!(output[0], 0);
         }
     }
 
