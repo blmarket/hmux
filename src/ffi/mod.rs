@@ -4,6 +4,7 @@
 pub mod libc;
 pub mod libm;
 pub mod ncurses;
+pub mod numbers;
 pub mod regex;
 pub mod resolv;
 pub mod systemd;

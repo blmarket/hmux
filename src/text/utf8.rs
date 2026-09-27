@@ -1,9 +1,6 @@
-use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::utf8proc::{utf8proc_wctomb, utf8proc_wcwidth};
 use crate::src::compat::vis::vis;
-use crate::src::ffi::libc::{
-    __ctype_b_loc, __errno_location, memcpy, memset, strchr, strlen, strncmp, strtoull, wctomb,
-};
+use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, memcpy, memset, strlen, wctomb};
 use crate::src::log::{fatalx, log_bytes, log_cstr_n, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
@@ -11,25 +8,16 @@ use crate::src::options::{
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::ctype::_ISalpha;
-use crate::src::shared::errno::ERANGE;
 use crate::src::shared::grid::*;
-use crate::src::shared::limits::__LONG_LONG_MAX__;
 use crate::src::shared::options::{options_array_item, options_entry};
-use crate::src::shared::utf8::*;
 use crate::src::shared::utf8::wchar_t;
+use crate::src::shared::utf8::*;
 use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
+use crate::src::text::utf8_width::parse_width_override;
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
-
-pub const __WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX__;
-pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::ffi::c_ulonglong)
-    .wrapping_mul(2 as ::core::ffi::c_ulonglong)
-    .wrapping_add(1 as ::core::ffi::c_ulonglong);
-pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
-
-static mut utf8_no_width: ::core::ffi::c_int = 0;
 
 fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
     UTF8_WIDTHS
@@ -48,133 +36,11 @@ unsafe fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
         .expect("UTF-8 width cache poisoned")
         .insert(wc, width);
 }
-unsafe fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut width: u_int = 0;
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut wc: wchar_t = 0;
-    let mut wc_start: wchar_t = 0;
-    let mut wc_end: wchar_t = 0;
-    let mut n: ::core::ffi::c_ulonglong = 0;
-    // The parser writes a NUL at '=', then only borrows the two parts during
-    // this call. Keep the original C terminator and allocation stable.
-    let mut copy_bytes = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
-    let copy = copy_bytes.as_mut_ptr().cast::<::core::ffi::c_char>();
-    cp = strchr(copy, '=' as i32);
-    if cp.is_null() {
-        return;
-    }
-    let fresh0 = cp;
-    cp = cp.offset(1);
-    *fresh0 = '\0' as i32 as ::core::ffi::c_char;
-    width = strtonum(
-        cp,
-        0 as ::core::ffi::c_longlong,
-        2 as ::core::ffi::c_longlong,
-        &raw mut errstr,
-    ) as u_int;
-    if !errstr.is_null() {
-        return;
-    }
-    if strncmp(
-        copy,
-        b"U+\0" as *const u8 as *const ::core::ffi::c_char,
-        2 as size_t,
-    ) == 0 as ::core::ffi::c_int
-    {
-        *__errno_location() = 0 as ::core::ffi::c_int;
-        n = strtoull(
-            copy.offset(2 as ::core::ffi::c_int as isize),
-            &raw mut endptr,
-            16 as ::core::ffi::c_int,
-        );
-        if *copy.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
-            || n == 0 as ::core::ffi::c_ulonglong
-            || n > WCHAR_MAX as ::core::ffi::c_ulonglong
-            || *__errno_location() == ERANGE && n == ULLONG_MAX
-        {
-            return;
+unsafe fn utf8_add_to_width_cache(input: &CStr) {
+    if let Some(parsed) = parse_width_override(input) {
+        for codepoint in parsed.codepoints {
+            utf8_insert_width_cache(codepoint, parsed.width);
         }
-        wc_start = n as wchar_t;
-        if *endptr as ::core::ffi::c_int == '-' as i32 {
-            endptr = endptr.offset(1);
-            if strncmp(
-                endptr,
-                b"U+\0" as *const u8 as *const ::core::ffi::c_char,
-                2 as size_t,
-            ) != 0 as ::core::ffi::c_int
-            {
-                return;
-            }
-            *__errno_location() = 0 as ::core::ffi::c_int;
-            n = strtoull(
-                endptr.offset(2 as ::core::ffi::c_int as isize),
-                &raw mut endptr,
-                16 as ::core::ffi::c_int,
-            );
-            if *endptr as ::core::ffi::c_int != '\0' as i32
-                || n == 0 as ::core::ffi::c_ulonglong
-                || n > WCHAR_MAX as ::core::ffi::c_ulonglong
-                || *__errno_location() == ERANGE && n == ULLONG_MAX
-                || (n as wchar_t) < wc_start
-            {
-                return;
-            }
-            wc_end = n as wchar_t;
-        } else {
-            if *endptr as ::core::ffi::c_int != '\0' as i32 {
-                return;
-            }
-            wc_end = wc_start;
-        }
-        wc = wc_start;
-        while wc <= wc_end {
-            utf8_insert_width_cache(wc, width);
-            wc = wc.wrapping_add(1);
-        }
-    } else {
-        let bytes = CStr::from_ptr(copy).to_bytes();
-        let mut first = utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        };
-        let mut offset = 0;
-        utf8_no_width = 1 as ::core::ffi::c_int;
-        if let Some(&byte) = bytes.first() {
-            let mut more = utf8_open(&raw mut first, byte);
-            if more == UTF8_MORE {
-                offset = 1;
-                while offset < bytes.len() && more == UTF8_MORE {
-                    more = utf8_append(&raw mut first, bytes[offset]);
-                    offset += 1;
-                }
-                if more != UTF8_DONE {
-                    // utf8_fromcstr retries the first byte after an invalid
-                    // or incomplete candidate, then emits it as one cell.
-                    offset = 0;
-                }
-            }
-            if more != UTF8_DONE {
-                utf8_set(&raw mut first, bytes[offset]);
-                offset += 1;
-            }
-        }
-        utf8_no_width = 0 as ::core::ffi::c_int;
-        if first.size == 0 || offset != bytes.len() {
-            return;
-        }
-        let bytes = ::core::slice::from_raw_parts(first.data.as_ptr(), first.size as usize);
-        let DecodeResult::Complete { codepoint, len } = decode_utf8(bytes) else {
-            return;
-        };
-        if len != first.size as usize {
-            return;
-        }
-        wc = codepoint as wchar_t;
-        utf8_insert_width_cache(wc, width);
     }
 }
 pub unsafe fn utf8_update_width_cache() {
@@ -190,7 +56,7 @@ pub unsafe fn utf8_update_width_cache() {
     );
     a = options_array_first(o);
     while !a.is_null() {
-        utf8_add_to_width_cache((*options_array_item_value(a)).string_ptr());
+        utf8_add_to_width_cache(CStr::from_ptr((*options_array_item_value(a)).string_ptr()));
         a = options_array_next(a);
     }
 }
@@ -445,17 +311,15 @@ pub unsafe fn utf8_append(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state 
             if (*ud).have as ::core::ffi::c_int == (*ud).size as ::core::ffi::c_int
                 && len == (*ud).size as usize =>
         {
-            if utf8_no_width == 0 {
-                if (*ud).width as ::core::ffi::c_int == 0xff as ::core::ffi::c_int {
-                    return UTF8_ERROR;
-                }
-                if utf8_width(ud, &raw mut width) as ::core::ffi::c_uint
-                    != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    return UTF8_ERROR;
-                }
-                (*ud).width = width as u_char;
+            if (*ud).width as ::core::ffi::c_int == 0xff as ::core::ffi::c_int {
+                return UTF8_ERROR;
             }
+            if utf8_width(ud, &raw mut width) as ::core::ffi::c_uint
+                != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                return UTF8_ERROR;
+            }
+            (*ud).width = width as u_char;
             UTF8_DONE
         }
         DecodeResult::Invalid { .. }
@@ -849,8 +713,6 @@ pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
     found != 0
 }
 
-pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1016,7 +878,7 @@ mod tests {
                 &b"U+E040=1\0U+E041=2\0"[..], // Stop at the first NUL.
                 &b"z=2\0"[..],            // A single ASCII cell also uses this path.
             ] {
-                utf8_add_to_width_cache(entry.as_ptr().cast());
+                utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
             }
 
             for (codepoint, expected) in [
@@ -1047,7 +909,7 @@ mod tests {
                 &b"\xff=1\0"[..],          // Invalid single byte.
                 &b"\xc0\xaf=1\0"[..],      // Overlong sequence.
             ] {
-                utf8_add_to_width_cache(entry.as_ptr().cast());
+                utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
             }
             for codepoint in [0xE030, 0xE041, 0xE022, 'a' as i32, 'b' as i32, '(' as i32] {
                 assert!(
@@ -1055,7 +917,6 @@ mod tests {
                     "unexpected U+{codepoint:04X}"
                 );
             }
-            assert_eq!(utf8_no_width, 0);
 
             for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040, 'z' as i32] {
                 UTF8_WIDTHS.lock().unwrap().remove(codepoint);

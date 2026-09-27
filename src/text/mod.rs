@@ -4,3 +4,4 @@ pub mod utf8;
 mod utf8_cache;
 pub mod utf8_combined;
 pub mod utf8_decode;
+mod utf8_width;
