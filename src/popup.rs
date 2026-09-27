@@ -388,14 +388,12 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
         );
     } else if (*pd).sx > 2 as u_int && (*pd).sy > 2 as u_int {
         screen_write_box(
-            &raw mut ctx,
+            &mut ctx,
             (*pd).sx,
             (*pd).sy,
             (*pd).border_lines,
-            &raw mut (*pd).border_cell,
-            ((*pd).title)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            Some(&(*pd).border_cell),
+            (*pd).title.as_deref(),
         );
         screen_write_cursormove(
             &raw mut ctx,

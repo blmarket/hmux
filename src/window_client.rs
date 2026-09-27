@@ -444,7 +444,7 @@ unsafe fn window_client_draw_info(
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(ctx, sy.wrapping_sub(i), &raw mut gc);
+        screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
     }
     format_free(ft);
 }
@@ -548,12 +548,12 @@ unsafe fn window_client_draw(
         ::core::ptr::null_mut::<format_tree>(),
     );
     screen_write_hline(
-        ctx,
+        &mut *ctx,
         sx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
         BOX_LINES_DEFAULT,
-        &raw mut gc,
+        Some(&gc),
     );
     if at != 0 as u_int {
         screen_write_cursormove(

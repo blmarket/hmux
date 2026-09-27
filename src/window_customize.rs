@@ -691,12 +691,12 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
         0 as ::core::ffi::c_int,
     );
     screen_write_box(
-        &raw mut ctx,
+        &mut ctx,
         box_w,
         box_h,
         BOX_LINES_DEFAULT,
-        &raw mut gc,
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        Some(&gc),
+        None,
     );
     screen_write_cursormove(
         &raw mut ctx,

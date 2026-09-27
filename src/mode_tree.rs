@@ -1203,12 +1203,12 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 0 as ::core::ffi::c_int,
             );
             screen_write_box(
-                &raw mut ctx,
+                &mut ctx,
                 w,
                 sy.wrapping_sub(h),
                 BOX_LINES_DEFAULT,
-                &raw mut box_gc,
-                ::core::ptr::null::<::core::ffi::c_char>(),
+                Some(&box_gc),
+                None,
             );
             let mut label_bytes = b" ".to_vec();
             mode_tree_append_printf_string(&mut label_bytes, Some((*mti).name.as_c_str()));
@@ -1835,12 +1835,12 @@ unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen
         0 as ::core::ffi::c_int,
     );
     screen_write_box(
-        ctx,
+        &mut *ctx,
         box_w,
         box_h,
         BOX_LINES_DEFAULT,
-        &raw mut box_gc,
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        Some(&box_gc),
+        None,
     );
     y = y.wrapping_add(1);
     x = x.wrapping_add(1);

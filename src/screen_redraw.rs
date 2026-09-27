@@ -1461,12 +1461,12 @@ unsafe fn redraw_draw_border_span(
                 ::core::ptr::null_mut::<window_pane>(),
                 pane_lines,
                 cell_type as ::core::ffi::c_int,
-                &raw mut gc,
+                &mut gc,
             );
         }
     } else {
         window_pane_get_border_style(wp, c, &raw mut gc);
-        window_pane_get_border_cell(wp, cell_type as ::core::ffi::c_int, &raw mut gc);
+        window_pane_get_border_cell(wp, cell_type as ::core::ffi::c_int, &mut gc);
     }
     if (*span).data.type_0 as ::core::ffi::c_uint
         == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint

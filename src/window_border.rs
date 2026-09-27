@@ -157,59 +157,56 @@ pub unsafe fn window_get_border_cell(
     mut wp: *mut window_pane,
     mut pane_lines: pane_lines,
     mut cell_type: ::core::ffi::c_int,
-    mut gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) {
     let mut idx: u_int = 0;
     match pane_lines as ::core::ffi::c_uint {
         4 => {
             if cell_type == CELL_NONE {
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_NONE as usize] as u_char);
+                gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
+                utf8_set(&mut gc.data, CELL_BORDERS[CELL_NONE as usize] as u_char);
             } else {
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+                gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
                 if !wp.is_null() && window_pane_index(wp, &raw mut idx) == 0 as ::core::ffi::c_int {
                     utf8_set(
-                        &mut (*gc).data,
+                        &mut gc.data,
                         ('0' as i32 as u_int).wrapping_add(idx.wrapping_rem(10 as u_int)) as u_char,
                     );
                 } else {
-                    utf8_set(&mut (*gc).data, '*' as i32 as u_char);
+                    utf8_set(&mut gc.data, '*' as i32 as u_char);
                 }
             }
         }
         1 => {
-            (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            (*gc).data = utf8_copy(tty_acs_double_borders(cell_type));
+            gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+            gc.data = utf8_copy(tty_acs_double_borders(cell_type));
         }
         2 => {
-            (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            (*gc).data = utf8_copy(tty_acs_heavy_borders(cell_type));
+            gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+            gc.data = utf8_copy(tty_acs_heavy_borders(cell_type));
         }
         7 => {
-            (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            (*gc).data = utf8_copy(tty_acs_rounded_borders(cell_type));
+            gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+            gc.data = utf8_copy(tty_acs_rounded_borders(cell_type));
         }
         3 => {
-            (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_set(
-                &mut (*gc).data,
-                SIMPLE_BORDERS[cell_type as usize] as u_char,
-            );
+            gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+            utf8_set(&mut gc.data, SIMPLE_BORDERS[cell_type as usize] as u_char);
         }
         6 | 5 => {
-            (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut (*gc).data, ' ' as i32 as u_char);
+            gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+            utf8_set(&mut gc.data, ' ' as i32 as u_char);
         }
         _ => {
-            (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut (*gc).data, CELL_BORDERS[cell_type as usize] as u_char);
+            gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
+            utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize] as u_char);
         }
     };
 }
 pub unsafe fn window_pane_get_border_cell(
     mut wp: *mut window_pane,
     mut cell_type: ::core::ffi::c_int,
-    mut gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) {
     let mut pane_lines: pane_lines = window_pane_get_pane_lines(wp);
     window_get_border_cell(wp, pane_lines, cell_type, gc);
@@ -308,7 +305,7 @@ pub unsafe fn window_make_pane_status(
     i = 0 as u_int;
     while i < width {
         cell_type = redraw_get_status_border_cell_type(spans, &raw mut span_index, i);
-        window_get_border_cell(wp, pane_lines, cell_type, &raw mut gc);
+        window_get_border_cell(wp, pane_lines, cell_type, &mut gc);
         screen_write_cell(&mut ctx, &gc);
         i = i.wrapping_add(1);
     }

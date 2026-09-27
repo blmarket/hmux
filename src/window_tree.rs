@@ -678,12 +678,12 @@ unsafe fn window_tree_draw_label(
         0 as ::core::ffi::c_int,
     );
     screen_write_box(
-        ctx,
+        &mut *ctx,
         width.wrapping_add(4 as u_int),
         3 as u_int,
         BOX_LINES_DEFAULT,
-        border_gc,
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        border_gc.as_ref(),
+        None,
     );
     screen_write_cursormove(
         ctx,
@@ -856,7 +856,7 @@ unsafe fn window_tree_draw_session(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(ctx, sy, &raw mut gc);
+        screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
@@ -875,7 +875,7 @@ unsafe fn window_tree_draw_session(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(ctx, sy, &raw mut gc);
+        screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
             ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
@@ -971,7 +971,7 @@ unsafe fn window_tree_draw_session(
                     cy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_vline(ctx, sy, &raw mut gc);
+                screen_write_vline(&mut *ctx, sy, Some(&gc));
             }
             loop_0 = loop_0.wrapping_add(1);
             i = i.wrapping_add(1);
@@ -1116,7 +1116,7 @@ unsafe fn window_tree_draw_window(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(ctx, sy, &raw mut gc);
+        screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
@@ -1135,7 +1135,7 @@ unsafe fn window_tree_draw_window(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(ctx, sy, &raw mut gc);
+        screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
             ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
@@ -1225,7 +1225,7 @@ unsafe fn window_tree_draw_window(
                         cy as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_vline(ctx, sy, &raw mut gc);
+                    screen_write_vline(&mut *ctx, sy, Some(&gc));
                 }
                 loop_0 = loop_0.wrapping_add(1);
                 i = i.wrapping_add(1);
@@ -1331,12 +1331,12 @@ unsafe fn window_tree_draw_info(
                 0 as ::core::ffi::c_int,
             );
             screen_write_hline(
-                ctx,
+                &mut *ctx,
                 sx,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 BOX_LINES_DEFAULT,
-                &raw mut gc,
+                Some(&gc),
             );
             if sx > 14 as u_int {
                 gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
@@ -1390,7 +1390,7 @@ unsafe fn window_tree_draw_info(
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(ctx, sy.wrapping_sub(i), &raw mut gc);
+        screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
     }
     format_free(ft);
 }

@@ -340,12 +340,12 @@ pub unsafe fn menu_update(mut md: *mut menu_data) {
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
     if (*md).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_box(
-            &raw mut ctx,
+            &mut ctx,
             (*menu).width.wrapping_add(4 as u_int),
             (*menu).count.wrapping_add(2 as u_int),
             (*md).border_lines,
-            &raw mut (*md).border_style_gc,
-            ((*menu).title).as_ptr().cast_mut(),
+            Some(&(*md).border_style_gc),
+            Some((*menu).title.as_c_str()),
         );
     }
     screen_write_menu(
