@@ -1,5 +1,6 @@
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::session::session_remove_ref;
-use crate::src::shared::client::{ClientOwner, client_owner_ptr};
+use crate::src::shared::client::client_rc_ptr;
 use crate::src::shared::rc;
 use crate::src::window::window_pane_upgrade;
 use std::cell::UnsafeCell;
@@ -140,10 +141,10 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     if (*hd).expand == 0 {
         return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
     }
-    let client_owner = ClientOwner::upgrade(&(*hd).client);
+    let client_owner = (*hd).client.upgrade();
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        client_owner_ptr(&client_owner),
+        client_rc_ptr(&client_owner),
         fs.s_ptr(),
         fs.wl_ptr(),
         fs.wp_ptr(),
@@ -155,6 +156,9 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
         expanded.as_c_str(),
         ::core::ptr::null_mut::<cmd_parse_input>(),
     );
+    if let Some(client) = client_owner {
+        server_client_unref_owned(client);
+    }
     return pr;
 }
 unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
@@ -425,8 +429,8 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let mut link = change.wl.try_borrow_mut().ok();
     let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
-    let client_owner = change.c.as_ref().and_then(ClientOwner::upgrade);
-    let c = client_owner_ptr(&client_owner);
+    let client_owner = change.c.as_ref().and_then(std::rc::Weak::upgrade);
+    let c = client_rc_ptr(&client_owner);
     let session_owner = change.s.as_ref().and_then(Weak::upgrade);
     let s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let pane_owner = change.wp.as_ref().and_then(|pane| window_pane_upgrade(pane));
@@ -525,6 +529,9 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     events_fire(change.name.as_ptr(), ep);
     if let Some(owner) = session_owner {
         session_remove_ref(owner, c"hooks_monitor_cb");
+    }
+    if let Some(client) = client_owner {
+        server_client_unref_owned(client);
     }
 }
 pub unsafe fn hooks_monitor_add(

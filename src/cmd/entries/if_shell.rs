@@ -1,4 +1,7 @@
-use crate::src::shared::client::{ClientOwner, client_owner_ptr};
+use crate::src::server_client::server_client_unref_owned;
+use std::cell::UnsafeCell;
+use std::rc::Rc;
+use crate::src::shared::client::{client_retain, client_rc_ptr};
 use crate::src::arguments::{
     args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
     args_string,
@@ -33,7 +36,7 @@ use crate::src::status::status_message_set;
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
     pub cmd_else: Option<Box<args_command_state>>,
-    pub client: Option<ClientOwner>,
+    pub client: Option<Rc<UnsafeCell<client>>>,
     pub item: *mut cmdq_item,
 }
 pub static cmd_if_shell_entry: cmd_entry = {
@@ -123,10 +126,10 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         ));
     }
     if wait != 0 {
-        cdata.client = ClientOwner::retain(cmdq_get_client(item));
+        cdata.client = client_retain(cmdq_get_client(item));
         cdata.item = item;
     } else {
-        cdata.client = ClientOwner::retain(tc);
+        cdata.client = client_retain(tc);
     }
     let job = job_run(
         Some(shellcmd.as_c_str()),
@@ -162,7 +165,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_shell_data) {
-    let mut c: *mut client = client_owner_ptr(&cdata.client);
+    let mut c: *mut client = client_rc_ptr(&cdata.client);
     let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let state = if completion.status == JobExitStatus::Exited(0) {
@@ -212,7 +215,9 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
 impl Drop for cmd_if_shell_data {
     fn drop(&mut self) {
         unsafe {
-            drop(self.client.take());
+            if let Some(client) = self.client.take() {
+                server_client_unref_owned(client);
+            }
             drop(self.cmd_else.take());
             drop(self.cmd_if.take());
         }

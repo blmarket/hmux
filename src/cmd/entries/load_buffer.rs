@@ -1,4 +1,7 @@
-use crate::src::shared::client::{ClientOwner, client_owner_ptr};
+use crate::src::server_client::server_client_unref_owned;
+use std::cell::UnsafeCell;
+use std::rc::Rc;
+use crate::src::shared::client::{client_retain, client_rc_ptr};
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
@@ -22,14 +25,16 @@ use std::ffi::{CStr, CString};
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {
-    pub client: Option<ClientOwner>,
+    pub client: Option<Rc<UnsafeCell<client>>>,
     pub item: *mut cmdq_item,
     pub name: Option<CString>,
 }
 
 impl cmd_load_buffer_data {
     unsafe fn release_client(&mut self) {
-        drop(self.client.take());
+        if let Some(client) = self.client.take() {
+            server_client_unref_owned(client);
+        }
     }
 }
 
@@ -75,7 +80,7 @@ unsafe fn cmd_load_buffer_done(
     if closed == 0 {
         return;
     }
-    let mut tc: *mut client = client_owner_ptr(&cdata.client);
+    let mut tc: *mut client = client_rc_ptr(&cdata.client);
     let mut item: *mut cmdq_item = cdata.item;
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -1)
@@ -126,7 +131,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }
     if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-        cdata.client = ClientOwner::retain(tc);
+        cdata.client = client_retain(tc);
     }
     let path = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     file_read_with_cmdq_wait(

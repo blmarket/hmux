@@ -1,3 +1,6 @@
+use crate::src::server_client::server_client_unref_owned;
+use std::cell::UnsafeCell;
+use std::rc::Rc;
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
 
 use super::abi::{pid_t, size_t, time_t, timeval, u_int, uint64_t};
@@ -284,7 +287,7 @@ pub struct client_files {
 pub struct client_file {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
-    pub c: Option<ClientOwner>,
+    pub c: Option<Rc<UnsafeCell<client>>>,
     pub peer: *mut tmuxpeer,
     pub stream: ::core::ffi::c_int,
     pub path: Option<std::ffi::CString>,
@@ -362,44 +365,19 @@ pub type overlay_mode_cb =
 pub type overlay_check_cb =
     Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> visible_ranges>>;
 
-/// An existing client reference whose release must wait for the event loop.
-/// Unlike a plain Rc field, every drop path preserves client teardown timing.
-pub struct ClientOwner(Option<std::rc::Rc<std::cell::UnsafeCell<client>>>);
-
-impl ClientOwner {
-    /// Upgrade an observer into a guard with the existing deferred release.
-    pub(crate) fn upgrade(
-        observer: &std::rc::Weak<std::cell::UnsafeCell<client>>,
-    ) -> Option<Self> {
-        Some(Self(Some(observer.upgrade()?)))
+/// Retain a live client; a null pointer represents an absent client.
+///
+/// # Safety
+/// A non-null pointer must identify a live Rc-owned client.
+pub unsafe fn client_retain(ptr: *mut client) -> Option<Rc<UnsafeCell<client>>> {
+    if ptr.is_null() {
+        return None;
     }
-
-    /// Retain a live client, or preserve an absent client as None.
-    ///
-    /// # Safety
-    /// A non-null pointer must identify a live Rc-owned client.
-    pub unsafe fn retain(ptr: *mut client) -> Option<Self> {
-        if ptr.is_null() {
-            return None;
-        }
-        Some(Self(Some((*ptr).observer.upgrade().expect("live Rc client"))))
-    }
-
-    pub fn as_ptr(&self) -> *mut client {
-        super::rc::as_ptr(self.0.as_ref().expect("live client owner"))
-    }
+    Some((*ptr).observer.upgrade().expect("live Rc client"))
 }
 
-impl Drop for ClientOwner {
-    fn drop(&mut self) {
-        if let Some(owner) = self.0.take() {
-            crate::src::server_client::server_client_unref_owned(owner);
-        }
-    }
-}
-
-pub fn client_owner_ptr(owner: &Option<ClientOwner>) -> *mut client {
-    owner.as_ref().map_or(std::ptr::null_mut(), ClientOwner::as_ptr)
+pub fn client_rc_ptr(owner: &Option<Rc<UnsafeCell<client>>>) -> *mut client {
+    owner.as_ref().map_or(std::ptr::null_mut(), super::rc::as_ptr)
 }
 
 #[cfg(test)]
@@ -414,10 +392,10 @@ mod retained_client_tests {
                 let initial = client::new();
                 let ptr = rc::as_ptr(&initial);
                 let observer = (*ptr).observer.clone();
-                let owner = ClientOwner::retain(ptr).unwrap();
+                let owner = client_retain(ptr).unwrap();
                 drop(initial);
-                assert_eq!(owner.as_ptr(), ptr);
-                drop(owner);
+                assert_eq!(rc::as_ptr(&owner), ptr);
+                server_client_unref_owned(owner);
                 assert_eq!(observer.strong_count(), 1);
                 if cancel {
                     reactor::shutdown_runtime();
@@ -427,7 +405,7 @@ mod retained_client_tests {
                 assert_eq!(observer.strong_count(), 0);
                 reactor::shutdown_runtime();
             }
-            assert!(ClientOwner::retain(std::ptr::null_mut()).is_none());
+            assert!(client_retain(std::ptr::null_mut()).is_none());
         }
     }
 }

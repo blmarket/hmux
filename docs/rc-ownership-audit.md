@@ -29,9 +29,10 @@ ownership from the address or increment a raw reference count. The self-observer
 does not keep the allocation's value alive. Owning fields and constructor return
 types remain explicit `Rc`s; `KeyTableOwner` has been removed.
 
-`ClientOwner` and `WindowOwner` remain drop-policy guards, not aliases: their
-release paths preserve deferred client cleanup and live window-close callbacks,
-respectively. Both contain ordinary `Rc`s and release typed handles.
+Client references use ordinary `Rc<UnsafeCell<client>>` values. Cleanup explicitly
+passes retained references to `server_client_unref_owned` for deferred release.
+Optional record fields support absent clients and taking references at teardown.
+`WindowOwner` remains a drop-policy guard for live window-close callbacks.
 
 ## Verification
 

@@ -1437,21 +1437,21 @@ unsafe fn control_write_callback(c: *mut client) {
     }
 }
 unsafe fn control_sub_change(change: &monitor_change) {
-    let Some(client_owner) = change.c.as_ref().and_then(crate::src::shared::client::ClientOwner::upgrade) else { return };
-    let c = client_owner.as_ptr();
-    if (*c).flags & crate::src::shared::client::CLIENT_DEAD as uint64_t != 0 { return; }
-    let Some(session_owner) = change.s.as_ref().and_then(std::rc::Weak::upgrade) else { return };
+    let Some(client_owner) = change.c.as_ref().and_then(std::rc::Weak::upgrade) else { return };
+    let c = crate::src::shared::rc::as_ptr(&client_owner);
+    if (*c).flags & crate::src::shared::client::CLIENT_DEAD as uint64_t != 0 { crate::src::server_client::server_client_unref_owned(client_owner); return; }
+    let Some(session_owner) = change.s.as_ref().and_then(std::rc::Weak::upgrade) else { crate::src::server_client::server_client_unref_owned(client_owner); return };
     let s = crate::src::shared::rc::as_ptr(&session_owner);
     let mut link = change.wl.try_borrow_mut().ok();
     if !change.wl.is_empty() && link.is_none() {
         session_remove_ref(session_owner, c"control_sub_change");
-        return;
+        crate::src::server_client::server_client_unref_owned(client_owner); return;
     }
     let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
     let pane_owner = change.wp.as_ref().and_then(|pane| crate::src::window::window_pane_upgrade(pane));
     if change.wp.is_some() && pane_owner.is_none() {
         session_remove_ref(session_owner, c"control_sub_change");
-        return;
+        crate::src::server_client::server_client_unref_owned(client_owner); return;
     }
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -1493,6 +1493,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
         });
     };
     session_remove_ref(session_owner, c"control_sub_change");
+    crate::src::server_client::server_client_unref_owned(client_owner);
 }
 pub unsafe fn control_start(mut c: *mut client) {
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {

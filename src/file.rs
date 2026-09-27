@@ -1,3 +1,4 @@
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::cmd::queue::{cmdq_clear_wait_file, cmdq_set_wait_file};
 use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::*;
@@ -16,8 +17,8 @@ use crate::src::server_client::server_client_get_cwd;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{
-    ClientOwner, client, client_file, client_file_cb, client_file_entry, client_file_event, client_files,
-    client_owner_ptr,
+    client_retain, client, client_file, client_file_cb, client_file_entry, client_file_event, client_files,
+    client_rc_ptr,
 };
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
 use crate::src::shared::command::cmdq_item;
@@ -185,23 +186,25 @@ unsafe fn file_create_with_client(
     }
     let owner = client_file::new();
     cf = rc::as_ptr(&owner);
-    (*cf).c = ClientOwner::retain(c);
+    (*cf).c = client_retain(c);
     (*cf).stream = stream;
     (*cf).cb = cb;
-    if !client_owner_ptr(&(*cf).c).is_null() {
-        (*cf).peer = (*client_owner_ptr(&(*cf).c)).peer;
-        client_files_insert(&raw mut (*client_owner_ptr(&(*cf).c)).files, owner.clone());
+    if !client_rc_ptr(&(*cf).c).is_null() {
+        (*cf).peer = (*client_rc_ptr(&(*cf).c)).peer;
+        client_files_insert(&raw mut (*client_rc_ptr(&(*cf).c)).files, owner.clone());
     }
     return owner;
 }
 unsafe fn file_destroy(cf: &mut client_file) {
     client_files_remove(cf);
-    drop(cf.c.take());
+    if let Some(client) = cf.c.take() {
+        server_client_unref_owned(client);
+    }
     cf.path = Default::default();
 }
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = owner.get();
-    let c: *mut client = client_owner_ptr(&(*cf).c);
+    let c: *mut client = client_rc_ptr(&(*cf).c);
     let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
     let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
@@ -258,7 +261,7 @@ pub unsafe fn file_fire_done(cf: *mut client_file) {
     });
 }
 pub unsafe fn file_fire_read(mut cf: *mut client_file) {
-    let c = client_owner_ptr(&(*cf).c);
+    let c = client_rc_ptr(&(*cf).c);
     let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
     let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
@@ -267,7 +270,7 @@ pub unsafe fn file_fire_read(mut cf: *mut client_file) {
     if !dead {
         if let Some(callback) = (*cf).cb.as_mut() {
             callback(client_file_event {
-                client: std::ptr::NonNull::new(client_owner_ptr(&(*cf).c)),
+                client: std::ptr::NonNull::new(client_rc_ptr(&(*cf).c)),
                 path: (*cf).path.as_deref(),
                 error: (*cf).error,
                 closed: false,
@@ -703,8 +706,8 @@ pub unsafe fn file_cancel(mut cf: *mut client_file) {
 }
 unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = owner.get();
-    if client_owner_ptr(&(*cf).c).is_null()
-        || !(*client_owner_ptr(&(*cf).c)).flags & CLIENT_DEAD as uint64_t != 0
+    if client_rc_ptr(&(*cf).c).is_null()
+        || !(*client_rc_ptr(&(*cf).c)).flags & CLIENT_DEAD as uint64_t != 0
     {
         file_push(cf);
     }
@@ -775,8 +778,8 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
             &raw mut close_0 as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_close>() as size_t,
         );
-        if client_owner_ptr(&(*cf).c).is_null()
-            || !(*client_owner_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
+        if client_rc_ptr(&(*cf).c).is_null()
+            || !(*client_rc_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
         {
             file_fire_done(cf);
         }
@@ -1242,8 +1245,8 @@ pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::co
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if client_owner_ptr(&(*cf).c).is_null()
-        || !(*client_owner_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
+    if client_rc_ptr(&(*cf).c).is_null()
+        || !(*client_rc_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
     {
         return 0 as ::core::ffi::c_int;
     }

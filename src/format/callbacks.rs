@@ -1,4 +1,4 @@
-use crate::src::shared::client::client_owner_ptr;
+use crate::src::shared::client::client_rc_ptr;
 use crate::src::shared::key::key_table_owner_ptr;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
@@ -347,7 +347,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
     Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
 unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
-    let mut c: *mut client = client_owner_ptr(&(*ft).client);
+    let mut c: *mut client = client_rc_ptr(&(*ft).client);
     let mut w: *mut window = (*ft).w;
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -368,7 +368,7 @@ unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
     return layout_dump_owned(lcroot, flags);
 }
 unsafe fn format_cb_window_visible_layout(mut ft: *mut format_tree) -> Option<CString> {
-    let mut c: *mut client = client_owner_ptr(&(*ft).client);
+    let mut c: *mut client = client_rc_ptr(&(*ft).client);
     let mut w: *mut window = (*ft).w;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if w.is_null() {

@@ -1,3 +1,5 @@
+use std::cell::UnsafeCell;
+use std::rc::Rc;
 //! Authoritative format declarations.
 
 use super::abi::{time_t, u_int};
@@ -124,7 +126,7 @@ pub struct format_tree {
     pub wp: *mut window_pane,
     pub pb: Option<PasteBufferRef>,
     pub item: *mut cmdq_item,
-    pub client: Option<super::client::ClientOwner>,
+    pub client: Option<Rc<UnsafeCell<client>>>,
     pub flags: ::core::ffi::c_int,
     pub tag: u_int,
     pub m: mouse_event,

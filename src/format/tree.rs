@@ -1,3 +1,4 @@
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::format::FormatTreeOwner;
 use crate::src::log::log_cstr;
 use crate::src::shared::format::FormatEntryState;
@@ -122,7 +123,7 @@ unsafe fn format_create_box(
 ) -> Box<format_tree> {
     let mut owner = Box::new(format_tree::default());
     let ft = &raw mut *owner;
-    (*ft).client = crate::src::shared::client::ClientOwner::retain(c);
+    (*ft).client = crate::src::shared::client::client_retain(c);
     (*ft).item = item;
     (*ft).tag = tag as u_int;
     (*ft).flags = flags;
@@ -156,7 +157,9 @@ unsafe fn format_clear(ft: *mut format_tree) {
     while let Some((_, entry)) = (*ft).tree.entries.pop_first() {
         drop(entry);
     }
-    drop((*ft).client.take());
+    if let Some(client) = (*ft).client.take() {
+        server_client_unref_owned(client);
+    }
 }
 
 pub unsafe fn format_free(ft: *mut format_tree) {

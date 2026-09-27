@@ -1,4 +1,4 @@
-use crate::src::shared::client::client_owner_ptr;
+use crate::src::shared::client::client_rc_ptr;
 use crate::src::log::{log_cstr, log_pointer};
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
@@ -145,12 +145,12 @@ pub(super) unsafe fn format_job_get(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    if client_owner_ptr(&(*ft).client).is_null() {
+    if client_rc_ptr(&(*ft).client).is_null() {
         jobs = &raw mut format_jobs as *mut format_job_tree;
     } else {
-        jobs = &mut **(*client_owner_ptr(&(*ft).client)).jobs.get_or_insert_with(Default::default);
+        jobs = &mut **(*client_rc_ptr(&(*ft).client)).jobs.get_or_insert_with(Default::default);
     }
-    fj = format_job_find_or_insert(&mut *jobs, client_owner_ptr(&(*ft).client), (*ft).tag, CStr::from_ptr(cmd));
+    fj = format_job_find_or_insert(&mut *jobs, client_rc_ptr(&(*ft).client), (*ft).tag, CStr::from_ptr(cmd));
     format_copy_state(
         &raw mut next,
         es,
@@ -182,7 +182,7 @@ pub(super) unsafe fn format_job_get(
             None,
             ::core::ptr::null_mut::<session>(),
             {
-                let cwd = server_client_get_cwd(client_owner_ptr(&(*ft).client), ::core::ptr::null_mut::<session>());
+                let cwd = server_client_get_cwd(client_rc_ptr(&(*ft).client), ::core::ptr::null_mut::<session>());
                 (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
             },
             job_update_callback(move |job| unsafe { format_job_update(job, fj) }),

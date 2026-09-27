@@ -1,5 +1,6 @@
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::session::session_remove_ref;
-use crate::src::shared::client::{ClientOwner, client_owner_ptr};
+use crate::src::shared::client::{client_retain, client_rc_ptr};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
@@ -50,7 +51,7 @@ use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
 pub struct cmd_run_shell_data {
-    pub client: Option<ClientOwner>,
+    pub client: Option<Rc<UnsafeCell<client>>>,
     pub cmd: Option<CString>,
     pub state: Option<Box<args_command_state>>,
     pub cwd: CString,
@@ -119,8 +120,8 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             cmdq_print(cdata.item, |out| write_cstr(out, msg));
             return;
         }
-        if cdata.client.is_some() && !(*client_owner_ptr(&cdata.client)).session.is_null() {
-            wp = (*(*(*(*client_owner_ptr(&cdata.client)).session).curw).window_ptr()).active;
+        if cdata.client.is_some() && !(*client_rc_ptr(&cdata.client)).session.is_null() {
+            wp = (*(*(*(*client_rc_ptr(&cdata.client)).session).curw).window_ptr()).active;
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
@@ -236,10 +237,10 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         cdata.wp_id = -(1 as ::core::ffi::c_int);
     }
     if wait != 0 {
-        cdata.client = ClientOwner::retain(c);
+        cdata.client = client_retain(c);
         cdata.item = item;
     } else {
-        cdata.client = ClientOwner::retain(tc);
+        cdata.client = client_retain(tc);
         cdata.flags |= JOB_NOWAIT;
     }
     if args_has(args, 'E' as i32 as u_char) != 0 {
@@ -268,7 +269,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
-    let mut c: *mut client = client_owner_ptr(&cdata.client);
+    let mut c: *mut client = client_rc_ptr(&cdata.client);
     let cmd = cdata.cmd.as_deref();
     let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -429,7 +430,9 @@ impl Drop for cmd_run_shell_data {
             if let Some(session) = self.s.take() {
                 session_remove_ref(session, c"cmd_run_shell_data::drop");
             }
-            drop(self.client.take());
+            if let Some(client) = self.client.take() {
+                server_client_unref_owned(client);
+            }
             drop(self.state.take());
         }
     }
