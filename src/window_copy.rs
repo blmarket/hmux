@@ -8018,9 +8018,8 @@ unsafe fn window_copy_copy_buffer(
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &mut ctx,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-            buf.as_ptr() as *mut u_char,
-            buf.len() as u_int,
+            c"",
+            &buf,
         );
         screen_write_stop(&mut ctx);
         (*wp).flags |= redraw;
@@ -8129,9 +8128,8 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &mut ctx,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-            buf.as_mut_ptr(),
-            buf.len() as u_int,
+            c"",
+            &buf,
         );
         screen_write_stop(&mut ctx);
         events_fire_pane(

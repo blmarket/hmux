@@ -111,9 +111,8 @@ unsafe fn cmd_load_buffer_done(
         {
             tty_set_selection(
                 &raw mut (*tc).tty,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
-                bdata as *const ::core::ffi::c_char,
-                bsize,
+                c"",
+                std::slice::from_raw_parts(bdata.cast(), bsize),
             );
         }
     }

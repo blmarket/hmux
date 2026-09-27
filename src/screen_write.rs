@@ -4219,12 +4219,7 @@ unsafe fn screen_write_overwrite(
     }
     return done;
 }
-pub unsafe fn screen_write_setselection(
-    ctx: &mut screen_write_ctx,
-    mut clip: *const ::core::ffi::c_char,
-    mut str: *mut u_char,
-    mut len: u_int,
-) {
+pub unsafe fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr, data: &[u8]) {
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
@@ -4274,9 +4269,10 @@ pub unsafe fn screen_write_setselection(
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    ttyctx.c2rust_unnamed.sel.clip = clip;
-    ttyctx.c2rust_unnamed.sel.data = str as *const ::core::ffi::c_char;
-    ttyctx.c2rust_unnamed.sel.size = len as size_t;
+    ttyctx.c2rust_unnamed.sel.clip = clip.as_ptr();
+    ttyctx.c2rust_unnamed.sel.data = data.as_ptr().cast();
+    ttyctx.c2rust_unnamed.sel.size = data.len();
+    // tty_write consumes the borrowed payload synchronously.
     tty_write(
         Some(tty_cmd_setselection as unsafe fn(*mut tty, *const tty_ctx) -> ()),
         &raw mut ttyctx,
@@ -4284,8 +4280,7 @@ pub unsafe fn screen_write_setselection(
 }
 pub unsafe fn screen_write_rawstring(
     ctx: &mut screen_write_ctx,
-    mut str: *mut u_char,
-    mut len: u_int,
+    data: &[u8],
     mut allow_invisible_panes: ::core::ffi::c_int,
 ) {
     let mut ttyctx: tty_ctx = tty_ctx {
@@ -4340,8 +4335,9 @@ pub unsafe fn screen_write_rawstring(
     if allow_invisible_panes != 0 {
         ttyctx.flags |= TTY_CTX_INVISIBLE_PANES;
     }
-    ttyctx.c2rust_unnamed.data.data = str as *const ::core::ffi::c_char;
-    ttyctx.c2rust_unnamed.data.size = len as size_t;
+    ttyctx.c2rust_unnamed.data.data = data.as_ptr().cast();
+    ttyctx.c2rust_unnamed.data.size = data.len();
+    // tty_write consumes the borrowed payload synchronously.
     tty_write(
         Some(tty_cmd_rawstring as unsafe fn(*mut tty, *const tty_ctx) -> ()),
         &raw mut ttyctx,

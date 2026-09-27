@@ -179,9 +179,8 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             if let Some(selection_data) = selection_data.as_ref() {
                 tty_set_selection(
                     &raw mut (*tc).tty,
-                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                    selection_data.as_ptr().cast(),
-                    selection_data.len(),
+                    c"",
+                    selection_data,
                 );
             }
             return CMD_RETURN_NORMAL;

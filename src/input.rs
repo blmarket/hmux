@@ -4519,8 +4519,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     {
         screen_write_rawstring(
             &mut *sctx,
-            buf.offset(prefixlen as isize),
-            len.wrapping_sub(prefixlen as size_t) as u_int,
+            &(&(*ictx).input_buf)[prefixlen as usize..len],
             (allow_passthrough == 2 as ::core::ffi::c_longlong) as ::core::ffi::c_int,
         );
     }
@@ -5558,32 +5557,20 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         scrolled: 0,
         bg: 0,
     };
-    let mut clip: [::core::ffi::c_char; 13] = ::core::mem::transmute::<
-        [u8; 13],
-        [::core::ffi::c_char; 13],
-    >(*b"\0\0\0\0\0\0\0\0\0\0\0\0\0");
-    let Some(mut out) = input_osc_52_parse(ictx, p, clip.as_mut_ptr()) else {
+    let mut clip = [0u8; 13];
+    let Some(out) = input_osc_52_parse(ictx, p, clip.as_mut_ptr().cast()) else {
         return;
     };
+    let clip = std::ffi::CStr::from_bytes_until_nul(&clip).expect("terminated clipboard selectors");
     if wp.is_null() {
         if (*ictx).c.is_null() {
             return;
         }
-        tty_set_selection(
-            &raw mut (*(*ictx).c).tty,
-            &raw mut clip as *mut ::core::ffi::c_char,
-            out.as_ptr().cast(),
-            out.len(),
-        );
+        tty_set_selection(&raw mut (*(*ictx).c).tty, clip, &out);
         paste_add_owned(None, out.into_boxed_slice());
     } else {
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
-        screen_write_setselection(
-            &mut ctx,
-            &raw mut clip as *mut ::core::ffi::c_char,
-            out.as_mut_ptr(),
-            out.len() as u_int,
-        );
+        screen_write_setselection(&mut ctx, clip, &out);
         screen_write_stop(&mut ctx);
         events_fire_pane(
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,

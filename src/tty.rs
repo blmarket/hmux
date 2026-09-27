@@ -2509,17 +2509,14 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ctx) {
 pub unsafe fn tty_cmd_setselection(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     tty_set_selection(
         tty,
-        (*ctx).c2rust_unnamed.sel.clip,
-        (*ctx).c2rust_unnamed.sel.data,
-        (*ctx).c2rust_unnamed.sel.size,
+        CStr::from_ptr((*ctx).c2rust_unnamed.sel.clip),
+        std::slice::from_raw_parts(
+            (*ctx).c2rust_unnamed.sel.data.cast(),
+            (*ctx).c2rust_unnamed.sel.size,
+        ),
     );
 }
-pub unsafe fn tty_set_selection(
-    mut tty: *mut tty,
-    mut clip: *const ::core::ffi::c_char,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-) {
+pub unsafe fn tty_set_selection(mut tty: *mut tty, clip: &CStr, data: &[u8]) {
     let mut size: size_t = 0;
     if !(*tty).flags & TTY_STARTED != 0 {
         return;
@@ -2528,17 +2525,16 @@ pub unsafe fn tty_set_selection(
         return;
     }
     size = (4 as size_t)
-        .wrapping_mul(len.wrapping_add(2 as size_t).wrapping_div(3 as size_t))
+        .wrapping_mul(
+            data.len()
+                .wrapping_add(2 as size_t)
+                .wrapping_div(3 as size_t),
+        )
         .wrapping_add(1 as size_t);
     let mut encoded = vec![0; size];
-    __b64_ntop(
-        buf as *const ::core::ffi::c_uchar,
-        len,
-        encoded.as_mut_ptr().cast(),
-        size,
-    );
+    __b64_ntop(data.as_ptr(), data.len(), encoded.as_mut_ptr().cast(), size);
     (*tty).flags |= TTY_NOBLOCK;
-    tty_putcode_ss(tty, TTYC_MS, clip, encoded.as_ptr().cast());
+    tty_putcode_ss(tty, TTYC_MS, clip.as_ptr(), encoded.as_ptr().cast());
 }
 pub unsafe fn tty_cmd_rawstring(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     (*tty).flags |= TTY_NOBLOCK;
