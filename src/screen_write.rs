@@ -1561,30 +1561,13 @@ pub unsafe fn screen_write_backspace(mut ctx: *mut screen_write_ctx) {
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-unsafe fn screen_write_cell_is_single(mut gc: *const grid_cell) -> ::core::ffi::c_int {
-    if (*gc).data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc).data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int)
-        < 0x20 as ::core::ffi::c_int
-        || *(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int
-            == 0x7f as ::core::ffi::c_int
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_CLEARED != 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+fn screen_write_cell_is_single(gc: &grid_cell) -> ::core::ffi::c_int {
+    (gc.data.width == 1
+        && gc.data.size == 1
+        && gc.data.data[0] >= 0x20
+        && gc.data.data[0] != 0x7f
+        && gc.flags as ::core::ffi::c_int & (GRID_FLAG_CLEARED | GRID_FLAG_PADDING | GRID_FLAG_TAB)
+            == 0) as ::core::ffi::c_int
 }
 unsafe fn screen_write_redraw_line(
     mut ctx: *mut screen_write_ctx,
@@ -1655,7 +1638,7 @@ unsafe fn screen_write_redraw_line(
                         );
                     } else {
                         grid_view_get_cell((*s).grid(), cx, yy, &mut gc);
-                        if screen_write_cell_is_single(&raw mut gc) == 0 {
+                        if screen_write_cell_is_single(&gc) == 0 {
                             tty_write(
                                 Some(
                                     tty_cmd_redrawline as unsafe fn(*mut tty, *const tty_ctx) -> (),
@@ -3768,31 +3751,13 @@ unsafe fn screen_write_collect_insert_clear(
         screen_write_collect_insert(&mut *ctx);
     }
 }
-unsafe fn screen_write_clear_cell(mut gd: *mut grid, mut px: u_int, mut py: u_int) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut bg: ::core::ffi::c_int = 0;
-    grid_view_get_cell(&*gd, px, py, &mut gc);
-    bg = gc.bg;
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+unsafe fn screen_write_clear_cell(gd: &mut grid, px: u_int, py: u_int) {
+    let mut gc = grid_default_cell;
+    grid_view_get_cell(gd, px, py, &mut gc);
+    let bg = gc.bg;
+    gc = grid_default_cell;
     gc.bg = bg;
-    grid_view_set_cell(&mut *gd, px, py, &gc);
+    grid_view_set_cell(gd, px, py, &gc);
 }
 unsafe fn screen_write_insert_clears(mut ctx: *mut screen_write_ctx, mut px: u_int, mut nx: u_int) {
     let mut s: *mut screen = (*ctx).s;
@@ -4156,7 +4121,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
     if gl.flags as ::core::ffi::c_int & GRID_LINE_EXTENDED != 0 {
         grid_view_get_cell(&*gd, (*s).cx, (*s).cy, &mut now_gc);
-        if screen_write_overwrite(ctx, &raw mut now_gc, width) != 0 {
+        if screen_write_overwrite(&mut *gd, (*s).cx, (*s).cy, &now_gc, width) != 0 {
             redraw = 1 as ::core::ffi::c_int;
             skip = 0 as ::core::ffi::c_int;
         }
@@ -4543,12 +4508,12 @@ unsafe fn screen_write_combine(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn screen_write_overwrite(
-    mut ctx: *mut screen_write_ctx,
-    mut gc: *mut grid_cell,
+    gd: &mut grid,
+    cx: u_int,
+    cy: u_int,
+    gc: &grid_cell,
     mut width: u_int,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut screen = (*ctx).s;
-    let mut gd: *mut grid = (*s).grid_mut();
     let mut tmp_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -4565,14 +4530,14 @@ unsafe fn screen_write_overwrite(
     };
     let mut xx: u_int = 0;
     let mut done: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-        xx = (*s).cx.wrapping_add(1 as u_int);
+    if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+        xx = cx.wrapping_add(1 as u_int);
         loop {
             xx = xx.wrapping_sub(1);
             if !(xx > 0 as u_int) {
                 break;
             }
-            grid_view_get_cell(&*gd, xx, (*s).cy, &mut tmp_gc);
+            grid_view_get_cell(gd, xx, cy, &mut tmp_gc);
             if !(tmp_gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
@@ -4580,30 +4545,30 @@ unsafe fn screen_write_overwrite(
                 "{}: padding at {},{}",
                 "screen_write_overwrite",
                 (xx) as u32,
-                ((*s).cy) as u32
+                (cy) as u32
             ));
-            screen_write_clear_cell(gd, xx, (*s).cy);
+            screen_write_clear_cell(gd, xx, cy);
         }
         log_debug(format_args!(
             "{}: character at {},{}",
             "screen_write_overwrite",
             (xx) as u32,
-            ((*s).cy) as u32
+            (cy) as u32
         ));
-        screen_write_clear_cell(gd, xx, (*s).cy);
+        screen_write_clear_cell(gd, xx, cy);
         done = 1 as ::core::ffi::c_int;
     }
     if width != 1 as u_int
-        || (*gc).data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-        || (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
+        || gc.data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
+        || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
     {
-        xx = (*s).cx.wrapping_add(width).wrapping_sub(1 as u_int);
+        xx = cx.wrapping_add(width).wrapping_sub(1 as u_int);
         loop {
             xx = xx.wrapping_add(1);
-            if !(xx < (*s).grid().sx) {
+            if !(xx < gd.sx) {
                 break;
             }
-            grid_view_get_cell(&*gd, xx, (*s).cy, &mut tmp_gc);
+            grid_view_get_cell(gd, xx, cy, &mut tmp_gc);
             if !(tmp_gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
@@ -4611,9 +4576,9 @@ unsafe fn screen_write_overwrite(
                 "{}: overwrite at {},{}",
                 "screen_write_overwrite",
                 (xx) as u32,
-                ((*s).cy) as u32
+                (cy) as u32
             ));
-            screen_write_clear_cell(gd, xx, (*s).cy);
+            screen_write_clear_cell(gd, xx, cy);
             done = 1 as ::core::ffi::c_int;
         }
     }
@@ -4917,6 +4882,66 @@ pub unsafe fn screen_write_alternateoff(
     );
     if ttyctx.redraw_cb.is_some() {
         ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
+    }
+}
+
+#[cfg(test)]
+mod write_cell_tests {
+    use super::*;
+    use crate::src::grid::grid_create;
+
+    #[test]
+    fn overwriting_wide_cells_clears_surrounding_padding_and_preserves_backgrounds() {
+        unsafe {
+            for (cx, width, cleared) in [
+                (1, 3, vec![0, 1, 4]),
+                (0, 1, vec![1]),
+                (3, 1, vec![4]),
+                (2, 3, vec![]),
+            ] {
+                let mut gd = grid_create(8, 1, 0);
+                for x in 0..8 {
+                    let mut cell = grid_default_cell;
+                    cell.data.data[0] = b'A' + x as u8;
+                    cell.bg = 100 + x as i32;
+                    grid_view_set_cell(&mut gd, x, 0, &cell);
+                }
+                for x in [0, 3] {
+                    let mut cell = grid_default_cell;
+                    cell.data.data[..3].copy_from_slice("漢".as_bytes());
+                    cell.data.size = 3;
+                    cell.data.width = 2;
+                    cell.bg = 200 + x as i32;
+                    grid_view_set_cell(&mut gd, x, 0, &cell);
+                    grid_view_set_padding(&mut gd, x + 1, 0, cell.bg);
+                }
+                let before: Vec<_> = (0..8)
+                    .map(|x| {
+                        let mut cell = grid_default_cell;
+                        grid_view_get_cell(&gd, x, 0, &mut cell);
+                        cell
+                    })
+                    .collect();
+                assert_eq!(
+                    screen_write_overwrite(&mut gd, cx, 0, &before[cx as usize], width),
+                    (!cleared.is_empty()) as i32,
+                );
+                for x in 0..8 {
+                    let mut after = grid_default_cell;
+                    grid_view_get_cell(&gd, x, 0, &mut after);
+                    let mut expected = before[x as usize];
+                    if cleared.contains(&x) {
+                        let bg = expected.bg;
+                        expected = grid_default_cell;
+                        expected.bg = bg;
+                    }
+                    assert!(
+                        grid_cells_equal(&after, &expected),
+                        "cursor {cx}, width {width}, cell {x}"
+                    );
+                }
+            }
+        }
     }
 }
 
