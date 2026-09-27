@@ -187,11 +187,11 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         assert_eq!(options_array_next(first), two);
         assert_eq!(
             options_array_get(array, c"02".as_ptr()),
-            options_array_item_value(two)
+            (hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)
         );
         assert_eq!(
             options_array_get_index(array, 2),
-            options_array_item_value(two)
+            (hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)
         );
         for (index, key) in [(0, c"0"), (u32::MAX, c"4294967295")] {
             let value = options_array_get_index(array, index);
@@ -204,7 +204,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         assert!(!non_utf8_value.is_null());
         assert!(options_array_get(array, c"".as_ptr()).is_null());
         assert_eq!(
-            CStr::from_ptr((*options_array_item_value(two)).string_ptr()),
+            CStr::from_ptr((*(hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)).string_ptr()),
             c"updated"
         );
         for (key, expected) in [

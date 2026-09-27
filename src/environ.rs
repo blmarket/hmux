@@ -191,7 +191,7 @@ pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut envi
     }
     a = options_array_first(o);
     while !a.is_null() {
-        ov = options_array_item_value(a);
+        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         found = 0 as ::core::ffi::c_int;
         for envent in environ_iter(src) {
             if fnmatch(

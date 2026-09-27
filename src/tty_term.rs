@@ -1171,7 +1171,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     );
     a = options_array_first(o);
     while !a.is_null() {
-        ov = options_array_item_value(a);
+        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         s = (*ov).string_ptr();
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);
@@ -1363,7 +1363,7 @@ pub unsafe fn tty_term_create(
     );
     a = options_array_first(o);
     while !a.is_null() {
-        ov = options_array_item_value(a);
+        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         s = (*ov).string_ptr();
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);

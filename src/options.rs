@@ -737,8 +737,11 @@ pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options
 pub fn options_array_item_key(a: &options_array_item) -> &CStr {
     &a.key
 }
-pub unsafe fn options_array_item_value(mut a: *mut options_array_item) -> *mut options_value {
-    return &raw mut (*a).value;
+pub fn options_array_item_value(a: &options_array_item) -> &options_value {
+    &a.value
+}
+pub fn options_array_item_value_mut(a: &mut options_array_item) -> &mut options_value {
+    &mut a.value
 }
 pub unsafe fn options_is_array(mut o: *mut options_entry) -> ::core::ffi::c_int {
     return (!(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() && (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).flags & OPTIONS_TABLE_IS_ARRAY != 0)

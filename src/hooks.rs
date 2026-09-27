@@ -248,7 +248,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         a = options_array_first(o);
         while !a.is_null() {
             if (*hd).expand != 0 {
-                value = (*options_array_item_value(a)).string_ptr();
+                value = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr();
                 pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
                 match pr.status as ::core::ffi::c_uint {
                     0 => {
@@ -262,7 +262,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                     _ => {}
                 }
             } else {
-                let cmdlist = (*options_array_item_value(a)).commands();
+                let cmdlist = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).commands();
                 item = hooks_insert_one(item, hd, cmdlist, &state);
             }
             a = options_array_next(a);

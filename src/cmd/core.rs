@@ -299,7 +299,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     wanted = name.to_bytes().len();
     a = options_array_first(o);
     while !a.is_null() {
-        ov = options_array_item_value(a);
+        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         equals = strchr((*ov).string_ptr(), '=' as i32);
         if !equals.is_null() {
             n = equals.offset_from((*ov).string_ptr()) as ::core::ffi::c_long as size_t;
