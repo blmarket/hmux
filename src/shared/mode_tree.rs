@@ -142,7 +142,7 @@ pub enum ModeTreeItemData {
     Buffer(Rc<UnsafeCell<window_buffer_itemdata>>),
     Client(Rc<UnsafeCell<window_client_itemdata>>),
     Customize(Rc<UnsafeCell<window_customize_itemdata>>),
-    Tree(Rc<UnsafeCell<window_tree_itemdata>>),
+    Tree(Rc<window_tree_itemdata>),
 }
 
 impl ModeTreeItemData {
@@ -164,7 +164,7 @@ impl ModeTreeItemData {
             _ => None,
         }
     }
-    pub fn as_tree(&self) -> Option<&Rc<UnsafeCell<window_tree_itemdata>>> {
+    pub fn as_tree(&self) -> Option<&Rc<window_tree_itemdata>> {
         match self {
             Self::Tree(item) => Some(item),
             _ => None,
