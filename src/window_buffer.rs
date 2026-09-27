@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strlen, strstr};
+use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
     format_expand_cstring, format_free, format_true,
@@ -48,7 +49,6 @@ use crate::src::sort::sort_get_buffers;
 use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 #[repr(C)]
@@ -753,17 +753,11 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     }
     pid = spawn_get_editor_pid((*data).editor);
     if pid == -(1 as ::core::ffi::c_int) {
-        xsnprintf(
-            &raw mut text as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"WAITING FOR EDITOR\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        xformat(&mut text, format_args!("WAITING FOR EDITOR"));
     } else {
-        xsnprintf(
-            &raw mut text as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"WAITING FOR EDITOR (PID %ld)\0" as *const u8 as *const ::core::ffi::c_char,
-            pid as ::core::ffi::c_long,
+        xformat(
+            &mut text,
+            format_args!("WAITING FOR EDITOR (PID {})", pid as ::core::ffi::c_long),
         );
     }
     textlen = strlen(&raw mut text as *mut ::core::ffi::c_char);

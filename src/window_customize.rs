@@ -1,3 +1,4 @@
+use crate::src::format::bytes::xformat;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -90,7 +91,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
-use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {
@@ -657,17 +658,11 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
     }
     pid = spawn_get_editor_pid((*data).editor);
     if pid == -(1 as ::core::ffi::c_int) {
-        xsnprintf(
-            &raw mut text as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"WAITING FOR EDITOR\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        xformat(&mut text, format_args!("WAITING FOR EDITOR"));
     } else {
-        xsnprintf(
-            &raw mut text as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"WAITING FOR EDITOR (PID %ld)\0" as *const u8 as *const ::core::ffi::c_char,
-            pid as ::core::ffi::c_long,
+        xformat(
+            &mut text,
+            format_args!("WAITING FOR EDITOR (PID {})", pid as ::core::ffi::c_long),
         );
     }
     textlen = strlen(&raw mut text as *mut ::core::ffi::c_char);
@@ -755,12 +750,7 @@ unsafe fn window_customize_set_option_value(
                 }
                 idx = idx.wrapping_add(1);
             }
-            xsnprintf(
-                &raw mut keybuf as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
-            );
+            xformat(&mut keybuf, format_args!("{}", idx as u32));
             array_key = &raw mut keybuf as *mut ::core::ffi::c_char;
         }
         if options_array_set(o, array_key, s, 0 as ::core::ffi::c_int, cause)
@@ -2574,14 +2564,7 @@ unsafe fn window_customize_draw_option(
                                                                                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                                                                                             ));
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                                                                                            xsnprintf(
-                                                                                                                &raw mut label as *mut ::core::ffi::c_char,
-                                                                                                                ::core::mem::size_of::<[::core::ffi::c_char; 64]>()
-                                                                                                                    as size_t,
-                                                                                                                b"Window value (from window %u): \0" as *const u8
-                                                                                                                    as *const ::core::ffi::c_char,
-                                                                                                                (*fs.wl).idx,
-                                                                                                            );
+                                                                                                            xformat(&mut label, format_args!("Window value (from window {}): " , ((*fs.wl).idx) as u32));
                                                                                                             if window_customize_write_value(
                                                                                                                 ctx,
                                                                                                                 (*s).cx,
@@ -3047,12 +3030,7 @@ unsafe fn window_customize_set_option_callback(
                 }
                 idx = idx.wrapping_add(1);
             }
-            xsnprintf(
-                &raw mut keybuf as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
-            );
+            xformat(&mut keybuf, format_args!("{}", idx as u32));
             array_key = &raw mut keybuf as *mut ::core::ffi::c_char;
         }
         if options_array_set(o, array_key, s, 0 as ::core::ffi::c_int, &raw mut cause)

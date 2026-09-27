@@ -2,6 +2,7 @@
 // immutable table is shared by lookup and enumeration; external user callbacks
 // retain their separate C ABI.
 use super::*;
+use crate::src::format::bytes::xformat;
 use crate::src::server_client::server_client_set_user;
 use crate::src::window::{window_pane_stack_first, window_winlinks_first, window_winlinks_next};
 use std::ffi::{CStr, CString};
@@ -127,12 +128,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
-            xsnprintf(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wl).idx,
-            );
+            xformat(&mut tmp, format_args!("{}", ((*wl).idx) as u32));
             if *(&raw mut alerts as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
@@ -179,20 +175,10 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
     if s.is_null() {
         return None;
     }
-    xsnprintf(
-        &raw mut result as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(*s).curw).idx,
-    );
+    xformat(&mut result, format_args!("{}", ((*(*s).curw).idx) as u32));
     wl = crate::src::window::winlink_stack_first(&(*s).lastw);
     while !wl.is_null() {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wl).idx,
-        );
+        xformat(&mut tmp, format_args!("{}", ((*wl).idx) as u32));
         if *(&raw mut result as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
             strlcat(
                 &raw mut result as *mut ::core::ffi::c_char,

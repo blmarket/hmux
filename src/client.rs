@@ -18,6 +18,7 @@ use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
 };
+use crate::src::format::bytes::xformat_with;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
 use crate::src::options::options_free;
 use crate::src::proc::{
@@ -56,7 +57,6 @@ use crate::src::tmux::{
     ptm_fd, setblocking, shell_argv0_cstring, shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
@@ -235,25 +235,22 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
     match client_exitreason as ::core::ffi::c_uint {
         1 => {
             if let Some(session) = client_exitsession.as_ref() {
-                xsnprintf(
-                    &raw mut msg as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-                    b"detached (from session %s)\0" as *const u8 as *const ::core::ffi::c_char,
-                    session.as_ptr(),
-                );
+                xformat_with(&mut *(&raw mut msg), |out| {
+                    out.write_all(b"detached (from session ")?;
+                    out.write_all(session.as_bytes())?;
+                    out.write_all(b")")
+                });
                 return &raw mut msg as *mut ::core::ffi::c_char;
             }
             return b"detached\0" as *const u8 as *const ::core::ffi::c_char;
         }
         2 => {
             if let Some(session) = client_exitsession.as_ref() {
-                xsnprintf(
-                    &raw mut msg as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-                    b"detached and SIGHUP (from session %s)\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    session.as_ptr(),
-                );
+                xformat_with(&mut *(&raw mut msg), |out| {
+                    out.write_all(b"detached and SIGHUP (from session ")?;
+                    out.write_all(session.as_bytes())?;
+                    out.write_all(b")")
+                });
                 return &raw mut msg as *mut ::core::ffi::c_char;
             }
             return b"detached and SIGHUP\0" as *const u8 as *const ::core::ffi::c_char;

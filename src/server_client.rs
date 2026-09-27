@@ -28,6 +28,7 @@ use crate::src::file::{
     client_files_minmax, client_files_next, file_fire_done, file_print, file_read_data,
     file_read_done, file_write_done, file_write_ready,
 };
+use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_expand_time_cstring, format_free,
     format_lost_client,
@@ -98,7 +99,6 @@ use crate::src::window::{
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -5013,11 +5013,12 @@ pub unsafe fn server_client_get_flags(mut c: *mut client) -> *const ::core::ffi:
         );
     }
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_PAUSEAFTER != 0 {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"pause-after=%u,\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).pause_age.wrapping_div(1000 as u_int),
+        xformat(
+            &mut tmp,
+            format_args!(
+                "pause-after={},",
+                ((*c).pause_age.wrapping_div(1000 as u_int)) as u32
+            ),
         );
         strlcat(
             &raw mut s as *mut ::core::ffi::c_char,

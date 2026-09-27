@@ -1,5 +1,6 @@
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::ffi::libc::{strchr, strlen};
+use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::options_get_number;
@@ -24,7 +25,6 @@ use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{utf8_to_data, utf8_towc};
 use crate::src::tmux::global_options;
 use crate::src::window::window_pane_is_visible;
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -543,7 +543,7 @@ pub unsafe fn input_key_pane(
         let key_string = key_string_format(key, true);
         log_debug(format_args!(
             "writing key 0x{:x} ({}) to %{}",
-            (key) as u64,
+            key,
             log_cstr((key_string.as_ptr()) as *const _),
             ((*wp).id) as u32
         ));
@@ -635,21 +635,17 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
         b"extended-keys-format\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 1 as ::core::ffi::c_longlong
     {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            b"\x1B[27;%c;%llu~\0" as *const u8 as *const ::core::ffi::c_char,
-            modifier as ::core::ffi::c_int,
-            key,
-        );
+        xformat_with(&mut tmp, |out| {
+            out.write_all(b"\x1B[27;")?;
+            out.write_all(&[modifier as u8])?;
+            write!(out, ";{}~", key)
+        });
     } else {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            b"\x1B[%llu;%cu\0" as *const u8 as *const ::core::ffi::c_char,
-            key,
-            modifier as ::core::ffi::c_int,
-        );
+        xformat_with(&mut tmp, |out| {
+            write!(out, "\x1B[{};", key)?;
+            out.write_all(&[modifier as u8])?;
+            out.write_all(b"u")
+        });
     }
     input_key_write(
         b"input_key_extended\0" as *const u8 as *const ::core::ffi::c_char,
@@ -672,11 +668,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
         b"1!9(0)=+;:'\",<.>/-8? 2\0" as *const u8 as *const ::core::ffi::c_char,
         b"119900=+;;'',,..\x1F\x1F\x7F\x7F\0\0\0" as *const u8 as *const ::core::ffi::c_char,
     ];
-    log_debug(format_args!(
-        "{}: key in {:x}",
-        "input_key_vt10x",
-        (key) as u64
-    ));
+    log_debug(format_args!("{}: key in {:x}", "input_key_vt10x", key));
     if key as ::core::ffi::c_ulonglong & KEYC_META != 0 {
         input_key_write(
             b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
@@ -724,11 +716,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
             return -(1 as ::core::ffi::c_int);
         }
     }
-    log_debug(format_args!(
-        "{}: key out {:x}",
-        "input_key_vt10x",
-        (key) as u64
-    ));
+    log_debug(format_args!("{}: key out {:x}", "input_key_vt10x", key));
     ud.data[0 as ::core::ffi::c_int as usize] = (key & 0x7f as key_code) as u_char;
     input_key_write(
         b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
@@ -741,11 +729,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
 }
 unsafe fn input_key_mode1(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut onlykey: key_code = 0;
-    log_debug(format_args!(
-        "{}: key in {:x}",
-        "input_key_mode1",
-        (key) as u64
-    ));
+    log_debug(format_args!("{}: key in {:x}", "input_key_mode1", key));
     if key as ::core::ffi::c_ulonglong & (KEYC_CTRL | KEYC_META) == KEYC_META {
         return input_key_vt10x(bev, key);
     }
@@ -807,7 +791,7 @@ pub unsafe fn input_key(
         log_debug(format_args!(
             "{}: key 0x{:x} is backspace -> 0x{:x}",
             "input_key",
-            (key) as u64,
+            key,
             (newkey) as u64
         ));
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS == 0 as ::core::ffi::c_ulonglong {
@@ -912,7 +896,7 @@ pub unsafe fn input_key(
         log_debug(format_args!(
             "{}: found key 0x{:x}: \"{}\"",
             "input_key",
-            (key) as u64,
+            key,
             log_cstr(((*ike).data) as *const _)
         ));
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -959,11 +943,7 @@ pub unsafe fn input_key(
                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                         << 32 as ::core::ffi::c_int)
     {
-        log_debug(format_args!(
-            "{}: ignoring key 0x{:x}",
-            "input_key",
-            (key) as u64
-        ));
+        log_debug(format_args!("{}: ignoring key 0x{:x}", "input_key", key));
         return 0 as ::core::ffi::c_int;
     }
     match (*s).mode & EXTENDED_KEY_MODES {
@@ -1012,15 +992,16 @@ pub unsafe fn input_key_get_mouse(
         return 0 as ::core::ffi::c_int;
     }
     if (*m).sgr_type != ' ' as i32 as u_int && (*s).mode & MODE_MOUSE_SGR != 0 {
-        len = xsnprintf(
-            &raw mut buf as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 40]>() as size_t,
-            b"\x1B[<%u;%u;%u%c\0" as *const u8 as *const ::core::ffi::c_char,
-            (*m).sgr_b,
-            x.wrapping_add(1 as u_int),
-            y.wrapping_add(1 as u_int),
-            (*m).sgr_type,
-        ) as size_t;
+        len = xformat_with(&mut *(&raw mut buf), |out| {
+            write!(
+                out,
+                "\x1B[<{};{};{}",
+                ((*m).sgr_b) as u32,
+                (x.wrapping_add(1 as u_int)) as u32,
+                (y.wrapping_add(1 as u_int)) as u32
+            )?;
+            out.write_all(&[((*m).sgr_type) as u8])
+        }) as size_t;
     } else if (*s).mode & MODE_MOUSE_UTF8 != 0 {
         if (*m).b > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_BTN_OFF) as u_int
             || x > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
@@ -1028,11 +1009,7 @@ pub unsafe fn input_key_get_mouse(
         {
             return 0 as ::core::ffi::c_int;
         }
-        len = xsnprintf(
-            &raw mut buf as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 40]>() as size_t,
-            b"\x1B[M\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as size_t;
+        len = xformat(&mut *(&raw mut buf), format_args!("\x1B[M")) as size_t;
         len = len.wrapping_add(input_key_split2(
             (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int),
             (&raw mut buf as *mut ::core::ffi::c_char).offset(len as isize)
@@ -1052,11 +1029,7 @@ pub unsafe fn input_key_get_mouse(
         if (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
             return 0 as ::core::ffi::c_int;
         }
-        len = xsnprintf(
-            &raw mut buf as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 40]>() as size_t,
-            b"\x1B[M\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as size_t;
+        len = xformat(&mut *(&raw mut buf), format_args!("\x1B[M")) as size_t;
         let fresh0 = len;
         len = len.wrapping_add(1);
         buf[fresh0 as usize] =

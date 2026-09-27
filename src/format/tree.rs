@@ -1,3 +1,4 @@
+use crate::src::format::bytes::xformat;
 use crate::src::log::log_cstr;
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
@@ -249,11 +250,9 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
             continue;
         }
         if (*fe).time != 0 as time_t {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                (*fe).time as ::core::ffi::c_longlong,
+            xformat(
+                &mut s,
+                format_args!("{}", ((*fe).time as ::core::ffi::c_longlong) as i64),
             );
             values.push((key, CStr::from_ptr((&raw const s).cast()).to_owned()));
         } else {

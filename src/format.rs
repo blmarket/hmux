@@ -81,7 +81,7 @@ use crate::src::window_copy::{
     window_copy_get_hyperlink_cstring, window_copy_get_line_cstring, window_copy_get_word_cstring,
 };
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::NULL_0;

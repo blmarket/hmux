@@ -1,7 +1,6 @@
-use crate::src::ffi::libc::{calloc, free, vasprintf, vsnprintf};
+use crate::src::ffi::libc::{calloc, free, vasprintf};
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
-use crate::src::shared::limits::INT_MAX;
 use std::ffi::{CStr, CString};
 pub unsafe fn xcalloc(size: size_t) -> *mut ::core::ffi::c_void {
     if size == 0 {
@@ -63,35 +62,6 @@ pub(crate) unsafe fn try_vasprintf_cstring(
     free(raw.cast());
     Some(value)
 }
-pub unsafe extern "C" fn xsnprintf(
-    mut str: *mut ::core::ffi::c_char,
-    mut len: size_t,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) -> ::core::ffi::c_int {
-    let mut ap: ::core::ffi::VaList;
-    let mut i: ::core::ffi::c_int = 0;
-    ap = args.clone();
-    i = xvsnprintf(str, len, fmt, ap);
-    return i;
-}
-pub unsafe fn xvsnprintf(
-    mut str: *mut ::core::ffi::c_char,
-    mut len: size_t,
-    mut fmt: *const ::core::ffi::c_char,
-    mut ap: ::core::ffi::VaList,
-) -> ::core::ffi::c_int {
-    let mut i: ::core::ffi::c_int = 0;
-    if len > INT_MAX as size_t {
-        fatalx(b"xsnprintf: len > INT_MAX\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    i = vsnprintf(str, len, fmt, ap);
-    if i < 0 as ::core::ffi::c_int || i >= len as ::core::ffi::c_int {
-        fatalx(b"xsnprintf: overflow\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    return i;
-}
-
 #[cfg(test)]
 mod tests {
     use super::xvasprintf_cstring;

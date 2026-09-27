@@ -10,6 +10,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
+use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
 };
@@ -42,7 +43,6 @@ use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 #[repr(C)]
@@ -223,12 +223,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             ft = format_create_from_target(item);
             i = 1 as u_int;
             while i < args_count(args) {
-                xsnprintf(
-                    &raw mut key as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-                    b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    i,
-                );
+                xformat(&mut key, format_args!("{}", i as u32));
                 format_add(
                     ft,
                     &raw mut key as *mut ::core::ffi::c_char,

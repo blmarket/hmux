@@ -1,4 +1,5 @@
 use crate::src::ffi::libc::{memcmp, memcpy, memmove, memset, strchr, strlcat, strlen};
+use crate::src::format::bytes::xformat;
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::server::current_time;
@@ -12,7 +13,6 @@ use crate::src::text::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
 use crate::src::tmux::start_time;
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -1315,18 +1315,14 @@ unsafe fn grid_string_cells_add_code(
     i = 0 as u_int;
     while (i as size_t) < nnewc {
         if (i.wrapping_add(1 as u_int) as size_t) < nnewc {
-            xsnprintf(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"%d;\0" as *const u8 as *const ::core::ffi::c_char,
-                *newc.offset(i as isize),
+            xformat(
+                &mut tmp,
+                format_args!("{};", (*newc.offset(i as isize)) as i32),
             );
         } else {
-            xsnprintf(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                *newc.offset(i as isize),
+            xformat(
+                &mut tmp,
+                format_args!("{}", (*newc.offset(i as isize)) as i32),
             );
         }
         strlcat(buf, &raw mut tmp as *mut ::core::ffi::c_char, len);
@@ -1511,19 +1507,15 @@ unsafe fn grid_string_cells_code(
         i = 0 as size_t;
         while i < n {
             if s[i as usize] < 10 as ::core::ffi::c_int {
-                xsnprintf(
-                    &raw mut tmp as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                    s[i as usize],
-                );
+                xformat(&mut tmp, format_args!("{}", (s[i as usize]) as i32));
             } else {
-                xsnprintf(
-                    &raw mut tmp as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    b"%d:%d\0" as *const u8 as *const ::core::ffi::c_char,
-                    s[i as usize] / 10 as ::core::ffi::c_int,
-                    s[i as usize] % 10 as ::core::ffi::c_int,
+                xformat(
+                    &mut tmp,
+                    format_args!(
+                        "{}:{}",
+                        (s[i as usize] / 10 as ::core::ffi::c_int) as i32,
+                        (s[i as usize] % 10 as ::core::ffi::c_int) as i32
+                    ),
                 );
             }
             strlcat(buf, &raw mut tmp as *mut ::core::ffi::c_char, len);

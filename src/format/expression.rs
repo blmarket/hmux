@@ -5,6 +5,7 @@
 // and job-cache lookup.
 use super::bytes::format_cstring;
 use super::*;
+use crate::src::format::bytes::xformat;
 use std::ffi::{CStr, CString};
 
 pub(super) unsafe fn format_strftime(
@@ -153,62 +154,24 @@ pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
     s = (age % 60 as time_t) as u_int;
     if d != 0 as u_int {
         if h != 0 as u_int {
-            xsnprintf(
-                &raw mut out as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%ud%uh\0" as *const u8 as *const ::core::ffi::c_char,
-                d,
-                h,
-            );
+            xformat(&mut out, format_args!("{}d{}h", d as u32, h as u32));
         } else {
-            xsnprintf(
-                &raw mut out as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%ud\0" as *const u8 as *const ::core::ffi::c_char,
-                d,
-            );
+            xformat(&mut out, format_args!("{}d", d as u32));
         }
     } else if h != 0 as u_int {
         if m != 0 as u_int {
-            xsnprintf(
-                &raw mut out as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%uh%um\0" as *const u8 as *const ::core::ffi::c_char,
-                h,
-                m,
-            );
+            xformat(&mut out, format_args!("{}h{}m", h as u32, m as u32));
         } else {
-            xsnprintf(
-                &raw mut out as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%uh\0" as *const u8 as *const ::core::ffi::c_char,
-                h,
-            );
+            xformat(&mut out, format_args!("{}h", h as u32));
         }
     } else if m != 0 as u_int {
         if s != 0 as u_int {
-            xsnprintf(
-                &raw mut out as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%um%us\0" as *const u8 as *const ::core::ffi::c_char,
-                m,
-                s,
-            );
+            xformat(&mut out, format_args!("{}m{}s", m as u32, s as u32));
         } else {
-            xsnprintf(
-                &raw mut out as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%um\0" as *const u8 as *const ::core::ffi::c_char,
-                m,
-            );
+            xformat(&mut out, format_args!("{}m", m as u32));
         }
     } else {
-        xsnprintf(
-            &raw mut out as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"%us\0" as *const u8 as *const ::core::ffi::c_char,
-            s,
-        );
+        xformat(&mut out, format_args!("{}s", s as u32));
     }
     return Some(CStr::from_ptr(out.as_ptr()).to_owned());
 }

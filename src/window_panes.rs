@@ -8,6 +8,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
 use crate::src::ffi::libc::memcpy;
+use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
@@ -58,7 +59,6 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::CString;
 
 #[repr(C)]
@@ -1209,19 +1209,13 @@ unsafe fn window_panes_draw_number(
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut format: u_int = 0;
-    len = xsnprintf(
-        &raw mut buf as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        pane,
-    ) as size_t;
+    len = xformat(&mut buf, format_args!("{}", pane as u32)) as size_t;
     if pane > 9 as u_int && pane < 35 as u_int {
-        llen = xsnprintf(
-            &raw mut lbuf as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-            b"%c\0" as *const u8 as *const ::core::ffi::c_char,
-            ('a' as i32 as u_int).wrapping_add(pane.wrapping_sub(10 as u_int)),
-        ) as size_t;
+        llen = xformat_with(&mut lbuf, |out| {
+            out.write_all(&[
+                (('a' as i32 as u_int).wrapping_add(pane.wrapping_sub(10 as u_int))) as u8,
+            ])
+        }) as size_t;
     }
     if (sx as size_t) < len {
         return;

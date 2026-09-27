@@ -19,6 +19,7 @@ use crate::src::ffi::libc::{
     getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr,
     stdout, strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
 };
+use crate::src::format::bytes::xformat;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
 use crate::src::options::{
     options_create, options_default, options_set_number, options_set_string,
@@ -44,7 +45,6 @@ use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::src::tty_features::tty_parse_features;
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
 
@@ -706,12 +706,7 @@ pub unsafe fn check_name(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c
 }
 pub unsafe fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 11] = [0; 11];
-    xsnprintf(
-        &raw mut s as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        signo,
-    );
+    xformat(&mut *(&raw mut s), format_args!("{}", signo as i32));
     return &raw mut s as *mut ::core::ffi::c_char;
 }
 pub unsafe fn find_cwd() -> *const ::core::ffi::c_char {

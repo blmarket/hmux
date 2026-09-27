@@ -2,6 +2,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{
     memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
 };
+use crate::src::format::bytes::xformat_with;
 use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
@@ -32,7 +33,6 @@ pub use crate::src::shared::window::winlink;
 use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;
-use crate::src::xmalloc::xsnprintf;
 
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const STYLE_PAD_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -769,14 +769,11 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         {
             tmp = b"right-marker\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%slist=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            tmp,
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"list=")?;
+            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).range_type as ::core::ffi::c_uint
@@ -831,14 +828,11 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
             );
             tmp = &raw mut b as *mut ::core::ffi::c_char;
         }
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%srange=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            tmp,
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"range=")?;
+            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).align as ::core::ffi::c_uint
@@ -861,14 +855,11 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         {
             tmp = b"absolute-centre\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%salign=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            tmp,
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"align=")?;
+            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).default_type as ::core::ffi::c_uint
@@ -887,125 +878,86 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         {
             tmp = b"set-default\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            tmp,
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).fill != 8 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%sfill=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            colour_format((*sy).fill).as_ptr(),
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"fill=")?;
+            out.write_all(colour_format((*sy).fill).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).dim != 0 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%sdim=%d%%\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            (*sy).dim,
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            write!(out, "dim={}%", ((*sy).dim) as i32)
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).fg != 8 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%sfg=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            colour_format((*gc).fg).as_ptr(),
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"fg=")?;
+            out.write_all(colour_format((*gc).fg).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).bg != 8 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%sbg=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            colour_format((*gc).bg).as_ptr(),
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"bg=")?;
+            out.write_all(colour_format((*gc).bg).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).us != 8 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%sus=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            colour_format((*gc).us).as_ptr(),
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"us=")?;
+            out.write_all(colour_format((*gc).us).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).attr as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            attributes_format((*gc).attr as ::core::ffi::c_int).as_ptr(),
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(attributes_format((*gc).attr as ::core::ffi::c_int).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).width >= 0 as ::core::ffi::c_int {
         if (*sy).width_percentage != 0 {
-            off += xsnprintf(
-                (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-                (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                    .wrapping_sub(off as size_t),
-                b"%swidth=%u%%\0" as *const u8 as *const ::core::ffi::c_char,
-                comma,
-                (*sy).width,
-            );
+            off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+                out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+                write!(out, "width={}%", ((*sy).width) as u32)
+            });
         } else {
-            off += xsnprintf(
-                (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-                (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                    .wrapping_sub(off as size_t),
-                b"%swidth=%u\0" as *const u8 as *const ::core::ffi::c_char,
-                comma,
-                (*sy).width,
-            );
+            off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+                out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+                write!(out, "width={}", ((*sy).width) as u32)
+            });
         }
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).pad >= 0 as ::core::ffi::c_int {
-        off += xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%spad=%u\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            (*sy).pad,
-        );
+        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            write!(out, "pad={}", ((*sy).pad) as u32)
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     uri = style_link(sy);
     if !uri.is_null() {
-        xsnprintf(
-            (&raw mut s as *mut ::core::ffi::c_char).offset(off as isize),
-            (::core::mem::size_of::<[::core::ffi::c_char; 2048]>() as size_t)
-                .wrapping_sub(off as size_t),
-            b"%slink=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            comma,
-            uri,
-        );
+        xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(b"link=")?;
+            out.write_all(std::ffi::CStr::from_ptr(uri).to_bytes())
+        });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {

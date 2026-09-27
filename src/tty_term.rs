@@ -9,6 +9,7 @@ use crate::src::ffi::ncurses::TERMINAL;
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
+use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_only,
@@ -29,7 +30,6 @@ use crate::src::shared::tty::{
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 pub const TTYCODE_FLAG: tty_code_type = 3;
@@ -1561,12 +1561,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
                 if n == -(1 as ::core::ffi::c_int) || n == -(2 as ::core::ffi::c_int) {
                     current_block_23 = 1856101646708284338;
                 } else {
-                    xsnprintf(
-                        &raw mut tmp as *mut ::core::ffi::c_char,
-                        ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
-                        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                        n,
-                    );
+                    xformat(&mut tmp, format_args!("{}", n as i32));
                     s = &raw mut tmp as *mut ::core::ffi::c_char;
                     current_block_23 = 14763689060501151050;
                 }
@@ -1750,56 +1745,43 @@ pub unsafe fn tty_term_describe(
     mut code: tty_code_code,
 ) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 256] = [0; 256];
-    let mut out: [::core::ffi::c_char; 128] = [0; 128];
+    let mut escaped: [::core::ffi::c_char; 128] = [0; 128];
     match &(&(*term).codes)[code as usize] {
         tty_code::None => {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-                b"%4u: %s: [missing]\0" as *const u8 as *const ::core::ffi::c_char,
-                code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name.as_ptr(),
-            );
+            xformat_with(&mut *(&raw mut s), |out| {
+                write!(out, "{:4}: ", code as u32)?;
+                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+                out.write_all(b": [missing]")
+            });
         }
         tty_code::String(value) => {
             strnvis(
-                &raw mut out as *mut ::core::ffi::c_char,
+                &raw mut escaped as *mut ::core::ffi::c_char,
                 value.as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
                 VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
             );
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-                b"%4u: %s: (string) %s\0" as *const u8 as *const ::core::ffi::c_char,
-                code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name.as_ptr(),
-                &raw mut out as *mut ::core::ffi::c_char,
-            );
+            xformat_with(&mut *(&raw mut s), |out| {
+                write!(out, "{:4}: ", code as u32)?;
+                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+                out.write_all(b": (string) ")?;
+                out.write_all(CStr::from_ptr(escaped.as_ptr()).to_bytes())
+            });
         }
         tty_code::Number(value) => {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-                b"%4u: %s: (number) %d\0" as *const u8 as *const ::core::ffi::c_char,
-                code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name.as_ptr(),
-                *value,
-            );
+            xformat_with(&mut *(&raw mut s), |out| {
+                write!(out, "{:4}: ", code as u32)?;
+                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+                write!(out, ": (number) {}", (*value) as i32)
+            });
         }
         tty_code::Flag(value) => {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-                b"%4u: %s: (flag) %s\0" as *const u8 as *const ::core::ffi::c_char,
-                code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name.as_ptr(),
-                if *value != 0 {
-                    b"true\0" as *const u8 as *const ::core::ffi::c_char
-                } else {
-                    b"false\0" as *const u8 as *const ::core::ffi::c_char
-                },
-            );
+            xformat_with(&mut *(&raw mut s), |out| {
+                write!(out, "{:4}: ", code as u32)?;
+                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+                out.write_all(b": (flag) ")?;
+                out.write_all(if *value != 0 { b"true" } else { b"false" })
+            });
         }
     }
     return &raw mut s as *mut ::core::ffi::c_char;
@@ -1808,6 +1790,31 @@ pub unsafe fn tty_term_describe(
 #[cfg(test)]
 mod term_string_owner_tests {
     use super::*;
+
+    #[test]
+    fn descriptions_keep_padding_escaping_and_variant_labels() {
+        unsafe {
+            let mut term = tty_term::empty();
+            term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
+            for (value, suffix) in [
+                (tty_code::None, "[missing]"),
+                (tty_code::Number(-12), "(number) -12"),
+                (tty_code::Flag(0), "(flag) false"),
+                (tty_code::Flag(1), "(flag) true"),
+                (
+                    tty_code::String(CString::new("a\nb").unwrap()),
+                    "(string) a\\nb",
+                ),
+            ] {
+                term.codes[TTYC_CLEAR as usize] = value;
+                let expected = format!("{:4}: clear: {suffix}", TTYC_CLEAR as u32);
+                assert_eq!(
+                    CStr::from_ptr(tty_term_describe(&mut term, TTYC_CLEAR)).to_bytes(),
+                    expected.as_bytes(),
+                );
+            }
+        }
+    }
 
     #[test]
     fn overrides_replace_owned_values_and_preserve_missing_semantics() {

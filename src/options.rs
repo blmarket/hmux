@@ -4,6 +4,7 @@ use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{fnmatch, strcasecmp, strcmp, strncmp, strsep, strstr};
+use crate::src::format::bytes::xformat;
 use crate::src::format::format_expand_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::hooks_monitor_free;
@@ -40,7 +41,7 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 macro_rules! store_options_cause {
@@ -332,12 +333,7 @@ pub unsafe fn options_default(
         }
         i = 0 as u_int;
         while !(*(*oe).default_arr.offset(i as isize)).is_null() {
-            xsnprintf(
-                &raw mut key as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-            );
+            xformat(&mut key, format_args!("{}", i as u32));
             options_array_set(
                 o,
                 &raw mut key as *mut ::core::ffi::c_char,
@@ -659,12 +655,7 @@ pub unsafe fn options_array_assign(
             }
             i = i.wrapping_add(1);
         }
-        xsnprintf(
-            &raw mut key as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
-        );
+        xformat(&mut key, format_args!("{}", i as u32));
         return options_array_set(
             o,
             &raw mut key as *mut ::core::ffi::c_char,
@@ -696,12 +687,7 @@ pub unsafe fn options_array_assign(
         if i == UINT_MAX {
             break;
         }
-        xsnprintf(
-            &raw mut key as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
-        );
+        xformat(&mut key, format_args!("{}", i as u32));
         if options_array_set(
             o,
             &raw mut key as *mut ::core::ffi::c_char,

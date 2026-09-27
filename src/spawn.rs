@@ -20,6 +20,7 @@ use crate::src::ffi::libc::{
     strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
+use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
 use crate::src::layout::{
@@ -49,7 +50,6 @@ use crate::src::window::{
     winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8]]) {
@@ -143,33 +143,19 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
         log_hex((((*sc).flags) as u32) as u64)
     ));
     if !wl.is_null() && !wp0.is_null() {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"wl=%d wp0=%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wl).idx,
-            (*wp0).id,
+        xformat(
+            &mut tmp,
+            format_args!("wl={} wp0=%{}", ((*wl).idx) as i32, ((*wp0).id) as u32),
         );
     } else if !wl.is_null() {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"wl=%d wp0=none\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wl).idx,
-        );
+        xformat(&mut tmp, format_args!("wl={} wp0=none", ((*wl).idx) as i32));
     } else if !wp0.is_null() {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"wl=none wp0=%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp0).id,
+        xformat(
+            &mut tmp,
+            format_args!("wl=none wp0=%{}", ((*wp0).id) as u32),
         );
     } else {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-            b"wl=none wp0=none\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        xformat(&mut tmp, format_args!("wl=none wp0=none"));
     }
     log_debug(format_args!(
         "{}: s=${} {} idx={}",

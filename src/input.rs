@@ -11,6 +11,7 @@ use crate::src::ffi::libc::{
     memcpy, memset, strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol, time,
 };
 use crate::src::ffi::resolv::{__b64_ntop, __b64_pton};
+use crate::src::format::bytes::xformat;
 use crate::src::grid::{
     grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line, grid_set_tab,
 };
@@ -62,7 +63,7 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
@@ -5854,12 +5855,7 @@ unsafe fn input_add_request(
     input_client_requests(c).push(ir);
     match type_0 as ::core::ffi::c_uint {
         0 => {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"\x1B]4;%d;?\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
-            );
+            xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", idx as i32));
             tty_puts(&raw mut (*c).tty, &raw mut s as *mut ::core::ffi::c_char);
         }
         1 => {

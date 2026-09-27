@@ -4,7 +4,7 @@ use crate::src::ffi::libc::{
     strlen, strncmp, tcflush, tcgetattr, tcsetattr, time, usleep, write,
 };
 use crate::src::ffi::resolv::__b64_ntop;
-use crate::src::format::bytes::format_cstring;
+use crate::src::format::bytes::{format_cstring, xformat};
 use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
@@ -84,7 +84,6 @@ use crate::src::tty_term::{
     tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
     tty_term_string_s, tty_term_string_ss,
 };
-use crate::src::xmalloc::xsnprintf;
 
 pub const TIOCGWINSZ: ::core::ffi::c_int = 0x5413 as ::core::ffi::c_int;
 
@@ -125,11 +124,9 @@ static mut tty_default_style_ctx: tty_style_ctx = {
 };
 pub unsafe fn tty_create_log() {
     let mut name: [::core::ffi::c_char; 64] = [0; 64];
-    xsnprintf(
-        &raw mut name as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-        b"tmux-out-%ld.log\0" as *const u8 as *const ::core::ffi::c_char,
-        getpid() as ::core::ffi::c_long,
+    xformat(
+        &mut name,
+        format_args!("tmux-out-{}.log", getpid() as ::core::ffi::c_long),
     );
     tty_log_fd = open(
         &raw mut name as *mut ::core::ffi::c_char,
@@ -1786,14 +1783,15 @@ unsafe fn tty_clear_area(
             return;
         }
         if (*(*tty).term).flags & TERM_DECFRA != 0 && !(bg == 8 as u_int || bg == 9 as u_int) {
-            xsnprintf(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"\x1B[32;%u;%u;%u;%u$x\0" as *const u8 as *const ::core::ffi::c_char,
-                py.wrapping_add(1 as u_int),
-                px.wrapping_add(1 as u_int),
-                py.wrapping_add(ny),
-                px.wrapping_add(nx),
+            xformat(
+                &mut tmp,
+                format_args!(
+                    "\x1B[32;{};{};{};{}$x",
+                    (py.wrapping_add(1 as u_int)) as u32,
+                    (px.wrapping_add(1 as u_int)) as u32,
+                    (py.wrapping_add(ny)) as u32,
+                    (px.wrapping_add(nx)) as u32
+                ),
             );
             tty_puts(tty, &raw mut tmp as *mut ::core::ffi::c_char);
             return;
@@ -3383,12 +3381,7 @@ unsafe fn tty_colours_fg(mut tty: *mut tty, mut gc: *const grid_cell) {
         }
     } else if (*gc).fg >= 90 as ::core::ffi::c_int && (*gc).fg <= 97 as ::core::ffi::c_int {
         if (*(*tty).term).flags & TERM_256COLOURS != 0 {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"\x1B[%dm\0" as *const u8 as *const ::core::ffi::c_char,
-                (*gc).fg,
-            );
+            xformat(&mut s, format_args!("\x1B[{}m", ((*gc).fg) as i32));
             tty_puts(tty, &raw mut s as *mut ::core::ffi::c_char);
         } else {
             tty_putcode_i(
@@ -3416,11 +3409,9 @@ unsafe fn tty_colours_bg(mut tty: *mut tty, mut gc: *const grid_cell) {
         }
     } else if (*gc).bg >= 90 as ::core::ffi::c_int && (*gc).bg <= 97 as ::core::ffi::c_int {
         if (*(*tty).term).flags & TERM_256COLOURS != 0 {
-            xsnprintf(
-                &raw mut s as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"\x1B[%dm\0" as *const u8 as *const ::core::ffi::c_char,
-                (*gc).bg + 10 as ::core::ffi::c_int,
+            xformat(
+                &mut s,
+                format_args!("\x1B[{}m", ((*gc).bg + 10 as ::core::ffi::c_int) as i32),
             );
             tty_puts(tty, &raw mut s as *mut ::core::ffi::c_char);
         } else {

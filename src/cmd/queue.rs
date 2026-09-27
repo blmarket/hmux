@@ -19,6 +19,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
+use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_add, format_add_cstr, format_create, format_free, format_merge};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
@@ -52,7 +53,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
-use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 pub const CMDQ_CALLBACK: cmdq_type = 1;
@@ -156,22 +157,15 @@ unsafe fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char {
     if c.is_null() {
         return b"<global>\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    if !(*c).name.is_none() {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-            b"<%s>\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+    if let Some(name) = (*c).name.as_ref() {
+        xformat_with(&mut *(&raw mut s), |out| {
+            out.write_all(b"<")?;
+            out.write_all(name.as_bytes())?;
+            out.write_all(b">")
+        });
     } else {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-            b"<%p>\0" as *const u8 as *const ::core::ffi::c_char,
-            c,
-        );
+        // The null client already returned <global> above.
+        xformat_with(&mut *(&raw mut s), |out| write!(out, "<{:p}>", c));
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
@@ -436,12 +430,7 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     );
     i = 0 as u_int;
     while i < args_count(args_0) {
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"argument_%u\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
-        );
+        xformat(&mut tmp, format_args!("argument_{}", i as u32));
         event_payload_set_string(
             ep,
             &raw mut tmp as *mut ::core::ffi::c_char,
@@ -453,12 +442,10 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     flag = args_first(args_0, &raw mut ae) as ::core::ffi::c_char;
     while flag as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
         value = args_get(args_0, flag as u_char);
-        xsnprintf(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"flag_%c\0" as *const u8 as *const ::core::ffi::c_char,
-            flag as ::core::ffi::c_int,
-        );
+        xformat_with(&mut tmp, |out| {
+            out.write_all(b"flag_")?;
+            out.write_all(&[flag as u8])
+        });
         if value.is_null() {
             event_payload_set_string(
                 ep,
@@ -476,13 +463,11 @@ pub unsafe extern "C" fn cmdq_insert_hook(
         i = 0 as u_int;
         av = args_first_value(args_0, flag as u_char);
         while !av.is_null() {
-            xsnprintf(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                b"flag_%c_%u\0" as *const u8 as *const ::core::ffi::c_char,
-                flag as ::core::ffi::c_int,
-                i,
-            );
+            xformat_with(&mut tmp, |out| {
+                out.write_all(b"flag_")?;
+                out.write_all(&[flag as u8])?;
+                write!(out, "_{}", i)
+            });
             event_payload_set_string(
                 ep,
                 &raw mut tmp as *mut ::core::ffi::c_char,
