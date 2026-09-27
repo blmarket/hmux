@@ -353,6 +353,13 @@ pub type overlay_check_cb =
 pub struct ClientOwner(Option<std::rc::Rc<std::cell::UnsafeCell<client>>>);
 
 impl ClientOwner {
+    /// Upgrade an observer into a guard with the existing deferred release.
+    pub(crate) fn upgrade(
+        observer: &std::rc::Weak<std::cell::UnsafeCell<client>>,
+    ) -> Option<Self> {
+        Some(Self(Some(observer.upgrade()?)))
+    }
+
     /// Retain a live client, or preserve an absent client as None.
     ///
     /// # Safety

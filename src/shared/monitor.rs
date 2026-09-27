@@ -1,6 +1,8 @@
 //! Authoritative monitor declarations, shared by the C translation units.
 
 use super::abi::{time_t, u_int};
+use std::cell::UnsafeCell;
+use std::rc::Weak;
 use super::client::client;
 use super::event::event;
 use super::pane::window_pane;
@@ -18,7 +20,7 @@ pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int
 /// Box-owned by monitor_create; its callback and weak observers expire on destroy.
 #[repr(C)]
 pub struct monitor_set {
-    pub client: *mut client,
+    pub client: Option<Weak<UnsafeCell<client>>>,
     pub session: Option<super::session::SessionOwner>,
     pub cb: monitor_cb,
     pub items: monitor_items,
@@ -26,16 +28,16 @@ pub struct monitor_set {
     pub generation: u_int,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct monitor_change<'a> {
     pub name: &'a std::ffi::CStr,
     pub value: &'a std::ffi::CStr,
     pub last: Option<&'a std::ffi::CStr>,
-    pub c: *mut client,
-    pub s: *mut session,
+    pub c: Option<Weak<UnsafeCell<client>>>,
+    pub s: Option<Weak<UnsafeCell<session>>>,
     pub wl: *mut winlink,
-    pub wp: *mut window_pane,
+    pub wp: Option<Weak<UnsafeCell<window_pane>>>,
 }
 
 pub type monitor_cb = std::rc::Rc<dyn Fn(&monitor_change)>;

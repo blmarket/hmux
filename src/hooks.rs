@@ -1,3 +1,9 @@
+use crate::src::shared::client::{ClientOwner, client_owner_ptr};
+use crate::src::shared::session::SessionOwner;
+use crate::src::shared::rc;
+use crate::src::window::window_pane_upgrade;
+use std::cell::UnsafeCell;
+use std::rc::Weak;
 use crate::src::options::options_owner_ptr;
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::find::{
@@ -88,7 +94,7 @@ pub struct hooks_data<'a> {
     pub fs: cmd_find_state,
     pub formats: crate::src::shared::format::FormatTreeOwner,
     pub oo: *mut options,
-    pub client: *mut client,
+    pub client: Weak<UnsafeCell<client>>,
     pub expand: ::core::ffi::c_int,
 }
 #[repr(C)]
@@ -135,9 +141,10 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     if (*hd).expand == 0 {
         return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
     }
+    let client_owner = ClientOwner::upgrade(&(*hd).client);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        (*hd).client,
+        client_owner_ptr(&client_owner),
         fs.s,
         fs.wl,
         fs.wp,
@@ -286,7 +293,7 @@ unsafe fn hooks_insert_event(
         fs: cmd_find_state::default(),
         formats,
         oo,
-        client: c,
+        client: if c.is_null() { Weak::new() } else { rc::downgrade(c) },
         expand,
     };
     event_payload_get_target(ep, &mut hd.fs);
@@ -374,7 +381,10 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
             std::ptr::null_mut(), std::ptr::null_mut(), 0, FORMAT_NOJOBS,
         ),
         oo: std::ptr::null_mut(),
-        client: cmdq_get_client(item),
+        client: {
+            let client = cmdq_get_client(item);
+            if client.is_null() { Weak::new() } else { rc::downgrade(client) }
+        },
         expand: 0,
     };
     cmd_find_copy_state(&raw mut hd.fs, target);
@@ -415,7 +425,12 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
 }
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let wl = change.wl;
-    let wp = change.wp;
+    let client_owner = change.c.as_ref().and_then(ClientOwner::upgrade);
+    let c = client_owner_ptr(&client_owner);
+    let session_owner = change.s.as_ref().and_then(|session| SessionOwner::upgrade(session, c"hook-monitor"));
+    let s = session_owner.as_ref().map_or(std::ptr::null_mut(), SessionOwner::as_ptr);
+    let pane_owner = change.wp.as_ref().and_then(|pane| window_pane_upgrade(pane));
+    let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -438,8 +453,8 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
     } else if !wp.is_null() {
         cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    } else if !change.s.is_null() {
-        cmd_find_from_session(&raw mut fs, change.s, 0 as ::core::ffi::c_int);
+    } else if !s.is_null() {
+        cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
     } else {
         cmd_find_copy_state(&raw mut fs, &raw mut (*hm).fs);
     }
@@ -462,18 +477,18 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
-    if !change.c.is_null() {
-        event_payload_set_client(&mut *ep, change.c);
+    if !c.is_null() {
+        event_payload_set_client(&mut *ep, c);
     }
-    if !change.s.is_null() {
+    if !s.is_null() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            change.s,
+            s,
         );
     }
     if !wl.is_null() {
-        if change.s.is_null() {
+        if s.is_null() {
             event_payload_set_session(
                 &mut *ep,
                 b"session\0" as *const u8 as *const ::core::ffi::c_char,

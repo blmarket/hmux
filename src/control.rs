@@ -1436,10 +1436,15 @@ unsafe fn control_write_callback(c: *mut client) {
     }
 }
 unsafe fn control_sub_change(change: &monitor_change) {
-    let c = change.c;
-    let s = change.s;
+    let Some(client_owner) = change.c.as_ref().and_then(crate::src::shared::client::ClientOwner::upgrade) else { return };
+    let c = client_owner.as_ptr();
+    if (*c).flags & crate::src::shared::client::CLIENT_DEAD as uint64_t != 0 { return; }
+    let Some(session_owner) = change.s.as_ref().and_then(|session| crate::src::shared::session::SessionOwner::upgrade(session, c"control-monitor")) else { return };
+    let s = session_owner.as_ptr();
     let wl = change.wl;
-    let wp = change.wp;
+    let pane_owner = change.wp.as_ref().and_then(|pane| crate::src::window::window_pane_upgrade(pane));
+    if change.wp.is_some() && pane_owner.is_none() { return; }
+    let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     if !wp.is_null() {
         w = (*wp).window as *mut window;
