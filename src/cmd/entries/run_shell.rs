@@ -265,12 +265,14 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         move |_, _| unsafe { cmd_run_shell_timer(cdata as *mut ::core::ffi::c_void) },
     );
     if !delay.is_null() {
-        tv.tv_usec = 0 as __suseconds_t;
-        tv.tv_sec = tv.tv_usec as __time_t;
-        tv.tv_sec = d as time_t as __time_t;
-        tv.tv_usec = ((d - tv.tv_sec as ::core::ffi::c_double)
-            * 1000000 as ::core::ffi::c_uint as ::core::ffi::c_double)
-            as __suseconds_t;
+        // The pinned tmux build treats negative, nonfinite and out-of-range
+        // delays as expired. Rust's saturating float casts would instead turn
+        // positive infinity into an enormous timer. The upper bound is
+        // exclusive because time_t::MAX rounds up when converted to f64.
+        if (0.0..time_t::MAX as f64).contains(&d) {
+            tv.tv_sec = d as time_t;
+            tv.tv_usec = ((d - tv.tv_sec as f64) * 1_000_000.0) as __suseconds_t;
+        }
         event_add(&raw mut (*cdata).timer, &raw mut tv);
     } else {
         event_active(&raw mut (*cdata).timer);

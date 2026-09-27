@@ -109,7 +109,7 @@ fn start(state: &Rc<EventState>) -> std::io::Result<()> {
             }
             let flags = result.expect("descriptor/signal wait failed");
             if s.flags & 0x10 != 0 {
-                s.deadline.set(s.interval.map(|d| Instant::now() + d));
+                s.deadline.set(s.interval.map(deadline));
             }
             fire(&s, flags);
             if !s.live.get() {
@@ -121,13 +121,19 @@ fn start(state: &Rc<EventState>) -> std::io::Result<()> {
     *state.task.borrow_mut() = Some(task);
     Ok(())
 }
+fn deadline(interval: Duration) -> Instant {
+    let now = Instant::now();
+    // Treat an overflowing deadline as expired, as the pinned libevent-based
+    // server does. Keep the timer armed rather than silently disabling it.
+    now.checked_add(interval).unwrap_or(now)
+}
 fn configure(ev: &event, interval: Option<Duration>) -> Rc<EventState> {
     Rc::new(EventState {
         key: ev as *const event as usize,
         fd: ev.fd,
         flags: ev.flags,
         callback: ev.callback.clone(),
-        deadline: Cell::new(interval.map(|d| Instant::now() + d)),
+        deadline: Cell::new(interval.map(deadline)),
         interval,
         active: Cell::new(0),
         live: Cell::new(true),
@@ -285,4 +291,47 @@ pub unsafe fn event_get_method() -> *const c_char {
 }
 pub unsafe fn event_get_version() -> *const c_char {
     c"hmux-rt 0.1".as_ptr()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overflowing_timers_remain_armed_and_fire_including_repeats() {
+        unsafe {
+            event_init();
+            for flags in [0, 0x10] {
+                let mut ev = event::default();
+                let calls = Rc::new(Cell::new(0));
+                let observed = calls.clone();
+                event_set(&mut ev, -1, flags, move |_, flags| {
+                    assert_eq!(flags, EV_TIMEOUT as c_short);
+                    observed.set(observed.get() + 1);
+                });
+                let timeout = timeval {
+                    tv_sec: libc::time_t::MAX,
+                    tv_usec: libc::suseconds_t::MAX,
+                };
+                assert_eq!(event_add(&mut ev, &timeout), 0);
+                assert_eq!(event_pending(&ev, 1, std::ptr::null_mut()), 1);
+                for _ in 0..3 {
+                    super::super::HOST.with(|host| {
+                        host.borrow_mut()
+                            .as_mut()
+                            .unwrap()
+                            .poll(Some(Duration::from_millis(10)))
+                            .unwrap();
+                    });
+                }
+                event_del(&mut ev);
+                if flags == 0 {
+                    assert_eq!(calls.get(), 1);
+                } else {
+                    assert!(calls.get() >= 2, "persistent timer must rearm");
+                }
+            }
+            super::super::shutdown_runtime();
+        }
+    }
 }
