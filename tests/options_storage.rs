@@ -33,7 +33,7 @@ fn ordered_names_survive_updates_and_removal() {
         let mut entry = options_first(oo);
         for name in &names {
             assert!(!entry.is_null());
-            assert_eq!(CStr::from_ptr(options_name(entry)).to_bytes(), name);
+            assert_eq!(CStr::from_ptr(options_name(&*(entry)).as_ptr()).to_bytes(), name);
             assert_eq!(CStr::from_ptr((*entry).value.string_ptr()), c"updated");
             let next = options_next(entry);
             assert_eq!(options_remove_or_default(entry, null(), null_mut()), 0);
@@ -101,7 +101,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
         let entry = options_set_string(oo, c"@bytes".as_ptr(), 0, |out| {
             write_cstr(out, c"\xff".as_ptr())
         });
-        let name = options_name(entry);
+        let name = options_name(&*(entry)).as_ptr();
         let previous = (*entry).value.string_ptr();
         assert_eq!(
             options_set_string(oo, name, 1, |out| { write_cstr(out, previous) }),

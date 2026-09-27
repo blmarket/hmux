@@ -207,7 +207,7 @@ impl options_table_entry {
 }
 
 impl options_entry {
-    pub fn tableentry_ptr(&self) -> *const options_table_entry {
-        self.tableentry.map_or(std::ptr::null(), |entry| entry)
+    pub fn tableentry_ptr(&self) -> Option<&'static options_table_entry> {
+        self.tableentry
     }
 }

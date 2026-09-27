@@ -1321,7 +1321,7 @@ pub(super) unsafe fn format_loop_add_option(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut oe: *const options_table_entry = options_table_entry(o);
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut is_array: ::core::ffi::c_int = options_is_array(o);
     format_log1(
@@ -1459,7 +1459,7 @@ pub(super) unsafe fn format_loop_add_array_item(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut oe: *const options_table_entry = options_table_entry(o);
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     array_key = options_array_item_key(a);

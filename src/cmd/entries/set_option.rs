@@ -501,8 +501,8 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                 } else if array_key.is_null() && options_is_array(parent) == 0 {
                                     error = options_from_string(
                                         oo,
-                                        options_table_entry(parent),
-                                        (*options_table_entry(parent)).name_ptr(),
+                                        options_table_entry(&*(parent)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry),
+                                        (*options_table_entry(&*(parent)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).name_ptr(),
                                         value,
                                         args_has(args, 'a' as i32 as u_char),
                                         &raw mut cause,
@@ -520,7 +520,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                     current_block = 8517774764635037400;
                                 } else {
                                     if o.is_null() {
-                                        o = options_empty(oo, options_table_entry(parent));
+                                        o = options_empty(oo, options_table_entry(&*(parent)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry));
                                     }
                                     if array_key.is_null() {
                                         if append == 0 {

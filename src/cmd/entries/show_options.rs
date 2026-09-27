@@ -276,7 +276,7 @@ unsafe fn cmd_show_options_print(
     let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_user: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut has_value: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    let mut oe: *const options_table_entry = options_table_entry(o);
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     if !array_key.is_null() {
         value = cmd_show_options_value(o, array_key);
     } else if options_is_array(o) != 0 {
@@ -535,7 +535,7 @@ unsafe fn cmd_show_options_all(
     let mut is_user_hook: ::core::ffi::c_int = 0;
     o = options_first(oo);
     while !o.is_null() {
-        if options_table_entry(o).is_null() {
+        if options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() {
             name = options_name(&*(o)).as_ptr();
             is_user_hook = 0 as ::core::ffi::c_int;
             if *name as ::core::ffi::c_int == '@' as i32 {

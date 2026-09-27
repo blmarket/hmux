@@ -775,7 +775,7 @@ unsafe fn window_customize_set_option_value(
     if o.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    oe = options_table_entry(o);
+    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if array_key.is_null() {
             idx = 0 as u_int;
@@ -832,7 +832,7 @@ unsafe fn window_customize_option_editable(
     if o.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    oe = options_table_entry(o);
+    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     if oe.is_null() {
         return 1 as ::core::ffi::c_int;
     }
@@ -927,7 +927,7 @@ unsafe fn window_customize_option_is_changed(
     mut o: *mut options_entry,
     mut array_key: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut oe: *const options_table_entry = options_table_entry(o);
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut defaults: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
@@ -991,7 +991,7 @@ unsafe fn window_customize_build_array(
     mut o: *mut options_entry,
     mut ft: *mut format_tree,
 ) -> u_int {
-    let mut oe: *const options_table_entry = options_table_entry(o);
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut oo: *mut options = options_owner(o);
     let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1065,7 +1065,7 @@ unsafe fn window_customize_build_option(
     mut fs: *mut cmd_find_state,
     mut type_0: window_customize_option_type,
 ) -> u_int {
-    let mut oe: *const options_table_entry = options_table_entry(o);
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut oo: *mut options = options_owner(o);
     let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -2004,7 +2004,7 @@ unsafe fn window_customize_draw_option(
     if o.is_null() {
         return;
     }
-    oe = options_table_entry(o);
+    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     is_hook = (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
     is_monitor = options_get_monitor_data(&mut *o).is_some() as ::core::ffi::c_int;
     is_user_hook = (*name as ::core::ffi::c_int == '@' as i32 && hooks_is_event(name) != 0)
@@ -3102,7 +3102,7 @@ unsafe fn window_customize_set_option_callback(
     if o.is_null() {
         return PROMPT_CLOSE;
     }
-    oe = options_table_entry(o);
+    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if array_key.is_null() {
             idx = 0 as u_int;
@@ -3779,7 +3779,7 @@ unsafe fn window_customize_set_option(
     if o.is_null() {
         return;
     }
-    oe = options_table_entry(o);
+    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     if !oe.is_null() && !(*oe).scope & OPTIONS_TABLE_PANE != 0 {
         pane = 0 as ::core::ffi::c_int;
     }

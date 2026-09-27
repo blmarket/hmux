@@ -993,7 +993,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     if !value.is_null() {
         let oe = options_get(o, c"menu-border-lines".as_ptr());
         let mut cause = None;
-        lines = options_find_choice(options_table_entry(oe), value, &mut cause) as box_lines;
+        lines = options_find_choice(options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry), value, &mut cause) as box_lines;
         if lines == -1 {
             cmdq_error(item, |out| {
                 out.write_all(b"menu-border-lines ")?;
@@ -1211,7 +1211,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     o,
                     b"popup-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
                 );
-                lines = options_find_choice(options_table_entry(oe), value, &raw mut cause)
+                lines = options_find_choice(options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry), value, &raw mut cause)
                     as box_lines;
                 if let Some(cause) = cause.as_ref() {
                     cmdq_error(item, |out| {
