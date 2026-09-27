@@ -1073,7 +1073,7 @@ unsafe fn window_panes_clear_floating_area(
         screen_write_cursormove(ctx, x, yy, 0 as ::core::ffi::c_int);
         xx = x;
         while xx <= x2 {
-            screen_write_putc(ctx, &raw mut gc, ' ' as i32 as u_char);
+            screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
             xx += 1;
         }
         yy += 1;
@@ -1285,11 +1285,11 @@ unsafe fn window_panes_draw_number(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(ctx, &raw mut fgc, |out| {
+        screen_write_puts(&mut *ctx, &fgc, |out| {
             write_cstr(out, &raw mut buf as *mut ::core::ffi::c_char)
         });
         if width > len {
-            screen_write_puts(ctx, &raw mut fgc, |out| {
+            screen_write_puts(&mut *ctx, &fgc, |out| {
                 out.write_all(b" ")?;
                 write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
             });
@@ -1316,7 +1316,7 @@ unsafe fn window_panes_draw_number(
                             y.wrapping_add(py).wrapping_add(j) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        screen_write_putc(ctx, &raw mut bgc, ' ' as i32 as u_char);
+                        screen_write_putc(&mut *ctx, &bgc, ' ' as i32 as u_char);
                     }
                     i = i.wrapping_add(1);
                 }
@@ -1341,7 +1341,7 @@ unsafe fn window_panes_draw_number(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(ctx, &raw mut fgc, |out| {
+        screen_write_puts(&mut *ctx, &fgc, |out| {
             write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
         });
     }

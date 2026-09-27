@@ -838,7 +838,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
             );
             gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
             gc.fg = colour;
-            screen_write_puts(&raw mut ctx, &raw mut gc, |out| {
+            screen_write_puts(&mut ctx, &gc, |out| {
                 write_cstr(out, &raw mut tim as *mut ::core::ffi::c_char)
             });
         }
@@ -895,7 +895,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
                             0 as ::core::ffi::c_int,
                         );
                         if window_clock_table[idx as usize][j as usize][i as usize] != 0 {
-                            screen_write_putc(&raw mut ctx, &raw mut gc, '#' as i32 as u_char);
+                            screen_write_putc(&mut ctx, &gc, '#' as i32 as u_char);
                         }
                         i = i.wrapping_add(1);
                     }

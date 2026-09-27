@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{memcpy, strlen};
+use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::view::{
@@ -491,91 +491,52 @@ pub unsafe fn screen_write_reset(mut ctx: *mut screen_write_ctx) {
     screen_write_clearscreen(ctx, 8 as u_int);
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_putc(
-    mut ctx: *mut screen_write_ctx,
-    mut gcp: *const grid_cell,
-    mut ch: u_char,
-) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        gcp as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+pub unsafe fn screen_write_putc(ctx: &mut screen_write_ctx, gcp: &grid_cell, ch: u_char) {
+    let mut gc = *gcp;
     utf8_set(&mut gc.data, ch);
-    screen_write_cell(&mut *ctx, &gc);
+    screen_write_cell(ctx, &gc);
 }
 /// Measure literal C-string bytes using the screen's display-width rules.
 pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
-    let mut ud: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
-    let mut left: size_t = 0;
-    let mut size: size_t = 0 as size_t;
-    let mut more: utf8_state = UTF8_MORE;
-    let mut ptr = msg.as_ptr() as *const u_char;
-    while *ptr as ::core::ffi::c_int != '\0' as i32 {
-        if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int
-            && utf8_open(&mut ud, *ptr) as ::core::ffi::c_uint
-                == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            ptr = ptr.offset(1);
-            left = strlen(ptr as *const ::core::ffi::c_char);
-            if left < (ud.size as size_t).wrapping_sub(1 as size_t) {
+    let bytes = msg.to_bytes();
+    let mut offset = 0;
+    let mut size: size_t = 0;
+    let mut ud = utf8_data::default();
+    while let Some(&byte) = bytes.get(offset) {
+        if byte > 0x7f && utf8_open(&mut ud, byte) == UTF8_MORE {
+            offset += 1;
+            if bytes.len() - offset < ud.size as usize - 1 {
                 break;
             }
-            loop {
-                more = utf8_append(&mut ud, *ptr);
-                if !(more as ::core::ffi::c_uint
-                    == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    break;
+            let more = loop {
+                let more = utf8_append(&mut ud, bytes[offset]);
+                offset += 1;
+                if more != UTF8_MORE {
+                    break more;
                 }
-                ptr = ptr.offset(1);
-            }
-            ptr = ptr.offset(1);
-            if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                size = size.wrapping_add(ud.width as size_t);
+            };
+            if more == UTF8_DONE {
+                size = size.wrapping_add(ud.width as usize);
             }
         } else {
-            if *ptr as ::core::ffi::c_int == '\t' as i32
-                || *ptr as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-                    && (*ptr as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
-            {
+            if byte == b'\t' || (0x20..0x7f).contains(&byte) {
                 size = size.wrapping_add(1);
             }
-            ptr = ptr.offset(1);
+            offset += 1;
         }
     }
-    return size;
+    size
 }
 pub unsafe fn screen_write_text(
-    mut ctx: *mut screen_write_ctx,
+    ctx: &mut screen_write_ctx,
     mut cx: u_int,
     mut width: u_int,
     mut lines: u_int,
     mut more: ::core::ffi::c_int,
-    mut gcp: *const grid_cell,
+    gcp: &grid_cell,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = ctx.s;
     let mut cy: u_int = (*s).cy;
     let mut i: u_int = 0;
     let mut end: u_int = 0;
@@ -583,25 +544,7 @@ pub unsafe fn screen_write_text(
     let mut idx: u_int = 0 as u_int;
     let mut at: u_int = 0;
     let mut left: u_int = 0;
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        gcp as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    let mut gc = *gcp;
     let cells = {
         let tmp = format_message_with(write);
         utf8_fromcstr_vec(tmp.as_c_str())
@@ -657,7 +600,7 @@ pub unsafe fn screen_write_text(
         i = idx;
         while i < end {
             gc.data = utf8_copy(&cells[i as usize]);
-            screen_write_cell(&mut *ctx, &gc);
+            screen_write_cell(ctx, &gc);
             i = i.wrapping_add(1);
         }
         idx = next;
@@ -692,95 +635,62 @@ pub unsafe fn screen_write_text(
 }
 
 pub unsafe fn screen_write_puts(
-    mut ctx: *mut screen_write_ctx,
-    mut gcp: *const grid_cell,
+    ctx: &mut screen_write_ctx,
+    gcp: &grid_cell,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    screen_write_nputs(ctx, -(1 as ::core::ffi::c_int) as ssize_t, gcp, write);
+    screen_write_nputs(ctx, -1, gcp, write);
 }
 pub unsafe fn screen_write_nputs(
-    mut ctx: *mut screen_write_ctx,
-    mut maxlen: ssize_t,
-    mut gcp: *const grid_cell,
+    ctx: &mut screen_write_ctx,
+    maxlen: ssize_t,
+    gcp: &grid_cell,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut ud: *mut utf8_data = &raw mut gc.data;
-    let mut left: size_t = 0;
-    let mut size: size_t = 0 as size_t;
-    let mut more: utf8_state = UTF8_MORE;
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        gcp as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    let mut gc = *gcp;
+    let mut size: size_t = 0;
     let msg = format_message_with(write);
-    let mut ptr = msg.as_ptr() as *const u_char;
-    while *ptr as ::core::ffi::c_int != '\0' as i32 {
-        if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int
-            && utf8_open(&mut *ud, *ptr) as ::core::ffi::c_uint
-                == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            ptr = ptr.offset(1);
-            left = strlen(ptr as *const ::core::ffi::c_char);
-            if left < ((*ud).size as size_t).wrapping_sub(1 as size_t) {
+    let bytes = msg.as_bytes();
+    let mut offset = 0;
+    while let Some(&byte) = bytes.get(offset) {
+        if byte > 0x7f && utf8_open(&mut gc.data, byte) == UTF8_MORE {
+            offset += 1;
+            if bytes.len() - offset < gc.data.size as usize - 1 {
                 break;
             }
-            loop {
-                more = utf8_append(&mut *ud, *ptr);
-                if !(more as ::core::ffi::c_uint
-                    == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    break;
+            let more = loop {
+                let more = utf8_append(&mut gc.data, bytes[offset]);
+                offset += 1;
+                if more != UTF8_MORE {
+                    break more;
                 }
-                ptr = ptr.offset(1);
-            }
-            ptr = ptr.offset(1);
-            if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
+            };
+            if more != UTF8_DONE {
                 continue;
             }
-            if maxlen > 0 as ssize_t && size.wrapping_add((*ud).width as size_t) > maxlen as size_t
-            {
-                while size < maxlen as size_t {
-                    screen_write_putc(ctx, &raw mut gc, ' ' as i32 as u_char);
+            if maxlen > 0 && size.wrapping_add(gc.data.width as usize) > maxlen as usize {
+                while size < maxlen as usize {
+                    screen_write_putc(ctx, &gc, b' ');
                     size = size.wrapping_add(1);
                 }
                 break;
-            } else {
-                size = size.wrapping_add((*ud).width as size_t);
-                screen_write_cell(&mut *ctx, &gc);
             }
+            size = size.wrapping_add(gc.data.width as usize);
+            screen_write_cell(ctx, &gc);
         } else {
-            if maxlen > 0 as ssize_t && size.wrapping_add(1 as size_t) > maxlen as size_t {
+            if maxlen > 0 && size.wrapping_add(1) > maxlen as usize {
                 break;
             }
-            if *ptr as ::core::ffi::c_int == '\u{1}' as i32 {
-                gc.attr = (gc.attr as ::core::ffi::c_int ^ GRID_ATTR_CHARSET) as u_short;
-            } else if *ptr as ::core::ffi::c_int == '\n' as i32 {
-                screen_write_linefeed(ctx, 0 as ::core::ffi::c_int, 8 as u_int);
+            if byte == 1 {
+                gc.attr ^= GRID_ATTR_CHARSET as u_short;
+            } else if byte == b'\n' {
+                screen_write_linefeed(ctx, 0, 8);
                 screen_write_carriagereturn(ctx);
-            } else if *ptr as ::core::ffi::c_int == '\t' as i32
-                || *ptr as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-                    && (*ptr as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
-            {
+            } else if byte == b'\t' || (0x20..0x7f).contains(&byte) {
                 size = size.wrapping_add(1);
-                screen_write_putc(ctx, &raw mut gc, *ptr);
+                screen_write_putc(ctx, &gc, byte);
             }
-            ptr = ptr.offset(1);
+            offset += 1;
         }
     }
 }
@@ -998,7 +908,7 @@ pub unsafe fn screen_write_vline(
     cx = (*s).cx;
     cy = (*s).cy;
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-    screen_write_putc(ctx, &raw mut gc, ('x' as i32) as u_char);
+    screen_write_putc(ctx, &gc, ('x' as i32) as u_char);
     i = 1 as u_int;
     while i < ny.wrapping_sub(1 as u_int) {
         screen_write_set_cursor(
@@ -1006,7 +916,7 @@ pub unsafe fn screen_write_vline(
             cx as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
         );
-        screen_write_putc(ctx, &raw mut gc, 'x' as i32 as u_char);
+        screen_write_putc(ctx, &gc, 'x' as i32 as u_char);
         i = i.wrapping_add(1);
     }
     screen_write_set_cursor(
@@ -1014,7 +924,7 @@ pub unsafe fn screen_write_vline(
         cx as ::core::ffi::c_int,
         cy.wrapping_add(ny).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
     );
-    screen_write_putc(ctx, &raw mut gc, ('x' as i32) as u_char);
+    screen_write_putc(ctx, &gc, ('x' as i32) as u_char);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_menu(
@@ -1096,7 +1006,7 @@ pub unsafe fn screen_write_menu(
             );
             j = 0 as u_int;
             while j < width.wrapping_add(2 as u_int) {
-                screen_write_putc(ctx, gc, ' ' as i32 as u_char);
+                screen_write_putc(&mut *ctx, &*gc, ' ' as i32 as u_char);
                 j = j.wrapping_add(1);
             }
             screen_write_cursormove(

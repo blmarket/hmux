@@ -1425,7 +1425,7 @@ pub unsafe fn format_draw(
                 gc.bg = fill;
                 i = 0 as u_int;
                 while i < available {
-                    screen_write_putc(octx, &raw mut gc, ' ' as i32 as u_char);
+                    screen_write_putc(&mut *octx, &gc, ' ' as i32 as u_char);
                     i = i.wrapping_add(1);
                 }
             }

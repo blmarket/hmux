@@ -863,7 +863,7 @@ unsafe fn window_tree_draw_session(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b"<"));
+        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b"<"));
     } else {
         (*data).left = -(1 as ::core::ffi::c_int);
     }
@@ -882,7 +882,7 @@ unsafe fn window_tree_draw_session(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b">"));
+        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b">"));
     } else {
         (*data).right = -(1 as ::core::ffi::c_int);
     }
@@ -1123,7 +1123,7 @@ unsafe fn window_tree_draw_window(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b"<"));
+        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b"<"));
     } else {
         (*data).left = -(1 as ::core::ffi::c_int);
     }
@@ -1142,7 +1142,7 @@ unsafe fn window_tree_draw_window(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b">"));
+        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b">"));
     } else {
         (*data).right = -(1 as ::core::ffi::c_int);
     }
@@ -1346,7 +1346,7 @@ unsafe fn window_tree_draw_info(
                     cy.wrapping_add(i) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_putc(ctx, &raw mut gc, 'n' as i32 as u_char);
+                screen_write_putc(&mut *ctx, &gc, 'n' as i32 as u_char);
             }
             i = i.wrapping_add(1);
         }

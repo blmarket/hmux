@@ -316,7 +316,7 @@ unsafe fn window_buffer_draw(
         let escaped = CStr::from_bytes_until_nul(&buf).expect("escaped line is terminated");
         if !escaped.is_empty() {
             screen_write_cursormove(ctx, cx as i32, cy.wrapping_add(row as u_int) as i32, 0);
-            screen_write_nputs(ctx, sx as ssize_t, &raw const grid_default_cell, |out| {
+            screen_write_nputs(&mut *ctx, sx as ssize_t, &grid_default_cell, |out| {
                 out.write_all(escaped.to_bytes())
             });
         }
@@ -775,9 +775,9 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
         0 as ::core::ffi::c_int,
     );
     screen_write_nputs(
-        &raw mut ctx,
+        &mut ctx,
         box_w.wrapping_sub(2 as u_int) as ssize_t,
-        &raw mut gc,
+        &gc,
         |out| write_cstr(out, &raw mut text as *mut ::core::ffi::c_char),
     );
     screen_write_stop(&mut ctx);

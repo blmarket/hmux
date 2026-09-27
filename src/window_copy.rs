@@ -762,7 +762,7 @@ pub unsafe fn window_copy_add(
             &raw const grid_default_cell as *const ::core::ffi::c_void,
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
-        screen_write_nputs(&raw mut backing_ctx, 0 as ssize_t, &raw mut gc, write);
+        screen_write_nputs(&mut backing_ctx, 0 as ssize_t, &gc, write);
     }
     screen_write_stop(&mut backing_ctx);
     (*data).oy = (*data)
@@ -6136,9 +6136,9 @@ unsafe fn window_copy_search(
     screen_init(&mut ss, ssx, 1 as u_int, 0 as u_int);
     screen_write_start(&mut ctx, &raw mut ss);
     screen_write_nputs(
-        &raw mut ctx,
+        &mut ctx,
         -(1 as ::core::ffi::c_int) as ssize_t,
-        &raw const grid_default_cell,
+        &grid_default_cell,
         |out| write_cstr(out, str),
     );
     screen_write_stop(&mut ctx);
@@ -6413,9 +6413,9 @@ unsafe fn window_copy_search_marks(
         screen_init(&mut ss, width, 1 as u_int, 0 as u_int);
         screen_write_start(&mut ctx, &raw mut ss);
         screen_write_nputs(
-            &raw mut ctx,
+            &mut ctx,
             -(1 as ::core::ffi::c_int) as ssize_t,
-            &raw const grid_default_cell,
+            &grid_default_cell,
             |out| write_cstr(out, window_copy_searchstr(&*data)),
         );
         screen_write_stop(&mut ctx);
@@ -6852,21 +6852,21 @@ unsafe fn window_copy_write_one(
                         py as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_putc(ctx, &raw mut gc, ' ' as i32 as u_char);
+                    screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
                 }
             } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 width = gc.data.width as u_int;
                 gc.flags = (gc.flags as ::core::ffi::c_int & !GRID_FLAG_TAB) as u_char;
                 i = 0 as u_int;
                 while i < width {
-                    screen_write_putc(ctx, &raw mut gc, ' ' as i32 as u_char);
+                    screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
                     i = i.wrapping_add(1);
                 }
             } else {
                 screen_write_cell(&mut *ctx, &gc);
             }
         } else {
-            screen_write_putc(ctx, &raw const grid_default_cell, ' ' as i32 as u_char);
+            screen_write_putc(&mut *ctx, &grid_default_cell, ' ' as i32 as u_char);
         }
         fx = fx.wrapping_add(1);
     }
@@ -7252,9 +7252,9 @@ unsafe fn window_copy_write_line(
             0 as ::core::ffi::c_int,
         );
         screen_write_nputs(
-            ctx,
+            &mut *ctx,
             width as ssize_t,
-            if current != 0 {
+            &*if current != 0 {
                 &raw mut cur_ln_gc
             } else {
                 &raw mut ln_gc
@@ -7324,7 +7324,7 @@ unsafe fn window_copy_write_line(
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_putc(ctx, &raw const grid_default_cell, '$' as i32 as u_char);
+        screen_write_putc(&mut *ctx, &grid_default_cell, '$' as i32 as u_char);
     }
     format_free(ft);
 }

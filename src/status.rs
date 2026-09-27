@@ -356,7 +356,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     if o.is_null() {
         n = 0 as u_int;
         while n < width.wrapping_mul(lines) {
-            screen_write_putc(&raw mut ctx, &raw mut gc, ' ' as i32 as u_char);
+            screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
             n = n.wrapping_add(1);
         }
     } else {
@@ -372,7 +372,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
             if ov.is_null() {
                 n = 0 as u_int;
                 while n < width {
-                    screen_write_putc(&raw mut ctx, &raw mut gc, ' ' as i32 as u_char);
+                    screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
                     n = n.wrapping_add(1);
                 }
             } else {
@@ -385,7 +385,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                     changed = 1 as ::core::ffi::c_int;
                     n = 0 as u_int;
                     while n < width {
-                        screen_write_putc(&raw mut ctx, &raw mut gc, ' ' as i32 as u_char);
+                        screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
                         n = n.wrapping_add(1);
                     }
                     screen_write_cursormove(

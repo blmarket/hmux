@@ -1240,7 +1240,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     h as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_puts(&raw mut ctx, &raw mut box_gc, |out| {
+                screen_write_puts(&mut ctx, &box_gc, |out| {
                     write_cstr(out, label.as_ptr())
                 });
                 if (*mtd).no_matches != 0 {
@@ -1257,21 +1257,21 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                             .wrapping_add(n)
                             .wrapping_add(2 as size_t)
                 {
-                    screen_write_puts(&raw mut ctx, &raw mut box_gc, |out| {
+                    screen_write_puts(&mut ctx, &box_gc, |out| {
                         out.write_all(b" (filter: ")
                     });
                     if (*mtd).no_matches != 0 {
-                        screen_write_puts(&raw mut ctx, &raw mut box_gc, |out| {
+                        screen_write_puts(&mut ctx, &box_gc, |out| {
                             out.write_all(b"no matches")
                         });
                     } else {
-                        screen_write_puts(&raw mut ctx, &raw mut box_gc, |out| {
+                        screen_write_puts(&mut ctx, &box_gc, |out| {
                             out.write_all(b"active")
                         });
                     }
-                    screen_write_puts(&raw mut ctx, &raw mut box_gc, |out| out.write_all(b") "));
+                    screen_write_puts(&mut ctx, &box_gc, |out| out.write_all(b") "));
                 } else {
-                    screen_write_puts(&raw mut ctx, &raw mut box_gc, |out| out.write_all(b" "));
+                    screen_write_puts(&mut ctx, &box_gc, |out| out.write_all(b" "));
                 }
             }
             drop(label);
