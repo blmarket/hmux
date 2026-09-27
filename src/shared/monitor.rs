@@ -19,7 +19,7 @@ pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int
 #[repr(C)]
 pub struct monitor_set {
     pub client: *mut client,
-    pub session: *mut session,
+    pub session: Option<super::session::SessionOwner>,
     pub cb: monitor_cb,
     pub items: monitor_items,
     pub timer: event,

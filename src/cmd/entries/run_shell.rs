@@ -1,3 +1,4 @@
+use crate::src::shared::session::{SessionOwner, session_owner_ptr};
 use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
@@ -21,7 +22,6 @@ use crate::src::reactor::{
     event_once_owned,
 };
 use crate::src::server_client::{server_client_get_cwd};
-use crate::src::session::{session_add_ref, session_remove_ref};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -53,7 +53,7 @@ pub struct cmd_run_shell_data {
     pub state: Option<Box<args_command_state>>,
     pub cwd: CString,
     pub item: *mut cmdq_item,
-    pub s: *mut session,
+    pub s: Option<SessionOwner>,
     pub wp_id: ::core::ffi::c_int,
     pub timer: event,
     pub flags: ::core::ffi::c_int,
@@ -198,7 +198,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         state: None,
         cwd: CStr::from_ptr(cwd).to_owned(),
         item: ::core::ptr::null_mut(),
-        s: ::core::ptr::null_mut(),
+        s: None,
         wp_id: 0,
         timer: Default::default(),
         flags: 0,
@@ -243,13 +243,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
-    cdata.s = s;
-    if !s.is_null() {
-        session_add_ref(
-            s,
-            b"cmd_run_shell_exec\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-    }
+    cdata.s = SessionOwner::retain(s, c"cmd_run_shell_exec", c"cmd_run_shell_free");
     if !delay.is_null() {
         // The pinned tmux build treats negative, nonfinite and out-of-range
         // delays as expired. Rust's saturating float casts would instead turn
@@ -287,7 +281,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             cmd,
             &Vec::new(),
             None,
-            cdata.s,
+            session_owner_ptr(&cdata.s),
             Some(cdata.cwd.as_c_str()),
             None,
             None,
@@ -430,9 +424,7 @@ impl Drop for cmd_run_shell_data {
     fn drop(&mut self) {
         unsafe {
             event_del(&mut self.timer);
-            if !self.s.is_null() {
-                session_remove_ref(self.s, c"cmd_run_shell_free".as_ptr());
-            }
+            drop(self.s.take());
             drop(self.client.take());
             drop(self.state.take());
         }

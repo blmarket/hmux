@@ -1,3 +1,4 @@
+use crate::src::shared::session::{SessionOwner, session_owner_ptr};
 use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
@@ -7,7 +8,7 @@ use crate::src::reactor::{event_add, event_del, event_initialized, event_pending
 use crate::src::server::current_time;
 use crate::src::session::sessions;
 use crate::src::session::{
-    session_add_ref, session_find_by_id, session_remove_ref, sessions_minmax,
+    session_find_by_id, sessions_minmax,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -55,7 +56,7 @@ unsafe fn monitor_get_session(mut ms: *mut monitor_set) -> *mut session {
     if !(*ms).client.is_null() {
         return (*(*ms).client).session;
     }
-    s = (*ms).session;
+    s = session_owner_ptr(&(*ms).session);
     if s.is_null() {
         return sessions_minmax(&*std::ptr::addr_of!(sessions));
     }
@@ -560,7 +561,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
 unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
     Box::into_raw(Box::new(monitor_set {
         client: std::ptr::null_mut(),
-        session: std::ptr::null_mut(),
+        session: None,
         cb,
         items: monitor_items { storage: None },
         timer: crate::src::shared::event::event::default(),
@@ -576,13 +577,7 @@ pub unsafe fn monitor_create_client(mut c: *mut client, cb: monitor_cb) -> *mut 
 pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
-    (*ms).session = s;
-    if !s.is_null() {
-        session_add_ref(
-            s,
-            b"monitor_create_session\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-    }
+    (*ms).session = SessionOwner::retain(s, c"monitor_create_session", c"monitor_destroy");
     return ms;
 }
 unsafe fn monitor_clear(mut ms: *mut monitor_set) {
@@ -600,12 +595,7 @@ unsafe fn monitor_clear(mut ms: *mut monitor_set) {
             monitor_free_item(ms, me);
             me = me1;
         }
-        if !(*ms).session.is_null() {
-            session_remove_ref(
-                (*ms).session,
-                b"monitor_destroy\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-        }
+        drop((*ms).session.take());
     }
 }
 pub unsafe fn monitor_destroy(ms: *mut monitor_set) {
