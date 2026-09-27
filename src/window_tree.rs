@@ -385,8 +385,8 @@ unsafe fn window_tree_build_pane(
         parent,
         item as *mut ::core::ffi::c_void,
         wp as uint64_t,
-        name.as_ptr(),
-        text.as_ptr(),
+        &name,
+        Some(&text),
         -(1 as ::core::ffi::c_int),
     ) as *mut mode_tree_item;
     mode_tree_align(mti);
@@ -466,8 +466,8 @@ unsafe fn window_tree_build_window(
         parent,
         item as *mut ::core::ffi::c_void,
         wl as uint64_t,
-        name.as_ptr(),
-        text.as_ptr(),
+        &name,
+        Some(&text),
         expanded,
     ) as *mut mode_tree_item;
     mode_tree_align(mti);
@@ -540,8 +540,8 @@ unsafe fn window_tree_build_session(
         ::core::ptr::null_mut::<mode_tree_item>(),
         item as *mut ::core::ffi::c_void,
         s as uint64_t,
-        ((*s).name).as_ptr().cast_mut(),
-        text.as_ptr(),
+        &(*s).name,
+        Some(&text),
         expanded,
     ) as *mut mode_tree_item;
     let l = sort_get_winlinks_session(s, sort_crit);
@@ -1763,10 +1763,7 @@ unsafe fn window_tree_init(
         &raw mut s,
     );
     mode_tree_zoom((*data).data, args);
-    mode_tree_view_name(
-        (*data).data,
-        b"preview\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    mode_tree_view_name(&mut *(*data).data, Some(c"preview"));
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
     (*data).type_0 = WINDOW_TREE_NONE;
@@ -2197,15 +2194,9 @@ unsafe fn window_tree_key(
         105 => {
             (*data).preview_is_info = ((*data).preview_is_info == 0) as ::core::ffi::c_int;
             if (*data).preview_is_info != 0 {
-                mode_tree_view_name(
-                    (*data).data,
-                    b"info\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                mode_tree_view_name(&mut *(*data).data, Some(c"info"));
             } else {
-                mode_tree_view_name(
-                    (*data).data,
-                    b"preview\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                mode_tree_view_name(&mut *(*data).data, Some(c"preview"));
             }
         }
         120 => {

@@ -12,7 +12,7 @@ use crate::src::format::{format_add, format_create_defaults, format_expand_cstri
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_debug};
+use crate::src::log::{log_bytes, log_debug};
 use crate::src::menu::{menu_add_items, menu_create, menu_display};
 use crate::src::options::options_get_number;
 use crate::src::prompt::{
@@ -387,12 +387,9 @@ pub unsafe fn mode_tree_get_current(mut mtd: *mut mode_tree_data) -> *mut ::core
     }
     return (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).itemdata;
 }
-pub unsafe fn mode_tree_get_current_name(
-    mut mtd: *mut mode_tree_data,
-) -> *const ::core::ffi::c_char {
-    return ((*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).name)
-        .as_ptr()
-        .cast_mut();
+pub unsafe fn mode_tree_get_current_name(mtd: &mode_tree_data) -> &CStr {
+    let item = mtd.lines[mtd.current as usize].item;
+    &(*item).name
 }
 pub unsafe fn mode_tree_expand_current(mut mtd: *mut mode_tree_data) {
     if (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).expanded == 0 {
@@ -671,27 +668,19 @@ pub unsafe fn mode_tree_add(
     mut parent: *mut mode_tree_item,
     mut itemdata: *mut ::core::ffi::c_void,
     mut tag: uint64_t,
-    mut name: *const ::core::ffi::c_char,
-    mut text: *const ::core::ffi::c_char,
+    name: &CStr,
+    text: Option<&CStr>,
     mut expanded: ::core::ffi::c_int,
 ) -> *mut mode_tree_item {
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut saved: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     log_debug(format_args!(
-        "{}: {}, {} {}",
-        "mode_tree_add",
-        tag as ::core::ffi::c_ulonglong,
-        log_cstr((name) as *const _),
-        log_cstr(
-            (if text.is_null() {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                text
-            }) as *const _
-        )
+        "mode_tree_add: {tag}, {} {}",
+        log_bytes(name.to_bytes()),
+        log_bytes(text.unwrap_or(c"").to_bytes()),
     ));
-    let name = CStr::from_ptr(name).to_owned();
-    let text = (!text.is_null()).then(|| CStr::from_ptr(text).to_owned());
+    let name = name.to_owned();
+    let text = text.map(CStr::to_owned);
     let mut owner = Box::new(mode_tree_item {
         name: name,
         text: text,
@@ -717,15 +706,8 @@ pub unsafe fn mode_tree_add(
     (*mode_tree_siblings(mtd, mti)).items.push(owner);
     return mti as *mut mode_tree_item;
 }
-pub unsafe fn mode_tree_view_name(
-    mut mtd: *mut mode_tree_data,
-    mut name: *const ::core::ffi::c_char,
-) {
-    (*mtd).view_name = if name.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(name))
-    };
+pub fn mode_tree_view_name(mtd: &mut mode_tree_data, name: Option<&'static CStr>) {
+    mtd.view_name = name;
 }
 pub unsafe fn mode_tree_draw_as_parent(mut mti: *mut mode_tree_item) {
     (*mti).draw_as_parent = 1 as ::core::ffi::c_int;
@@ -2375,8 +2357,8 @@ mod mode_tree_tests {
                     parent,
                     std::ptr::null_mut(),
                     tag,
-                    name.as_ptr(),
-                    std::ptr::null(),
+                    name,
+                    None,
                     1,
                 )
             };
@@ -2430,8 +2412,8 @@ mod mode_tree_tests {
                 ::core::ptr::null_mut(),
                 ::core::ptr::null_mut(),
                 1,
-                c"row".as_ptr(),
-                ::core::ptr::null(),
+                c"row",
+                None,
                 1,
             );
             for (next, expected) in [
@@ -2483,8 +2465,8 @@ mod mode_tree_tests {
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             1,
-            c"parent".as_ptr(),
-            std::ptr::null(),
+            c"parent",
+            None,
             1,
         );
         for id in 0..64 {
@@ -2493,8 +2475,8 @@ mod mode_tree_tests {
                 parent,
                 std::ptr::null_mut(),
                 id as u64 + 2,
-                c"child".as_ptr(),
-                std::ptr::null(),
+                c"child",
+                None,
                 1,
             );
         }
@@ -2541,8 +2523,8 @@ mod mode_tree_tests {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 7,
-                c"row".as_ptr(),
-                std::ptr::null(),
+                c"row",
+                None,
                 1,
             );
             (*prior).tagged = 1;
@@ -2554,8 +2536,8 @@ mod mode_tree_tests {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 7,
-                c"row".as_ptr(),
-                std::ptr::null(),
+                c"row",
+                None,
                 1,
             );
             let different = mode_tree_add(
@@ -2563,8 +2545,8 @@ mod mode_tree_tests {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 8,
-                c"other".as_ptr(),
-                std::ptr::null(),
+                c"other",
+                None,
                 1,
             );
             assert_eq!(((*restored).tagged, (*restored).expanded), (1, 0));

@@ -1020,8 +1020,8 @@ unsafe fn window_customize_build_array(
                 top,
                 item as *mut ::core::ffi::c_void,
                 window_customize_get_tag(o, ai, oe),
-                name.as_ptr(),
-                text.as_ptr(),
+                &name,
+                Some(&text),
                 -(1 as ::core::ffi::c_int),
             );
             drop(value);
@@ -1191,9 +1191,8 @@ unsafe fn window_customize_build_option(
         top,
         item as *mut ::core::ffi::c_void,
         window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
-        name,
-        text.as_ref()
-            .map_or(::core::ptr::null(), |text| text.as_ptr()),
+        CStr::from_ptr(name),
+        text.as_deref(),
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
     if array == 0 {
@@ -1239,8 +1238,8 @@ unsafe fn window_customize_build_options(
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
         window_customize_top_tag(group),
-        title,
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        CStr::from_ptr(title),
+        None,
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
     mode_tree_no_tag(top);
@@ -1332,8 +1331,8 @@ unsafe fn window_customize_build_keys(
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
         window_customize_key_tag(kt.cast(), 0),
-        title.as_ptr(),
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        &title,
+        None,
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
     mode_tree_no_tag(top);
@@ -1403,8 +1402,8 @@ unsafe fn window_customize_build_keys(
                 top,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 0),
-                expanded.as_ptr(),
-                ::core::ptr::null::<::core::ffi::c_char>(),
+                &expanded,
+                None,
                 0 as ::core::ffi::c_int,
             ) as *mut mode_tree_item;
             let tmp = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
@@ -1414,8 +1413,8 @@ unsafe fn window_customize_build_keys(
                 child,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 1),
-                b"Command\0" as *const u8 as *const ::core::ffi::c_char,
-                text.as_ptr(),
+                c"Command",
+                Some(&text),
                 -(1 as ::core::ffi::c_int),
             ) as *mut mode_tree_item;
             mode_tree_draw_as_parent(mti);
@@ -1438,8 +1437,8 @@ unsafe fn window_customize_build_keys(
                 child,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 2),
-                b"Note\0" as *const u8 as *const ::core::ffi::c_char,
-                text.as_ptr(),
+                c"Note",
+                Some(&text),
                 -(1 as ::core::ffi::c_int),
             ) as *mut mode_tree_item;
             mode_tree_draw_as_parent(mti);
@@ -1456,8 +1455,8 @@ unsafe fn window_customize_build_keys(
                 child,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 3),
-                b"Repeat\0" as *const u8 as *const ::core::ffi::c_char,
-                text.as_ptr(),
+                c"Repeat",
+                Some(&text),
                 -(1 as ::core::ffi::c_int),
             ) as *mut mode_tree_item;
             mode_tree_draw_as_parent(mti);
@@ -1494,8 +1493,8 @@ unsafe fn window_customize_build_environment(
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
         window_customize_top_tag(group),
-        title,
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        CStr::from_ptr(title),
+        None,
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
     mode_tree_no_tag(top);
@@ -1609,9 +1608,8 @@ unsafe fn window_customize_build_environment(
             top,
             item as *mut ::core::ffi::c_void,
             (2_u64 << 62) | envent as uint64_t,
-            name.as_ptr(),
-            text.as_ref()
-                .map_or(::core::ptr::null(), |text| text.as_ptr()),
+            &name,
+            text.as_deref(),
             0 as ::core::ffi::c_int,
         );
     }
@@ -3521,7 +3519,6 @@ unsafe fn window_customize_start_edit(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let value: Cow<'_, CStr>;
     let mut edit_type: window_customize_edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     if !(*data).editor.is_null() || item.is_null() {
@@ -3553,25 +3550,19 @@ unsafe fn window_customize_start_edit(
     } else if (*item).type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        name = mode_tree_get_current_name((*data).data);
+        let name = mode_tree_get_current_name(&*(*data).data);
         if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd)
             == 0
         {
             return;
         }
-        if strcmp(
-            name,
-            b"Command\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        if name == c"Command" {
             value = Cow::Owned(cmd_list_print_cstring(
                 &*(*bd).cmdlist,
                 0 as ::core::ffi::c_int,
             ));
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_COMMAND;
-        } else if strcmp(name, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        } else if name == c"Note" {
             value = Cow::Borrowed(if (*bd).note.is_none() {
                 c""
             } else {
@@ -4119,7 +4110,6 @@ unsafe fn window_customize_set_key(
 ) {
     let mut key: key_code = (*item).key;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     if item.is_null()
@@ -4128,13 +4118,10 @@ unsafe fn window_customize_set_key(
     {
         return;
     }
-    s = mode_tree_get_current_name((*data).data);
-    if strcmp(s, b"Repeat\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
+    let s = mode_tree_get_current_name(&*(*data).data);
+    if s == c"Repeat" {
         (*bd).flags ^= KEY_BINDING_REPEAT;
-    } else if strcmp(s, b"Command\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if s == c"Command" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
         let value = cmd_list_print_cstring(&*(*bd).cmdlist, 0 as ::core::ffi::c_int);
@@ -4155,9 +4142,7 @@ unsafe fn window_customize_set_key(
             window_customize_prompt_input_cb(window_customize_set_command_callback, new_item),
             window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
         );
-    } else if strcmp(s, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if s == c"Note" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
         new_item = window_customize_new_item();
@@ -4288,19 +4273,19 @@ unsafe fn window_customize_add_key_callback(
 unsafe fn window_customize_add_key(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
-    mut table: *const ::core::ffi::c_char,
+    table: &CStr,
 ) {
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut prompt_bytes = b"New key in ".to_vec();
-    prompt_bytes.extend_from_slice(CStr::from_ptr(table).to_bytes());
+    prompt_bytes.extend_from_slice(table.to_bytes());
     prompt_bytes.extend_from_slice(b": ");
     let prompt = CString::new(prompt_bytes).expect("key table name contains no NUL");
     new_item = window_customize_new_item();
     (*new_item).data = data as *mut window_customize_modedata;
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
     (*new_item).scope = WINDOW_CUSTOMIZE_KEY;
-    window_customize_set_table(&mut *new_item, Some(CStr::from_ptr(table)));
+    window_customize_set_table(&mut *new_item, Some(table));
     crate::src::shared::rc::retain(data);
     mode_tree_set_prompt(
         (*data).data,
@@ -4557,19 +4542,13 @@ unsafe fn window_customize_add_current(
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut table: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    name = mode_tree_get_current_name((*data).data);
+    let name = mode_tree_get_current_name(&*(*data).data);
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
         cmd_find_from_pane(&raw mut fs, (*data).wp, 0 as ::core::ffi::c_int);
     }
-    if strcmp(
-        name,
-        b"Server Options\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Server Options" {
         window_customize_add_option(
             c,
             data,
@@ -4579,11 +4558,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strcmp(
-        name,
-        b"Session Options\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Session Options" {
         window_customize_add_option(
             c,
             data,
@@ -4593,11 +4568,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strcmp(
-        name,
-        b"Window & Pane Options\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Window & Pane Options" {
         window_customize_add_option(
             c,
             data,
@@ -4607,11 +4578,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strcmp(
-        name,
-        b"Session Hooks\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Session Hooks" {
         window_customize_add_option(
             c,
             data,
@@ -4621,11 +4588,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strcmp(
-        name,
-        b"Window & Pane Hooks\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Window & Pane Hooks" {
         window_customize_add_option(
             c,
             data,
@@ -4635,11 +4598,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strcmp(
-        name,
-        b"Global Environment\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Global Environment" {
         window_customize_add_environment(
             c,
             data,
@@ -4648,11 +4607,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strcmp(
-        name,
-        b"Session Environment\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    if name == c"Session Environment" {
         window_customize_add_environment(
             c,
             data,
@@ -4661,15 +4616,10 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if strncmp(
-        name,
-        b"Key Table - \0" as *const u8 as *const ::core::ffi::c_char,
-        12 as size_t,
-    ) == 0 as ::core::ffi::c_int
-    {
-        table = name.offset(12 as ::core::ffi::c_int as isize);
+    if let Some(table) = name.to_bytes_with_nul().strip_prefix(b"Key Table - ") {
+        let table = CStr::from_bytes_with_nul(table).expect("key table suffix is NUL terminated");
         window_customize_add_key(c, data, table);
-        return 1 as ::core::ffi::c_int;
+        return 1;
     }
     return 0 as ::core::ffi::c_int;
 }

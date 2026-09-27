@@ -273,8 +273,8 @@ unsafe fn window_buffer_build(
                         ::core::ptr::null_mut::<mode_tree_item>(),
                         item as *mut ::core::ffi::c_void,
                         (*item).order as uint64_t,
-                        ((*item).name).as_ptr().cast_mut(),
-                        text.as_ptr(),
+                        &(*item).name,
+                        Some(&text),
                         -(1 as ::core::ffi::c_int),
                     );
                     format_free(ft);

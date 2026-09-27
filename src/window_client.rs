@@ -330,10 +330,8 @@ unsafe fn window_client_build(
                     ::core::ptr::null_mut::<mode_tree_item>(),
                     item as *mut ::core::ffi::c_void,
                     c as uint64_t,
-                    ((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    text.as_ptr(),
+                    (*c).name.as_deref().expect("attached client has a name"),
+                    Some(&text),
                     -(1 as ::core::ffi::c_int),
                 );
             }
@@ -737,15 +735,9 @@ unsafe fn window_client_init(
     );
     mode_tree_zoom((*data).data, args);
     if (*data).preview_is_info != 0 {
-        mode_tree_view_name(
-            (*data).data,
-            b"info\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        mode_tree_view_name(&mut *(*data).data, Some(c"info"));
     } else {
-        mode_tree_view_name(
-            (*data).data,
-            b"preview\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        mode_tree_view_name(&mut *(*data).data, Some(c"preview"));
     }
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
@@ -826,9 +818,9 @@ unsafe fn window_client_key(
         105 => {
             (*data).preview_is_info = ((*data).preview_is_info == 0) as ::core::ffi::c_int;
             if (*data).preview_is_info != 0 {
-                mode_tree_view_name(mtd, b"info\0" as *const u8 as *const ::core::ffi::c_char);
+                mode_tree_view_name(&mut *mtd, Some(c"info"));
             } else {
-                mode_tree_view_name(mtd, b"preview\0" as *const u8 as *const ::core::ffi::c_char);
+                mode_tree_view_name(&mut *mtd, Some(c"preview"));
             }
             mode_tree_build(mtd);
         }
