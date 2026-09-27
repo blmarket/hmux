@@ -4417,21 +4417,24 @@ unsafe fn server_client_dispatch(
     };
     datalen = imsg.data.len() as ssize_t;
     match imsg.hdr.type_0 {
-        107 | 108 | 105 | 109 | 100 | 111 | 104 | 110 | 101 | 112 | 102 | 106 => {
+        MSG_IDENTIFY_CLIENTPID | MSG_IDENTIFY_CWD | MSG_IDENTIFY_ENVIRON
+        | MSG_IDENTIFY_FEATURES | MSG_IDENTIFY_FLAGS | MSG_IDENTIFY_LONGFLAGS
+        | MSG_IDENTIFY_STDIN | MSG_IDENTIFY_STDOUT | MSG_IDENTIFY_TERM
+        | MSG_IDENTIFY_TERMINFO | MSG_IDENTIFY_TTYNAME | MSG_IDENTIFY_DONE => {
             if server_client_dispatch_identify(c, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
-        200 => {
+        MSG_COMMAND => {
             if server_client_dispatch_command(c, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
-        208 => {
+        MSG_RESIZE => {
             if datalen != 0 as ssize_t {
                 current_block = 13639960948656484833;
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -4455,7 +4458,7 @@ unsafe fn server_client_dispatch(
                 current_block = 14945149239039849694;
             }
         }
-        205 => {
+        MSG_EXITING => {
             if datalen != 0 as ssize_t {
                 current_block = 13639960948656484833;
             } else {
@@ -4472,7 +4475,7 @@ unsafe fn server_client_dispatch(
                 current_block = 14945149239039849694;
             }
         }
-        216 | 215 => {
+        MSG_WAKEUP | MSG_UNLOCK => {
             if datalen != 0 as ssize_t {
                 current_block = 13639960948656484833;
             } else if (*c).flags & CLIENT_SUSPENDED as uint64_t == 0 {
@@ -4496,7 +4499,7 @@ unsafe fn server_client_dispatch(
                 }
             }
         }
-        209 => {
+        MSG_SHELL => {
             if datalen != 0 as ssize_t {
                 current_block = 13639960948656484833;
             } else if server_client_dispatch_shell(c) != 0 as ::core::ffi::c_int {
@@ -4505,28 +4508,28 @@ unsafe fn server_client_dispatch(
                 current_block = 14945149239039849694;
             }
         }
-        305 => {
+        MSG_WRITE_READY => {
             if file_write_ready(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
-        308 => {
+        MSG_WRITE_DONE => {
             if file_write_done(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
-        301 => {
+        MSG_READ => {
             if file_read_data(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
-        302 => {
+        MSG_READ_DONE => {
             if file_read_done(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
@@ -4698,7 +4701,7 @@ unsafe fn server_client_dispatch_identify(
     data = imsg.data.as_ptr().cast::<::core::ffi::c_char>();
     datalen = imsg.data.len();
     match imsg.hdr.type_0 {
-        109 => {
+        MSG_IDENTIFY_FEATURES => {
             if datalen != ::core::mem::size_of::<::core::ffi::c_int>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -4714,7 +4717,7 @@ unsafe fn server_client_dispatch_identify(
                 log_cstr(tty_get_features(feat).as_ptr())
             ));
         }
-        100 => {
+        MSG_IDENTIFY_FLAGS => {
             if datalen != ::core::mem::size_of::<::core::ffi::c_int>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -4730,7 +4733,7 @@ unsafe fn server_client_dispatch_identify(
                 log_hex(((flags) as u32) as u64)
             ));
         }
-        111 => {
+        MSG_IDENTIFY_LONGFLAGS => {
             if datalen != ::core::mem::size_of::<uint64_t>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -4746,7 +4749,7 @@ unsafe fn server_client_dispatch_identify(
                 log_hex(longflags as ::core::ffi::c_ulonglong)
             ));
         }
-        101 => {
+        MSG_IDENTIFY_TERM => {
             if datalen == 0 as size_t
                 || *data.offset(datalen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
@@ -4760,7 +4763,7 @@ unsafe fn server_client_dispatch_identify(
                 log_cstr((data) as *const _)
             ));
         }
-        112 => {
+        MSG_IDENTIFY_TERMINFO => {
             if datalen == 0 as size_t
                 || *data.offset(datalen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
@@ -4774,7 +4777,7 @@ unsafe fn server_client_dispatch_identify(
                 log_cstr((data) as *const _)
             ));
         }
-        102 => {
+        MSG_IDENTIFY_TTYNAME => {
             if datalen == 0 as size_t
                 || *data.offset(datalen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
@@ -4788,7 +4791,7 @@ unsafe fn server_client_dispatch_identify(
                 log_cstr((data) as *const _)
             ));
         }
-        108 => {
+        MSG_IDENTIFY_CWD => {
             if datalen == 0 as size_t
                 || *data.offset(datalen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
@@ -4810,7 +4813,7 @@ unsafe fn server_client_dispatch_identify(
                 log_cstr((data) as *const _)
             ));
         }
-        104 => {
+        MSG_IDENTIFY_STDIN => {
             if datalen != 0 as size_t {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -4823,7 +4826,7 @@ unsafe fn server_client_dispatch_identify(
                 ((*c).fd) as i32
             ));
         }
-        110 => {
+        MSG_IDENTIFY_STDOUT => {
             if datalen != 0 as size_t {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -4836,7 +4839,7 @@ unsafe fn server_client_dispatch_identify(
                 ((*c).out_fd) as i32
             ));
         }
-        105 => {
+        MSG_IDENTIFY_ENVIRON => {
             if datalen == 0 as size_t
                 || *data.offset(datalen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
@@ -4856,7 +4859,7 @@ unsafe fn server_client_dispatch_identify(
                 log_cstr((data) as *const _)
             ));
         }
-        107 => {
+        MSG_IDENTIFY_CLIENTPID => {
             if datalen != ::core::mem::size_of::<pid_t>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -4873,7 +4876,7 @@ unsafe fn server_client_dispatch_identify(
         }
         _ => {}
     }
-    if imsg.hdr.type_0 != MSG_IDENTIFY_DONE as ::core::ffi::c_int as uint32_t {
+    if imsg.hdr.type_0 != MSG_IDENTIFY_DONE {
         return 0 as ::core::ffi::c_int;
     }
     (*c).flags |= CLIENT_IDENTIFIED as uint64_t;

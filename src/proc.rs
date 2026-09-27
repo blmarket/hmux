@@ -111,9 +111,7 @@ unsafe fn proc_signal_cb(mut signo: ::core::ffi::c_int, mut arg: *mut ::core::ff
 unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c_int {
     let mut version: ::core::ffi::c_int = 0;
     version = (imsg.hdr.peerid & 0xff as uint32_t) as ::core::ffi::c_int;
-    if imsg.hdr.type_0 != MSG_VERSION as ::core::ffi::c_int as uint32_t
-        && version != PROTOCOL_VERSION
-    {
+    if imsg.hdr.type_0 != MSG_VERSION && version != PROTOCOL_VERSION {
         log_debug(format_args!(
             "peer {} bad version {}",
             log_pointer((peer) as *const ::core::ffi::c_void),
@@ -178,7 +176,7 @@ pub unsafe fn proc_send(
     let fd = (fd >= 0).then(|| unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) });
     if imsg_compose(
         imsgbuf,
-        type_0 as uint32_t,
+        type_0,
         PROTOCOL_VERSION as uint32_t,
         -(1 as pid_t),
         fd,

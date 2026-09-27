@@ -4,8 +4,8 @@ mod message;
 pub use message::{
     imsg, imsg_hdr, msgtype, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT,
     MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD,
-    MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_LONGFLAGS,
-    MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
+    MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS,
+    MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
     MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READ, MSG_READY, MSG_READ_CANCEL, MSG_READ_DONE,
     MSG_READ_OPEN, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION,
     MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY,
@@ -103,7 +103,7 @@ pub(crate) fn imsg_get_fd(imsg: &mut imsg) -> Option<OwnedFd> {
 }
 pub(crate) fn imsg_compose(
     imsgbuf: &mut imsgbuf,
-    type_0: uint32_t,
+    type_0: msgtype,
     id: uint32_t,
     pid: pid_t,
     fd: Option<OwnedFd>,
@@ -116,7 +116,7 @@ pub(crate) fn imsg_compose(
 }
 fn imsg_create(
     imsgbuf: &imsgbuf,
-    type_0: uint32_t,
+    type_0: msgtype,
     id: uint32_t,
     pid: pid_t,
     datalen: usize,

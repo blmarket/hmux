@@ -41,7 +41,7 @@ pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
 pub const MSG_IDENTIFY_STDIN: msgtype = 104;
 pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
 pub const MSG_IDENTIFY_TERM: msgtype = 101;
-const MSG_IDENTIFY_FLAGS: msgtype = 100;
+pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
 pub const MSG_VERSION: msgtype = 12;
 
 #[cfg(test)]
@@ -63,7 +63,7 @@ mod tests {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct imsg_hdr {
-    pub type_0: uint32_t,
+    pub type_0: msgtype,
     pub len: uint32_t,
     pub peerid: uint32_t,
     pub pid: uint32_t,
