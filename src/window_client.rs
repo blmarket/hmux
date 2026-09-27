@@ -18,7 +18,7 @@ use crate::src::screen_write::{
     screen_write_vline,
 };
 use crate::src::server_client::{
-    server_client_detach, server_client_how_many, server_client_suspend, server_client_unref,
+    server_client_detach, server_client_how_many, server_client_suspend, server_client_unref_owned,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -63,29 +63,32 @@ pub struct window_client_modedata {
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
     // Rows and the mode share ownership of their heap-allocated records.
-    pub items: Vec<Rc<UnsafeCell<window_client_itemdata>>>,
+    pub items: Vec<Rc<window_client_itemdata>>,
 }
 pub struct window_client_itemdata {
-    pub c: *mut client,
+    // Present until Drop transfers the last item-owned reference to the reactor.
+    c: Option<Rc<UnsafeCell<client>>>,
     pub ttyname: CString,
 }
 
 impl window_client_itemdata {
-    fn new(c: *mut client, ttyname: &CStr) -> Self {
+    fn new(c: &Rc<UnsafeCell<client>>, ttyname: &CStr) -> Self {
         Self {
-            c,
+            c: Some(Rc::clone(c)),
             ttyname: ttyname.to_owned(),
         }
+    }
+
+    fn client(&self) -> &Rc<UnsafeCell<client>> {
+        self.c.as_ref().expect("live client row retains its client")
     }
 }
 
 impl Drop for window_client_itemdata {
     fn drop(&mut self) {
-        // The item retains its client until the last row or selection releases it.
-        if !self.c.is_null() {
-            unsafe { server_client_unref(self.c) };
+        if let Some(client) = self.c.take() {
+            server_client_unref_owned(client);
         }
-        // CString is released after unref, matching the former free path.
     }
 }
 
@@ -229,17 +232,15 @@ pub static mut window_client_mode: window_mode = {
 };
 static window_client_order_seq: [sort_order; 4] =
     [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY];
-unsafe fn window_client_add_item(data: *mut window_client_modedata, c: *mut client) {
-    let item = Rc::new(UnsafeCell::new(window_client_itemdata::new(
-        c,
-        CStr::from_ptr(
-            ((*c).ttyname)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ),
-    )));
-    crate::src::shared::rc::retain(c);
-    (*data).items.push(item);
+unsafe fn window_client_add_item(
+    items: &mut Vec<Rc<window_client_itemdata>>,
+    c: &Rc<UnsafeCell<client>>,
+) {
+    let ttyname = (*c.get())
+        .ttyname
+        .as_deref()
+        .expect("attached client has a terminal name");
+    items.push(Rc::new(window_client_itemdata::new(c, ttyname)));
 }
 
 #[cfg(test)]
@@ -248,38 +249,41 @@ mod tests {
 
     #[test]
     fn client_items_keep_snapshots_alive_after_list_replacement() {
+        let client_owner = unsafe { client::new() };
+        let client_observer = Rc::downgrade(&client_owner);
         let ttyname = CString::new(b"/dev/pts/7".as_slice()).unwrap();
-        let mut items = Vec::new();
-        items.push(Rc::new(UnsafeCell::new(window_client_itemdata::new(
-            std::ptr::null_mut(),
+        let mut items = vec![Rc::new(window_client_itemdata::new(
+            &client_owner,
             &ttyname,
-        ))));
+        ))];
         let first = Rc::clone(&items[0]);
         let observer = Rc::downgrade(&first);
         drop(ttyname);
 
         for _ in 0..256 {
-            items.push(Rc::new(UnsafeCell::new(window_client_itemdata::new(
-                std::ptr::null_mut(),
+            items.push(Rc::new(window_client_itemdata::new(
+                &client_owner,
                 c"another terminal",
-            ))));
+            )));
         }
         assert!(Rc::ptr_eq(&items[0], &first));
-        assert_eq!(unsafe { (*first.get()).ttyname.as_bytes() }, b"/dev/pts/7");
+        assert_eq!(first.ttyname.as_bytes(), b"/dev/pts/7");
 
         items.clear();
-        items.push(Rc::new(UnsafeCell::new(window_client_itemdata::new(
-            std::ptr::null_mut(),
+        items.push(Rc::new(window_client_itemdata::new(
+            &client_owner,
             c"replacement",
-        ))));
-        assert_eq!(
-            unsafe { (*items[0].get()).ttyname.as_bytes() },
-            b"replacement"
-        );
-        assert_eq!(unsafe { (*first.get()).ttyname.as_bytes() }, b"/dev/pts/7");
+        )));
+        assert_eq!(items[0].ttyname.as_bytes(), b"replacement");
+        assert_eq!(first.ttyname.as_bytes(), b"/dev/pts/7");
         assert!(observer.upgrade().is_some());
         drop(first);
         assert!(observer.upgrade().is_none());
+        drop(items);
+        drop(client_owner);
+        assert!(client_observer.upgrade().is_some());
+        crate::src::reactor::shutdown_runtime();
+        assert!(client_observer.upgrade().is_none());
     }
 
     #[test]
@@ -301,14 +305,18 @@ mod tests {
                     preview_is_info: 0,
                     items: Vec::new(),
                 };
-                window_client_add_item(&mut data, c);
+                window_client_add_item(&mut data.items, &client_owner);
+                assert_eq!(Rc::strong_count(&client_owner), 2);
                 let item_observer = Rc::downgrade(&data.items[0]);
                 let selected = ModeTreeItemData::Client(Rc::clone(&data.items[0]));
                 data.items.clear();
                 drop(client_owner);
                 assert!(client_observer.upgrade().is_some());
                 assert!(item_observer.upgrade().is_some());
+                let another_selection = selected.clone();
                 drop(selected);
+                assert!(item_observer.upgrade().is_some());
+                drop(another_selection);
                 assert!(item_observer.upgrade().is_none());
                 assert!(client_observer.upgrade().is_some());
                 if cancel {
@@ -328,7 +336,6 @@ unsafe fn window_client_build(
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
-    let mut item: *mut window_client_itemdata = ::core::ptr::null_mut::<window_client_itemdata>();
     let mut i: u_int = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     (*data).items.clear();
@@ -337,16 +344,18 @@ unsafe fn window_client_build(
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize];
         if !((*c).session.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            window_client_add_item(data, c);
+            let client_owner = crate::src::shared::rc::downgrade(c)
+                .upgrade()
+                .expect("live sorted client");
+            window_client_add_item(&mut (*data).items, &client_owner);
         }
         i = i.wrapping_add(1);
     }
     let mut current_block_21: u64;
     i = 0 as u_int;
     while (i as usize) < (*data).items.len() {
-        let item_owner = Rc::clone(&(&(*data).items)[i as usize]);
-        item = item_owner.get();
-        c = (*item).c;
+        let item = Rc::clone(&(&(*data).items)[i as usize]);
+        c = crate::src::shared::rc::as_ptr(item.client());
         if !filter.is_null() {
             let cp = format_single_cstring(
                 ::core::ptr::null_mut::<cmdq_item>(),
@@ -377,7 +386,7 @@ unsafe fn window_client_build(
                 mode_tree_add(
                     (*data).data,
                     None,
-                    ModeTreeItemData::Client(Rc::clone(&item_owner)),
+                    ModeTreeItemData::Client(Rc::clone(&item)),
                     c as uint64_t,
                     (*c).name.as_deref().expect("attached client has a name"),
                     Some(&text),
@@ -395,7 +404,7 @@ unsafe fn window_client_draw_info(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut c: *mut client = (*item).c;
+    let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut s: *mut screen = (*ctx).s;
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut gc: grid_cell = grid_cell {
@@ -497,7 +506,7 @@ unsafe fn window_client_draw(
     mut sy: u_int,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
-    let mut c: *mut client = (*item).c;
+    let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut session: *mut session = (*c).session;
     let mut s: *mut screen = (*ctx).s;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -656,7 +665,7 @@ unsafe fn window_client_get_key(
     );
     format_defaults(
         ft,
-        (*item).c,
+        crate::src::shared::rc::as_ptr(item.client()),
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
@@ -753,8 +762,7 @@ unsafe fn window_client_init(
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
-            let item_owner = itemdata.as_client().expect("client row payload");
-            let item = &*item_owner.get();
+            let item = itemdata.as_client().expect("client row payload");
             window_client_draw(data_handle.as_ptr().cast(), item, ctx, sx, sy)
         })),
         None,
@@ -763,8 +771,7 @@ unsafe fn window_client_init(
         })),
         None,
         Some(Box::new(move |itemdata, line| {
-            let item_owner = itemdata.as_client().expect("client row payload");
-            let item = &*item_owner.get();
+            let item = itemdata.as_client().expect("client row payload");
             window_client_get_key(data_handle.as_ptr().cast(), item, line)
         })),
         None,
@@ -804,22 +811,24 @@ unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_client_do_detach(
     mut data: *mut window_client_modedata,
-    mut item: *mut window_client_itemdata,
+    item: &Rc<window_client_itemdata>,
     mut key: key_code,
 ) {
-    if item
-        == mode_tree_get_current(&*(*data).data)
-            .as_client()
-            .map_or(std::ptr::null_mut(), |item| item.get())
+    if mode_tree_get_current(&*(*data).data)
+        .as_client()
+        .is_some_and(|current| Rc::ptr_eq(item, current))
     {
         mode_tree_down((*data).data, 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
-        server_client_detach((*item).c, MSG_DETACH);
+        server_client_detach(crate::src::shared::rc::as_ptr(item.client()), MSG_DETACH);
     } else if key == 'x' as i32 as key_code || key == 'X' as i32 as key_code {
-        server_client_detach((*item).c, MSG_DETACHKILL);
+        server_client_detach(
+            crate::src::shared::rc::as_ptr(item.client()),
+            MSG_DETACHKILL,
+        );
     } else if key == 'z' as i32 as key_code || key == 'Z' as i32 as key_code {
-        server_client_suspend((*item).c);
+        server_client_suspend(crate::src::shared::rc::as_ptr(item.client()));
     }
 }
 unsafe fn window_client_key(
@@ -833,7 +842,6 @@ unsafe fn window_client_key(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data;
-    let mut item: *mut window_client_itemdata = ::core::ptr::null_mut::<window_client_itemdata>();
     let mut finished: ::core::ffi::c_int = 0;
     finished = mode_tree_key(
         mtd,
@@ -846,10 +854,9 @@ unsafe fn window_client_key(
     match key {
         100 | 120 | 122 => {
             let item_owner = mode_tree_get_current(&*mtd);
-            item = item_owner
-                .as_client()
-                .map_or(std::ptr::null_mut(), |item| item.get());
-            window_client_do_detach(data, item, key);
+            if let Some(item) = item_owner.as_client() {
+                window_client_do_detach(data, item, key);
+            }
             mode_tree_build(mtd);
         }
         68 | 88 | 90 => {
@@ -859,9 +866,7 @@ unsafe fn window_client_key(
                     let itemdata = row.borrow().itemdata.clone();
                     window_client_do_detach(
                         data,
-                        itemdata
-                            .as_client()
-                            .map_or(std::ptr::null_mut(), |item| item.get()),
+                        itemdata.as_client().expect("client row payload"),
                         key,
                     )
                 },
@@ -882,10 +887,9 @@ unsafe fn window_client_key(
         }
         13 => {
             let item_owner = mode_tree_get_current(&*mtd);
-            item = item_owner
-                .as_client()
-                .map_or(std::ptr::null_mut(), |item| item.get());
-            mode_tree_run_command(c, None, &(*data).command, &(*item).ttyname);
+            if let Some(item) = item_owner.as_client() {
+                mode_tree_run_command(c, None, &(*data).command, &item.ttyname);
+            }
             finished = 1 as ::core::ffi::c_int;
         }
         _ => {}

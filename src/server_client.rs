@@ -1471,11 +1471,19 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     server_update_socket();
 }
 pub unsafe fn server_client_unref(c: *mut client) {
-    log_debug(format_args!(
-        "unref client {}",
-        log_pointer((c) as *const ::core::ffi::c_void)
-    ));
-    crate::src::shared::rc::release_later(crate::src::shared::rc::take(c));
+    server_client_unref_owned(crate::src::shared::rc::take(c));
+}
+
+/// Transfer a client reference to deferred cleanup, preserving the event-loop
+/// lifetime required by client teardown callbacks.
+pub fn server_client_unref_owned(c: std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    unsafe {
+        log_debug(format_args!(
+            "unref client {}",
+            log_pointer(crate::src::shared::rc::as_ptr(&c).cast())
+        ));
+    }
+    crate::src::shared::rc::release_later(c);
 }
 unsafe fn server_client_free(c: *mut client) {
     log_debug(format_args!(
