@@ -265,13 +265,13 @@ pub unsafe fn server_lock_client(mut c: *mut client) {
     tty_stop_tty(&raw mut (*c).tty);
     tty_raw(
         &raw mut (*c).tty,
-        tty_term_string(tty_term_owner_ptr(&(*c).tty.term), TTYC_SMCUP),
+        tty_term_string(&*(tty_term_owner_ptr(&(*c).tty.term)), TTYC_SMCUP).as_ptr(),
     );
     tty_raw(
         &raw mut (*c).tty,
-        tty_term_string(tty_term_owner_ptr(&(*c).tty.term), TTYC_CLEAR),
+        tty_term_string(&*(tty_term_owner_ptr(&(*c).tty.term)), TTYC_CLEAR).as_ptr(),
     );
-    tty_raw(&raw mut (*c).tty, tty_term_string(tty_term_owner_ptr(&(*c).tty.term), TTYC_E3));
+    tty_raw(&raw mut (*c).tty, tty_term_string(&*(tty_term_owner_ptr(&(*c).tty.term)), TTYC_E3).as_ptr());
     (*c).flags |= CLIENT_SUSPENDED as uint64_t;
     proc_send(
         (*c).peer,

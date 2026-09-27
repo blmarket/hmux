@@ -708,22 +708,22 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
         ),
     );
     if tty_acs_needed(tty.as_ref()) != 0 {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_RMACS));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_RMACS).as_ptr());
     }
-    tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_SGR0));
-    tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_RMKX));
+    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_SGR0).as_ptr());
+    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_RMKX).as_ptr());
     if options_get_number(
         global_options,
         b"clear-on-attach\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_CLEAR));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_CLEAR).as_ptr());
     }
     if (*tty).cstyle as ::core::ffi::c_uint
         != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_SE) != 0 {
-            tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_SE));
+            tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_SE).as_ptr());
         } else if tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_SS) != 0 {
             tty_raw(
                 tty,
@@ -732,9 +732,9 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
         }
     }
     if (*tty).ccolour != -(1 as ::core::ffi::c_int) {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_CR));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_CR).as_ptr());
     }
-    tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_CNORM));
+    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_CNORM).as_ptr());
     if tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_KMOUS) != 0 {
         tty_raw(
             tty,
@@ -746,7 +746,7 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
         );
     }
     if tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_DSBP) != 0 {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_DSBP));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_DSBP).as_ptr());
     }
     if (*tty_term_owner_ptr(&(*tty).term)).flags & TERM_VT100LIKE != 0 {
         tty_raw(
@@ -754,19 +754,19 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
             b"\x1B[?7727l\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_DSFCS));
-    tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_DSEKS));
+    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_DSFCS).as_ptr());
+    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_DSEKS).as_ptr());
     if (*tty_term_owner_ptr(&(*tty).term)).flags & TERM_DECSLRM != 0 {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_DSMG));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_DSMG).as_ptr());
     }
     if options_get_number(
         global_options,
         b"clear-on-attach\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_RMCUP));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_RMCUP).as_ptr());
     } else {
-        tty_raw(tty, tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_CLEAR));
+        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_CLEAR).as_ptr());
     }
     if (*tty_term_owner_ptr(&(*tty).term)).flags & TERM_VT100LIKE != 0 {
         tty_raw(
@@ -812,7 +812,7 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_ENEKS)),
+            std::ffi::CStr::from_ptr(tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_ENEKS).as_ptr()),
         );
     }
     if options_get_number(
@@ -822,7 +822,7 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string(tty_term_owner_ptr(&(*tty).term), TTYC_ENFCS)),
+            std::ffi::CStr::from_ptr(tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_ENFCS).as_ptr()),
         );
     }
     if (*tty_term_owner_ptr(&(*tty).term)).flags & TERM_VT100LIKE != 0 {
@@ -856,7 +856,7 @@ pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
 pub unsafe fn tty_putcode(mut tty: *mut tty, mut code: tty_code_code) {
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string(tty_term_owner_ptr(&(*tty).term), code)),
+        std::ffi::CStr::from_ptr(tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), code).as_ptr()),
     );
 }
 pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: ::core::ffi::c_int) {
