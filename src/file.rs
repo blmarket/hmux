@@ -106,10 +106,6 @@ pub const EVBUFFER_ERROR: ::core::ffi::c_int = BEV_EVENT_ERROR;
 
 static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 
-unsafe fn file_create_owner() -> *mut client_file {
-    crate::src::shared::rc::new(client_file::empty())
-}
-
 fn file_set_path(cf: &mut client_file, path: CString) {
     cf.path = Default::default();
     cf.path = Some(path);
@@ -167,37 +163,36 @@ pub unsafe fn file_create_with_peer(
     mut files: *mut client_files,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
-) -> *mut client_file {
+) -> Rc<UnsafeCell<client_file>> {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    cf = file_create_owner();
+    let owner = client_file::new();
+    cf = rc::as_ptr(&owner);
     (*cf).c = None;
     (*cf).stream = stream;
     (*cf).cb = cb;
     (*cf).peer = peer;
-    client_files_insert(files, cf);
-    return cf;
+    client_files_insert(files, owner.clone());
+    return owner;
 }
 unsafe fn file_create_with_client(
     mut c: *mut client,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
-) -> *mut client_file {
+) -> Rc<UnsafeCell<client_file>> {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if !c.is_null() && (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         c = ::core::ptr::null_mut::<client>();
     }
-    cf = file_create_owner();
+    let owner = client_file::new();
+    cf = rc::as_ptr(&owner);
     (*cf).c = ClientOwner::retain(c);
     (*cf).stream = stream;
     (*cf).cb = cb;
     if !client_owner_ptr(&(*cf).c).is_null() {
         (*cf).peer = (*client_owner_ptr(&(*cf).c)).peer;
-        client_files_insert(&raw mut (*client_owner_ptr(&(*cf).c)).files, cf);
+        client_files_insert(&raw mut (*client_owner_ptr(&(*cf).c)).files, owner.clone());
     }
-    return cf;
-}
-pub unsafe fn file_free(cf: *mut client_file) {
-    crate::src::shared::rc::release(cf);
+    return owner;
 }
 unsafe fn file_destroy(cf: *mut client_file) {
     client_files_remove(cf);
@@ -239,18 +234,28 @@ unsafe fn file_fire_done_cb(mut arg: *mut ::core::ffi::c_void) {
     // Completion retires the stream even if a lookup guard still retains its
     // allocation. Final Drop remains an idempotent unlink fallback.
     client_files_remove(cf);
-    file_free(cf);
 }
-pub unsafe fn file_fire_done(mut cf: *mut client_file) {
-    // The file stays in its stream index until this event runs. A read-done
-    // message and client teardown can both request completion before then.
-    // Only the first event may consume the callback data and free the owner.
-    let owner = &mut *cf;
-    if owner.terminal_scheduled {
+/// Own completion until dispatch or cancellation. Both paths retire the index
+/// entry while a typed owner still keeps the file and its callback data alive.
+struct FileCompletion(Rc<UnsafeCell<client_file>>);
+
+impl Drop for FileCompletion {
+    fn drop(&mut self) {
+        unsafe { client_files_remove(rc::as_ptr(&self.0)); }
+    }
+}
+
+pub unsafe fn file_fire_done(cf: *mut client_file) {
+    if (*cf).terminal_scheduled {
         return;
     }
-    owner.terminal_scheduled = true;
-    event_once(move |_, _| unsafe { file_fire_done_cb(cf as *mut ::core::ffi::c_void) });
+    (*cf).terminal_scheduled = true;
+    let owner = (*cf).observer.upgrade().expect("live Rc file");
+    let mut completion = Some(FileCompletion(owner));
+    event_once(move |_, _| {
+        let completion = completion.take().expect("one terminal dispatch");
+        file_fire_done_cb(rc::as_ptr(&completion.0).cast());
+    });
 }
 pub unsafe fn file_fire_read(mut cf: *mut client_file) {
     let c = client_owner_ptr(&(*cf).c);
@@ -285,6 +290,7 @@ pub unsafe fn file_print(
     mut c: *mut client,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
+    let transfer_owner;
     let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
@@ -299,7 +305,8 @@ pub unsafe fn file_print(
     let file_owner = client_files_find(&(*c).files, &find);
     cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     if cf.is_null() {
-        cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
+        transfer_owner = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
+        cf = rc::as_ptr(&transfer_owner);
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
         msg.stream = 1 as ::core::ffi::c_int;
@@ -322,6 +329,7 @@ pub unsafe fn file_print_buffer(
     mut data: *mut ::core::ffi::c_void,
     mut size: size_t,
 ) {
+    let transfer_owner;
     let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
@@ -336,7 +344,8 @@ pub unsafe fn file_print_buffer(
     let file_owner = client_files_find(&(*c).files, &find);
     cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     if cf.is_null() {
-        cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
+        transfer_owner = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
+        cf = rc::as_ptr(&transfer_owner);
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add(&mut *(*cf).buffer, data, size);
         msg.stream = 1 as ::core::ffi::c_int;
@@ -358,6 +367,7 @@ pub unsafe fn file_error(
     mut c: *mut client,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
+    let transfer_owner;
     let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
@@ -372,7 +382,8 @@ pub unsafe fn file_error(
     let file_owner = client_files_find(&(*c).files, &find);
     cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     if cf.is_null() {
-        cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None);
+        transfer_owner = file_create_with_client(c, 2 as ::core::ffi::c_int, None);
+        cf = rc::as_ptr(&transfer_owner);
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
         msg.stream = 2 as ::core::ffi::c_int;
@@ -413,6 +424,7 @@ unsafe fn file_write_impl(
     mut cb: client_file_cb,
     wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
 ) {
+    let transfer_owner;
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msglen: size_t = 0;
@@ -423,7 +435,8 @@ unsafe fn file_write_impl(
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+        transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+        cf = rc::as_ptr(&transfer_owner);
         if let Some((item, cancel_cb)) = wait {
             file_set_cmdq_wait(cf, item, cancel_cb);
         }
@@ -439,7 +452,8 @@ unsafe fn file_write_impl(
             current_block = 8821498768635335055;
         }
     } else {
-        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+        transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+        cf = rc::as_ptr(&transfer_owner);
         if let Some((item, cancel_cb)) = wait {
             file_set_cmdq_wait(cf, item, cancel_cb);
         }
@@ -544,6 +558,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) -> *mut client_file {
+    let transfer_owner;
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -554,7 +569,8 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     let mut file_owner: Option<CFile> = None;
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
-    cf = file_create_with_client(c, stream as ::core::ffi::c_int, None);
+    transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, None);
+    cf = rc::as_ptr(&transfer_owner);
     file_set_cmdq_wait(cf, item, cancel_cb);
     (*cf).cb = callback(crate::src::shared::rc::downgrade(cf));
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
@@ -692,7 +708,6 @@ unsafe fn file_push_cb(mut arg: *mut ::core::ffi::c_void) {
     {
         file_push(cf);
     }
-    file_free(cf);
 }
 pub unsafe fn file_push(mut cf: *mut client_file) {
     let mut msg = Vec::<u8>::new();
@@ -749,8 +764,8 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         ));
     }
     if left != 0 as size_t {
-        crate::src::shared::rc::retain(cf);
-        event_once(move |_, _| unsafe { file_push_cb(cf as *mut ::core::ffi::c_void) });
+        let owner = (*cf).observer.upgrade().expect("live Rc file");
+        event_once(move |_, _| unsafe { file_push_cb(rc::as_ptr(&owner).cast()) });
     } else if (*cf).stream > 2 as ::core::ffi::c_int {
         close_0.stream = (*cf).stream;
         proc_send(
@@ -823,7 +838,6 @@ unsafe fn file_write_finished(mut cf: *mut client_file) {
         });
     }
     client_files_remove(cf);
-    file_free(cf);
 }
 unsafe fn file_write_error_callback(
     mut what: ::core::ffi::c_short,
@@ -879,6 +893,7 @@ pub unsafe fn file_write_open(
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) {
+    let transfer_owner;
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_write_open>() {
         fatalx(|out| out.write_all(b"bad MSG_WRITE_OPEN size"));
@@ -909,7 +924,8 @@ pub unsafe fn file_write_open(
     if client_files_find(&*files, &find).is_some() {
         error = EBADF;
     } else {
-        cf = file_create_with_peer(peer, files, msg.stream, cb);
+        transfer_owner = file_create_with_peer(peer, files, msg.stream, cb);
+        cf = rc::as_ptr(&transfer_owner);
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
@@ -1032,7 +1048,6 @@ unsafe fn file_read_error_callback(
     bufferevent_free((*cf).event);
     close((*cf).fd);
     client_files_remove(cf);
-    file_free(cf);
 }
 unsafe fn file_read_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
@@ -1090,6 +1105,7 @@ pub unsafe fn file_read_open(
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) {
+    let transfer_owner;
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_read_open>() {
         fatalx(|out| out.write_all(b"bad MSG_READ_OPEN size"));
@@ -1120,7 +1136,8 @@ pub unsafe fn file_read_open(
     if client_files_find(&*files, &find).is_some() {
         error = EBADF;
     } else {
-        cf = file_create_with_peer(peer, files, msg.stream, cb);
+        transfer_owner = file_create_with_peer(peer, files, msg.stream, cb);
+        cf = rc::as_ptr(&transfer_owner);
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
@@ -1287,7 +1304,7 @@ pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::cor
 fn client_files_key(elm: &client_file) -> i32 {
     elm.stream
 }
-/// Lookups return a retained operation guard; the index itself is nonowning.
+/// Lookups clone the indexed Rc to keep a file alive during an operation.
 pub fn client_files_find(
     head: &client_files,
     elm: &client_file,
@@ -1296,23 +1313,24 @@ pub fn client_files_find(
     let map = owner
         .try_borrow_mut()
         .expect("client file index already borrowed");
-    map.get(&client_files_key(elm)).and_then(Weak::upgrade)
+    map.get(&client_files_key(elm)).cloned()
 }
 
 pub unsafe fn client_files_insert(
     head: *mut client_files,
-    elm: *mut client_file,
+    file: Rc<UnsafeCell<client_file>>,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
+    let elm = rc::as_ptr(&file);
     let key = client_files_key(&*elm);
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
         .try_borrow_mut()
         .expect("client file index already borrowed");
-    if let Some(existing) = map.get(&key).and_then(Weak::upgrade) {
+    if let Some(existing) = map.get(&key).cloned() {
         return Some(existing);
     }
-    map.insert(key, rc::downgrade(elm));
+    map.insert(key, file);
     (*elm).entry.owner = Some(observer);
     None
 }
@@ -1331,9 +1349,11 @@ pub unsafe fn client_files_remove(elm: *mut client_file) {
     let key = client_files_key(&*elm);
     if map
         .get(&key)
-        .is_some_and(|file| std::ptr::eq(file.as_ptr().cast::<client_file>(), elm))
+        .is_some_and(|file| rc::as_ptr(file) == elm)
     {
-        map.remove(&key);
+        let file = map.remove(&key);
+        drop(map);
+        drop(file);
     }
 }
 
@@ -1342,7 +1362,7 @@ pub fn client_files_minmax(head: &client_files) -> Option<Rc<UnsafeCell<client_f
     let map = owner
         .try_borrow_mut()
         .expect("client file index already borrowed");
-    map.values().find_map(Weak::upgrade)
+    map.values().next().cloned()
 }
 
 pub unsafe fn client_files_next(elm: &client_file) -> Option<Rc<UnsafeCell<client_file>>> {
@@ -1354,7 +1374,7 @@ pub unsafe fn client_files_next(elm: &client_file) -> Option<Rc<UnsafeCell<clien
     };
     let key = client_files_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
-        .find_map(|(_, file)| file.upgrade())
+        .next().map(|(_, file)| file.clone())
 }
 
 impl Drop for client_file {
@@ -1364,7 +1384,7 @@ impl Drop for client_file {
 }
 
 #[cfg(test)]
-mod weak_file_index_tests {
+mod file_index_ownership_tests {
     use super::*;
     use crate::src::reactor::{event_loop, shutdown_runtime};
 
@@ -1373,10 +1393,11 @@ mod weak_file_index_tests {
         unsafe {
             let mut files = client_files::default();
             let file = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
-            let observed = rc::downgrade(file);
-            assert_eq!(rc::strong_count(file), 1, "the index must not own the file");
+            let observed = Rc::downgrade(&file);
+            assert_eq!(Rc::strong_count(&file), 2, "caller and index each own the file");
             let guard = client_files_minmax(&files).unwrap();
-            file_fire_done(file);
+            file_fire_done(rc::as_ptr(&file));
+            drop(file);
             event_loop();
 
             assert!(observed.upgrade().is_some());
@@ -1393,7 +1414,8 @@ mod weak_file_index_tests {
         unsafe {
             let mut files = client_files::default();
             let first = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
-            file_free(first);
+            client_files_remove(rc::as_ptr(&first));
+            drop(first);
             assert!(
                 files
                     .storage
@@ -1409,12 +1431,38 @@ mod weak_file_index_tests {
             files.storage = None;
             assert!(!old_index.is_alive());
             let replacement = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
-            file_free(old);
+            drop(old);
             let found = client_files_minmax(&files).unwrap();
-            assert_eq!(rc::as_ptr(&found), replacement);
+            assert_eq!(rc::as_ptr(&found), rc::as_ptr(&replacement));
             drop(found);
-            file_free(replacement);
+            client_files_remove(rc::as_ptr(&replacement));
+            drop(replacement);
             assert!(client_files_minmax(&files).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod completion_cancellation_tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_completion_releases_index_and_client_owners() {
+        unsafe {
+            let client = client::new();
+            let client_observer = Rc::downgrade(&client);
+            let file = file_create_with_client(rc::as_ptr(&client), 7, None);
+            let file_observer = Rc::downgrade(&file);
+            file_fire_done(rc::as_ptr(&file));
+            drop(file);
+            drop(client);
+            assert!(file_observer.upgrade().is_some());
+            assert!(client_observer.upgrade().is_some());
+
+            crate::src::reactor::shutdown_runtime();
+
+            assert!(file_observer.upgrade().is_none());
+            assert!(client_observer.upgrade().is_none());
         }
     }
 }

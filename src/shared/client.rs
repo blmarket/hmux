@@ -271,16 +271,17 @@ impl client {
 }
 
 pub type ClientFileIndex =
-    std::collections::BTreeMap<i32, std::rc::Weak<std::cell::UnsafeCell<client_file>>>;
+    std::collections::BTreeMap<i32, std::rc::Rc<std::cell::UnsafeCell<client_file>>>;
 
 #[derive(Default)]
 #[repr(C)]
 pub struct client_files {
-    /// The client owns its stream index; file records remain externally owned.
+    /// The stream index owns active file records until completion unlinks them.
     pub storage: Option<refbox::RefBox<ClientFileIndex>>,
 }
 
 pub struct client_file {
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
     pub c: Option<ClientOwner>,
     pub peer: *mut tmuxpeer,
     pub stream: ::core::ffi::c_int,
@@ -307,8 +308,17 @@ pub struct client_file_event<'a> {
 }
 
 impl client_file {
+    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        std::rc::Rc::new_cyclic(|observer| {
+            let mut value = Self::empty();
+            value.observer = observer.clone();
+            std::cell::UnsafeCell::new(value)
+        })
+    }
+
     pub fn empty() -> Self {
         Self {
+            observer: std::rc::Weak::new(),
             c: Default::default(),
             peer: Default::default(),
             stream: Default::default(),

@@ -4797,21 +4797,22 @@ mod pane_input_owner_tests {
     unsafe fn waiting_input(
         item: &mut cmdq_item,
         client: &Rc<UnsafeCell<client>>,
-    ) -> *mut client_file {
+    ) -> Rc<UnsafeCell<client_file>> {
         let mut data = Box::new(window_pane_input_data {
             item: NonNull::from(&mut *item),
             client: Some(Rc::clone(client)),
             wp: u_int::MAX,
             file: Weak::new(),
         });
-        let file = rc::new(client_file::empty());
+        let owner = client_file::new();
+        let file = rc::as_ptr(&owner);
         (*file).wait_item = item;
         (*file).wait_client = Some(Rc::downgrade(client));
         data.file = rc::downgrade(file);
         (*file).cb = data.into_callback();
         item.wait_file = Some(rc::downgrade(file));
         item.flags = CMDQ_WAITING;
-        file
+        owner
     }
 
     #[test]
@@ -4820,7 +4821,8 @@ mod pane_input_owner_tests {
             let client = client::new();
             let client_observer = Rc::downgrade(&client);
             let mut item = cmdq_item::empty();
-            let file = waiting_input(&mut item, &client);
+            let owner = waiting_input(&mut item, &client);
+            let file = rc::as_ptr(&owner);
             let file_observer = rc::downgrade(file);
             // Cancellation was already requested. Further progress must drain
             // the bytes and keep waiting until the peer sends its terminal event.
@@ -4846,6 +4848,7 @@ mod pane_input_owner_tests {
             file_fire_done(file);
             file_fire_done(file);
             assert!((*file).cb.is_some());
+            drop(owner);
             event_loop();
             assert_eq!(item.flags & CMDQ_WAITING, 0);
             assert!(item.wait_file.is_none());
@@ -4905,12 +4908,14 @@ mod pane_input_owner_tests {
                     (*client.get()).flags |= CLIENT_DEAD as u64;
                 }
                 let mut item = cmdq_item::empty();
-                let file = waiting_input(&mut item, &client);
+                let owner = waiting_input(&mut item, &client);
+            let file = rc::as_ptr(&owner);
                 let file_observer = rc::downgrade(file);
                 (*file).error = libc::EBADF;
                     drop(client);
                 file_fire_done(file);
                 file_fire_done(file);
+                drop(owner);
                 event_loop();
                 assert_eq!(item.flags & CMDQ_WAITING != 0, dead);
                 assert!(item.wait_file.is_none());
