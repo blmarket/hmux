@@ -354,7 +354,7 @@ pub unsafe fn tty_draw_line(
                         == TTY_DRAW_LINE_FIRST as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
                         next_state = TTY_DRAW_LINE_SAME;
-                    } else if grid_cells_look_equal(gcp, &raw mut last) != 0 {
+                    } else if grid_cells_look_equal(&*gcp, &last) {
                         if (*gcp).data.size as usize
                             > (::core::mem::size_of::<[::core::ffi::c_char; 1000]>() as usize)
                                 .wrapping_sub(len as usize)

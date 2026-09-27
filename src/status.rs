@@ -335,7 +335,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
         gc.bg = bg;
     }
-    if grid_cells_equal(&raw mut gc, &raw mut (*sl).style) == 0 {
+    if !grid_cells_equal(&gc, &(*sl).style) {
         force = 1 as ::core::ffi::c_int;
         memcpy(
             &raw mut (*sl).style as *mut ::core::ffi::c_void,
@@ -691,7 +691,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    if grid_compare((*sl).active_screen().grid, old_screen.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare(&*(*sl).active_screen().grid, &*old_screen.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
@@ -841,7 +841,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     pdd.cursor_x = &raw mut (*sl).prompt_cx;
     prompt_draw((*c).prompt, &raw mut pdd);
     screen_write_stop(&raw mut ctx);
-    if grid_compare((*sl).active_screen().grid, old_screen.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare(&*(*sl).active_screen().grid, &*old_screen.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
     }

@@ -330,7 +330,7 @@ pub unsafe fn window_make_pane_status(
     );
     screen_write_stop(&raw mut ctx);
     format_free(ft);
-    if grid_compare((*wp).status_screen.grid, old.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare(&*(*wp).status_screen.grid, &*old.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old);
         return 0 as ::core::ffi::c_int;
     }

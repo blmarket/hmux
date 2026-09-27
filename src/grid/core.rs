@@ -21,7 +21,7 @@ pub struct C2RustUnnamed_1 {
     pub mask: u_int,
     pub code: u_int,
 }
-pub static mut grid_default_cell: grid_cell = grid_cell {
+pub static grid_default_cell: grid_cell = grid_cell {
     data: utf8_data {
         data: [
             ' ' as i32 as u_char,
@@ -68,7 +68,7 @@ pub static mut grid_default_cell: grid_cell = grid_cell {
     us: 8 as ::core::ffi::c_int,
     link: 0 as u_int,
 };
-static mut grid_padding_cell: grid_cell = grid_cell {
+static grid_padding_cell: grid_cell = grid_cell {
     data: utf8_data {
         data: [
             '!' as i32 as u_char,
@@ -115,7 +115,7 @@ static mut grid_padding_cell: grid_cell = grid_cell {
     us: 8 as ::core::ffi::c_int,
     link: 0 as u_int,
 };
-static mut grid_cleared_cell: grid_cell = grid_cell {
+static grid_cleared_cell: grid_cell = grid_cell {
     data: utf8_data {
         data: [
             ' ' as i32 as u_char,
@@ -381,44 +381,18 @@ unsafe fn grid_check_y(gd: &grid, from: &str, py: u_int) -> i32 {
     }
     0
 }
-pub unsafe fn grid_cells_look_equal(
-    mut gc1: *const grid_cell,
-    mut gc2: *const grid_cell,
-) -> ::core::ffi::c_int {
-    let mut flags1: ::core::ffi::c_int = (*gc1).flags as ::core::ffi::c_int;
-    let mut flags2: ::core::ffi::c_int = (*gc2).flags as ::core::ffi::c_int;
-    if (*gc1).fg != (*gc2).fg || (*gc1).bg != (*gc2).bg {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc1).attr as ::core::ffi::c_int != (*gc2).attr as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if flags1 & !GRID_FLAG_CLEARED != flags2 & !GRID_FLAG_CLEARED {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc1).link != (*gc2).link {
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+pub fn grid_cells_look_equal(gc1: &grid_cell, gc2: &grid_cell) -> bool {
+    gc1.fg == gc2.fg
+        && gc1.bg == gc2.bg
+        && gc1.attr == gc2.attr
+        && (gc1.flags as i32 & !GRID_FLAG_CLEARED) == (gc2.flags as i32 & !GRID_FLAG_CLEARED)
+        && gc1.link == gc2.link
 }
-pub unsafe fn grid_cells_equal(
-    mut gc1: *const grid_cell,
-    mut gc2: *const grid_cell,
-) -> ::core::ffi::c_int {
-    if grid_cells_look_equal(gc1, gc2) == 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc1).data.width as ::core::ffi::c_int != (*gc2).data.width as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*gc1).data.size as ::core::ffi::c_int != (*gc2).data.size as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (memcmp(
-        &raw const (*gc1).data.data as *const u_char as *const ::core::ffi::c_void,
-        &raw const (*gc2).data.data as *const u_char as *const ::core::ffi::c_void,
-        (*gc1).data.size as size_t,
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+pub fn grid_cells_equal(gc1: &grid_cell, gc2: &grid_cell) -> bool {
+    grid_cells_look_equal(gc1, gc2)
+        && gc1.data.width == gc2.data.width
+        && gc1.data.size == gc2.data.size
+        && gc1.data.data[..gc1.data.size as usize] == gc2.data.data[..gc2.data.size as usize]
 }
 pub fn grid_set_tab(gc: &mut grid_cell, width: u_int) {
     gc.data.data.fill(0);
@@ -458,62 +432,30 @@ pub unsafe fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> *mut grid {
 pub unsafe fn grid_destroy(gd: *mut grid) {
     drop(Box::from_raw(gd));
 }
-pub unsafe fn grid_compare(mut ga: *mut grid, mut gb: *mut grid) -> ::core::ffi::c_int {
-    let mut gla: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut glb: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut gca: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut gcb: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut xx: u_int = 0;
-    let mut yy: u_int = 0;
-    if (*ga).sx != (*gb).sx || (*ga).sy != (*gb).sy {
-        return 1 as ::core::ffi::c_int;
+pub unsafe fn grid_compare(ga: &grid, gb: &grid) -> i32 {
+    if ga.sx != gb.sx || ga.sy != gb.sy {
+        return 1;
     }
-    yy = 0 as u_int;
-    while yy < (*ga).sy {
-        gla = (*ga).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
-        glb = (*gb).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
-        if (*gla).cellsize as ::core::ffi::c_int != (*glb).cellsize as ::core::ffi::c_int {
-            return 1 as ::core::ffi::c_int;
+    let mut a = grid_cell::default();
+    let mut b = grid_cell::default();
+    // The comparison deliberately starts at line zero, without a history offset.
+    for row in 0..ga.sy {
+        let a_line = &ga.linedata[row as usize];
+        let b_line = &gb.linedata[row as usize];
+        if a_line.cellsize != b_line.cellsize {
+            return 1;
         }
-        xx = 0 as u_int;
-        while xx < (*gla).cellsize as u_int {
-            grid_get_cell(&*ga, xx, yy, &mut gca);
-            grid_get_cell(&*gb, xx, yy, &mut gcb);
-            if grid_cells_equal(&raw mut gca, &raw mut gcb) == 0 {
-                return 1 as ::core::ffi::c_int;
+        for column in 0..a_line.cellsize as u_int {
+            grid_get_cell(ga, column, row, &mut a);
+            grid_get_cell(gb, column, row, &mut b);
+            if !grid_cells_equal(&a, &b) {
+                return 1;
             }
-            xx = xx.wrapping_add(1);
         }
-        yy = yy.wrapping_add(1);
     }
-    return 0 as ::core::ffi::c_int;
+    0
 }
+
 unsafe fn grid_trim_history(mut gd: *mut grid, mut ny: u_int) {
     grid_free_lines(gd, 0, ny);
     let live = (*gd).hsize.wrapping_add((*gd).sy) as usize;
@@ -2471,6 +2413,64 @@ pub unsafe fn grid_cell_attr_string(mut attr: ::core::ffi::c_int) -> *const ::co
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn cell_comparison_preserves_ignored_fields_and_exact_glyph_bytes() {
+        let original = grid_default_cell;
+        let mut changed = original;
+        changed.flags |= GRID_FLAG_CLEARED as u_char;
+        changed.us = 99;
+        changed.data.have = 31;
+        changed.data.data[31] = 0xff;
+        assert!(grid_cells_equal(&original, &changed));
+        changed.data.width = 2;
+        assert!(grid_cells_look_equal(&original, &changed));
+        assert!(!grid_cells_equal(&original, &changed));
+        changed.data.width = original.data.width;
+        changed.data.data[0] = b'x';
+        assert!(grid_cells_look_equal(&original, &changed));
+        assert!(!grid_cells_equal(&original, &changed));
+        for mutate in [
+            |cell: &mut grid_cell| cell.fg += 1,
+            |cell: &mut grid_cell| cell.bg += 1,
+            |cell: &mut grid_cell| cell.attr ^= 1,
+            |cell: &mut grid_cell| cell.flags ^= GRID_FLAG_PADDING as u_char,
+            |cell: &mut grid_cell| cell.link += 1,
+        ] {
+            let mut changed = original;
+            mutate(&mut changed);
+            assert!(!grid_cells_look_equal(&original, &changed));
+            assert!(!grid_cells_equal(&original, &changed));
+        }
+    }
+
+    #[test]
+    fn grid_comparison_keeps_allocated_line_sizes_and_physical_row_origin() {
+        unsafe {
+            let mut a = grid_create_box(2, 1, 10);
+            let mut b = grid_create_box(2, 1, 10);
+            assert_eq!(grid_compare(&a, &b), 0);
+            grid_set_cell(&mut *a, 0, 0, &grid_default_cell);
+            assert_eq!(grid_compare(&a, &b), 1);
+            grid_set_cell(&mut *b, 0, 0, &grid_default_cell);
+            assert_eq!(grid_compare(&a, &b), 0);
+
+            grid_scroll_history(&mut *a, 8);
+            grid_scroll_history(&mut *b, 8);
+            let mut cell = grid_default_cell;
+            cell.data.data[0] = b'X';
+            grid_set_cell(&mut *a, 0, 1, &cell);
+            assert_eq!(grid_compare(&a, &b), 0);
+            grid_set_cell(&mut *a, 0, 0, &cell);
+            assert_eq!(grid_compare(&a, &b), 1);
+            grid_set_cell(&mut *b, 0, 0, &cell);
+            a.linedata[0].time = 17;
+            a.linedata[0].flags ^= GRID_LINE_WRAPPED as u_short;
+            assert_eq!(grid_compare(&a, &b), 0);
+            b.sx = 3;
+            assert_eq!(grid_compare(&a, &b), 1);
+        }
+    }
 
     fn assert_same_cell(actual: &grid_cell, expected: &grid_cell) {
         assert_eq!(actual.data.data, expected.data.data);

@@ -1455,7 +1455,7 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
     loop {
         gc1 = &raw mut (*wp).cached_gc;
         gc2 = &raw mut (*wp).cached_active_gc;
-        if grid_cells_look_equal(gc1, gc2) == 0 {
+        if !grid_cells_look_equal(&*gc1, &*gc2) {
             (*wp).flags |= PANE_REDRAW;
         } else if (*wp).cached_dim != (*wp).cached_active_dim {
             (*wp).flags |= PANE_REDRAW;
@@ -3938,7 +3938,7 @@ unsafe fn window_pane_input_callback(
     let mut buf: *mut u_char =
         evbuffer_pullup(buffer, -1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut u_char;
-    let mut len: size_t = evbuffer_get_length(&*(buffer));
+    let mut len: size_t = evbuffer_get_length(&*buffer);
     wp = window_pane_find_by_id((*cdata).wp);
     if wp.is_null() {
         (*c).retval = 1 as ::core::ffi::c_int;

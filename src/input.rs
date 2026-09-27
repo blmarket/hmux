@@ -2626,7 +2626,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                             || *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
                                 != ' ' as i32
-                            || grid_cells_look_equal(&raw mut gc, &raw mut first_gc) == 0
+                            || !grid_cells_look_equal(&gc, &first_gc)
                         {
                             has_content = 1 as ::core::ffi::c_int;
                         }

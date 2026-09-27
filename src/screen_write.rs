@@ -4230,7 +4230,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     }
     if skip != 0 {
         if (*s).cx >= (*gl).cellsize as u_int {
-            skip = grid_cells_equal(gc, &raw const grid_default_cell);
+            skip = grid_cells_equal(&*gc, &grid_default_cell) as ::core::ffi::c_int;
         } else {
             gce = (*gl).celldata.as_mut_ptr().offset((*s).cx as isize) as *mut grid_cell_entry;
             if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
