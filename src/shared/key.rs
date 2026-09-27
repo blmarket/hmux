@@ -1507,7 +1507,7 @@ impl key_table {
 #[repr(C)]
 pub struct key_table_entry {
     /// Weak traversal handle into the key table index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, KeyTableOwner>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<key_table>>>>>,
 }
 
 /// Each table owns its bindings; the map is allocated only when first populated.
@@ -1585,7 +1585,6 @@ impl KeyBindingCommand {
 }
 
 /// One of the key table's existing strong references.
-pub type KeyTableOwner = std::rc::Rc<std::cell::UnsafeCell<key_table>>;
-pub fn key_table_owner_ptr(owner: &Option<KeyTableOwner>) -> *mut key_table {
+pub fn key_table_owner_ptr(owner: &Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>>) -> *mut key_table {
     owner.as_ref().map_or(std::ptr::null_mut(), super::rc::as_ptr)
 }

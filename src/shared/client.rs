@@ -165,7 +165,7 @@ pub struct client {
     pub exit_msgtype: msgtype,
     pub exit_session: Option<std::ffi::CString>,
     pub exit_message: Option<std::ffi::CString>,
-    pub keytable: Option<super::key::KeyTableOwner>,
+    pub keytable: Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>>,
     pub last_key: key_code,
     pub paste_time: time_t,
     pub message_ignore_keys: ::core::ffi::c_int,

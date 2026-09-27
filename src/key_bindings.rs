@@ -26,7 +26,7 @@ use std::ffi::CStr;
 
 #[repr(C)]
 pub struct key_tables {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, crate::src::shared::key::KeyTableOwner>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<key_table>>>>>,
 }
 
 static mut key_tables: key_tables = key_tables { storage: None };
@@ -45,7 +45,7 @@ pub unsafe fn key_bindings_get_table(name: *const ::core::ffi::c_char, create: i
 pub unsafe fn key_bindings_get_table_owner(
     name: *const ::core::ffi::c_char,
     create: i32,
-) -> Option<crate::src::shared::key::KeyTableOwner> {
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
     let name = CStr::from_ptr(name);
     if let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() {
         let map = index.try_borrow_mut().expect("key table index already borrowed");
@@ -930,7 +930,7 @@ pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_ta
     let key = elm.name.as_bytes();
     map.get(key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
 }
-pub unsafe fn key_tables_insert(head: *mut key_tables, table: crate::src::shared::key::KeyTableOwner) -> *mut key_table {
+pub unsafe fn key_tables_insert(head: *mut key_tables, table: std::rc::Rc<std::cell::UnsafeCell<key_table>>) -> *mut key_table {
     let elm = crate::src::shared::rc::as_ptr(&table);
     let key = (*elm).name.as_bytes();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
@@ -947,7 +947,7 @@ pub unsafe fn key_tables_insert(head: *mut key_tables, table: crate::src::shared
     }
     std::ptr::null_mut()
 }
-pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> Option<crate::src::shared::key::KeyTableOwner> {
+pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
     if elm.is_null() {
         return None;
     }
