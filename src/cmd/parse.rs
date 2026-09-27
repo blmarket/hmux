@@ -362,17 +362,7 @@ unsafe fn cmd_parse_build_command(
         };
         values.push(value);
     }
-    match cmd_parse(
-        if values.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            values.as_mut_ptr()
-        },
-        u_int::try_from(values.len()).expect("parser argument count exceeds u_int"),
-        pi.file.as_deref(),
-        pi.line,
-        pi.flags,
-    ) {
+    match cmd_parse(&values, pi.file.as_deref(), pi.line, pi.flags) {
         Ok(command) => {
             pr.status = CMD_PARSE_SUCCESS;
             pr.cmdlist = cmd_list_new();

@@ -405,23 +405,16 @@ fn cmd_new_owned(file: Option<&CStr>) -> Box<cmd> {
 }
 
 pub unsafe fn cmd_parse(
-    mut values: *mut args_value,
-    mut count: u_int,
+    values: &[args_value],
     file: Option<&CStr>,
-    mut line: u_int,
-    mut parse_flags: ::core::ffi::c_int,
+    line: u_int,
+    parse_flags: ::core::ffi::c_int,
 ) -> Result<Box<cmd>, CString> {
-    let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
-    if count == 0 as u_int
-        || (*values.offset(0 as ::core::ffi::c_int as isize)).type_0() as ::core::ffi::c_uint
-            != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
+    let Some(command) = values.first().filter(|value| value.type_0() == ARGS_STRING) else {
         return Err(CString::new("no command").unwrap());
-    }
-    entry = cmd_find(CStr::from_ptr(
-        (*values.offset(0 as ::core::ffi::c_int as isize)).string_ptr(),
-    ))?;
-    let args = match args_parse(&raw const (*entry).args, values, count) {
+    };
+    let entry = cmd_find(CStr::from_ptr(command.string_ptr()))?;
+    let args = match args_parse(&(*entry).args, values) {
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {
             let mut error = b"usage: ".to_vec();

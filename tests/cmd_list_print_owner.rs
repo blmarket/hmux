@@ -50,8 +50,8 @@ fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
 }
 
 unsafe fn display_message_command() -> Box<cmd> {
-    let mut value = args_value::borrowed_string(c"display-message".as_ptr());
-    cmd_parse(&mut value, 1, None, 0, 0).expect("command parse reported an error")
+    let value = args_value::borrowed_string(c"display-message".as_ptr());
+    cmd_parse(std::slice::from_ref(&value), None, 0, 0).expect("command parse reported an error")
 }
 
 #[test]
@@ -187,13 +187,13 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
     unsafe {
         let nested = cmd_list_new();
         let nested_observer = rc::downgrade(nested);
-        let mut values = vec![
+        let values = vec![
             args_value::string(c"if-shell".to_owned()),
             args_value::string(c"-F".to_owned()),
             args_value::string(c"1".to_owned()),
             args_value::commands(nested),
         ];
-        let command = cmd_parse(values.as_mut_ptr(), values.len() as u32, None, 0, 0).unwrap();
+        let command = cmd_parse(&values, None, 0, 0).unwrap();
         let address = command.as_ref() as *const cmd as usize;
         drop(values);
         assert_eq!(nested_observer.strong_count(), 1);

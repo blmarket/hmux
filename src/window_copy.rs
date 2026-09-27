@@ -1,5 +1,5 @@
 use crate::src::arguments::args_parse;
-use crate::src::arguments::{args_count, args_has, args_string, args_values};
+use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
@@ -5112,14 +5112,8 @@ unsafe fn window_copy_command(
                 );
                 return;
             }
-            cs.wargs = args_parse(
-                &raw const (*(&raw const window_copy_cmd_table as *const C2RustUnnamed_46)
-                    .offset(i as isize))
-                .args,
-                args_values(args),
-                count,
-            )
-            .ok();
+            cs.wargs =
+                args_parse(&window_copy_cmd_table[i as usize].args, &(*args).values).ok();
             if cs.wargs.is_none() {
                 break;
             }

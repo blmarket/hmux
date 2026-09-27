@@ -199,7 +199,7 @@ fn borrowed_parser_command_retains_only_while_stored() {
 
     unsafe {
         let cmdlist = cmd_list_new();
-        let mut values = [
+        let values = [
             args_value::borrowed_string(c"command".as_ptr()),
             args_value::borrowed_commands(cmdlist),
         ];
@@ -209,13 +209,13 @@ fn borrowed_parser_command_retains_only_while_stored() {
             upper: -1,
             cb: Some(commands),
         };
-        let stored = parse_args(&spec, values.as_mut_ptr(), 2).expect("valid command argument");
+        let stored = parse_args(&spec, &values).expect("valid command argument");
         assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 2);
         drop(stored);
         assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
 
         spec.lower = 2;
-        assert!(parse_args(&spec, values.as_mut_ptr(), 2).is_err());
+        assert!(parse_args(&spec, &values).is_err());
         assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
         cmd_list_free(cmdlist);
     }
@@ -236,7 +236,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
     unsafe {
         let command = cstring("command");
         let command_lists = [cmd_list_new(), cmd_list_new()];
-        let mut values = [
+        let values = [
             borrowed_string_value(command.as_c_str()),
             borrowed_commands_value(command_lists[0]),
             borrowed_commands_value(command_lists[1]),
@@ -247,8 +247,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             upper: -1,
             cb: Some(command_argument),
         };
-        let mut args = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
-            .expect("valid command arguments");
+        let mut args = parse_args(&spec, &values).expect("valid command arguments");
         for cmdlist in command_lists {
             cmd_list_free(cmdlist);
         }
@@ -278,7 +277,7 @@ fn rejected_command_argument_keeps_source_value_ownership() {
     unsafe {
         let command = cstring("command");
         let command_list = cmd_list_new();
-        let mut values = [
+        let values = [
             borrowed_string_value(command.as_c_str()),
             borrowed_commands_value(command_list),
         ];
@@ -288,8 +287,9 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             upper: -1,
             cb: None,
         };
-        let error = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
-            .err().expect("command value must be rejected");
+        let error = parse_args(&spec, &values)
+            .err()
+            .expect("command value must be rejected");
         let error = match error {
             hmux2::src::arguments::ArgsParseError::Message(error) => error,
             hmux2::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),

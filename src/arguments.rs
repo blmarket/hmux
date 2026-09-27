@@ -6,7 +6,7 @@ use crate::src::cmd::{
     cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{__ctype_b_loc, free, strchr};
+use crate::src::ffi::libc::{__ctype_b_loc, free};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
@@ -157,276 +157,180 @@ pub unsafe fn args_push_positional_commands(args: *mut args, cmdlist: *mut cmd_l
 }
 
 unsafe fn args_parse_flag_argument(
-    values: *mut args_value,
-    count: u_int,
-    args: *mut args,
-    i: *mut u_int,
-    string: *const ::core::ffi::c_char,
-    flag: ::core::ffi::c_int,
-    optional_argument: ::core::ffi::c_int,
+    values: &[args_value],
+    args: &mut args,
+    i: &mut usize,
+    suffix: &[u8],
+    flag: u_char,
+    optional_argument: bool,
 ) -> Result<(), CString> {
-    let new = if *string != 0 {
-        args_value::string(CStr::from_ptr(string).to_owned())
+    let new = if !suffix.is_empty() {
+        args_value::string(CString::new(suffix).expect("flag suffix contains no NUL"))
     } else {
-        let argument = if *i == count {
-            ::core::ptr::null_mut::<args_value>()
-        } else {
-            values.add(*i as usize)
-        };
-        if !argument.is_null()
-            && (*argument).type_0() as ::core::ffi::c_uint
-                != ARGS_STRING as ::core::ffi::c_int as u32
-        {
-            return Err(parse_flag_error(
-                b"-",
-                flag as u_char,
-                b" argument must be a string",
+        let argument = values.get(*i);
+        if argument.is_some_and(|value| value.type_0() != ARGS_STRING) {
+            return Err(parse_flag_error(b"-", flag, b" argument must be a string"));
+        }
+        let skip_optional = optional_argument
+            && argument.is_none_or(|value| {
+                let bytes = CStr::from_ptr(value.string_ptr()).to_bytes();
+                bytes.first() == Some(&b'-')
+                    && bytes.get(1).is_some_and(|next| {
+                        *next == b'-'
+                            || *(*__ctype_b_loc()).add(*next as usize) & _ISalpha as u16 != 0
+                    })
+            });
+        if skip_optional {
+            log_debug(format_args!(
+                "args_parse_flag_argument: -{} (optional)",
+                log_byte(flag)
             ));
+            args_set_value(args, flag, None, ARGS_ENTRY_OPTIONAL_VALUE);
+            return Ok(());
         }
-        if argument.is_null() {
-            if optional_argument != 0 {
-                log_debug(format_args!(
-                    "{}: -{} (optional)",
-                    "args_parse_flag_argument",
-                    log_byte((flag) as u8)
-                ));
-                args_set_flag(args, flag as u_char, ARGS_ENTRY_OPTIONAL_VALUE);
-                return Ok(());
-            }
-            return Err(parse_flag_error(
-                b"-",
-                flag as u_char,
-                b" expects an argument",
-            ));
-        }
-        if optional_argument != 0 {
-            let value = (*argument).string_ptr();
-            if *value == b'-' as ::core::ffi::c_char
-                && (*value.add(1) == b'-' as ::core::ffi::c_char
-                    || *(*__ctype_b_loc()).offset(*value.add(1) as u_char as isize)
-                        as ::core::ffi::c_int
-                        & _ISalpha as ::core::ffi::c_int as ::core::ffi::c_ushort
-                            as ::core::ffi::c_int
-                        != 0)
-            {
-                log_debug(format_args!(
-                    "{}: -{} (optional)",
-                    "args_parse_flag_argument",
-                    log_byte((flag) as u8)
-                ));
-                args_set_flag(args, flag as u_char, ARGS_ENTRY_OPTIONAL_VALUE);
-                return Ok(());
-            }
-        }
-        *i = (*i).wrapping_add(1);
-        args_copy_value(&*argument)
+        let argument =
+            argument.ok_or_else(|| parse_flag_error(b"-", flag, b" expects an argument"))?;
+        *i += 1;
+        args_copy_value(argument)
     };
     let printed = args_value_for_log(&new);
     log_debug(format_args!(
-        "{}: -{} = {}",
-        "args_parse_flag_argument",
-        log_byte((flag) as u8),
+        "args_parse_flag_argument: -{} = {}",
+        log_byte(flag),
         log_bytes(printed.to_bytes())
     ));
-    args_set_value(&mut *args, flag as u_char, Some(new), 0);
+    args_set_value(args, flag, Some(new), 0);
     Ok(())
 }
+
+/// Return true when flags end, leaving the first positional value unconsumed.
 unsafe fn args_parse_flags(
-    mut parse: *const args_parse,
-    mut values: *mut args_value,
-    mut count: u_int,
-    mut args: *mut args,
-    mut i: *mut u_int,
-) -> Result<::core::ffi::c_int, ArgsParseError> {
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut flag: u_char = 0;
-    let mut found: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut string: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut optional_argument: ::core::ffi::c_int = 0;
-    value = values.offset(*i as isize) as *mut args_value;
-    if (*value).type_0() as ::core::ffi::c_uint
-        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return Ok(1 as ::core::ffi::c_int);
+    parse: &args_parse,
+    values: &[args_value],
+    args: &mut args,
+    i: &mut usize,
+) -> Result<bool, ArgsParseError> {
+    let value = &values[*i];
+    if value.type_0() != ARGS_STRING {
+        return Ok(true);
     }
-    string = (*value).string_ptr();
-    log_debug(format_args!(
-        "{}: next {}",
-        "args_parse_flags",
-        log_cstr((string) as *const _)
-    ));
-    let fresh1 = string;
-    string = string.offset(1);
-    if *fresh1 as ::core::ffi::c_int != '-' as i32 || *string as ::core::ffi::c_int == '\0' as i32 {
-        return Ok(1 as ::core::ffi::c_int);
+    let string = CStr::from_ptr(value.string_ptr()).to_bytes();
+    log_debug(format_args!("args_parse_flags: next {}", log_bytes(string)));
+    if string.first() != Some(&b'-') || string.len() == 1 {
+        return Ok(true);
     }
-    *i = (*i).wrapping_add(1);
-    if *string.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '-' as i32
-        && *string.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
-    {
-        return Ok(1 as ::core::ffi::c_int);
+    *i += 1;
+    if string == b"--" {
+        return Ok(true);
     }
-    loop {
-        let fresh2 = string;
-        string = string.offset(1);
-        flag = *fresh2 as u_char;
-        if flag as ::core::ffi::c_int == '\0' as i32 {
-            return Ok(0 as ::core::ffi::c_int);
-        }
-        if flag as ::core::ffi::c_int == '?' as i32 {
+    let template = CStr::from_ptr(parse.template).to_bytes();
+    for (offset, &flag) in string.iter().enumerate().skip(1) {
+        if flag == b'?' {
             return Err(ArgsParseError::Usage);
         }
-        if *(*__ctype_b_loc()).offset(flag as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-            & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            == 0
-        {
+        if *(*__ctype_b_loc()).add(flag as usize) & _ISalnum as u16 == 0 {
             return Err(ArgsParseError::Message(parse_flag_error(
                 b"invalid flag -",
                 flag,
                 b"",
             )));
         }
-        found = strchr((*parse).template, flag as ::core::ffi::c_int);
-        if found.is_null() {
-            return Err(ArgsParseError::Message(parse_flag_error(
-                b"unknown flag -",
-                flag,
-                b"",
-            )));
-        }
-        if *found.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ':' as i32 {
-            log_debug(format_args!(
-                "{}: -{}",
-                "args_parse_flags",
-                log_byte((flag as ::core::ffi::c_int) as u8)
-            ));
-            args_set_flag(args, flag, 0);
+        let found = template
+            .iter()
+            .position(|byte| *byte == flag)
+            .ok_or_else(|| {
+                ArgsParseError::Message(parse_flag_error(b"unknown flag -", flag, b""))
+            })?;
+        if template.get(found + 1) != Some(&b':') {
+            log_debug(format_args!("args_parse_flags: -{}", log_byte(flag)));
+            args_set_value(args, flag, None, 0);
         } else {
-            optional_argument = (*found.offset(2 as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                == ':' as i32) as ::core::ffi::c_int;
             return args_parse_flag_argument(
                 values,
-                count,
                 args,
                 i,
-                string,
-                flag as ::core::ffi::c_int,
-                optional_argument,
+                &string[offset + 1..],
+                flag,
+                template.get(found + 2) == Some(&b':'),
             )
-            .map(|()| 0)
+            .map(|()| false)
             .map_err(ArgsParseError::Message);
         }
     }
+    Ok(false)
 }
+
 pub unsafe fn args_parse(
-    mut parse: *const args_parse,
-    mut values: *mut args_value,
-    mut count: u_int,
+    parse: &args_parse,
+    values: &[args_value],
 ) -> Result<Box<args>, ArgsParseError> {
-    let mut i: u_int = 0;
-    let mut type_0: args_parse_type = ARGS_PARSE_INVALID;
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut stop: ::core::ffi::c_int = 0;
-    if count == 0 as u_int {
-        return Ok(args_create());
-    }
     let mut args = args_create();
-    i = 1 as u_int;
-    while i < count {
-        stop = match args_parse_flags(parse, values, count, &mut *args, &raw mut i) {
-            Ok(stop) => stop,
-            Err(error) => {
-                return Err(error);
-            }
-        };
-        if stop == 1 as ::core::ffi::c_int {
+    // tmux accepts an empty input before applying positional bounds.
+    if values.is_empty() {
+        return Ok(args);
+    }
+    let mut i = 1;
+    while i < values.len() {
+        if args_parse_flags(parse, values, &mut args, &mut i)? {
             break;
         }
     }
     log_debug(format_args!(
-        "{}: flags end at {} of {}",
-        "args_parse",
-        (i) as u32,
-        (count) as u32
+        "args_parse: flags end at {} of {}",
+        i,
+        values.len()
     ));
-    if i != count {
-        while i < count {
-            value = values.offset(i as isize) as *mut args_value;
-            let printed = args_value_for_log(&*value);
-            log_debug(format_args!(
-                "{}: {} = {} (type {})",
-                "args_parse",
-                (i) as u32,
-                log_bytes(printed.to_bytes()),
-                log_cstr((args_type_to_string((*value).type_0())) as *const _)
-            ));
-            if (*parse).cb.is_some() {
-                let idx = (*args).count;
-                type_0 = match (*parse).cb.expect("non-null function pointer")(&mut *args, idx) {
-                    Ok(type_0) => type_0,
-                    Err(error) => {
-                        return Err(error);
-                    }
-                };
-                if type_0 as ::core::ffi::c_uint
-                    == ARGS_PARSE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    return Err(ArgsParseError::Usage);
-                }
-            } else {
-                type_0 = ARGS_PARSE_STRING;
+    for (index, value) in values.iter().enumerate().skip(i) {
+        let printed = args_value_for_log(value);
+        log_debug(format_args!(
+            "args_parse: {} = {} (type {})",
+            index,
+            log_bytes(printed.to_bytes()),
+            log_cstr(args_type_to_string(value.type_0()))
+        ));
+        let kind = if let Some(callback) = parse.cb {
+            let index = args.count;
+            callback(&mut args, index)?
+        } else {
+            ARGS_PARSE_STRING
+        };
+        match kind {
+            ARGS_PARSE_INVALID => return Err(ArgsParseError::Usage),
+            ARGS_PARSE_STRING if value.type_0() != ARGS_STRING => {
+                return Err(ArgsParseError::Message(parse_number_error(format!(
+                    "argument {} must be \"string\"",
+                    args.count.wrapping_add(1)
+                ))));
             }
-            let copied = match type_0 as ::core::ffi::c_uint {
-                0 => {
-                    fatalx(|out| out.write_all(b"unexpected argument type"));
-                }
-                1 => {
-                    if (*value).type_0() as ::core::ffi::c_uint
-                        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        let error = parse_number_error(format!(
-                            "argument {} must be \"string\"",
-                            (*args).count.wrapping_add(1)
-                        ));
-                        return Err(ArgsParseError::Message(error));
-                    }
-                    args_copy_value(&*value)
-                }
-                2 => args_copy_value(&*value),
-                3 => {
-                    if (*value).type_0() as ::core::ffi::c_uint
-                        != ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        let error = parse_number_error(format!(
-                            "argument {} must be {{ commands }}",
-                            (*args).count.wrapping_add(1)
-                        ));
-                        return Err(ArgsParseError::Message(error));
-                    }
-                    args_copy_value(&*value)
-                }
-                _ => args_value::empty(),
-            };
-            args_push_positional_owned(&mut *args, copied);
-            i = i.wrapping_add(1);
+            ARGS_PARSE_COMMANDS if value.type_0() != ARGS_COMMANDS => {
+                return Err(ArgsParseError::Message(parse_number_error(format!(
+                    "argument {} must be {{ commands }}",
+                    args.count.wrapping_add(1)
+                ))));
+            }
+            _ => {}
         }
+        let copied = match kind {
+            ARGS_PARSE_STRING | ARGS_PARSE_COMMANDS_OR_STRING | ARGS_PARSE_COMMANDS => {
+                args_copy_value(value)
+            }
+            _ => args_value::empty(),
+        };
+        args_push_positional_owned(&mut args, copied);
     }
-    if (*parse).lower != -(1 as ::core::ffi::c_int) && (*args).count < (*parse).lower as u_int {
-        let error = parse_number_error(format!(
+    if parse.lower != -1 && args.count < parse.lower as u_int {
+        return Err(ArgsParseError::Message(parse_number_error(format!(
             "too few arguments (need at least {})",
-            (*parse).lower as u_int
-        ));
-        return Err(ArgsParseError::Message(error));
+            parse.lower as u_int
+        ))));
     }
-    if (*parse).upper != -(1 as ::core::ffi::c_int) && (*args).count > (*parse).upper as u_int {
-        let error = parse_number_error(format!(
+    if parse.upper != -1 && args.count > parse.upper as u_int {
+        return Err(ArgsParseError::Message(parse_number_error(format!(
             "too many arguments (need at most {})",
-            (*parse).upper as u_int
-        ));
-        return Err(ArgsParseError::Message(error));
+            parse.upper as u_int
+        ))));
     }
-    return Ok(args);
+    Ok(args)
 }
 unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
     match from.type_0() as ::core::ffi::c_uint {
@@ -678,6 +582,70 @@ mod ownership_tests {
     use super::*;
 
     #[test]
+    fn parser_slices_preserve_optional_values_and_flag_boundaries() {
+        unsafe {
+            let spec = args_parse {
+                template: c"ao::r:".as_ptr(),
+                lower: 0,
+                upper: -1,
+                cb: None,
+            };
+            let cases: &[(&[&[u8]], Option<&[u8]>, bool, &[&[u8]])] = &[
+                (&[b"-o"], None, false, &[]),
+                (&[b"-o", b"-a"], None, true, &[]),
+                (&[b"-o", b"--", b"-a"], None, false, &[b"-a"]),
+                (&[b"-o", b"-7"], Some(b"-7"), false, &[]),
+                (&[b"-o", b"-"], Some(b"-"), false, &[]),
+                (&[b"-o", b""], Some(b""), false, &[]),
+                (
+                    &[b"-aoRAW\xff", b"tail"],
+                    Some(b"RAW\xff"),
+                    true,
+                    &[b"tail"],
+                ),
+                (&[b"", b"-a"], None, false, &[b"", b"-a"]),
+                (&[b"-", b"-a"], None, false, &[b"-", b"-a"]),
+            ];
+            for &(input, optional, has_a, positional) in cases {
+                let values: Vec<_> = std::iter::once(b"test".as_slice())
+                    .chain(input.iter().copied())
+                    .map(|bytes| args_value::string(CString::new(bytes).unwrap()))
+                    .collect();
+                let parsed = args_parse(&spec, &values).unwrap();
+                assert_eq!(
+                    args_last_string(&parsed, b'o').map(CStr::to_bytes),
+                    optional,
+                    "{input:?}"
+                );
+                assert_eq!(
+                    args_flags(&parsed).any(|flag| flag == b'a'),
+                    has_a,
+                    "{input:?}"
+                );
+                let actual: Vec<_> = parsed
+                    .values
+                    .iter()
+                    .map(|value| CStr::from_ptr(value.string_ptr()).to_bytes())
+                    .collect();
+                assert_eq!(actual, positional, "{input:?}");
+            }
+            let values = [
+                args_value::string(c"test".to_owned()),
+                args_value::string(c"-a".to_owned()),
+                args_value::string(c"-?".to_owned()),
+            ];
+            assert!(args_parse(&spec, &values[..2]).is_ok());
+            assert!(matches!(
+                args_parse(&spec, &values),
+                Err(ArgsParseError::Usage)
+            ));
+            let required = args_parse { lower: 1, ..spec };
+            assert!(args_parse(&required, &[]).is_ok());
+            assert!(args_parse(&required, &values[..1]).is_err());
+        }
+    }
+
+    #[test]
     fn argument_root_transfers_to_command_and_failed_parse_releases_partial_values() {
         fn allow_commands(_args: &mut args, _index: u_int) -> Result<args_parse_type, ArgsParseError> {
             Ok(ARGS_PARSE_COMMANDS_OR_STRING)
@@ -685,7 +653,7 @@ mod ownership_tests {
         unsafe {
             let commands = crate::src::cmd::cmd_list_new();
             let observer = rc::downgrade(commands);
-            let mut values = vec![
+            let values = vec![
                 args_value::string(c"test".to_owned()),
                 args_value::commands(commands),
                 args_value::string(c"extra".to_owned()),
@@ -696,14 +664,14 @@ mod ownership_tests {
                 upper: 1,
                 cb: Some(allow_commands),
             };
-            assert!(args_parse(&spec, values.as_mut_ptr(), values.len() as u_int).is_err());
+            assert!(args_parse(&spec, &values).is_err());
             assert_eq!(
                 observer.strong_count(),
                 1,
                 "failed parse drops copied references"
             );
             spec.upper = 2;
-            let parsed = args_parse(&spec, values.as_mut_ptr(), values.len() as u_int).unwrap();
+            let parsed = args_parse(&spec, &values).unwrap();
             let address = &*parsed as *const args;
             assert_eq!(observer.strong_count(), 2);
             let mut command = cmd::empty();

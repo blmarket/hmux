@@ -5,8 +5,8 @@ use hmux2::src::shared::arguments::args_value;
 
 unsafe fn parse_display_message(file: Option<&CStr>) -> Box<hmux2::src::cmd::cmd> {
     let command_name = c"display-message";
-    let mut value = args_value::borrowed_string(command_name.as_ptr());
-    cmd_parse(&mut value, 1, file, 37, 0).expect("command parse reported an error")
+    let value = args_value::borrowed_string(command_name.as_ptr());
+    cmd_parse(std::slice::from_ref(&value), file, 37, 0).expect("command parse reported an error")
 }
 
 #[test]
