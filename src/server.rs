@@ -156,7 +156,7 @@ pub unsafe fn server_is_marked(
     return server_check_marked();
 }
 pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
-    return cmd_find_valid_state(&raw mut marked_pane);
+    return cmd_find_valid_state(&marked_pane);
 }
 pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
     let mut sa: sockaddr_un = sockaddr_un {

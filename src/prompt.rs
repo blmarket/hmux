@@ -396,11 +396,11 @@ pub unsafe fn prompt_update(
     mut input: *const ::core::ffi::c_char,
 ) {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    if cmd_find_valid_state(&raw mut (*pr).state) != 0 {
+    if cmd_find_valid_state(&(*pr).state) != 0 {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
             ::core::ptr::null_mut::<client>(),
-            &raw mut (*pr).state,
+            &(*pr).state,
         );
     } else {
         ft = format_create_defaults(
@@ -568,11 +568,11 @@ unsafe fn prompt_draw_complete(
 }
 unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    if cmd_find_valid_state(&raw mut (*pr).state) != 0 {
+    if cmd_find_valid_state(&(*pr).state) != 0 {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
             ::core::ptr::null_mut::<client>(),
-            &raw mut (*pr).state,
+            &(*pr).state,
         );
     } else {
         ft = format_create_defaults(

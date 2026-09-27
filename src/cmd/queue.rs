@@ -245,7 +245,7 @@ pub unsafe fn cmdq_new_state(
         event: snapshot,
         current: Default::default(),
     });
-    if !current.is_null() && cmd_find_valid_state(current) != 0 {
+    if !current.is_null() && cmd_find_valid_state(&*current) != 0 {
         cmd_find_copy_state(&raw mut (*state).current, current);
     } else {
         cmd_find_clear_state(&raw mut (*state).current, 0 as ::core::ffi::c_int);
@@ -726,10 +726,10 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                     retval = (*entry).exec.expect("non-null function pointer")(cmd, item);
                     if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
                         if (*entry).flags & CMD_AFTERHOOK != 0 {
-                            if cmd_find_valid_state(&raw mut (*item).target) != 0 {
+                            if cmd_find_valid_state(&(*item).target) != 0 {
                                 fsp = &raw mut (*item).target;
                                 current_block = 8704759739624374314;
-                            } else if cmd_find_valid_state(&raw mut (*(*item).state).current) != 0 {
+                            } else if cmd_find_valid_state(&(*(*item).state).current) != 0 {
                                 fsp = &raw mut (*(*item).state).current;
                                 current_block = 8704759739624374314;
                             } else if cmd_find_from_client(
@@ -762,9 +762,9 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     (*item).client = saved;
     if retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int {
         fsp = ::core::ptr::null_mut::<cmd_find_state>();
-        if cmd_find_valid_state(&raw mut (*item).target) != 0 {
+        if cmd_find_valid_state(&(*item).target) != 0 {
             fsp = &raw mut (*item).target;
-        } else if cmd_find_valid_state(&raw mut (*(*item).state).current) != 0 {
+        } else if cmd_find_valid_state(&(*(*item).state).current) != 0 {
             fsp = &raw mut (*(*item).state).current;
         } else if cmd_find_from_client(&raw mut fs, (*item).client, 0 as ::core::ffi::c_int)
             == 0 as ::core::ffi::c_int

@@ -209,7 +209,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let mut session = self.0.borrow_mut();
             let pi = &mut *session.input;
             let mut fs: cmd_find_state = Default::default();
-            let fsp = if cmd_find_valid_state(&raw mut (*pi).fs) != 0 {
+            let fsp = if cmd_find_valid_state(&(*pi).fs) != 0 {
                 &raw mut (*pi).fs
             } else {
                 cmd_find_from_client(&raw mut fs, (*pi).c, 0);

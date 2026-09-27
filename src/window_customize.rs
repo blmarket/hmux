@@ -404,7 +404,7 @@ unsafe fn window_customize_check_item(
     if fsp.is_null() {
         fsp = &raw mut fs;
     }
-    if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
+    if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(fsp, &raw mut (*data).fs);
     } else {
         cmd_find_from_pane(fsp, (*data).wp, 0 as ::core::ffi::c_int);
@@ -1344,7 +1344,7 @@ unsafe fn window_customize_build_keys(
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
-        fs,
+        &*fs,
     );
     format_add(
         ft,
@@ -1638,7 +1638,7 @@ unsafe fn window_customize_build(
     for item in (*data).item_list.drain(..) {
         drop(item);
     }
-    if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
+    if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
         cmd_find_from_pane(&raw mut fs, (*data).wp, 0 as ::core::ffi::c_int);
@@ -1646,7 +1646,7 @@ unsafe fn window_customize_build(
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
-        &raw mut fs,
+        &fs,
     );
     format_add(
         ft,
@@ -1762,7 +1762,7 @@ unsafe fn window_customize_build(
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
-        &raw mut fs,
+        &fs,
     );
     format_add(
         ft,
@@ -1995,7 +1995,7 @@ unsafe fn window_customize_draw_option(
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
-        &raw mut fs,
+        &fs,
     );
     if oe.is_null() || (*oe).text.is_null() {
         if is_monitor != 0 {
@@ -4583,7 +4583,7 @@ unsafe fn window_customize_add_current(
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut table: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     name = mode_tree_get_current_name((*data).data);
-    if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
+    if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
         cmd_find_from_pane(&raw mut fs, (*data).wp, 0 as ::core::ffi::c_int);

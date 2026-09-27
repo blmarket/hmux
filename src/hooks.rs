@@ -177,8 +177,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         log_cstr(((*hd).name) as *const _)
     ));
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
-    if cmd_find_empty_state(&raw mut (*hd).fs) != 0 || cmd_find_valid_state(&raw mut (*hd).fs) == 0
-    {
+    if cmd_find_empty_state(&(*hd).fs) != 0 || cmd_find_valid_state(&(*hd).fs) == 0 {
         cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int);
     } else {
         cmd_find_copy_state(&raw mut fs, &raw mut (*hd).fs);

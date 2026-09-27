@@ -331,24 +331,24 @@ pub unsafe fn event_payload_get_target(
     } else {
         -(1 as ::core::ffi::c_int)
     };
-    if cmd_find_valid_state(fs) != 0 {
+    if cmd_find_valid_state(&*fs) != 0 {
         return 1 as ::core::ffi::c_int;
     }
     if !wl.is_null() && !(*t).wp.is_null() && window_has_pane((*wl).window, (*t).wp) != 0 {
         cmd_find_from_winlink_pane(fs, wl, (*t).wp, flags);
-        if cmd_find_valid_state(fs) != 0 {
+        if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }
     if !(*t).wp.is_null()
         && cmd_find_from_pane(fs, (*t).wp, flags) == 0 as ::core::ffi::c_int
-        && cmd_find_valid_state(fs) != 0
+        && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
     }
     if !wl.is_null() {
         cmd_find_from_winlink(fs, wl, flags);
-        if cmd_find_valid_state(fs) != 0 {
+        if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }
@@ -356,13 +356,13 @@ pub unsafe fn event_payload_get_target(
         && !(*t).w.is_null()
         && session_alive((*t).s) != 0
         && cmd_find_from_session_window(fs, (*t).s, (*t).w, flags) == 0 as ::core::ffi::c_int
-        && cmd_find_valid_state(fs) != 0
+        && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
     }
     if !(*t).s.is_null() && session_alive((*t).s) != 0 {
         cmd_find_from_session(fs, (*t).s, flags);
-        if cmd_find_valid_state(fs) != 0 {
+        if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }

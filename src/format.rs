@@ -375,13 +375,13 @@ pub unsafe fn format_create_defaults(
 pub unsafe fn format_create_from_state(
     mut item: *mut cmdq_item,
     mut c: *mut client,
-    mut fs: *mut cmd_find_state,
+    fs: &cmd_find_state,
 ) -> *mut format_tree {
-    return format_create_defaults(item, c, (*fs).s, (*fs).wl, (*fs).wp);
+    return format_create_defaults(item, c, fs.s, fs.wl, fs.wp);
 }
 pub unsafe fn format_create_from_target(mut item: *mut cmdq_item) -> *mut format_tree {
     let mut tc: *mut client = cmdq_get_target_client(item);
-    return format_create_from_state(item, tc, cmdq_get_target(item));
+    return format_create_from_state(item, tc, &*cmdq_get_target(item));
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,

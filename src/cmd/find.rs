@@ -830,23 +830,23 @@ pub unsafe fn cmd_find_clear_state(mut fs: *mut cmd_find_state, mut flags: ::cor
     (*fs).flags = flags;
     (*fs).idx = -(1 as ::core::ffi::c_int);
 }
-pub unsafe fn cmd_find_empty_state(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
-    if (*fs).s.is_null() && (*fs).wl.is_null() && (*fs).w.is_null() && (*fs).wp.is_null() {
+pub fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
+    if fs.s.is_null() && fs.wl.is_null() && fs.w.is_null() && fs.wp.is_null() {
         return 1 as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::core::ffi::c_int {
+pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    if (*fs).s.is_null() || (*fs).wl.is_null() || (*fs).w.is_null() || (*fs).wp.is_null() {
+    if fs.s.is_null() || fs.wl.is_null() || fs.w.is_null() || fs.wp.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if session_alive((*fs).s) == 0 {
+    if session_alive(fs.s) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*fs.s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if (*wl).window == (*fs).w && wl == (*fs).wl {
+        if (*wl).window == fs.w && wl == fs.wl {
             break;
         }
         wl = winlinks_next(&*wl);
@@ -854,10 +854,10 @@ pub unsafe fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::core::ffi::
     if wl.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if (*fs).w != (*(*fs).wl).window {
+    if fs.w != (*fs.wl).window {
         return 0 as ::core::ffi::c_int;
     }
-    return window_has_pane((*fs).w, (*fs).wp);
+    return window_has_pane(fs.w, fs.wp);
 }
 pub unsafe fn cmd_find_copy_state(mut dst: *mut cmd_find_state, mut src: *mut cmd_find_state) {
     (*dst).s = (*src).s;
@@ -1223,7 +1223,7 @@ pub unsafe fn cmd_find_target(
             "cmd_find_target"
         ));
         current_block = 1836292691772056875;
-    } else if cmd_find_valid_state(cmdq_get_current(item)) != 0 {
+    } else if cmd_find_valid_state(&*cmdq_get_current(item)) != 0 {
         (*fs).current = cmdq_get_current(item);
         log_debug(format_args!("{}: current is from queue", "cmd_find_target"));
         current_block = 1836292691772056875;
@@ -1244,7 +1244,7 @@ pub unsafe fn cmd_find_target(
     }
     match current_block {
         1836292691772056875 => {
-            if cmd_find_valid_state((*fs).current) == 0 {
+            if cmd_find_valid_state(&*(*fs).current) == 0 {
                 fatalx(|out| out.write_all(b"invalid current find state"));
             }
             if target.is_null() || *target as ::core::ffi::c_int == '\0' as i32 {

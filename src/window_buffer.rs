@@ -243,7 +243,7 @@ unsafe fn window_buffer_build(
         paste_buffer_data(pb, &raw mut (*item).size);
         (*item).order = paste_buffer_order(pb);
     }
-    if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
+    if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.s;
         wl = (*data).fs.wl;
         wp = (*data).fs.wp;
@@ -481,7 +481,7 @@ unsafe fn window_buffer_get_key(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut key: key_code = 0;
-    if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
+    if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.s;
         wl = (*data).fs.wl;
         wp = (*data).fs.wp;
