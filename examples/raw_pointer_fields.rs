@@ -1,4 +1,5 @@
-//! Inventory stored raw pointers, excluding callback signatures and src/compat.
+//! Inventory in-scope stored raw pointers, excluding foreign ABI/resource fields,
+//! callback signatures and src/compat. Exclusions are recorded in the audit TSV.
 //! Run with `cargo run --quiet --example raw_pointer_fields`.
 use std::{fs, path::Path};
 use syn::visit::{self, Visit};
@@ -106,19 +107,21 @@ fn main() {
     ] {
         scan(Path::new(root), &mut rows);
     }
+    let audit = fs::read_to_string("docs/raw-pointer-fields.tsv").unwrap();
+    let mut expected = std::collections::BTreeSet::new();
+    let mut excluded = std::collections::BTreeSet::new();
+    for line in audit.lines().skip(1) {
+        let fields: Vec<_> = line.split('\t').collect();
+        assert_eq!(fields.len(), 5, "invalid audit row");
+        let key = fields[..3].join("\t");
+        if fields[3].starts_with("Excluded;") {
+            excluded.insert(key.clone());
+            expected.insert(key);
+        } else if fields[3].starts_with("Skip;") {
+            expected.insert(key);
+        }
+    }
     if std::env::args().any(|arg| arg == "--check") {
-        let audit = fs::read_to_string("docs/raw-pointer-fields.tsv").unwrap();
-        let expected: std::collections::BTreeSet<_> = audit
-            .lines()
-            .skip(1)
-            .filter_map(|line| {
-                let fields: Vec<_> = line.split('\t').collect();
-                assert_eq!(fields.len(), 5, "invalid audit row");
-                fields[3]
-                    .starts_with("Skip;")
-                    .then(|| fields[..3].join("\t"))
-            })
-            .collect();
         let actual: std::collections::BTreeSet<_> = rows.into_iter().collect();
         let missing: Vec<_> = actual.difference(&expected).collect();
         let stale: Vec<_> = expected.difference(&actual).collect();
@@ -127,12 +130,15 @@ fn main() {
             "unreviewed fields: {missing:?}\nstale dispositions: {stale:?}"
         );
         println!(
-            "All {} remaining raw-pointer fields have audit dispositions.",
-            actual.len()
+            "All {} in-scope raw-pointer fields have audit dispositions; {} external fields excluded.",
+            actual.difference(&excluded).count(),
+            excluded.len()
         );
     } else {
         for row in rows {
-            println!("{row}");
+            if !excluded.contains(&row) {
+                println!("{row}");
+            }
         }
     }
 }

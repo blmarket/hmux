@@ -3,13 +3,16 @@
 Reviewed 2026-09-27. Scope: workspace Rust struct, union, tuple and enum fields,
 including raw pointers nested in collections or smart pointers, excluding
 `src/compat/`. Function-pointer parameters/results are not stored data pointers.
-Tests and foreign ABI records are included. The requested
+Foreign ABI/resource fields are excluded from migration work. The offending
+integration test under `tests/` has been deleted; the scanner still detects any
+new raw fields added there. The requested
 [remaining-field report](../../report.md) is written outside the repository.
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
 fields, their disposition, and the lifecycle reason. **69 fields were migrated;
-251 remain raw.** A skipped candidate is not a claim that its current raw API is
+176 remain in scope; 72 external ABI/resource fields are excluded; 3 fields were
+removed with the deleted integration test.** A skipped candidate is not a claim that its current raw API is
 safe, nor that migration is impossible. It means this review did not establish
 the ownership, aliasing, and callback guarantees needed for that substitution.
 
@@ -24,7 +27,9 @@ The scanner uses `syn`, so it distinguishes fields from local variables,
 arguments, comments and literals. It includes inactive `cfg` items but does not
 expand macros or resolve aliases; no pointer type aliases or macro-generated
 data fields were found in the reviewed sources. The coverage check requires a
-disposition for every remaining field and rejects stale skipped entries.
+disposition for every raw field and rejects stale skipped or excluded entries.
+Default output omits excluded fields. The TSV keeps exclusions and deleted-field
+records so the original inventory remains traceable.
 
 ## Ownership rules used
 
@@ -92,14 +97,18 @@ The TSV gives a separate decision for every field. The main blockers are:
   are candidates, but must preserve deferred release and last-window-close
   notifications. A `Box` would claim sole ownership incorrectly.
 - **Erased or registry ownership:** mode payloads mix Box, RefBox and retained state with mode-specific callbacks. Intrusive job links combine registry membership and traversal. Those fields do not have an independent, uniformly typed owner that can simply replace each pointer.
-- **Foreign or non-dereferenced addresses:** libc/ncurses/systemd records,
-  fault addresses, formatting-only pointers and reserved slots have no valid
-  Rust reference/Box substitution based on this review.
+- **Non-dereferenced addresses:** formatting-only pointers and reserved slots
+  have no pointee lifetime or ownership to migrate.
+
+Libc/POSIX ABI layouts and handles, plus ncurses/systemd layouts and resources,
+are outside this migration scope. Their 72 fields retain external ABI and cleanup
+contracts and do not appear in the remaining-field report. The deleted
+`tests/events_sink_owner.rs` contributed three fields, now recorded as removed.
 
 ## Validation
 
-`cargo test --workspace`: **597 passed**. The inventory coverage check passes
-for all **251** remaining fields, and `git diff --check` is clean.
+`cargo test --workspace`: **596 passed**. The inventory coverage check passes
+for all **176** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -141,8 +150,8 @@ The follow-up review excludes test-only ownership inconsistencies: runtime
 winlinks consistently own retained windows and option entries use static metadata,
 so those fields are now migrated and the conflicting fixtures removed.
 
-Every original field has a migration or skip decision in the TSV. The generated
-external report contains a reason for each remaining field. The scanner checks
+Every original field has a migration, skip, exclusion or removal decision in the TSV. The generated
+external report contains a reason for each remaining in-scope field. The scanner checks
 that these decisions cover the current declarations exactly; it is a coverage
 check, not proof that raw observers are safe. The skips use the requested rule:
 leave the field raw where its existing ownership and callback behavior do not
