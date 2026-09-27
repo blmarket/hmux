@@ -46,7 +46,7 @@ pub const SHOW_HOOKS_MONITOR_TEMPLATE: [::core::ffi::c_char; 61] = unsafe {
         *b"#{option_name}:#{hook_monitor_target}:#{hook_monitor_format}\0",
     )
 };
-pub static mut cmd_show_options_entry: cmd_entry = {
+pub static cmd_show_options_entry: cmd_entry = {
     cmd_entry {
         name: c"show-options",
         alias: Some(c"show"),
@@ -71,7 +71,7 @@ pub static mut cmd_show_options_entry: cmd_entry = {
         exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_show_window_options_entry: cmd_entry = {
+pub static cmd_show_window_options_entry: cmd_entry = {
     cmd_entry {
         name: c"show-window-options",
         alias: Some(c"showw"),
@@ -96,7 +96,7 @@ pub static mut cmd_show_window_options_entry: cmd_entry = {
         exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_show_hooks_entry: cmd_entry = {
+pub static cmd_show_hooks_entry: cmd_entry = {
     cmd_entry {
         name: c"show-hooks",
         alias: None,
@@ -136,8 +136,8 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut print_parent: ::core::ffi::c_int = 0;
     let mut scope: ::core::ffi::c_int = 0;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    window =
-        (cmd_get_entry(self_0) == &raw const cmd_show_window_options_entry) as ::core::ffi::c_int;
+    window = (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_window_options_entry))
+        as ::core::ffi::c_int;
     if args_count(args) == 0 as u_int {
         scope = options_scope_from_flags(args, window, target, &raw mut oo, &raw mut cause);
         if scope == OPTIONS_TABLE_NONE {
@@ -149,7 +149,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             });
             return CMD_RETURN_ERROR;
         }
-        if cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry
+        if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
             && args_has(args, 'B' as i32 as u_char) != 0
         {
             o = options_first(oo);
@@ -212,7 +212,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 parent = 0 as ::core::ffi::c_int;
             }
             if !o.is_null() {
-                if cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry
+                if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                     && args_has(args, 'B' as i32 as u_char) != 0
                 {
                     cmd_show_hooks_print_monitor(self_0, item, o);
@@ -351,7 +351,7 @@ unsafe fn cmd_show_options_print(
         b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (has_value) as i32),
     );
-    if cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry) {
         fire_count = options_get_fire_count(o);
         format_add(
             ft,
@@ -543,7 +543,7 @@ unsafe fn cmd_show_options_all(
                     is_user_hook = 1 as ::core::ffi::c_int;
                 }
             }
-            if cmd_get_entry(self_0) != &raw const cmd_show_hooks_entry {
+            if !std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry) {
                 if is_user_hook == 0 || args_has(args, 'H' as i32 as u_char) != 0 {
                     cmd_show_options_print(
                         self_0,
@@ -569,10 +569,10 @@ unsafe fn cmd_show_options_all(
     oe = &raw const options_table as *const options_table_entry;
     while !(*oe).name.is_null() {
         if !(!(*oe).scope & scope != 0) {
-            if !(cmd_get_entry(self_0) != &raw const cmd_show_hooks_entry
+            if !(!std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                 && args_has(args, 'H' as i32 as u_char) == 0
                 && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0
-                || cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry
+                || std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                     && !(*oe).flags & OPTIONS_TABLE_IS_HOOK != 0)
             {
                 o = options_get_only(oo, (*oe).name);

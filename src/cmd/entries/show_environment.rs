@@ -12,7 +12,7 @@ use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::tmux::global_environ;
 use std::ffi::{CStr, CString};
-pub static mut cmd_show_environment_entry: cmd_entry = {
+pub static cmd_show_environment_entry: cmd_entry = {
     cmd_entry {
         name: c"show-environment",
         alias: Some(c"showenv"),

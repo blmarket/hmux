@@ -20,7 +20,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
-pub static mut cmd_server_access_entry: cmd_entry = {
+pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {
         name: c"server-access",
         alias: None,

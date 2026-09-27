@@ -22,7 +22,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_replace_old_layout;
 use std::ffi::CString;
-pub static mut cmd_select_layout_entry: cmd_entry = {
+pub static cmd_select_layout_entry: cmd_entry = {
     cmd_entry {
         name: c"select-layout",
         alias: Some(c"selectl"),
@@ -47,7 +47,7 @@ pub static mut cmd_select_layout_entry: cmd_entry = {
         exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_next_layout_entry: cmd_entry = {
+pub static cmd_next_layout_entry: cmd_entry = {
     cmd_entry {
         name: c"next-layout",
         alias: Some(c"nextl"),
@@ -72,7 +72,7 @@ pub static mut cmd_next_layout_entry: cmd_entry = {
         exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_previous_layout_entry: cmd_entry = {
+pub static cmd_previous_layout_entry: cmd_entry = {
     cmd_entry {
         name: c"previous-layout",
         alias: Some(c"prevl"),
@@ -112,12 +112,12 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut layout: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     server_unzoom_window(w);
-    next = (cmd_get_entry(self_0) == &raw const cmd_next_layout_entry) as ::core::ffi::c_int;
+    next = (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_next_layout_entry)) as ::core::ffi::c_int;
     if args_has(args, 'n' as i32 as u_char) != 0 {
         next = 1 as ::core::ffi::c_int;
     }
     previous =
-        (cmd_get_entry(self_0) == &raw const cmd_previous_layout_entry) as ::core::ffi::c_int;
+        (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_previous_layout_entry)) as ::core::ffi::c_int;
     if args_has(args, 'p' as i32 as u_char) != 0 {
         previous = 1 as ::core::ffi::c_int;
     }

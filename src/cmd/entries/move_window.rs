@@ -16,7 +16,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::winlink_shuffle_up;
-pub static mut cmd_move_window_entry: cmd_entry = {
+pub static cmd_move_window_entry: cmd_entry = {
     cmd_entry {
         name: c"move-window",
         alias: Some(c"movew"),
@@ -41,7 +41,7 @@ pub static mut cmd_move_window_entry: cmd_entry = {
         exec: Some(cmd_move_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_link_window_entry: cmd_entry = {
+pub static cmd_link_window_entry: cmd_entry = {
     cmd_entry {
         name: c"link-window",
         alias: Some(c"linkw"),
@@ -135,7 +135,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
         return CMD_RETURN_ERROR;
     }
-    if cmd_get_entry(self_0) == &raw const cmd_move_window_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_window_entry) {
         server_unlink_window(src, wl);
     }
     if sflag == 0

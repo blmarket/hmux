@@ -17,7 +17,7 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::winlink;
 use crate::src::spawn::spawn_window;
-pub static mut cmd_respawn_window_entry: cmd_entry = {
+pub static cmd_respawn_window_entry: cmd_entry = {
     cmd_entry {
         name: c"respawn-window",
         alias: Some(c"respawnw"),

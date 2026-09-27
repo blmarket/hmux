@@ -36,7 +36,7 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_first, window_pane_next};
 use std::ffi::{CStr, CString};
-pub static mut cmd_set_option_entry: cmd_entry = {
+pub static cmd_set_option_entry: cmd_entry = {
     cmd_entry {
         name: c"set-option",
         alias: Some(c"set"),
@@ -61,7 +61,7 @@ pub static mut cmd_set_option_entry: cmd_entry = {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_set_window_option_entry: cmd_entry = {
+pub static cmd_set_window_option_entry: cmd_entry = {
     cmd_entry {
         name: c"set-window-option",
         alias: Some(c"setw"),
@@ -86,7 +86,7 @@ pub static mut cmd_set_window_option_entry: cmd_entry = {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_set_hook_entry: cmd_entry = {
+pub static cmd_set_hook_entry: cmd_entry = {
     cmd_entry {
         name: c"set-hook",
         alias: None,
@@ -315,13 +315,13 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut ambiguous: ::core::ffi::c_int = 0;
     let mut scope: ::core::ffi::c_int = 0;
     window =
-        (cmd_get_entry(self_0) == &raw const cmd_set_window_option_entry) as ::core::ffi::c_int;
-    if cmd_get_entry(self_0) == &raw const cmd_set_hook_entry
+        (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_window_option_entry)) as ::core::ffi::c_int;
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
         && args_has(args, 'E' as i32 as u_char) != 0
     {
         return cmd_set_hook_event_exec(self_0, item);
     }
-    if cmd_get_entry(self_0) == &raw const cmd_set_hook_entry
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
         && args_has(args, 'B' as i32 as u_char) != 0
     {
         return cmd_set_hook_monitor_exec(item, args, window);
@@ -331,7 +331,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         return CMD_RETURN_ERROR;
     }
     let argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
-    if cmd_get_entry(self_0) == &raw const cmd_set_hook_entry
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
         && args_has(args, 'R' as i32 as u_char) != 0
     {
         hooks_run(item, argument.as_ptr());
@@ -489,7 +489,10 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                         options_set_string(oo, name, append, |out| {
                                             write_cstr(out, value)
                                         });
-                                        if cmd_get_entry(self_0) == &raw const cmd_set_hook_entry {
+                                        if std::ptr::eq(
+                                            cmd_get_entry(&*self_0),
+                                            &cmd_set_hook_entry,
+                                        ) {
                                             hooks_add_event(name);
                                         }
                                         current_block = 16231175055492490595;

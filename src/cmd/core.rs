@@ -111,101 +111,100 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static mut cmd_table: [*const cmd_entry; 93] = {
+pub static cmd_table: [&'static cmd_entry; 92] = {
     [
-        &raw const cmd_attach_session_entry,
-        &raw const cmd_bind_key_entry,
-        &raw const cmd_break_pane_entry,
-        &raw const cmd_capture_pane_entry,
-        &raw const cmd_choose_buffer_entry,
-        &raw const cmd_choose_client_entry,
-        &raw const cmd_choose_tree_entry,
-        &raw const cmd_clear_history_entry,
-        &raw const cmd_clear_prompt_history_entry,
-        &raw const cmd_clock_mode_entry,
-        &raw const cmd_command_prompt_entry,
-        &raw const cmd_confirm_before_entry,
-        &raw const cmd_copy_mode_entry,
-        &raw const cmd_customize_mode_entry,
-        &raw const cmd_delete_buffer_entry,
-        &raw const cmd_detach_client_entry,
-        &raw const cmd_display_menu_entry,
-        &raw const cmd_display_message_entry,
-        &raw const cmd_display_popup_entry,
-        &raw const cmd_display_panes_entry,
-        &raw const cmd_find_window_entry,
-        &raw const cmd_has_session_entry,
-        &raw const cmd_if_shell_entry,
-        &raw const cmd_join_pane_entry,
-        &raw const cmd_kill_pane_entry,
-        &raw const cmd_kill_server_entry,
-        &raw const cmd_kill_session_entry,
-        &raw const cmd_kill_window_entry,
-        &raw const cmd_last_pane_entry,
-        &raw const cmd_last_window_entry,
-        &raw const cmd_link_window_entry,
-        &raw const cmd_list_buffers_entry,
-        &raw const cmd_list_clients_entry,
-        &raw const cmd_list_commands_entry,
-        &raw const cmd_list_keys_entry,
-        &raw const cmd_list_panes_entry,
-        &raw const cmd_list_sessions_entry,
-        &raw const cmd_list_windows_entry,
-        &raw const cmd_load_buffer_entry,
-        &raw const cmd_lock_client_entry,
-        &raw const cmd_lock_server_entry,
-        &raw const cmd_lock_session_entry,
-        &raw const cmd_move_pane_entry,
-        &raw const cmd_move_window_entry,
-        &raw const cmd_new_pane_entry,
-        &raw const cmd_new_session_entry,
-        &raw const cmd_new_window_entry,
-        &raw const cmd_next_layout_entry,
-        &raw const cmd_next_window_entry,
-        &raw const cmd_paste_buffer_entry,
-        &raw const cmd_pipe_pane_entry,
-        &raw const cmd_previous_layout_entry,
-        &raw const cmd_previous_window_entry,
-        &raw const cmd_refresh_client_entry,
-        &raw const cmd_rename_session_entry,
-        &raw const cmd_rename_window_entry,
-        &raw const cmd_resize_pane_entry,
-        &raw const cmd_resize_window_entry,
-        &raw const cmd_respawn_pane_entry,
-        &raw const cmd_respawn_window_entry,
-        &raw const cmd_rotate_window_entry,
-        &raw const cmd_run_shell_entry,
-        &raw const cmd_save_buffer_entry,
-        &raw const cmd_select_layout_entry,
-        &raw const cmd_select_pane_entry,
-        &raw const cmd_select_window_entry,
-        &raw const cmd_send_keys_entry,
-        &raw const cmd_send_prefix_entry,
-        &raw const cmd_server_access_entry,
-        &raw const cmd_set_buffer_entry,
-        &raw const cmd_set_environment_entry,
-        &raw const cmd_set_hook_entry,
-        &raw const cmd_set_option_entry,
-        &raw const cmd_set_window_option_entry,
-        &raw const cmd_show_buffer_entry,
-        &raw const cmd_show_environment_entry,
-        &raw const cmd_show_hooks_entry,
-        &raw const cmd_show_messages_entry,
-        &raw const cmd_show_options_entry,
-        &raw const cmd_show_prompt_history_entry,
-        &raw const cmd_show_window_options_entry,
-        &raw const cmd_source_file_entry,
-        &raw const cmd_split_window_entry,
-        &raw const cmd_start_server_entry,
-        &raw const cmd_suspend_client_entry,
-        &raw const cmd_swap_pane_entry,
-        &raw const cmd_swap_window_entry,
-        &raw const cmd_switch_client_entry,
-        &raw const cmd_switch_mode_entry,
-        &raw const cmd_unbind_key_entry,
-        &raw const cmd_unlink_window_entry,
-        &raw const cmd_wait_for_entry,
-        ::core::ptr::null::<cmd_entry>(),
+        &cmd_attach_session_entry,
+        &cmd_bind_key_entry,
+        &cmd_break_pane_entry,
+        &cmd_capture_pane_entry,
+        &cmd_choose_buffer_entry,
+        &cmd_choose_client_entry,
+        &cmd_choose_tree_entry,
+        &cmd_clear_history_entry,
+        &cmd_clear_prompt_history_entry,
+        &cmd_clock_mode_entry,
+        &cmd_command_prompt_entry,
+        &cmd_confirm_before_entry,
+        &cmd_copy_mode_entry,
+        &cmd_customize_mode_entry,
+        &cmd_delete_buffer_entry,
+        &cmd_detach_client_entry,
+        &cmd_display_menu_entry,
+        &cmd_display_message_entry,
+        &cmd_display_popup_entry,
+        &cmd_display_panes_entry,
+        &cmd_find_window_entry,
+        &cmd_has_session_entry,
+        &cmd_if_shell_entry,
+        &cmd_join_pane_entry,
+        &cmd_kill_pane_entry,
+        &cmd_kill_server_entry,
+        &cmd_kill_session_entry,
+        &cmd_kill_window_entry,
+        &cmd_last_pane_entry,
+        &cmd_last_window_entry,
+        &cmd_link_window_entry,
+        &cmd_list_buffers_entry,
+        &cmd_list_clients_entry,
+        &cmd_list_commands_entry,
+        &cmd_list_keys_entry,
+        &cmd_list_panes_entry,
+        &cmd_list_sessions_entry,
+        &cmd_list_windows_entry,
+        &cmd_load_buffer_entry,
+        &cmd_lock_client_entry,
+        &cmd_lock_server_entry,
+        &cmd_lock_session_entry,
+        &cmd_move_pane_entry,
+        &cmd_move_window_entry,
+        &cmd_new_pane_entry,
+        &cmd_new_session_entry,
+        &cmd_new_window_entry,
+        &cmd_next_layout_entry,
+        &cmd_next_window_entry,
+        &cmd_paste_buffer_entry,
+        &cmd_pipe_pane_entry,
+        &cmd_previous_layout_entry,
+        &cmd_previous_window_entry,
+        &cmd_refresh_client_entry,
+        &cmd_rename_session_entry,
+        &cmd_rename_window_entry,
+        &cmd_resize_pane_entry,
+        &cmd_resize_window_entry,
+        &cmd_respawn_pane_entry,
+        &cmd_respawn_window_entry,
+        &cmd_rotate_window_entry,
+        &cmd_run_shell_entry,
+        &cmd_save_buffer_entry,
+        &cmd_select_layout_entry,
+        &cmd_select_pane_entry,
+        &cmd_select_window_entry,
+        &cmd_send_keys_entry,
+        &cmd_send_prefix_entry,
+        &cmd_server_access_entry,
+        &cmd_set_buffer_entry,
+        &cmd_set_environment_entry,
+        &cmd_set_hook_entry,
+        &cmd_set_option_entry,
+        &cmd_set_window_option_entry,
+        &cmd_show_buffer_entry,
+        &cmd_show_environment_entry,
+        &cmd_show_hooks_entry,
+        &cmd_show_messages_entry,
+        &cmd_show_options_entry,
+        &cmd_show_prompt_history_entry,
+        &cmd_show_window_options_entry,
+        &cmd_source_file_entry,
+        &cmd_split_window_entry,
+        &cmd_start_server_entry,
+        &cmd_suspend_client_entry,
+        &cmd_swap_pane_entry,
+        &cmd_swap_window_entry,
+        &cmd_switch_client_entry,
+        &cmd_switch_mode_entry,
+        &cmd_unbind_key_entry,
+        &cmd_unlink_window_entry,
+        &cmd_wait_for_entry,
     ]
 };
 static mut cmd_list_next_group: u_int = 1 as u_int;
@@ -265,8 +264,8 @@ pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<C
     }
     Some(CString::new(bytes).expect("escaped argv contains no interior NUL"))
 }
-pub unsafe fn cmd_get_entry(mut cmd: *mut cmd) -> *const cmd_entry {
-    return (*cmd).entry;
+pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
+    cmd.entry
 }
 pub unsafe fn cmd_get_args(mut cmd: *mut cmd) -> *mut args {
     return (*cmd)
@@ -327,81 +326,60 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     }
     None
 }
-pub unsafe fn cmd_find(name: &CStr) -> Result<*const cmd_entry, CString> {
-    let mut loop_0: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
-    let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
-    let mut found: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
-    let mut ambiguous: ::core::ffi::c_int = 0;
-    let mut s: [::core::ffi::c_char; 8192] = [0; 8192];
-    ambiguous = 0 as ::core::ffi::c_int;
-    loop_0 = &raw mut cmd_table as *mut *const cmd_entry;
-    while !(*loop_0).is_null() {
-        entry = *loop_0;
-        if (*entry).alias == Some(name) {
-            ambiguous = 0 as ::core::ffi::c_int;
-            found = entry;
+pub fn cmd_find(name: &CStr) -> Result<&'static cmd_entry, CString> {
+    let mut found = None;
+    let mut ambiguous = false;
+    for &entry in &cmd_table {
+        if entry.alias == Some(name) {
+            ambiguous = false;
+            found = Some(entry);
             break;
-        } else {
-            if (*entry).name.to_bytes().starts_with(name.to_bytes()) {
-                if !found.is_null() {
-                    ambiguous = 1 as ::core::ffi::c_int;
-                }
-                found = entry;
-                if (*entry).name == name {
-                    break;
-                }
+        }
+        if entry.name.to_bytes().starts_with(name.to_bytes()) {
+            if found.is_some() {
+                ambiguous = true;
             }
-            loop_0 = loop_0.offset(1);
+            found = Some(entry);
+            if entry.name == name {
+                break;
+            }
         }
     }
-    if ambiguous != 0 {
-        *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-        loop_0 = &raw mut cmd_table as *mut *const cmd_entry;
-        while !(*loop_0).is_null() {
-            entry = *loop_0;
-            if (*entry).name.to_bytes().starts_with(name.to_bytes()) {
-                if strlcat(
-                    &raw mut s as *mut ::core::ffi::c_char,
-                    (*entry).name.as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
-                ) as usize
-                    >= ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as usize
-                {
-                    break;
-                }
-                if strlcat(
-                    &raw mut s as *mut ::core::ffi::c_char,
-                    b", \0" as *const u8 as *const ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
-                ) as usize
-                    >= ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as usize
-                {
-                    break;
+    if ambiguous {
+        // Keep the pinned diagnostic's bounded stack buffer and truncation.
+        let mut candidates = [0u8; 8192];
+        let mut len = 0;
+        'entries: for &entry in &cmd_table {
+            if !entry.name.to_bytes().starts_with(name.to_bytes()) {
+                continue;
+            }
+            for bytes in [entry.name.to_bytes(), b", ".as_slice()] {
+                let available = candidates.len() - 1 - len;
+                let count = bytes.len().min(available);
+                candidates[len..len + count].copy_from_slice(&bytes[..count]);
+                len += count;
+                if count < bytes.len() {
+                    break 'entries;
                 }
             }
-            loop_0 = loop_0.offset(1);
         }
-        s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(2 as size_t) as usize] =
-            '\0' as i32 as ::core::ffi::c_char;
         let mut error = b"ambiguous command: ".to_vec();
         error.extend_from_slice(name.to_bytes());
         error.extend_from_slice(b", could be: ");
-        error.extend_from_slice(CStr::from_ptr(s.as_ptr()).to_bytes());
+        error.extend_from_slice(&candidates[..len - 2]);
         return Err(CString::new(error).expect("command diagnostic contains no NUL"));
-    } else {
-        if found.is_null() {
-            let mut error = b"unknown command: ".to_vec();
-            error.extend_from_slice(name.to_bytes());
-            return Err(CString::new(error).expect("command diagnostic contains no NUL"));
-        }
-        return Ok(found);
-    };
+    }
+    found.ok_or_else(|| {
+        let mut error = b"unknown command: ".to_vec();
+        error.extend_from_slice(name.to_bytes());
+        CString::new(error).expect("command diagnostic contains no NUL")
+    })
 }
 
-fn cmd_new_owned(file: Option<&CStr>) -> Box<cmd> {
+fn cmd_new_owned(entry: &'static cmd_entry, file: Option<&CStr>) -> Box<cmd> {
     Box::new(cmd {
         file: file.map(CStr::to_owned),
-        ..cmd::empty()
+        ..cmd::new(entry)
     })
 }
 
@@ -415,33 +393,31 @@ pub unsafe fn cmd_parse(
         return Err(CString::new("no command").unwrap());
     };
     let entry = cmd_find(command.as_string().expect("command name"))?;
-    let args = match args_parse(&(*entry).args, values) {
+    let args = match args_parse(&entry.args, values) {
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {
             let mut error = b"usage: ".to_vec();
-            error.extend_from_slice((*entry).name.to_bytes());
+            error.extend_from_slice(entry.name.to_bytes());
             error.push(b' ');
-            error.extend_from_slice((*entry).usage.to_bytes());
+            error.extend_from_slice(entry.usage.to_bytes());
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
         Err(ArgsParseError::Message(message)) => {
             let mut error = b"command ".to_vec();
-            error.extend_from_slice((*entry).name.to_bytes());
+            error.extend_from_slice(entry.name.to_bytes());
             error.extend_from_slice(b": ");
             error.extend_from_slice(message.as_bytes());
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
     };
-    let mut cmd = cmd_new_owned(file);
-    cmd.entry = entry;
+    let mut cmd = cmd_new_owned(entry, file);
     cmd.args = Some(args);
     cmd.parse_flags = parse_flags;
     cmd.line = line;
     return Ok(cmd);
 }
 pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> Box<cmd> {
-    let mut new_cmd = cmd_new_owned(cmd.file.as_deref());
-    new_cmd.entry = cmd.entry;
+    let mut new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
     new_cmd.args = Some(args_copy(
         cmd.args.as_deref().expect("parsed command arguments"),
         argv,
@@ -456,7 +432,7 @@ pub unsafe fn cmd_print(cmd: &cmd) -> CString {
 pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     let args = args_print_cstring(cmd.args.as_deref().expect("parsed command arguments"));
     let arguments = args.as_bytes();
-    let name = (*cmd.entry).name.to_bytes();
+    let name = cmd.entry.name.to_bytes();
     let mut buf = Vec::with_capacity(
         name.len()
             + if arguments.is_empty() {
@@ -564,7 +540,7 @@ pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<&cmd> {
 pub unsafe fn cmd_list_all_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
     for cmd in &(*cmdlist).list {
-        if !(*(*cmd).entry).flags & flag != 0 {
+        if !(*cmd).entry.flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -573,7 +549,7 @@ pub unsafe fn cmd_list_all_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_in
 pub unsafe fn cmd_list_any_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
     for cmd in &(*cmdlist).list {
-        if (*(*cmd).entry).flags & flag != 0 {
+        if (*cmd).entry.flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }

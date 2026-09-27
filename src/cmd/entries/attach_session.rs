@@ -33,7 +33,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
-pub static mut cmd_attach_session_entry: cmd_entry = {
+pub static cmd_attach_session_entry: cmd_entry = {
     cmd_entry {
         name: c"attach-session",
         alias: Some(c"attach"),

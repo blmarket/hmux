@@ -666,7 +666,7 @@ mod ownership_tests {
             let parsed = args_parse(&spec, &values).unwrap();
             let address = &*parsed as *const args;
             assert_eq!(observer.strong_count(), 2);
-            let mut command = cmd::empty();
+            let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
             command.args = Some(parsed);
             assert_eq!(cmd_get_args(&mut command).cast_const(), address);
             drop(values);
@@ -684,7 +684,7 @@ mod ownership_tests {
             let observer = crate::src::shared::rc::downgrade(commands);
             let mut source = Box::new(args::empty());
             args_push_positional_commands(&mut source, rc::take(commands));
-            let mut command = cmd::empty();
+            let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
             command.args = Some(source);
             let mut item = cmdq_item::empty();
             let mut state =
@@ -766,7 +766,7 @@ mod ownership_tests {
             let client = client::new();
             let observer = std::rc::Rc::downgrade(&client);
             let mut source = Box::new(args::empty());
-            let mut command = cmd::empty();
+            let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
             command.args = Some(source);
             command.file = Some(CString::new(b"source\xff.conf".as_slice()).unwrap());
             command.line = 17;

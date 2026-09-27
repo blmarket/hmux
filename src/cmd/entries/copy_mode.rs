@@ -19,7 +19,7 @@ use crate::src::window_copy::{
     window_copy_mode, window_copy_pagedown, window_copy_pageup, window_copy_scroll,
     window_copy_set_line_numbers, window_copy_start_drag,
 };
-pub static mut cmd_copy_mode_entry: cmd_entry = {
+pub static cmd_copy_mode_entry: cmd_entry = {
     cmd_entry {
         name: c"copy-mode",
         alias: None,
@@ -44,7 +44,7 @@ pub static mut cmd_copy_mode_entry: cmd_entry = {
         exec: Some(cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_clock_mode_entry: cmd_entry = {
+pub static cmd_clock_mode_entry: cmd_entry = {
     cmd_entry {
         name: c"clock-mode",
         alias: None,
@@ -96,7 +96,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return CMD_RETURN_NORMAL;
         }
     }
-    if cmd_get_entry(self_0) == &raw const cmd_clock_mode_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clock_mode_entry) {
         window_pane_set_mode(
             wp,
             ::core::ptr::null_mut::<window_pane>(),

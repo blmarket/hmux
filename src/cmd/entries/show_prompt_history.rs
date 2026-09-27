@@ -12,7 +12,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
 use std::ffi::CStr;
-pub static mut cmd_show_prompt_history_entry: cmd_entry = {
+pub static cmd_show_prompt_history_entry: cmd_entry = {
     cmd_entry {
         name: c"show-prompt-history",
         alias: Some(c"showphist"),
@@ -39,7 +39,7 @@ pub static mut cmd_show_prompt_history_entry: cmd_entry = {
         ),
     }
 };
-pub static mut cmd_clear_prompt_history_entry: cmd_entry = {
+pub static cmd_clear_prompt_history_entry: cmd_entry = {
     cmd_entry {
         name: c"clear-prompt-history",
         alias: Some(c"clearphist"),
@@ -75,7 +75,7 @@ unsafe fn cmd_show_prompt_history_exec(
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;
     let mut h: u_int = 0;
-    if cmd_get_entry(self_0) == &raw const cmd_clear_prompt_history_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clear_prompt_history_entry) {
         if typestr.is_null() {
             t = 0 as u_int;
             while t < PROMPT_NTYPES as u_int {

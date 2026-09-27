@@ -24,7 +24,7 @@ pub const SHOW_MESSAGES_TEMPLATE: [::core::ffi::c_char; 37] = unsafe {
         *b"#{t/p:message_time}: #{message_text}\0",
     )
 };
-pub static mut cmd_show_messages_entry: cmd_entry = {
+pub static cmd_show_messages_entry: cmd_entry = {
     cmd_entry {
         name: c"show-messages",
         alias: Some(c"showmsgs"),

@@ -20,7 +20,7 @@ use crate::src::window_customize::window_customize_mode;
 use crate::src::window_panes::window_panes_mode;
 use crate::src::window_switch::window_switch_mode;
 use crate::src::window_tree::window_tree_mode;
-pub static mut cmd_choose_tree_entry: cmd_entry = {
+pub static cmd_choose_tree_entry: cmd_entry = {
     cmd_entry {
         name: c"choose-tree",
         alias: None,
@@ -50,7 +50,7 @@ pub static mut cmd_choose_tree_entry: cmd_entry = {
         ),
     }
 };
-pub static mut cmd_choose_client_entry: cmd_entry = {
+pub static cmd_choose_client_entry: cmd_entry = {
     cmd_entry {
         name: c"choose-client",
         alias: None,
@@ -80,7 +80,7 @@ pub static mut cmd_choose_client_entry: cmd_entry = {
         ),
     }
 };
-pub static mut cmd_choose_buffer_entry: cmd_entry = {
+pub static cmd_choose_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"choose-buffer",
         alias: None,
@@ -110,7 +110,7 @@ pub static mut cmd_choose_buffer_entry: cmd_entry = {
         ),
     }
 };
-pub static mut cmd_customize_mode_entry: cmd_entry = {
+pub static cmd_customize_mode_entry: cmd_entry = {
     cmd_entry {
         name: c"customize-mode",
         alias: None,
@@ -135,7 +135,7 @@ pub static mut cmd_customize_mode_entry: cmd_entry = {
         exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_switch_mode_entry: cmd_entry = {
+pub static cmd_switch_mode_entry: cmd_entry = {
     cmd_entry {
         name: c"switch-mode",
         alias: None,
@@ -160,7 +160,7 @@ pub static mut cmd_switch_mode_entry: cmd_entry = {
         exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_display_panes_entry: cmd_entry = {
+pub static cmd_display_panes_entry: cmd_entry = {
     cmd_entry {
         name: c"display-panes",
         alias: Some(c"displayp"),
@@ -204,21 +204,21 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         cmdq_error(item, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    if cmd_get_entry(self_0) == &raw const cmd_choose_buffer_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_choose_buffer_entry) {
         if paste_is_empty() != 0 {
             return CMD_RETURN_NORMAL;
         }
         mode = &raw const window_buffer_mode;
-    } else if cmd_get_entry(self_0) == &raw const cmd_choose_client_entry {
+    } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_choose_client_entry) {
         if server_client_how_many() == 0 as u_int {
             return CMD_RETURN_NORMAL;
         }
         mode = &raw const window_client_mode;
-    } else if cmd_get_entry(self_0) == &raw const cmd_customize_mode_entry {
+    } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_customize_mode_entry) {
         mode = &raw const window_customize_mode;
-    } else if cmd_get_entry(self_0) == &raw const cmd_switch_mode_entry {
+    } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_switch_mode_entry) {
         mode = &raw const window_switch_mode;
-    } else if cmd_get_entry(self_0) == &raw const cmd_display_panes_entry {
+    } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_display_panes_entry) {
         mode = &raw const window_panes_mode;
     } else {
         mode = &raw const window_tree_mode;

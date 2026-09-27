@@ -9,7 +9,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
 };
-pub static mut cmd_lock_server_entry: cmd_entry = {
+pub static cmd_lock_server_entry: cmd_entry = {
     cmd_entry {
         name: c"lock-server",
         alias: Some(c"lock"),
@@ -34,7 +34,7 @@ pub static mut cmd_lock_server_entry: cmd_entry = {
         exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_lock_session_entry: cmd_entry = {
+pub static cmd_lock_session_entry: cmd_entry = {
     cmd_entry {
         name: c"lock-session",
         alias: Some(c"locks"),
@@ -59,7 +59,7 @@ pub static mut cmd_lock_session_entry: cmd_entry = {
         exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_lock_client_entry: cmd_entry = {
+pub static cmd_lock_client_entry: cmd_entry = {
     cmd_entry {
         name: c"lock-client",
         alias: Some(c"lockc"),
@@ -87,9 +87,9 @@ pub static mut cmd_lock_client_entry: cmd_entry = {
 unsafe fn cmd_lock_server_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    if cmd_get_entry(self_0) == &raw const cmd_lock_server_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_server_entry) {
         server_lock();
-    } else if cmd_get_entry(self_0) == &raw const cmd_lock_session_entry {
+    } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_session_entry) {
         server_lock_session((*target).s);
     } else {
         server_lock_client(tc);

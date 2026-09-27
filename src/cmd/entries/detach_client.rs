@@ -16,7 +16,7 @@ use crate::src::shared::command::{
     CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_READONLY, CMD_TARGET_CLIENT_USAGE,
 };
 use crate::src::shared::session::session;
-pub static mut cmd_detach_client_entry: cmd_entry = {
+pub static cmd_detach_client_entry: cmd_entry = {
     cmd_entry {
         name: c"detach-client",
         alias: Some(c"detach"),
@@ -41,7 +41,7 @@ pub static mut cmd_detach_client_entry: cmd_entry = {
         exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_suspend_client_entry: cmd_entry = {
+pub static cmd_suspend_client_entry: cmd_entry = {
     cmd_entry {
         name: c"suspend-client",
         alias: Some(c"suspendc"),
@@ -75,7 +75,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut msgtype: msgtype = 0 as msgtype;
     let mut cmd: *const ::core::ffi::c_char = args_get(args, 'E' as i32 as u_char);
-    if cmd_get_entry(self_0) == &raw const cmd_suspend_client_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_suspend_client_entry) {
         server_client_suspend(tc);
         return CMD_RETURN_NORMAL;
     }

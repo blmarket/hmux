@@ -43,7 +43,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_INPUTOFF, PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
-pub static mut cmd_select_pane_entry: cmd_entry = {
+pub static cmd_select_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"select-pane",
         alias: Some(c"selectp"),
@@ -68,7 +68,7 @@ pub static mut cmd_select_pane_entry: cmd_entry = {
         exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_last_pane_entry: cmd_entry = {
+pub static cmd_last_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"last-pane",
         alias: Some(c"lastp"),
@@ -226,7 +226,7 @@ unsafe fn cmd_select_pane_marked_pane(
 }
 unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut entry: *const cmd_entry = cmd_get_entry(self_0);
+    let entry = cmd_get_entry(&*self_0);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut fs: cmd_find_state = cmd_find_state {
@@ -248,7 +248,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut visible: ::core::ffi::c_int = 0;
     let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
-    if entry == &raw const cmd_last_pane_entry || args_has(args, 'l' as i32 as u_char) != 0 {
+    if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(args, 'l' as i32 as u_char) != 0 {
         lastwp = window_pane_stack_first(w);
         if lastwp.is_null() && window_count_panes(w, 1 as ::core::ffi::c_int) == 2 as u_int {
             lastwp = window_pane_previous((*w).active);

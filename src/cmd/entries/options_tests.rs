@@ -81,7 +81,8 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     cmd_list_free(command_list);
 
     let cmd = (*item).cmd;
-    let exec = (*(*cmd).entry)
+    let exec = (*cmd)
+        .entry
         .exec
         .expect("option command has an execution callback");
     let retval = exec(cmd, item);

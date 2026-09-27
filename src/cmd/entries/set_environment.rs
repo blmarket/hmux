@@ -13,7 +13,7 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::environment::environ;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::tmux::global_environ;
-pub static mut cmd_set_environment_entry: cmd_entry = {
+pub static cmd_set_environment_entry: cmd_entry = {
     cmd_entry {
         name: c"set-environment",
         alias: Some(c"setenv"),

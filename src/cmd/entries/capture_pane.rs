@@ -37,7 +37,7 @@ use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::window_pane_reset_mode_all;
 use std::ffi::{CStr, CString};
 use std::io::Write;
-pub static mut cmd_capture_pane_entry: cmd_entry = {
+pub static cmd_capture_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"capture-pane",
         alias: Some(c"capturep"),
@@ -63,7 +63,7 @@ pub static mut cmd_capture_pane_entry: cmd_entry = {
         exec: Some(cmd_capture_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_clear_history_entry: cmd_entry = {
+pub static cmd_clear_history_entry: cmd_entry = {
     cmd_entry {
         name: c"clear-history",
         alias: Some(c"clearhist"),
@@ -577,7 +577,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if cmd_get_entry(self_0) == &raw const cmd_clear_history_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clear_history_entry) {
         window_pane_reset_mode_all(wp);
         grid_clear_history((*wp).base.grid_mut());
         if args_has(args, 'H' as i32 as u_char) != 0 {

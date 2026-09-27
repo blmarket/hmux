@@ -39,7 +39,7 @@ use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
 use crate::src::window::{window_pane_destroy_ready, window_pane_exited};
-pub static mut cmd_pipe_pane_entry: cmd_entry = {
+pub static cmd_pipe_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"pipe-pane",
         alias: Some(c"pipep"),

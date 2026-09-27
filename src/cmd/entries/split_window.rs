@@ -64,7 +64,7 @@ pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
-pub static mut cmd_new_pane_entry: cmd_entry = {
+pub static cmd_new_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"new-pane",
         alias: Some(c"newp"),
@@ -92,7 +92,7 @@ pub static mut cmd_new_pane_entry: cmd_entry = {
         ),
     }
 };
-pub static mut cmd_split_window_entry: cmd_entry = {
+pub static cmd_split_window_entry: cmd_entry = {
     cmd_entry {
         name: c"split-window",
         alias: Some(c"splitw"),
@@ -173,7 +173,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if window_active_pane_is_over_zoom(w) != 0 {
         restore_zoom = 1 as ::core::ffi::c_int;
     }
-    if cmd_get_entry(self_0) == &raw const cmd_new_pane_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_new_pane_entry) {
         is_floating = (args_has(args, 'L' as i32 as u_char) == 0) as ::core::ffi::c_int;
     } else {
         if window_pane_is_visible(wp) == 0 {

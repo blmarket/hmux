@@ -5,7 +5,7 @@ use crate::src::shared::command::CMD_STARTSERVER;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::signal::SIGTERM;
-pub static mut cmd_kill_server_entry: cmd_entry = {
+pub static cmd_kill_server_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-server",
         alias: None,
@@ -30,7 +30,7 @@ pub static mut cmd_kill_server_entry: cmd_entry = {
         exec: Some(cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_start_server_entry: cmd_entry = {
+pub static cmd_start_server_entry: cmd_entry = {
     cmd_entry {
         name: c"start-server",
         alias: Some(c"start"),
@@ -56,7 +56,7 @@ pub static mut cmd_start_server_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_kill_server_exec(mut self_0: *mut cmd, _item: *mut cmdq_item) -> cmd_retval {
-    if cmd_get_entry(self_0) == &raw const cmd_kill_server_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_kill_server_entry) {
         kill(getpid(), SIGTERM);
     }
     return CMD_RETURN_NORMAL;

@@ -47,7 +47,7 @@ use crate::src::window::{
     window_pane_z_next, window_pane_z_previous, window_pane_z_remove, window_redraw_active_switch,
     window_set_active_pane,
 };
-pub static mut cmd_join_pane_entry: cmd_entry = {
+pub static cmd_join_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"join-pane",
         alias: Some(c"joinp"),
@@ -72,7 +72,7 @@ pub static mut cmd_join_pane_entry: cmd_entry = {
         exec: Some(cmd_join_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_move_pane_entry: cmd_entry = {
+pub static cmd_move_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"move-pane",
         alias: Some(c"movep"),
@@ -650,7 +650,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     dst_wp = (*target).wp;
     dst_w = (*dst_wl).window;
     dst_idx = (*dst_wl).idx;
-    if cmd_get_entry(self_0) == &raw const cmd_move_pane_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_pane_entry) {
         if args_has(args, 'M' as i32 as u_char) != 0 {
             return cmd_join_pane_mouse_update(item);
         }

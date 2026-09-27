@@ -36,8 +36,7 @@ use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
     prompt_result, PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE,
     PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE,
-    PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_QUOTENEXT,
-    PROMPT_SINGLE,
+    PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_QUOTENEXT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -1594,17 +1593,14 @@ fn prompt_complete_add(list: &mut Vec<CString>, s: &CStr) {
 }
 unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     let mut list = Vec::new();
-    let mut cmdent: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
     let prefix = s.to_bytes();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    cmdent = &raw mut cmd_table as *mut *const cmd_entry;
-    while !(*cmdent).is_null() {
-        let name = (**cmdent).name;
+    for &entry in &cmd_table {
+        let name = entry.name;
         if name.to_bytes().starts_with(prefix) {
             prompt_complete_add(&mut list, name);
         }
-        cmdent = cmdent.offset(1);
     }
     o = options_get_only(
         global_options,

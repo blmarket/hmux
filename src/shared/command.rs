@@ -229,7 +229,7 @@ pub struct cmd_list {
 
 #[repr(C)]
 pub struct cmd {
-    pub entry: *const cmd_entry,
+    pub entry: &'static cmd_entry,
     pub args: Option<Box<args>>,
     pub group: u_int,
     pub file: Option<std::ffi::CString>,
@@ -238,9 +238,9 @@ pub struct cmd {
 }
 
 impl cmd {
-    pub fn empty() -> Self {
+    pub fn new(entry: &'static cmd_entry) -> Self {
         Self {
-            entry: Default::default(),
+            entry,
             args: Default::default(),
             group: Default::default(),
             file: Default::default(),

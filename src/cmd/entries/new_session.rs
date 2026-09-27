@@ -57,7 +57,7 @@ use std::ffi::{CStr, CString};
 pub const NEW_SESSION_TEMPLATE: [::core::ffi::c_char; 17] = unsafe {
     ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"#{session_name}:\0")
 };
-pub static mut cmd_new_session_entry: cmd_entry = {
+pub static cmd_new_session_entry: cmd_entry = {
     cmd_entry {
         name: c"new-session",
         alias: Some(c"new"),
@@ -85,7 +85,7 @@ pub static mut cmd_new_session_entry: cmd_entry = {
         ),
     }
 };
-pub static mut cmd_has_session_entry: cmd_entry = {
+pub static cmd_has_session_entry: cmd_entry = {
     cmd_entry {
         name: c"has-session",
         alias: Some(c"has"),
@@ -178,7 +178,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    if cmd_get_entry(self_0) == &raw const cmd_has_session_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_has_session_entry) {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 't' as i32 as u_char) != 0

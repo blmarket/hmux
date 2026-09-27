@@ -2,8 +2,7 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::paste::{
-    paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename,
-    paste_set_owned,
+    paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_parse;
@@ -14,7 +13,7 @@ use crate::src::shared::command::{
 };
 use crate::src::tty::tty_set_selection;
 use std::ffi::CStr;
-pub static mut cmd_set_buffer_entry: cmd_entry = {
+pub static cmd_set_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"set-buffer",
         alias: Some(c"setb"),
@@ -39,7 +38,7 @@ pub static mut cmd_set_buffer_entry: cmd_entry = {
         exec: Some(cmd_set_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_delete_buffer_entry: cmd_entry = {
+pub static cmd_delete_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"delete-buffer",
         alias: Some(c"deleteb"),
@@ -71,7 +70,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
     let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
     let mut pb = bufname.as_deref().and_then(paste_get_name);
     let mut cause = None;
-    let deleting = cmd_get_entry(self_0) == &raw const cmd_delete_buffer_entry;
+    let deleting = std::ptr::eq(cmd_get_entry(&*self_0), &cmd_delete_buffer_entry);
     if deleting || args_has(args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {

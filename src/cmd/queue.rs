@@ -300,13 +300,12 @@ pub unsafe fn cmdq_add_formats(mut state: *mut cmdq_state, mut ft: *mut format_t
     format_merge((*state).formats, ft);
 }
 pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_tree) {
-    let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     if !(*item).cmd.is_null() {
-        entry = cmd_get_entry((*item).cmd);
+        let entry = cmd_get_entry(&*(*item).cmd);
         format_add(
             ft,
             b"command\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, (*entry).name.as_ptr()),
+            |out| write_cstr(out, entry.name.as_ptr()),
         );
     }
     if !(*(*item).state).formats.is_null() {
@@ -503,7 +502,6 @@ pub unsafe fn cmdq_get_command(
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut first: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut last: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut created: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*cmdlist).list.is_empty() {
         return cmdq_get_callback_owned(
@@ -521,8 +519,8 @@ pub unsafe fn cmdq_get_command(
     }
     for command in &mut (*cmdlist).list {
         let cmd = &mut **command as *mut cmd;
-        entry = cmd_get_entry(cmd);
-        item = cmdq_new_named_item(Some((*entry).name));
+        let entry = cmd_get_entry(&*cmd);
+        item = cmdq_new_named_item(Some(entry.name));
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
         (*item).state = cmdq_link_state(state);
@@ -556,15 +554,15 @@ pub unsafe fn cmdq_get_command(
 unsafe fn cmdq_find_flag(
     mut item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
-    mut flag: *const cmd_entry_flag,
+    flag: &cmd_entry_flag,
 ) -> cmd_retval {
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if (*flag).flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+    if flag.flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         cmd_find_from_client(fs, (*item).target_client, 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    value = args_get(cmd_get_args((*item).cmd), (*flag).flag as u_char);
-    if cmd_find_target(fs, item, value, (*flag).type_0, (*flag).flags) != 0 as ::core::ffi::c_int {
+    value = args_get(cmd_get_args((*item).cmd), flag.flag as u_char);
+    if cmd_find_target(fs, item, value, flag.type_0, flag.flags) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
     }
@@ -636,7 +634,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut state: *mut cmdq_state = (*item).state;
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args: *mut args = cmd_get_args(cmd);
-    let mut entry: *const cmd_entry = cmd_get_entry(cmd);
+    let entry = cmd_get_entry(&*cmd);
     let mut tc: *mut client = ::core::ptr::null_mut::<client>();
     let mut saved: *mut client = (*item).client;
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
@@ -678,10 +676,10 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
             1 as ::core::ffi::c_int,
         );
     }
-    if (*entry).flags & CMD_CLIENT_CANFAIL != 0 {
+    if entry.flags & CMD_CLIENT_CANFAIL != 0 {
         quiet = 1 as ::core::ffi::c_int;
     }
-    if (*entry).flags & CMD_CLIENT_CFLAG != 0 {
+    if entry.flags & CMD_CLIENT_CFLAG != 0 {
         tc = cmd_find_client(item, args_get(args, 'c' as i32 as u_char), quiet);
         if tc.is_null() && quiet == 0 {
             retval = CMD_RETURN_ERROR;
@@ -689,7 +687,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         } else {
             current_block = 18317007320854588510;
         }
-    } else if (*entry).flags & CMD_CLIENT_TFLAG != 0 {
+    } else if entry.flags & CMD_CLIENT_TFLAG != 0 {
         tc = cmd_find_client(item, args_get(args, 't' as i32 as u_char), quiet);
         if tc.is_null() && quiet == 0 {
             retval = CMD_RETURN_ERROR;
@@ -708,13 +706,13 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     match current_block {
         18317007320854588510 => {
             (*item).target_client = tc;
-            retval = cmdq_find_flag(item, &raw mut (*item).source, &raw const (*entry).source);
+            retval = cmdq_find_flag(item, &raw mut (*item).source, &entry.source);
             if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
-                retval = cmdq_find_flag(item, &raw mut (*item).target, &raw const (*entry).target);
+                retval = cmdq_find_flag(item, &raw mut (*item).target, &entry.target);
                 if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
-                    retval = (*entry).exec.expect("non-null function pointer")(cmd, item);
+                    retval = entry.exec.expect("non-null function pointer")(cmd, item);
                     if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
-                        if (*entry).flags & CMD_AFTERHOOK != 0 {
+                        if entry.flags & CMD_AFTERHOOK != 0 {
                             if cmd_find_valid_state(&(*item).target) != 0 {
                                 fsp = &raw mut (*item).target;
                                 current_block = 8704759739624374314;
@@ -737,7 +735,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                                 _ => {
                                     cmdq_insert_hook((*fsp).s, item, fsp, |out| {
                                         out.write_all(b"after-")?;
-                                        write_cstr(out, (*entry).name.as_ptr())
+                                        write_cstr(out, entry.name.as_ptr())
                                     });
                                 }
                             }

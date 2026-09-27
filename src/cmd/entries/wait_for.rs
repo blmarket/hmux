@@ -3,8 +3,8 @@ use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::events::{events_add_sink, events_remove_sink};
 use crate::src::events_payload::{
-    event_payload_add_formats, event_payload_items, event_payload_item_name,
-    event_payload_item_print_owned,
+    event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
+    event_payload_items,
 };
 use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::write_cstr;
@@ -45,7 +45,7 @@ pub struct wait_event_item {
     pub verbose: ::core::ffi::c_int,
 }
 
-pub static mut cmd_wait_for_entry: cmd_entry = {
+pub static cmd_wait_for_entry: cmd_entry = {
     cmd_entry {
         name: c"wait-for",
         alias: Some(c"wait"),

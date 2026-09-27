@@ -16,7 +16,7 @@ use crate::src::shared::vis::{VIS_NOSLASH, VIS_SAFE};
 use crate::src::text::utf8::utf8_stravisx_bytes;
 use crate::src::window::window_pane_exited;
 use std::ffi::CStr;
-pub static mut cmd_paste_buffer_entry: cmd_entry = {
+pub static cmd_paste_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"paste-buffer",
         alias: Some(c"pasteb"),

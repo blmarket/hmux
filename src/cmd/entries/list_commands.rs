@@ -26,7 +26,7 @@ pub const LIST_COMMANDS_TEMPLATE: [::core::ffi::c_char; 91] = unsafe {
         *b"#{command_list_name}#{?command_list_alias, (#{command_list_alias}),} #{command_list_usage}\0",
     )
 };
-pub static mut cmd_list_commands_entry: cmd_entry = {
+pub static cmd_list_commands_entry: cmd_entry = {
     cmd_entry {
         name: c"list-commands",
         alias: Some(c"lscm"),
@@ -52,7 +52,7 @@ pub static mut cmd_list_commands_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_list_single_command(
-    mut entry: *const cmd_entry,
+    entry: &cmd_entry,
     mut ft: *mut format_tree,
     mut template: *const ::core::ffi::c_char,
     mut item: *mut cmdq_item,
@@ -60,17 +60,17 @@ unsafe fn cmd_list_single_command(
     format_add(
         ft,
         b"command_list_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, (*entry).name.as_ptr()),
+        |out| write_cstr(out, entry.name.as_ptr()),
     );
     format_add(
         ft,
         b"command_list_alias\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, (*entry).alias.unwrap_or(c"").as_ptr()),
+        |out| write_cstr(out, entry.alias.unwrap_or(c"").as_ptr()),
     );
     format_add(
         ft,
         b"command_list_usage\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, (*entry).usage.as_ptr()),
+        |out| write_cstr(out, entry.usage.as_ptr()),
     );
     let line = format_expand_cstring(ft, template);
     if !line.is_empty() {
@@ -79,8 +79,6 @@ unsafe fn cmd_list_single_command(
 }
 unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut entryp: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
-    let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -103,24 +101,19 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     );
     command = args_string(args, 0 as u_int);
     if command.is_null() {
-        entryp = &raw mut cmd_table as *mut *const cmd_entry;
-        while !(*entryp).is_null() {
-            cmd_list_single_command(*entryp, ft, template, item);
-            entryp = entryp.offset(1);
+        for &entry in &cmd_table {
+            cmd_list_single_command(entry, ft, template, item);
         }
     } else {
         match cmd_find(CStr::from_ptr(command)) {
             Ok(found) => {
-                entry = found;
+                cmd_list_single_command(found, ft, template, item);
             }
             Err(cause) => {
                 cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
                 format_free(ft);
                 return CMD_RETURN_ERROR;
             }
-        }
-        if !entry.is_null() {
-            cmd_list_single_command(entry, ft, template, item);
         }
     }
     format_free(ft);

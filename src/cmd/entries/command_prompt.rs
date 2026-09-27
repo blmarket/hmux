@@ -88,7 +88,7 @@ fn cmd_command_prompt_rows(
         })
         .collect()
 }
-pub static mut cmd_command_prompt_entry: cmd_entry = {
+pub static cmd_command_prompt_entry: cmd_entry = {
     cmd_entry {
         name: c"command-prompt",
         alias: None,

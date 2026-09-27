@@ -52,7 +52,7 @@ pub const BREAK_PANE_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
 };
 use std::ffi::CStr;
 
-pub static mut cmd_break_pane_entry: cmd_entry = {
+pub static cmd_break_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"break-pane",
         alias: Some(c"breakp"),

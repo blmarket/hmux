@@ -5,7 +5,9 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
-use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_bindings_tables};
+use crate::src::key_bindings::{
+    key_bindings_get_table, key_bindings_has_repeat, key_bindings_tables,
+};
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
@@ -43,7 +45,7 @@ pub const LIST_KEYS_TEMPLATE: [::core::ffi::c_char; 250] = unsafe {
         *b"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}\0",
     )
 };
-pub static mut cmd_list_keys_entry: cmd_entry = {
+pub static cmd_list_keys_entry: cmd_entry = {
     cmd_entry {
         name: c"list-keys",
         alias: Some(c"lsk"),

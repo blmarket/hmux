@@ -57,7 +57,7 @@ pub struct cmd_run_shell_data {
     pub timer: event,
     pub flags: ::core::ffi::c_int,
 }
-pub static mut cmd_run_shell_entry: cmd_entry = {
+pub static cmd_run_shell_entry: cmd_entry = {
     cmd_entry {
         name: c"run-shell",
         alias: Some(c"run"),

@@ -19,7 +19,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
-pub static mut cmd_kill_window_entry: cmd_entry = {
+pub static cmd_kill_window_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-window",
         alias: Some(c"killw"),
@@ -44,7 +44,7 @@ pub static mut cmd_kill_window_entry: cmd_entry = {
         exec: Some(cmd_kill_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_unlink_window_entry: cmd_entry = {
+pub static cmd_unlink_window_entry: cmd_entry = {
     cmd_entry {
         name: c"unlink-window",
         alias: Some(c"unlinkw"),
@@ -80,7 +80,7 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
-    if cmd_get_entry(self_0) == &raw const cmd_unlink_window_entry {
+    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_unlink_window_entry) {
         if args_has(args, 'k' as i32 as u_char) == 0 && session_is_linked(s, w) == 0 {
             cmdq_error(item, |out| {
                 out.write_all(b"window only linked to one session")

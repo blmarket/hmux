@@ -41,7 +41,7 @@ impl Drop for cmd_load_buffer_data {
         unsafe { self.release_client() }
     }
 }
-pub static mut cmd_load_buffer_entry: cmd_entry = {
+pub static cmd_load_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"load-buffer",
         alias: Some(c"loadb"),
