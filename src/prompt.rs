@@ -270,34 +270,50 @@ fn prompt_last(pr: &prompt) -> &CStr {
         .expect("incremental prompt has saved input")
         .as_c_str()
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PromptCallbackResult {
+    Continue,
+    Close,
+    Freed,
+}
+
+impl PromptCallbackResult {
+    fn key_result(self) -> prompt_key_result {
+        match self {
+            Self::Continue => PROMPT_KEY_HANDLED,
+            Self::Close | Self::Freed => PROMPT_KEY_CLOSE,
+        }
+    }
+}
+
 unsafe fn prompt_fire_callback(
-    mut pr: *mut prompt,
-    mut s: *const ::core::ffi::c_char,
-    mut type_0: prompt_key_result,
-    mut redraw: *mut ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+    pr: *mut prompt,
+    text: Option<&CStr>,
+    kind: prompt_key_result,
+    redraw: Option<&mut ::core::ffi::c_int>,
+) -> PromptCallbackResult {
     let mut callback = (*pr).inputcb.take().expect("non-null prompt callback");
     (*pr).flags |= PROMPT_CALLBACK_ACTIVE;
-    let text = (!s.is_null()).then(|| CStr::from_ptr(s));
-    let result = callback(text, type_0);
+    let result = callback(text, kind);
     let free_pending = (*pr).flags & PROMPT_FREE_PENDING != 0;
     (*pr).flags &= !PROMPT_CALLBACK_ACTIVE;
     if free_pending {
         prompt_free(pr);
-        return 1 as ::core::ffi::c_int;
+        return PromptCallbackResult::Freed;
     }
     if (*pr).inputcb.is_none() {
         (*pr).inputcb = Some(callback);
     }
-    if result as ::core::ffi::c_uint == PROMPT_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint {
-        (*pr).closed = 1 as ::core::ffi::c_int;
-        return 1 as ::core::ffi::c_int;
+    if result == PROMPT_CLOSE {
+        (*pr).closed = 1;
+        return PromptCallbackResult::Close;
     }
-    if !redraw.is_null() {
-        *redraw = 1 as ::core::ffi::c_int;
+    if let Some(redraw) = redraw {
+        *redraw = 1;
     }
-    return 0 as ::core::ffi::c_int;
+    PromptCallbackResult::Continue
 }
+
 pub unsafe fn prompt_incremental_start(mut pr: *mut prompt) {
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
         let input = utf8_tocstr_cstring(&(*pr).buffer);
@@ -305,12 +321,7 @@ pub unsafe fn prompt_incremental_start(mut pr: *mut prompt) {
         bytes.push(b'=');
         bytes.extend_from_slice(input.as_bytes());
         let callback_input = CString::new(bytes).expect("the first NUL ends the prompt input");
-        prompt_fire_callback(
-            pr,
-            callback_input.as_ptr(),
-            PROMPT_KEY_HANDLED,
-            ::core::ptr::null_mut::<::core::ffi::c_int>(),
-        );
+        prompt_fire_callback(pr, Some(&callback_input), PROMPT_KEY_HANDLED, None);
     }
 }
 pub unsafe fn prompt_update(
@@ -1235,50 +1246,38 @@ fn prompt_backward_word(pr: &prompt, separators: &CStr) -> usize {
     index
 }
 unsafe fn prompt_done(
-    mut pr: *mut prompt,
-    mut s: *const ::core::ffi::c_char,
-    mut redraw: *mut ::core::ffi::c_int,
-) -> prompt_key_result {
-    if prompt_fire_callback(pr, s, PROMPT_KEY_CLOSE, redraw) != 0 {
-        return PROMPT_KEY_CLOSE;
-    }
-    return PROMPT_KEY_HANDLED;
+    pr: *mut prompt,
+    text: Option<&CStr>,
+    redraw: &mut ::core::ffi::c_int,
+) -> PromptCallbackResult {
+    prompt_fire_callback(pr, text, PROMPT_KEY_CLOSE, Some(redraw))
 }
 unsafe fn prompt_done_with_history(
     pr: *mut prompt,
-    redraw: *mut ::core::ffi::c_int,
+    redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
-    let s = utf8_tocstr_cstring(&(*pr).buffer);
-    if !s.as_bytes().is_empty() {
-        prompt_add_history(s.as_ptr(), (*pr).type_0 as u_int);
+    let input = utf8_tocstr_cstring(&(*pr).buffer);
+    if !input.is_empty() {
+        prompt_add_history(input.as_ptr(), (*pr).type_0);
     }
-    prompt_done(pr, s.as_ptr(), redraw)
+    prompt_done(pr, Some(&input), redraw).key_result()
 }
-unsafe fn prompt_check_move(mut pr: *mut prompt, mut key: key_code) -> prompt_key_result {
-    if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
+unsafe fn prompt_check_move(pr: *mut prompt, key: key_code) -> prompt_key_result {
+    if (*pr).flags & PROMPT_INCREMENTAL == 0 {
         return PROMPT_KEY_NOT_HANDLED;
     }
     match key {
-        8589934619 | 8589934620 | 8589934617 | 8589934616 => {}
-        8589934621 | 8589934622 => {
-            if (*pr).flags & PROMPT_EDITARROWS != 0 {
-                return PROMPT_KEY_NOT_HANDLED;
-            }
-        }
+        KEYC_UP | KEYC_DOWN | KEYC_PPAGE | KEYC_NPAGE => {}
+        KEYC_LEFT | KEYC_RIGHT if (*pr).flags & PROMPT_EDITARROWS == 0 => {}
         _ => return PROMPT_KEY_NOT_HANDLED,
     }
-    let s = utf8_tocstr_cstring(&(*pr).buffer);
-    if prompt_fire_callback(
-        pr,
-        s.as_ptr(),
-        PROMPT_KEY_MOVE,
-        ::core::ptr::null_mut::<::core::ffi::c_int>(),
-    ) != 0
-    {
-        return PROMPT_KEY_CLOSE;
+    let input = utf8_tocstr_cstring(&(*pr).buffer);
+    match prompt_fire_callback(pr, Some(&input), PROMPT_KEY_MOVE, None) {
+        PromptCallbackResult::Continue => PROMPT_KEY_MOVE,
+        PromptCallbackResult::Close | PromptCallbackResult::Freed => PROMPT_KEY_CLOSE,
     }
-    return PROMPT_KEY_MOVE;
 }
+
 #[derive(Debug, PartialEq, Eq)]
 enum PromptEditAction {
     Unchanged,
@@ -1470,12 +1469,8 @@ pub unsafe fn prompt_key(
     prompt_clear_complete(&mut *pr);
     if (*pr).flags & PROMPT_KEY != 0 {
         let key_string = key_string_format(key, false);
-        if prompt_fire_callback(
-            pr,
-            key_string.as_ptr(),
-            PROMPT_KEY_CLOSE,
-            std::ptr::null_mut(),
-        ) == 0
+        if prompt_fire_callback(pr, Some(&key_string), PROMPT_KEY_CLOSE, None)
+            == PromptCallbackResult::Continue
         {
             (*pr).closed = 1;
         }
@@ -1485,7 +1480,8 @@ pub unsafe fn prompt_key(
     let translated = if (*pr).flags & PROMPT_NUMERIC != 0 {
         if !(b'0' as key_code..=b'9' as key_code).contains(&key) {
             let input = utf8_tocstr_cstring(&(*pr).buffer);
-            if prompt_fire_callback(pr, input.as_ptr(), PROMPT_KEY_CLOSE, std::ptr::null_mut()) == 0
+            if prompt_fire_callback(pr, Some(&input), PROMPT_KEY_CLOSE, None)
+                == PromptCallbackResult::Continue
             {
                 (*pr).closed = 1;
             }
@@ -1532,7 +1528,7 @@ pub unsafe fn prompt_key(
             return PROMPT_KEY_HANDLED;
         }
         PromptEditAction::Submit => return prompt_done_with_history(pr, redraw),
-        PromptEditAction::Cancel => return prompt_done(pr, std::ptr::null(), redraw),
+        PromptEditAction::Cancel => return prompt_done(pr, None, redraw).key_result(),
         PromptEditAction::Changed(prefix) => prefix,
         PromptEditAction::Append(key) => {
             if !prompt_append_key(&mut *pr, key) {
@@ -1544,7 +1540,14 @@ pub unsafe fn prompt_key(
                     result = PROMPT_KEY_CLOSE;
                 } else {
                     let input = utf8_tocstr_cstring(&(*pr).buffer);
-                    result = prompt_done(pr, input.as_ptr(), redraw);
+                    let outcome = prompt_done(pr, Some(&input), redraw);
+                    if outcome == PromptCallbackResult::Freed {
+                        // Closing callbacks may replace the owner or destroy it.
+                        // A freed prompt has no changed tail to process.
+                        *redraw = 1;
+                        return PROMPT_KEY_CLOSE;
+                    }
+                    result = outcome.key_result();
                 }
             }
             b'='
@@ -1560,12 +1563,7 @@ pub unsafe fn prompt_key(
         bytes.push(prefix);
         bytes.extend_from_slice(input.as_bytes());
         let callback_input = CString::new(bytes).expect("the first NUL ends the prompt input");
-        prompt_fire_callback(
-            pr,
-            callback_input.as_ptr(),
-            PROMPT_KEY_HANDLED,
-            std::ptr::null_mut(),
-        );
+        prompt_fire_callback(pr, Some(&callback_input), PROMPT_KEY_HANDLED, None);
     }
     result
 }
@@ -2028,6 +2026,136 @@ mod prompt_buffer_tests {
         }
         assert_eq!(pr.flags & PROMPT_QUOTENEXT, 0);
         assert_eq!(pr.buffer[2].width, 2);
+    }
+
+    #[test]
+    fn callbacks_can_free_prompts_after_single_keys_moves_and_cancellation() {
+        use std::{cell::RefCell, rc::Rc};
+        for callback_result in [PROMPT_CONTINUE, PROMPT_CLOSE] {
+            for (flags, key, expected, kind, text) in [
+                (
+                    PROMPT_SINGLE,
+                    b'a' as key_code,
+                    PROMPT_KEY_CLOSE,
+                    PROMPT_KEY_CLOSE,
+                    Some(c"a"),
+                ),
+                (
+                    PROMPT_SINGLE | PROMPT_INCREMENTAL,
+                    b'a' as key_code,
+                    PROMPT_KEY_CLOSE,
+                    PROMPT_KEY_CLOSE,
+                    Some(c"a"),
+                ),
+                (
+                    PROMPT_NUMERIC,
+                    13,
+                    PROMPT_KEY_NOT_HANDLED,
+                    PROMPT_KEY_CLOSE,
+                    Some(c""),
+                ),
+                (
+                    PROMPT_KEY,
+                    b'a' as key_code,
+                    PROMPT_KEY_CLOSE,
+                    PROMPT_KEY_CLOSE,
+                    Some(c"a"),
+                ),
+                (
+                    PROMPT_INCREMENTAL,
+                    b'a' as key_code,
+                    PROMPT_KEY_HANDLED,
+                    PROMPT_KEY_HANDLED,
+                    Some(c"=a"),
+                ),
+                (
+                    PROMPT_INCREMENTAL,
+                    KEYC_UP,
+                    PROMPT_KEY_CLOSE,
+                    PROMPT_KEY_MOVE,
+                    Some(c""),
+                ),
+                (0, 27, PROMPT_KEY_CLOSE, PROMPT_KEY_CLOSE, None),
+                (
+                    PROMPT_BSPACE_EXIT,
+                    KEYC_BSPACE,
+                    PROMPT_KEY_CLOSE,
+                    PROMPT_KEY_CLOSE,
+                    None,
+                ),
+            ] {
+                let events = Rc::new(RefCell::new(Vec::new()));
+                let callback_events = events.clone();
+                let free_events = events.clone();
+                let pr = Box::into_raw(make_prompt(c"", 0, None));
+                unsafe {
+                    (*pr).flags = flags;
+                    (*pr).freecb = Some(Box::new(move || {
+                        free_events.borrow_mut().push("freed");
+                        // Recursive cleanup cannot run this callback twice.
+                        prompt_free(pr);
+                    }));
+                    (*pr).inputcb = Some(Box::new(move |input, result| {
+                        assert_eq!(input, text);
+                        assert_eq!(result, kind);
+                        callback_events.borrow_mut().push("start");
+                        prompt_free(pr);
+                        assert_eq!(&*callback_events.borrow(), &["start"]);
+                        assert_ne!((*pr).flags & PROMPT_FREE_PENDING, 0);
+                        callback_events.borrow_mut().push("end");
+                        callback_result
+                    }));
+                    assert_eq!(prompt_key(pr, key, &mut 0), expected);
+                }
+                // The callback destroyed pr. Neither this test nor the key
+                // dispatcher may read its cells or flags after returning.
+                assert_eq!(&*events.borrow(), &["start", "end", "freed"]);
+                assert_eq!(Rc::strong_count(&events), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn retained_single_prompts_use_callback_updates_for_incremental_input() {
+        use std::{cell::RefCell, rc::Rc};
+        for callback_result in [PROMPT_CONTINUE, PROMPT_CLOSE] {
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let callback_events = events.clone();
+            let pr = Box::into_raw(make_prompt(c"", 0, None));
+            unsafe {
+                (*pr).flags = PROMPT_SINGLE | PROMPT_INCREMENTAL;
+                (*pr).inputcb = Some(Box::new(move |input, kind| {
+                    callback_events
+                        .borrow_mut()
+                        .push((input.unwrap().to_owned(), kind));
+                    if kind == PROMPT_KEY_CLOSE {
+                        // Model a callback updating this prompt for its next
+                        // question while the previous input stays borrowed.
+                        (*pr).buffer = utf8_fromcstr_vec(c"é漢");
+                        (*pr).index = 2;
+                    }
+                    callback_result
+                }));
+                let mut redraw = 0;
+                let expected = if callback_result == PROMPT_CLOSE {
+                    PROMPT_KEY_CLOSE
+                } else {
+                    PROMPT_KEY_HANDLED
+                };
+                assert_eq!(prompt_key(pr, b'a' as key_code, &mut redraw), expected);
+                assert_eq!(redraw, 1);
+                assert_eq!(utf8_tocstr_cstring(&(*pr).buffer).as_c_str(), c"é漢");
+                assert_eq!(
+                    &*events.borrow(),
+                    &[
+                        (c"a".to_owned(), PROMPT_KEY_CLOSE),
+                        (c"=é漢".to_owned(), PROMPT_KEY_HANDLED)
+                    ]
+                );
+                prompt_free(pr);
+            }
+            assert_eq!(Rc::strong_count(&events), 1);
+        }
     }
 
     #[test]
