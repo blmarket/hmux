@@ -110,7 +110,7 @@ use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_CLOSE};
-use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
+use libc::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;

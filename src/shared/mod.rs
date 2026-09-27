@@ -43,7 +43,6 @@ pub mod process;
 pub mod prompt;
 pub mod rc;
 pub mod redraw;
-pub mod regex;
 pub mod screen;
 pub mod screen_write;
 pub mod server_acl;

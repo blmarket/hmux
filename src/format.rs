@@ -134,7 +134,7 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
-use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
+use libc::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{
     screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,

@@ -68,7 +68,7 @@ use crate::src::shared::mouse::{
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES};
-use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
+use libc::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -5444,7 +5444,7 @@ unsafe fn window_copy_search_lr_regex(
     mut py: u_int,
     mut first: u_int,
     mut last: u_int,
-    reg: &CompiledRegex<'_>,
+    reg: &CompiledRegex,
 ) -> ::core::ffi::c_int {
     let mut eflags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut endline: u_int = 0;
@@ -5518,7 +5518,7 @@ unsafe fn window_copy_search_rl_regex(
     psx: &mut u_int,
     mut py: u_int,
     mut last: u_int,
-    reg: &CompiledRegex<'_>,
+    reg: &CompiledRegex,
 ) -> ::core::ffi::c_int {
     let mut first: u_int = 0 as u_int;
     let mut eflags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -5597,7 +5597,7 @@ unsafe fn window_copy_last_regex(
     ppx: &mut u_int,
     psx: &mut u_int,
     buf: &CStr,
-    preg: &CompiledRegex<'_>,
+    preg: &CompiledRegex,
     mut eflags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut foundx: u_int = 0;
@@ -5834,7 +5834,7 @@ unsafe fn window_copy_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::cor
 }
 unsafe fn window_copy_search_back_overlap(
     gd: &grid,
-    preg: &CompiledRegex<'_>,
+    preg: &CompiledRegex,
     ppx: &mut u_int,
     psx: &mut u_int,
     ppy: &mut u_int,

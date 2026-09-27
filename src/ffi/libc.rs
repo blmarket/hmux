@@ -7,7 +7,6 @@ use crate::src::shared::abi::{
 use crate::src::shared::account::{group, passwd};
 use crate::src::shared::posix_io::{glob_t, stat};
 use crate::src::shared::posix_terminal::winsize;
-use crate::src::shared::regex::{regex_t, regmatch_t};
 use crate::src::shared::signal::{sigaction, sigset_t};
 use crate::src::shared::socket::{__CONST_SOCKADDR_ARG, __SOCKADDR_ARG};
 use crate::src::shared::stdio::FILE;
@@ -251,7 +250,6 @@ extern "C" {
     pub fn prctl(__option: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
     pub fn printf(__format: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
     pub static mut program_invocation_short_name: *mut ::core::ffi::c_char;
-    pub type re_dfa_t;
     pub fn readlink(
         __path: *const ::core::ffi::c_char,
         __buf: *mut ::core::ffi::c_char,
@@ -271,19 +269,6 @@ extern "C" {
         __message: *mut msghdr,
         __flags: ::core::ffi::c_int,
     ) -> ssize_t;
-    pub fn regcomp(
-        __preg: *mut regex_t,
-        __pattern: *const ::core::ffi::c_char,
-        __cflags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    pub fn regexec(
-        __preg: *const regex_t,
-        __String: *const ::core::ffi::c_char,
-        __nmatch: size_t,
-        __pmatch: *mut regmatch_t,
-        __eflags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    pub fn regfree(__preg: *mut regex_t);
     pub fn sendmsg(
         __fd: ::core::ffi::c_int,
         __message: *const msghdr,

@@ -1,13 +1,12 @@
-//! Borrowed ownership of POSIX regex state and bounded calls into libc.
+//! Owned POSIX regex state and bounded calls into libc.
 
-use super::libc::{regcomp, regexec, regfree};
-use crate::src::shared::regex::regex_t;
-pub use crate::src::shared::regex::regmatch_t as RegexMatch;
+pub use libc::regmatch_t as RegexMatch;
+use libc::{regcomp, regex_t, regexec, regfree};
 use std::ffi::{c_int, CStr};
 use std::mem::MaybeUninit;
 
-/// Keep the C object in its caller's stack slot while a compiled guard exists.
-/// Failed compilation never constructs a guard or calls `regfree`.
+/// Reusable compilation storage. Successful compilation transfers ownership
+/// to `CompiledRegex`; failed compilation never constructs an owner or calls `regfree`.
 pub struct RegexStorage(MaybeUninit<regex_t>);
 
 impl Default for RegexStorage {
@@ -17,21 +16,21 @@ impl Default for RegexStorage {
 }
 
 impl RegexStorage {
-    pub fn compile(&mut self, pattern: &CStr, flags: c_int) -> Result<CompiledRegex<'_>, c_int> {
+    pub fn compile(&mut self, pattern: &CStr, flags: c_int) -> Result<CompiledRegex, c_int> {
         self.0 = MaybeUninit::zeroed();
         let status = unsafe { regcomp(self.0.as_mut_ptr(), pattern.as_ptr(), flags) };
         if status != 0 {
             return Err(status);
         }
-        // regcomp initialized the C object, and this borrow prevents the stack
-        // storage from being moved, reused, or dropped before regfree.
-        Ok(CompiledRegex(unsafe { self.0.assume_init_mut() }))
+        // regcomp initialized the C object. Only the returned owner uses or
+        // frees it; this scratch storage is overwritten on the next compile.
+        Ok(CompiledRegex(unsafe { self.0.assume_init() }))
     }
 }
 
-pub struct CompiledRegex<'a>(&'a mut regex_t);
+pub struct CompiledRegex(regex_t);
 
-impl CompiledRegex<'_> {
+impl CompiledRegex {
     pub fn is_match(&self, text: &CStr) -> bool {
         self.execute_at(text, 0, &mut [], 0)
     }
@@ -57,7 +56,7 @@ impl CompiledRegex<'_> {
         };
         unsafe {
             regexec(
-                self.0,
+                &raw const self.0,
                 text.as_ptr().add(start),
                 matches.len(),
                 output,
@@ -67,15 +66,37 @@ impl CompiledRegex<'_> {
     }
 }
 
-impl Drop for CompiledRegex<'_> {
+impl Drop for CompiledRegex {
     fn drop(&mut self) {
-        unsafe { regfree(self.0) }
+        unsafe { regfree(&mut self.0) }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiled_owners_survive_storage_reuse_drop_and_moves() {
+        let (mut first, mut second) = {
+            let mut storage = RegexStorage::default();
+            let first = storage.compile(c"^(a)(b)?$", libc::REG_EXTENDED).unwrap();
+            let second = storage.compile(c"^z+$", libc::REG_EXTENDED).unwrap();
+            assert!(storage.compile(c"[", libc::REG_EXTENDED).is_err());
+            (first, second)
+        };
+
+        std::mem::swap(&mut first, &mut second);
+        assert!(first.is_match(c"zzz"));
+        assert!(!first.is_match(c"a"));
+        drop(first);
+
+        let mut matches = [RegexMatch { rm_so: 0, rm_eo: 0 }; 3];
+        assert!(second.execute_at(c"xa", 1, &mut matches, 0));
+        assert_eq!((matches[0].rm_so, matches[0].rm_eo), (0, 1));
+        assert_eq!((matches[1].rm_so, matches[1].rm_eo), (0, 1));
+        assert_eq!((matches[2].rm_so, matches[2].rm_eo), (-1, -1));
+    }
 
     #[test]
     fn storage_can_be_recompiled_after_success_and_failure() {
