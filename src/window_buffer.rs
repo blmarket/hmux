@@ -65,13 +65,20 @@ use std::rc::{Rc, Weak};
 pub struct window_buffer_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub fs: cmd_find_state,
-    pub data: *mut mode_tree_data,
+    pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
     pub editor: *mut spawn_editor_state,
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
     item_list: Vec<refbox::RefBox<window_buffer_itemdata>>,
 }
+
+impl window_buffer_modedata {
+    fn data_ptr(&self) -> *mut mode_tree_data {
+        self.data.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+    }
+}
+
 #[repr(C)]
 #[derive(Clone)]
 pub struct window_buffer_itemdata {
@@ -265,7 +272,7 @@ unsafe fn window_buffer_build(
                 _ => {
                     let text = format_expand_cstring(ft, (*data).format.as_ptr());
                     mode_tree_add(
-                        (*data).data,
+                        (*data).data_ptr(),
                         None,
                         ModeTreeItemData::Buffer(item_handle.clone()),
                         item.order as uint64_t,
@@ -472,7 +479,7 @@ unsafe fn window_buffer_init(
     data = Box::into_raw(Box::new(window_buffer_modedata {
         wp: window_pane_weak(wp),
         fs: Default::default(),
-        data: ::core::ptr::null_mut(),
+        data: None,
         editor: ::core::ptr::null_mut(),
         command,
         format,
@@ -482,7 +489,7 @@ unsafe fn window_buffer_init(
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
     cmd_find_copy_state(&raw mut (*data).fs, fs);
-    (*data).data = mode_tree_start(
+    (*data).data = Some(mode_tree_start(
         wp,
         args,
         Some(Box::new(move |sort, tag, filter| {
@@ -515,10 +522,10 @@ unsafe fn window_buffer_init(
         Some(window_buffer_help),
         &window_buffer_menu_items,
         &raw mut s,
-    );
-    mode_tree_zoom((*data).data, args);
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    ));
+    mode_tree_zoom((*data).data_ptr(), args);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     return s;
 }
 unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
@@ -529,13 +536,13 @@ unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
     if !(*data).editor.is_null() {
         spawn_cancel_editor((*data).editor);
     }
-    mode_tree_free((*data).data);
+    mode_tree_free((*data).data.take().expect("mode tree owner"));
     window_buffer_clear_items(&mut (*data).item_list);
     drop(Box::from_raw(data));
 }
 unsafe fn window_buffer_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
-    mode_tree_resize((*data).data, sx, sy);
+    mode_tree_resize((*data).data_ptr(), sx, sy);
 }
 unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
@@ -543,8 +550,8 @@ unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     window_buffer_draw_waiting(data);
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -552,11 +559,11 @@ unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     item: &ModeTreeItemSnapshot<window_buffer_itemdata>,
 ) {
-    if mode_tree_get_current(&*(*data).data)
+    if mode_tree_get_current(&*(*data).data_ptr())
         .is_buffer(item)
-        && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
+        && mode_tree_down((*data).data_ptr(), 0 as ::core::ffi::c_int) == 0
     {
-        mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
+        mode_tree_up((*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     if let Some(pb) = paste_get_name(&item.name) {
         paste_free(&pb);
@@ -731,8 +738,8 @@ unsafe fn window_buffer_edit_close_cb(
         wme = (*wp).modes.active;
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
             data = (*wme).data as *mut window_buffer_modedata;
-            mode_tree_build((*data).data);
-            mode_tree_draw((*data).data);
+            mode_tree_build((*data).data_ptr());
+            mode_tree_draw((*data).data_ptr());
             window_buffer_draw_waiting(data);
         }
         (*wp).flags |= PANE_REDRAW;
@@ -782,7 +789,7 @@ unsafe fn window_buffer_key(
 ) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
-    let mut mtd: *mut mode_tree_data = (*data).data;
+    let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let mut finished: ::core::ffi::c_int = 0;
     if paste_is_empty() != 0 {
         finished = 1 as ::core::ffi::c_int;
@@ -797,7 +804,7 @@ unsafe fn window_buffer_key(
         }
     } else {
         finished = mode_tree_key(
-            mtd,
+            (*data).data.as_ref().expect("mode tree owner").clone(),
             c,
             &raw mut key,
             m,

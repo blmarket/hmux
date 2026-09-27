@@ -60,7 +60,7 @@ use std::rc::{Rc, Weak};
 #[repr(C)]
 pub struct window_client_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
-    pub data: *mut mode_tree_data,
+    pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
     pub format: CString,
     pub key_format: CString,
     pub command: CString,
@@ -69,6 +69,13 @@ pub struct window_client_modedata {
     // The mode solely owns records; rows observe them weakly.
     pub items: Vec<refbox::RefBox<window_client_itemdata>>,
 }
+
+impl window_client_modedata {
+    fn data_ptr(&self) -> *mut mode_tree_data {
+        self.data.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+    }
+}
+
 #[derive(Clone)]
 pub struct window_client_itemdata {
     // Present until Drop transfers the last item-owned reference to the reactor.
@@ -303,7 +310,7 @@ mod tests {
                 let client_observer = Rc::downgrade(&client_owner);
                 let mut data = window_client_modedata {
                     wp: Weak::new(),
-                    data: std::ptr::null_mut(),
+                    data: None,
                     format: c"".to_owned(),
                     key_format: c"".to_owned(),
                     command: c"".to_owned(),
@@ -395,7 +402,7 @@ unsafe fn window_client_build(
                     ::core::ptr::null_mut::<window_pane>(),
                 );
                 mode_tree_add(
-                    (*data).data,
+                    (*data).data_ptr(),
                     None,
                     ModeTreeItemData::Client(item_handle.clone()),
                     c as uint64_t,
@@ -753,7 +760,7 @@ unsafe fn window_client_init(
     };
     data = Box::into_raw(Box::new(window_client_modedata {
         wp: Weak::new(),
-        data: ::core::ptr::null_mut(),
+        data: None,
         format: CStr::from_ptr(format).to_owned(),
         key_format: CStr::from_ptr(key_format).to_owned(),
         command: CStr::from_ptr(command).to_owned(),
@@ -768,7 +775,7 @@ unsafe fn window_client_init(
         (!args.is_null() && args_has(args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).preview_is_info =
         (!args.is_null() && args_has(args, 'i' as i32 as u_char) != 0) as ::core::ffi::c_int;
-    (*data).data = mode_tree_start(
+    (*data).data = Some(mode_tree_start(
         wp,
         args,
         Some(Box::new(move |sort, tag, filter| {
@@ -798,15 +805,15 @@ unsafe fn window_client_init(
         Some(window_client_help),
         &window_client_menu_items,
         &raw mut s,
-    );
-    mode_tree_zoom((*data).data, args);
+    ));
+    mode_tree_zoom((*data).data_ptr(), args);
     if (*data).preview_is_info != 0 {
-        mode_tree_view_name(&mut *(*data).data, Some(c"info"));
+        mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"info"));
     } else {
-        mode_tree_view_name(&mut *(*data).data, Some(c"preview"));
+        mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"preview"));
     }
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     return s;
 }
 unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
@@ -814,13 +821,13 @@ unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
     if data.is_null() {
         return;
     }
-    mode_tree_free((*data).data);
+    mode_tree_free((*data).data.take().expect("mode tree owner"));
     (*data).items.clear();
     drop(Box::from_raw(data));
 }
 unsafe fn window_client_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
-    mode_tree_resize((*data).data, sx, sy);
+    mode_tree_resize((*data).data_ptr(), sx, sy);
 }
 unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
@@ -828,8 +835,8 @@ unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_client_do_detach(
@@ -837,10 +844,10 @@ unsafe fn window_client_do_detach(
     item: &ModeTreeItemSnapshot<window_client_itemdata>,
     mut key: key_code,
 ) {
-    if mode_tree_get_current(&*(*data).data)
+    if mode_tree_get_current(&*(*data).data_ptr())
         .is_client(item)
     {
-        mode_tree_down((*data).data, 0 as ::core::ffi::c_int);
+        mode_tree_down((*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
         server_client_detach(crate::src::shared::rc::as_ptr(item.client()), MSG_DETACH);
@@ -863,10 +870,10 @@ unsafe fn window_client_key(
 ) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
-    let mut mtd: *mut mode_tree_data = (*data).data;
+    let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let mut finished: ::core::ffi::c_int = 0;
     finished = mode_tree_key(
-        mtd,
+        (*data).data.as_ref().expect("mode tree owner").clone(),
         c,
         &raw mut key,
         m,

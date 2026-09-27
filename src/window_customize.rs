@@ -117,7 +117,7 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
 pub struct window_customize_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
-    pub data: *mut mode_tree_data,
+    pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
     pub editor: *mut spawn_editor_state,
     pub format: CString,
     pub hide_global: ::core::ffi::c_int,
@@ -127,6 +127,13 @@ pub struct window_customize_modedata {
     pub fs: cmd_find_state,
     pub change: window_customize_change,
 }
+
+impl window_customize_modedata {
+    fn data_ptr(&self) -> *mut mode_tree_data {
+        self.data.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+    }
+}
+
 pub type window_customize_change = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_RESET: window_customize_change = 1;
 pub const WINDOW_CUSTOMIZE_UNSET: window_customize_change = 0;
@@ -1031,7 +1038,7 @@ unsafe fn window_customize_build_array(
             );
             let text = format_expand_cstring(ft, (*data).format.as_ptr());
             mode_tree_add(
-                (*data).data,
+                (*data).data_ptr(),
                 Some(top),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_get_tag(o, ai, oe),
@@ -1205,7 +1212,7 @@ unsafe fn window_customize_build_option(
     );
     let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
     let top = mode_tree_add(
-        (*data).data,
+        (*data).data_ptr(),
         Some(top),
         ModeTreeItemData::Customize(item_owner.clone()),
         window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
@@ -1251,7 +1258,7 @@ unsafe fn window_customize_build_options(
     let mut count: u_int = 0 as u_int;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let top = mode_tree_add(
-        (*data).data,
+        (*data).data_ptr(),
         None,
         ModeTreeItemData::None,
         window_customize_top_tag(group),
@@ -1317,7 +1324,7 @@ unsafe fn window_customize_build_options(
         }
     }
     if (*data).hide_default != 0 && count == 0 as u_int {
-        mode_tree_remove((*data).data, &top);
+        mode_tree_remove((*data).data_ptr(), &top);
     }
 }
 fn window_customize_key_detail(value: &[u8]) -> CString {
@@ -1338,7 +1345,7 @@ unsafe fn window_customize_build_keys(
     title_bytes.extend_from_slice((*kt).name.as_bytes());
     let title = CString::new(title_bytes).expect("key table name contains no NUL");
     let top = mode_tree_add(
-        (*data).data,
+        (*data).data_ptr(),
         None,
         ModeTreeItemData::None,
         window_customize_key_tag(kt.cast(), 0),
@@ -1411,7 +1418,7 @@ unsafe fn window_customize_build_keys(
             );
             let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
             let child = mode_tree_add(
-                (*data).data,
+                (*data).data_ptr(),
                 Some(&top),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 0),
@@ -1422,7 +1429,7 @@ unsafe fn window_customize_build_keys(
             let tmp = cmd_list_print_cstring(&*bd.cmdlist(), 0);
             let text = window_customize_key_detail(tmp.as_bytes());
             let mti = mode_tree_add(
-                (*data).data,
+                (*data).data_ptr(),
                 Some(&child),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 1),
@@ -1446,7 +1453,7 @@ unsafe fn window_customize_build_keys(
                 CString::new(Vec::new()).expect("empty key note")
             };
             let mti = mode_tree_add(
-                (*data).data,
+                (*data).data_ptr(),
                 Some(&child),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 2),
@@ -1464,7 +1471,7 @@ unsafe fn window_customize_build_keys(
             };
             let text = window_customize_key_detail(flag);
             let mti = mode_tree_add(
-                (*data).data,
+                (*data).data_ptr(),
                 Some(&child),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 3),
@@ -1480,7 +1487,7 @@ unsafe fn window_customize_build_keys(
     }
     format_free(ft);
     if (*data).hide_default != 0 && count == 0 as u_int {
-        mode_tree_remove((*data).data, &top);
+        mode_tree_remove((*data).data_ptr(), &top);
     }
 }
 unsafe fn window_customize_build_environment(
@@ -1505,7 +1512,7 @@ unsafe fn window_customize_build_environment(
         return;
     }
     let top = mode_tree_add(
-        (*data).data,
+        (*data).data_ptr(),
         None,
         ModeTreeItemData::None,
         window_customize_top_tag(group),
@@ -1625,7 +1632,7 @@ unsafe fn window_customize_build_environment(
             Cow::Borrowed((*envent).name.as_c_str())
         };
         mode_tree_add(
-            (*data).data,
+            (*data).data_ptr(),
             Some(&top),
             ModeTreeItemData::Customize(item_owner.clone()),
             (2_u64 << 62) | std::ptr::from_ref(envent) as uint64_t,
@@ -2931,7 +2938,7 @@ unsafe fn window_customize_init(
     data = crate::src::shared::rc::new(window_customize_modedata {
         wp: window_pane_weak(wp),
         dead: 0,
-        data: ::core::ptr::null_mut(),
+        data: None,
         editor: ::core::ptr::null_mut(),
         format,
         hide_global: 0,
@@ -2946,7 +2953,7 @@ unsafe fn window_customize_init(
     if args_has(args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
-    (*data).data = mode_tree_start(
+    (*data).data = Some(mode_tree_start(
         wp,
         args,
         Some(Box::new(move |_, tag, filter| {
@@ -2974,10 +2981,10 @@ unsafe fn window_customize_init(
         Some(window_customize_help),
         &window_customize_menu_items,
         &raw mut s,
-    );
-    mode_tree_zoom((*data).data, args);
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    ));
+    mode_tree_zoom((*data).data_ptr(), args);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     return s;
 }
 unsafe fn window_customize_destroy(data: *mut window_customize_modedata) {
@@ -2992,12 +2999,12 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     if !(*data).editor.is_null() {
         spawn_cancel_editor((*data).editor);
     }
-    mode_tree_free((*data).data);
+    mode_tree_free((*data).data.take().expect("mode tree owner"));
     window_customize_destroy(data);
 }
 unsafe fn window_customize_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
-    mode_tree_resize((*data).data, sx, sy);
+    mode_tree_resize((*data).data_ptr(), sx, sy);
 }
 unsafe fn window_customize_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
@@ -3145,8 +3152,8 @@ unsafe fn window_customize_set_option_callback(
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
-            mode_tree_build((*data).data);
-            mode_tree_draw((*data).data);
+            mode_tree_build((*data).data_ptr());
+            mode_tree_draw((*data).data_ptr());
             (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
@@ -3201,8 +3208,8 @@ unsafe fn window_customize_set_environment_callback(
         flags,
         |out| write_cstr(out, s),
     );
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -3295,7 +3302,7 @@ unsafe fn window_customize_set_environment(
     let (inputcb, freecb) =
         window_customize_prompt_callbacks(owner, window_customize_set_environment_callback);
     mode_tree_set_prompt(
-        (*data).data,
+        (*data).data.as_ref().expect("mode tree owner").clone(),
         c,
         &prompt,
         Some(&value),
@@ -3393,8 +3400,8 @@ unsafe fn window_customize_add_option_callback(
         hooks_add_event(name);
     }
     options_push_changes(name);
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -3427,7 +3434,7 @@ unsafe fn window_customize_add_option(
     let (inputcb, freecb) =
         window_customize_prompt_callbacks(owner, window_customize_add_option_callback);
     mode_tree_set_prompt(
-        (*data).data,
+        (*data).data.as_ref().expect("mode tree owner").clone(),
         c,
         prompt,
         Some(c"@"),
@@ -3505,8 +3512,8 @@ unsafe fn window_customize_add_environment_callback(
             write_cstr(out, value.offset(1 as ::core::ffi::c_int as isize))
         });
     }
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -3530,7 +3537,7 @@ unsafe fn window_customize_add_environment(
     let (inputcb, freecb) =
         window_customize_prompt_callbacks(owner, window_customize_add_environment_callback);
     mode_tree_set_prompt(
-        (*data).data,
+        (*data).data.as_ref().expect("mode tree owner").clone(),
         c,
         c"New environment: ",
         Some(c""),
@@ -3616,8 +3623,8 @@ unsafe fn window_customize_edit_close_cb(
     }
     match current_block {
         1608152415753874203 => {
-            mode_tree_build((*data).data);
-            mode_tree_draw((*data).data);
+            mode_tree_build((*data).data_ptr());
+            mode_tree_draw((*data).data_ptr());
             (*wp).flags |= PANE_REDRAW;
         }
         _ => {}
@@ -3666,7 +3673,7 @@ unsafe fn window_customize_start_edit(
     } else if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        let name = mode_tree_get_current_name(&*(*data).data);
+        let name = mode_tree_get_current_name(&*(*data).data_ptr());
         let Some(table) = window_customize_get_key_table(item) else {
             return;
         };
@@ -3893,7 +3900,7 @@ unsafe fn window_customize_set_option(
         let (inputcb, freecb) =
             window_customize_prompt_callbacks(owner, window_customize_set_option_callback);
         mode_tree_set_prompt(
-            (*data).data,
+            (*data).data.as_ref().expect("mode tree owner").clone(),
             c,
             &prompt,
             Some(&value),
@@ -3977,8 +3984,8 @@ unsafe fn window_customize_set_array_key_callback(
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
-        mode_tree_build((*data).data);
-        mode_tree_draw((*data).data);
+        mode_tree_build((*data).data_ptr());
+        mode_tree_draw((*data).data_ptr());
         (*mode_pane).flags |= PANE_REDRAW;
         return PROMPT_CLOSE;
     };
@@ -4031,7 +4038,7 @@ unsafe fn window_customize_set_array_key(
     let (inputcb, freecb) =
         window_customize_prompt_callbacks(owner, window_customize_set_array_key_callback);
     mode_tree_set_prompt(
-        (*data).data,
+        (*data).data.as_ref().expect("mode tree owner").clone(),
         c,
         &prompt,
         item.array_key.as_deref(),
@@ -4069,10 +4076,10 @@ unsafe fn window_customize_unset_environment(
     {
         return;
     }
-    if mode_tree_get_current(&*(*data).data)
+    if mode_tree_get_current(&*(*data).data_ptr())
         .is_customize(item)
     {
-        mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
+        mode_tree_up((*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     environ_unset(
         env,
@@ -4099,10 +4106,10 @@ unsafe fn window_customize_unset_option(
         return;
     }
     if !item.array_key.is_none()
-        && mode_tree_get_current(&*(*data).data)
+        && mode_tree_get_current(&*(*data).data_ptr())
             .is_customize(item)
     {
-        mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
+        mode_tree_up((*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     options_remove_or_default(
         o,
@@ -4193,8 +4200,8 @@ unsafe fn window_customize_set_command_callback(
                 return PROMPT_CLOSE;
             };
             bd.commands = pr.cmdlist.take().expect("successful command parse");
-            mode_tree_build((*data).data);
-            mode_tree_draw((*data).data);
+            mode_tree_build((*data).data_ptr());
+            mode_tree_draw((*data).data_ptr());
             (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
@@ -4222,8 +4229,8 @@ unsafe fn window_customize_set_note_callback(
     let kt = crate::src::shared::rc::as_ptr(&table);
     let bd = (*kt).key_bindings.get_mut(item.key).expect("live binding");
     key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -4246,7 +4253,7 @@ unsafe fn window_customize_set_key(
     };
     let kt = crate::src::shared::rc::as_ptr(&table);
     let bd = (*kt).key_bindings.get_mut(item.key).expect("live binding");
-    let s = mode_tree_get_current_name(&*(*data).data);
+    let s = mode_tree_get_current_name(&*(*data).data_ptr());
     if s.as_ref() == c"Repeat" {
         bd.flags ^= KEY_BINDING_REPEAT;
     } else if s.as_ref() == c"Command" {
@@ -4268,7 +4275,7 @@ unsafe fn window_customize_set_key(
         let (inputcb, freecb) =
             window_customize_prompt_callbacks(owner, window_customize_set_command_callback);
         mode_tree_set_prompt(
-            (*data).data,
+            (*data).data.as_ref().expect("mode tree owner").clone(),
             c,
             &prompt,
             Some(&value),
@@ -4296,7 +4303,7 @@ unsafe fn window_customize_set_key(
         let (inputcb, freecb) =
             window_customize_prompt_callbacks(owner, window_customize_set_note_callback);
         mode_tree_set_prompt(
-            (*data).data,
+            (*data).data.as_ref().expect("mode tree owner").clone(),
             c,
             &prompt,
             Some(&note),
@@ -4411,8 +4418,8 @@ unsafe fn window_customize_add_key_callback(
                 0 as ::core::ffi::c_int,
                 pr.take_cmdlist(),
             );
-            mode_tree_build((*data).data);
-            mode_tree_draw((*data).data);
+            mode_tree_build((*data).data_ptr());
+            mode_tree_draw((*data).data_ptr());
             (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
@@ -4441,7 +4448,7 @@ unsafe fn window_customize_add_key(
     let (inputcb, freecb) =
         window_customize_prompt_callbacks(owner, window_customize_add_key_callback);
     mode_tree_set_prompt(
-        (*data).data,
+        (*data).data.as_ref().expect("mode tree owner").clone(),
         c,
         &prompt,
         Some(c""),
@@ -4459,10 +4466,10 @@ unsafe fn window_customize_unset_key(
         return;
     };
     let name = (&*crate::src::shared::rc::as_ptr(&table)).name.clone();
-    if mode_tree_get_current(&*(*data).data)
+    if mode_tree_get_current(&*(*data).data_ptr())
         .is_customize(item)
     {
-        mode_tree_up((*data).data, 0);
+        mode_tree_up((*data).data_ptr(), 0);
     }
     key_bindings_remove(name.as_ptr(), item.key);
 }
@@ -4482,10 +4489,10 @@ unsafe fn window_customize_reset_key(
     let has_default = default.is_some();
     let name = table_ref.name.clone();
     if !has_default
-        && mode_tree_get_current(&*(*data).data)
+        && mode_tree_get_current(&*(*data).data_ptr())
             .is_customize(item)
     {
-        mode_tree_up((*data).data, 0);
+        mode_tree_up((*data).data_ptr(), 0);
     }
     key_bindings_reset(name.as_ptr(), item.key);
 }
@@ -4584,7 +4591,7 @@ unsafe fn window_customize_change_current_callback(
     {
         return PROMPT_CLOSE;
     }
-    let item_owner = mode_tree_get_current(&*(*data).data);
+    let item_owner = mode_tree_get_current(&*(*data).data_ptr());
     let Some(item) = item_owner.as_customize() else {
         return PROMPT_CLOSE;
     };
@@ -4635,8 +4642,8 @@ unsafe fn window_customize_change_current_callback(
     {
         options_push_changes(name.as_ref().expect("option name was copied").as_ptr());
     }
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -4684,7 +4691,7 @@ unsafe fn window_customize_change_tagged_callback(
         return PROMPT_CLOSE;
     }
     mode_tree_each_tagged(
-        (*data).data,
+        (*data).data_ptr(),
         |row, _, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
             window_customize_change_each(
@@ -4696,8 +4703,8 @@ unsafe fn window_customize_change_tagged_callback(
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         0 as ::core::ffi::c_int,
     );
-    mode_tree_build((*data).data);
-    mode_tree_draw((*data).data);
+    mode_tree_build((*data).data_ptr());
+    mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -4718,7 +4725,7 @@ unsafe fn window_customize_add_current(
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let name = mode_tree_get_current_name(&*(*data).data);
+    let name = mode_tree_get_current_name(&*(*data).data_ptr());
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
@@ -4822,14 +4829,14 @@ unsafe fn window_customize_key(
         }
     } else {
         finished = mode_tree_key(
-            (*data).data,
+            (*data).data.as_ref().expect("mode tree owner").clone(),
             c,
             &raw mut key,
             m,
             ::core::ptr::null_mut::<u_int>(),
             ::core::ptr::null_mut::<u_int>(),
         );
-        let item_owner = mode_tree_get_current(&*(*data).data);
+        let item_owner = mode_tree_get_current(&*(*data).data_ptr());
         let item = item_owner.as_customize();
         match key {
             101 => {
@@ -4868,9 +4875,9 @@ unsafe fn window_customize_key(
                                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         );
                     }
-                    mode_tree_build((*data).data);
+                    mode_tree_build((*data).data_ptr());
                 } else if window_customize_add_current(c, data) != 0 {
-                    mode_tree_build((*data).data);
+                    mode_tree_build((*data).data_ptr());
                 }
             }
             119 => {
@@ -4888,7 +4895,7 @@ unsafe fn window_customize_key(
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     );
-                    mode_tree_build((*data).data);
+                    mode_tree_build((*data).data_ptr());
                 }
             }
             83 | 87 => {
@@ -4912,7 +4919,7 @@ unsafe fn window_customize_key(
                                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         );
                     }
-                    mode_tree_build((*data).data);
+                    mode_tree_build((*data).data_ptr());
                 }
             }
             100 => {
@@ -4941,7 +4948,7 @@ unsafe fn window_customize_key(
                     );
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
-                        (*data).data,
+                        (*data).data.as_ref().expect("mode tree owner").clone(),
                         c,
                         &reset_prompt,
                         Some(c""),
@@ -4953,7 +4960,7 @@ unsafe fn window_customize_key(
                 }
             }
             68 => {
-                tagged = mode_tree_count_tagged((*data).data);
+                tagged = mode_tree_count_tagged((*data).data_ptr());
                 if !(tagged == 0 as u_int) {
                     let reset_prompt = CString::new(format!("Reset {tagged} tagged to default? "))
                         .expect("formatted number has no NUL");
@@ -4966,7 +4973,7 @@ unsafe fn window_customize_key(
                     );
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
-                        (*data).data,
+                        (*data).data.as_ref().expect("mode tree owner").clone(),
                         c,
                         &reset_prompt,
                         Some(c""),
@@ -5014,7 +5021,7 @@ unsafe fn window_customize_key(
                     );
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
-                        (*data).data,
+                        (*data).data.as_ref().expect("mode tree owner").clone(),
                         c,
                         &prompt,
                         Some(c""),
@@ -5026,7 +5033,7 @@ unsafe fn window_customize_key(
                 }
             }
             85 => {
-                tagged = mode_tree_count_tagged((*data).data);
+                tagged = mode_tree_count_tagged((*data).data_ptr());
                 if !(tagged == 0 as u_int) {
                     let prompt = CString::new(format!("Unset {tagged} tagged? ")).unwrap();
                     let owner = crate::src::shared::rc::downgrade(data)
@@ -5038,7 +5045,7 @@ unsafe fn window_customize_key(
                     );
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
-                        (*data).data,
+                        (*data).data.as_ref().expect("mode tree owner").clone(),
                         c,
                         &prompt,
                         Some(c""),
@@ -5051,11 +5058,11 @@ unsafe fn window_customize_key(
             }
             72 => {
                 (*data).hide_global = ((*data).hide_global == 0) as ::core::ffi::c_int;
-                mode_tree_build((*data).data);
+                mode_tree_build((*data).data_ptr());
             }
             67 => {
                 (*data).hide_default = ((*data).hide_default == 0) as ::core::ffi::c_int;
-                mode_tree_build((*data).data);
+                mode_tree_build((*data).data_ptr());
             }
             _ => {}
         }
@@ -5063,7 +5070,7 @@ unsafe fn window_customize_key(
     if finished != 0 {
         window_pane_reset_mode(wp);
     } else {
-        mode_tree_draw((*data).data);
+        mode_tree_draw((*data).data_ptr());
         window_customize_draw_waiting(data);
         (*wp).flags |= PANE_REDRAW;
     };
@@ -5126,7 +5133,7 @@ mod item_owner_tests {
             let data = crate::src::shared::rc::new(window_customize_modedata {
                 wp: Weak::new(),
                 dead: 0,
-                data: std::ptr::null_mut(),
+                data: None,
                 editor: std::ptr::null_mut(),
                 format: CString::new(Vec::new()).unwrap(),
                 hide_global: 0,

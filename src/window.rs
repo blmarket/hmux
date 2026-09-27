@@ -5018,16 +5018,17 @@ mod zoom_teardown_tests {
         unsafe {
             let w = zoomed_window();
             let pane = (*w).active;
-            let tree = rc::new(crate::src::shared::mode_tree::mode_tree_data {
+            let tree_owner = std::rc::Rc::new(std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
                 wp: window_pane_weak(pane),
                 zoomed: 0,
                 ..Default::default()
-            });
+            }));
+            let tree = rc::as_ptr(&tree_owner);
             let observed = rc::downgrade(tree);
             (*pane).flags |= PANE_DESTROYED;
             assert!(window_pane_upgrade(&(*tree).wp).is_none());
 
-            crate::src::mode_tree::mode_tree_free(tree);
+            crate::src::mode_tree::mode_tree_free(tree_owner);
 
             assert!(observed.upgrade().is_none());
             assert_eq!((*w).flags & WINDOW_ZOOMED, 0);
