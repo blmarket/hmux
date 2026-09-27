@@ -17,7 +17,7 @@ pub static mut cmd_unbind_key_entry: cmd_entry = {
         name: c"unbind-key",
         alias: Some(c"unbind"),
         args: args_parse {
-            template: b"anqT:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"anqT:",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

@@ -217,7 +217,7 @@ pub type args_parse_cb = Option<fn(&mut args, u_int) -> Result<args_parse_type, 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args_parse {
-    pub template: *const ::core::ffi::c_char,
+    pub template: &'static CStr,
     pub lower: ::core::ffi::c_int,
     pub upper: ::core::ffi::c_int,
     pub cb: args_parse_cb,

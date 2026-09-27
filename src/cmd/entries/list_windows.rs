@@ -33,7 +33,7 @@ pub static mut cmd_list_windows_entry: cmd_entry = {
         name: c"list-windows",
         alias: Some(c"lsw"),
         args: args_parse {
-            template: b"aF:f:O:rt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aF:f:O:rt:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

@@ -28,7 +28,7 @@ pub static mut cmd_swap_pane_entry: cmd_entry = {
         name: c"swap-pane",
         alias: Some(c"swapp"),
         args: args_parse {
-            template: b"dDs:t:UZ\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"dDs:t:UZ",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

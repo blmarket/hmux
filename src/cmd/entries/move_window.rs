@@ -21,7 +21,7 @@ pub static mut cmd_move_window_entry: cmd_entry = {
         name: c"move-window",
         alias: Some(c"movew"),
         args: args_parse {
-            template: b"abdkrs:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"abdkrs:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -46,7 +46,7 @@ pub static mut cmd_link_window_entry: cmd_entry = {
         name: c"link-window",
         alias: Some(c"linkw"),
         args: args_parse {
-            template: b"abdks:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"abdks:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

@@ -40,7 +40,7 @@ pub static mut cmd_if_shell_entry: cmd_entry = {
         name: c"if-shell",
         alias: Some(c"if"),
         args: args_parse {
-            template: b"bFt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"bFt:",
             lower: 2 as ::core::ffi::c_int,
             upper: 3 as ::core::ffi::c_int,
             cb: Some(cmd_if_shell_args_parse),

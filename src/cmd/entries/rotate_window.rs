@@ -22,7 +22,7 @@ pub static mut cmd_rotate_window_entry: cmd_entry = {
         name: c"rotate-window",
         alias: Some(c"rotatew"),
         args: args_parse {
-            template: b"Dt:UZ\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"Dt:UZ",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

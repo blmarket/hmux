@@ -21,7 +21,7 @@ pub static mut cmd_detach_client_entry: cmd_entry = {
         name: c"detach-client",
         alias: Some(c"detach"),
         args: args_parse {
-            template: b"aE:s:t:P\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aE:s:t:P",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -46,7 +46,7 @@ pub static mut cmd_suspend_client_entry: cmd_entry = {
         name: c"suspend-client",
         alias: Some(c"suspendc"),
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

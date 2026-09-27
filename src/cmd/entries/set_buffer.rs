@@ -19,7 +19,7 @@ pub static mut cmd_set_buffer_entry: cmd_entry = {
         name: c"set-buffer",
         alias: Some(c"setb"),
         args: args_parse {
-            template: b"ab:t:n:w\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"ab:t:n:w",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
@@ -44,7 +44,7 @@ pub static mut cmd_delete_buffer_entry: cmd_entry = {
         name: c"delete-buffer",
         alias: Some(c"deleteb"),
         args: args_parse {
-            template: b"b:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"b:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

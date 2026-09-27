@@ -51,8 +51,7 @@ pub static mut cmd_display_menu_entry: cmd_entry = {
         name: c"display-menu",
         alias: Some(c"menu"),
         args: args_parse {
-            template: b"b:c:C:H:s:S:MOt:T:x:y:\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"b:c:C:H:s:S:MOt:T:x:y:",
             lower: 1 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: Some(
@@ -82,8 +81,7 @@ pub static mut cmd_display_popup_entry: cmd_entry = {
         name: c"display-popup",
         alias: Some(c"popup"),
         args: args_parse {
-            template: b"Bb:Cc:d:e:Eh:kNs:S:t:T:w:x:y:\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"Bb:Cc:d:e:Eh:kNs:S:t:T:w:x:y:",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,

@@ -51,7 +51,7 @@ pub static mut cmd_show_options_entry: cmd_entry = {
         name: c"show-options",
         alias: Some(c"show"),
         args: args_parse {
-            template: b"AgF:Hpqst:vw\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"AgF:Hpqst:vw",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
@@ -76,7 +76,7 @@ pub static mut cmd_show_window_options_entry: cmd_entry = {
         name: c"show-window-options",
         alias: Some(c"showw"),
         args: args_parse {
-            template: b"F:gvt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"F:gvt:",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
@@ -101,7 +101,7 @@ pub static mut cmd_show_hooks_entry: cmd_entry = {
         name: c"show-hooks",
         alias: None,
         args: args_parse {
-            template: b"BF:gpt:w\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"BF:gpt:w",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

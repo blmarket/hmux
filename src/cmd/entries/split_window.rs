@@ -69,8 +69,7 @@ pub static mut cmd_new_pane_entry: cmd_entry = {
         name: c"new-pane",
         alias: Some(c"newp"),
         args: args_parse {
-            template: b"AbB:Cc:Dde:EfF:hIkl:KLMm:Op:PR:s:S:t:T:vWx:X:y:Y:Z\0"
-                as *const u8 as *const ::core::ffi::c_char,
+            template: c"AbB:Cc:Dde:EfF:hIkl:KLMm:Op:PR:s:S:t:T:vWx:X:y:Y:Z",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
@@ -98,8 +97,7 @@ pub static mut cmd_split_window_entry: cmd_entry = {
         name: c"split-window",
         alias: Some(c"splitw"),
         args: args_parse {
-            template: b"bB:c:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"bB:c:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,

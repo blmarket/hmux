@@ -17,7 +17,7 @@ pub static mut cmd_show_prompt_history_entry: cmd_entry = {
         name: c"show-prompt-history",
         alias: Some(c"showphist"),
         args: args_parse {
-            template: b"T:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"T:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -44,7 +44,7 @@ pub static mut cmd_clear_prompt_history_entry: cmd_entry = {
         name: c"clear-prompt-history",
         alias: Some(c"clearphist"),
         args: args_parse {
-            template: b"T:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"T:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

@@ -25,7 +25,7 @@ pub static mut cmd_server_access_entry: cmd_entry = {
         name: c"server-access",
         alias: None,
         args: args_parse {
-            template: b"adglrw\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"adglrw",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

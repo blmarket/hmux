@@ -19,7 +19,7 @@ pub static mut cmd_swap_window_entry: cmd_entry = {
         name: c"swap-window",
         alias: Some(c"swapw"),
         args: args_parse {
-            template: b"ds:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"ds:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

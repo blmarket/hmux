@@ -18,7 +18,7 @@ pub static mut cmd_bind_key_entry: cmd_entry = {
         name: c"bind-key",
         alias: Some(c"bind"),
         args: args_parse {
-            template: b"nrN:T:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"nrN:T:",
             lower: 1 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: Some(cmd_bind_key_args_parse),

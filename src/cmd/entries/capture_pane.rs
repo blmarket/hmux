@@ -42,7 +42,7 @@ pub static mut cmd_capture_pane_entry: cmd_entry = {
         name: c"capture-pane",
         alias: Some(c"capturep"),
         args: args_parse {
-            template: b"ab:CeE:FHIJLMNpPqRS:Tt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"ab:CeE:FHIJLMNpPqRS:Tt:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -68,7 +68,7 @@ pub static mut cmd_clear_history_entry: cmd_entry = {
         name: c"clear-history",
         alias: Some(c"clearhist"),
         args: args_parse {
-            template: b"Ht:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"Ht:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

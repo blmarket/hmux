@@ -24,7 +24,7 @@ pub static mut cmd_kill_window_entry: cmd_entry = {
         name: c"kill-window",
         alias: Some(c"killw"),
         args: args_parse {
-            template: b"af:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"af:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -49,7 +49,7 @@ pub static mut cmd_unlink_window_entry: cmd_entry = {
         name: c"unlink-window",
         alias: Some(c"unlinkw"),
         args: args_parse {
-            template: b"kt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"kt:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

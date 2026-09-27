@@ -20,7 +20,7 @@ pub static mut cmd_select_window_entry: cmd_entry = {
         name: c"select-window",
         alias: Some(c"selectw"),
         args: args_parse {
-            template: b"lnpTt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"lnpTt:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -45,7 +45,7 @@ pub static mut cmd_next_window_entry: cmd_entry = {
         name: c"next-window",
         alias: Some(c"next"),
         args: args_parse {
-            template: b"at:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"at:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -70,7 +70,7 @@ pub static mut cmd_previous_window_entry: cmd_entry = {
         name: c"previous-window",
         alias: Some(c"prev"),
         args: args_parse {
-            template: b"at:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"at:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -95,7 +95,7 @@ pub static mut cmd_last_window_entry: cmd_entry = {
         name: c"last-window",
         alias: Some(c"last"),
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

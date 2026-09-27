@@ -33,7 +33,7 @@ pub static mut cmd_confirm_before_entry: cmd_entry = {
         name: c"confirm-before",
         alias: Some(c"confirm"),
         args: args_parse {
-            template: b"bc:p:t:y\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"bc:p:t:y",
             lower: 1 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_confirm_before_args_parse),

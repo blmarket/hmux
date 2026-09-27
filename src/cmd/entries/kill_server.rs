@@ -10,7 +10,7 @@ pub static mut cmd_kill_server_entry: cmd_entry = {
         name: c"kill-server",
         alias: None,
         args: args_parse {
-            template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -35,7 +35,7 @@ pub static mut cmd_start_server_entry: cmd_entry = {
         name: c"start-server",
         alias: Some(c"start"),
         args: args_parse {
-            template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

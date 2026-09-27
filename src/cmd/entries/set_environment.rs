@@ -18,7 +18,7 @@ pub static mut cmd_set_environment_entry: cmd_entry = {
         name: c"set-environment",
         alias: Some(c"setenv"),
         args: args_parse {
-            template: b"Fhgrt:u\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"Fhgrt:u",
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: None,

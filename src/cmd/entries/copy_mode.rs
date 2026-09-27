@@ -24,7 +24,7 @@ pub static mut cmd_copy_mode_entry: cmd_entry = {
         name: c"copy-mode",
         alias: None,
         args: args_parse {
-            template: b"dekHMqSs:t:u\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"dekHMqSs:t:u",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -49,7 +49,7 @@ pub static mut cmd_clock_mode_entry: cmd_entry = {
         name: c"clock-mode",
         alias: None,
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

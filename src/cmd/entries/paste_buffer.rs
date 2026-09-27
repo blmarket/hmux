@@ -21,7 +21,7 @@ pub static mut cmd_paste_buffer_entry: cmd_entry = {
         name: c"paste-buffer",
         alias: Some(c"pasteb"),
         args: args_parse {
-            template: b"db:prSs:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"db:prSs:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

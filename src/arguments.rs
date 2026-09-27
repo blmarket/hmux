@@ -210,7 +210,7 @@ unsafe fn args_parse_flags(
     if string == b"--" {
         return Ok(true);
     }
-    let template = CStr::from_ptr(parse.template).to_bytes();
+    let template = parse.template.to_bytes();
     for (offset, &flag) in string.iter().enumerate().skip(1) {
         if flag == b'?' {
             return Err(ArgsParseError::Usage);
@@ -577,7 +577,7 @@ mod ownership_tests {
     fn parser_slices_preserve_optional_values_and_flag_boundaries() {
         unsafe {
             let spec = args_parse {
-                template: c"ao::r:".as_ptr(),
+                template: c"ao::r:",
                 lower: 0,
                 upper: -1,
                 cb: None,
@@ -651,7 +651,7 @@ mod ownership_tests {
                 args_value::string(c"extra".to_owned()),
             ];
             let mut spec = args_parse {
-                template: c"".as_ptr(),
+                template: c"",
                 lower: 0,
                 upper: 1,
                 cb: Some(allow_commands),

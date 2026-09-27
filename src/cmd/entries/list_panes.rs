@@ -28,7 +28,7 @@ pub static mut cmd_list_panes_entry: cmd_entry = {
         name: c"list-panes",
         alias: Some(c"lsp"),
         args: args_parse {
-            template: b"aF:f:O:rst:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aF:f:O:rst:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

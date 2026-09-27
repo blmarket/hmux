@@ -42,8 +42,7 @@ pub static mut cmd_resize_pane_entry: cmd_entry = {
         name: c"resize-pane",
         alias: Some(c"resizep"),
         args: args_parse {
-            template: b"D::L::MR::Tt:U::x:y:Z\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"D::L::MR::Tt:U::x:y:Z",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

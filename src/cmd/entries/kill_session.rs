@@ -28,7 +28,7 @@ pub static mut cmd_kill_session_entry: cmd_entry = {
         name: c"kill-session",
         alias: None,
         args: args_parse {
-            template: b"aCgf:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aCgf:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

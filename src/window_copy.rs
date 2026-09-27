@@ -3661,7 +3661,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3675,7 +3675,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3689,7 +3689,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3703,7 +3703,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3717,7 +3717,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3731,7 +3731,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3745,7 +3745,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3759,7 +3759,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3773,7 +3773,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3787,7 +3787,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3802,7 +3802,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3816,7 +3816,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3830,7 +3830,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3844,7 +3844,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3858,7 +3858,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3872,7 +3872,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3886,7 +3886,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3900,7 +3900,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 2 as ::core::ffi::c_int,
                 cb: None,
@@ -3914,7 +3914,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3928,7 +3928,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3942,7 +3942,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"CP\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -3956,7 +3956,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3970,7 +3970,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3984,7 +3984,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -3998,7 +3998,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4012,7 +4012,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4026,7 +4026,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4040,7 +4040,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4054,7 +4054,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4068,7 +4068,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4082,7 +4082,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4096,7 +4096,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4110,7 +4110,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4124,7 +4124,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4138,7 +4138,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4152,7 +4152,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4166,7 +4166,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4180,7 +4180,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4194,7 +4194,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4208,7 +4208,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4222,7 +4222,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4236,7 +4236,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4250,7 +4250,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4264,7 +4264,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4278,7 +4278,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4292,7 +4292,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"o\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"o",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4306,7 +4306,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"o\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"o",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4320,7 +4320,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4334,7 +4334,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4348,7 +4348,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4362,7 +4362,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4376,7 +4376,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4390,7 +4390,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4404,7 +4404,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4418,7 +4418,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4432,7 +4432,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4446,7 +4446,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4460,7 +4460,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4474,7 +4474,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4488,7 +4488,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4502,7 +4502,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4516,7 +4516,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4530,7 +4530,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4544,7 +4544,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4558,7 +4558,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4572,7 +4572,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4586,7 +4586,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4600,7 +4600,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4614,7 +4614,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4628,7 +4628,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4642,7 +4642,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4656,7 +4656,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4670,7 +4670,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4684,7 +4684,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4698,7 +4698,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4712,7 +4712,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4726,7 +4726,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4740,7 +4740,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4754,7 +4754,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4768,7 +4768,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4782,7 +4782,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"e\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"e",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4796,7 +4796,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4810,7 +4810,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4824,7 +4824,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4838,7 +4838,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4852,7 +4852,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4866,7 +4866,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4880,7 +4880,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4894,7 +4894,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4908,7 +4908,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 1 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4922,7 +4922,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4936,7 +4936,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4950,7 +4950,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4964,7 +4964,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 1 as ::core::ffi::c_int,
                 cb: None,
@@ -4978,7 +4978,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -4992,7 +4992,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -5006,7 +5006,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -5020,7 +5020,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,
@@ -5034,7 +5034,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             minargs: 0,
             maxargs: 0,
             args: args_parse {
-                template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+                template: c"",
                 lower: 0 as ::core::ffi::c_int,
                 upper: 0 as ::core::ffi::c_int,
                 cb: None,

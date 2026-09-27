@@ -14,7 +14,7 @@ pub static mut cmd_lock_server_entry: cmd_entry = {
         name: c"lock-server",
         alias: Some(c"lock"),
         args: args_parse {
-            template: b"\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -39,7 +39,7 @@ pub static mut cmd_lock_session_entry: cmd_entry = {
         name: c"lock-session",
         alias: Some(c"locks"),
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -64,7 +64,7 @@ pub static mut cmd_lock_client_entry: cmd_entry = {
         name: c"lock-client",
         alias: Some(c"lockc"),
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

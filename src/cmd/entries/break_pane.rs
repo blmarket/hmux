@@ -57,8 +57,7 @@ pub static mut cmd_break_pane_entry: cmd_entry = {
         name: c"break-pane",
         alias: Some(c"breakp"),
         args: args_parse {
-            template: b"abdPF:n:s:t:Wx:X:y:Y:\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"abdPF:n:s:t:Wx:X:y:Y:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

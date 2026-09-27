@@ -48,7 +48,7 @@ pub static mut cmd_list_keys_entry: cmd_entry = {
         name: c"list-keys",
         alias: Some(c"lsk"),
         args: args_parse {
-            template: b"1aF:NO:P:rT:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"1aF:NO:P:rT:",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

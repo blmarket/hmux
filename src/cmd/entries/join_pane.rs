@@ -52,7 +52,7 @@ pub static mut cmd_join_pane_entry: cmd_entry = {
         name: c"join-pane",
         alias: Some(c"joinp"),
         args: args_parse {
-            template: b"bdfhvp:l:s:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"bdfhvp:l:s:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -77,8 +77,7 @@ pub static mut cmd_move_pane_entry: cmd_entry = {
         name: c"move-pane",
         alias: Some(c"movep"),
         args: args_parse {
-            template: b"bdD::fhMvl:L::P:R::s:t:U::X:Y:z:\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"bdD::fhMvl:L::P:R::s:t:U::X:Y:z:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

@@ -36,8 +36,7 @@ pub static mut cmd_refresh_client_entry: cmd_entry = {
         name: c"refresh-client",
         alias: Some(c"refresh"),
         args: args_parse {
-            template: b"A:B:cC:Df:r:F:lLRSt:U\0" as *const u8
-                as *const ::core::ffi::c_char,
+            template: c"A:B:cC:Df:r:F:lLRSt:U",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

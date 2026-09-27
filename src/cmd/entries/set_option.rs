@@ -41,7 +41,7 @@ pub static mut cmd_set_option_entry: cmd_entry = {
         name: c"set-option",
         alias: Some(c"set"),
         args: args_parse {
-            template: b"aFgopqst:uUw\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aFgopqst:uUw",
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: Some(cmd_set_option_args_parse),
@@ -66,7 +66,7 @@ pub static mut cmd_set_window_option_entry: cmd_entry = {
         name: c"set-window-option",
         alias: Some(c"setw"),
         args: args_parse {
-            template: b"aFgoqt:u\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aFgoqt:u",
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: Some(cmd_set_option_args_parse),
@@ -91,7 +91,7 @@ pub static mut cmd_set_hook_entry: cmd_entry = {
         name: c"set-hook",
         alias: None,
         args: args_parse {
-            template: b"agpERTt:uB:w\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"agpERTt:uB:w",
             lower: 0 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: Some(cmd_set_option_args_parse),

@@ -24,7 +24,7 @@ pub static mut cmd_kill_pane_entry: cmd_entry = {
         name: c"kill-pane",
         alias: Some(c"killp"),
         args: args_parse {
-            template: b"af:t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"af:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

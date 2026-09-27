@@ -38,7 +38,7 @@ pub static mut cmd_attach_session_entry: cmd_entry = {
         name: c"attach-session",
         alias: Some(c"attach"),
         args: args_parse {
-            template: b"c:dEf:rt:x\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"c:dEf:rt:x",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

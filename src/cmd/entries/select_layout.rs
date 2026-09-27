@@ -27,7 +27,7 @@ pub static mut cmd_select_layout_entry: cmd_entry = {
         name: c"select-layout",
         alias: Some(c"selectl"),
         args: args_parse {
-            template: b"Enopt:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"Enopt:",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
@@ -52,7 +52,7 @@ pub static mut cmd_next_layout_entry: cmd_entry = {
         name: c"next-layout",
         alias: Some(c"nextl"),
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -77,7 +77,7 @@ pub static mut cmd_previous_layout_entry: cmd_entry = {
         name: c"previous-layout",
         alias: Some(c"prevl"),
         args: args_parse {
-            template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

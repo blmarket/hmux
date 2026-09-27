@@ -26,7 +26,7 @@ pub static mut cmd_list_buffers_entry: cmd_entry = {
         name: c"list-buffers",
         alias: Some(c"lsb"),
         args: args_parse {
-            template: b"F:f:O:r\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"F:f:O:r",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

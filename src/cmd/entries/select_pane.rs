@@ -48,7 +48,7 @@ pub static mut cmd_select_pane_entry: cmd_entry = {
         name: c"select-pane",
         alias: Some(c"selectp"),
         args: args_parse {
-            template: b"DdegLlMmP:RT:t:UZ\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"DdegLlMmP:RT:t:UZ",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
@@ -73,7 +73,7 @@ pub static mut cmd_last_pane_entry: cmd_entry = {
         name: c"last-pane",
         alias: Some(c"lastp"),
         args: args_parse {
-            template: b"det:Z\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"det:Z",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,

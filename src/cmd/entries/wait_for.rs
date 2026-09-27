@@ -50,7 +50,7 @@ pub static mut cmd_wait_for_entry: cmd_entry = {
         name: c"wait-for",
         alias: Some(c"wait"),
         args: args_parse {
-            template: b"EF:LSUlvw:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"EF:LSUlvw:",
             lower: 1 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

@@ -44,7 +44,7 @@ pub static mut cmd_display_message_entry: cmd_entry = {
         name: c"display-message",
         alias: Some(c"display"),
         args: args_parse {
-            template: b"aCc:d:jlINpt:F:v\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"aCc:d:jlINpt:F:v",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,

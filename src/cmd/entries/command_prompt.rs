@@ -93,7 +93,7 @@ pub static mut cmd_command_prompt_entry: cmd_entry = {
         name: c"command-prompt",
         alias: None,
         args: args_parse {
-            template: b"1CbeFiklI:NPp:t:T:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"1CbeFiklI:NPp:t:T:",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_command_prompt_args_parse),

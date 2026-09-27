@@ -206,7 +206,7 @@ fn borrowed_parser_command_retains_only_while_stored() {
             ArgumentValue::borrowed_commands(&cmdlist),
         ];
         let mut spec = args_parse {
-            template: c"".as_ptr(),
+            template: c"",
             lower: 1,
             upper: -1,
             cb: Some(commands),
@@ -245,7 +245,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             borrowed_commands_value(&command_lists[1]),
         ];
         let spec = args_parse {
-            template: c"".as_ptr(),
+            template: c"",
             lower: 0,
             upper: -1,
             cb: Some(command_argument),
@@ -284,7 +284,7 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             borrowed_commands_value(&command_list),
         ];
         let spec = args_parse {
-            template: c"".as_ptr(),
+            template: c"",
             lower: 0,
             upper: -1,
             cb: None,

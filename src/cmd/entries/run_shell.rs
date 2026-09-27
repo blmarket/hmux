@@ -62,7 +62,7 @@ pub static mut cmd_run_shell_entry: cmd_entry = {
         name: c"run-shell",
         alias: Some(c"run"),
         args: args_parse {
-            template: b"bd:Ct:Es:c:\0" as *const u8 as *const ::core::ffi::c_char,
+            template: c"bd:Ct:Es:c:",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: Some(
