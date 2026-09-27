@@ -1353,31 +1353,17 @@ pub unsafe fn grid_string_cells_bytes(
     }
     buf
 }
-pub unsafe fn grid_duplicate_lines(
-    mut dst: *mut grid,
-    mut dy: u_int,
-    mut src: *mut grid,
-    mut sy: u_int,
-    mut ny: u_int,
-) {
-    let mut dstl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut srcl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut yy: u_int = 0;
-    if dy.wrapping_add(ny) > (*dst).hsize.wrapping_add((*dst).sy) {
-        ny = (*dst).hsize.wrapping_add((*dst).sy).wrapping_sub(dy);
+pub fn grid_duplicate_lines(dst: &mut grid, dy: u_int, src: &grid, sy: u_int, mut ny: u_int) {
+    if dy.wrapping_add(ny) > dst.hsize.wrapping_add(dst.sy) {
+        ny = dst.hsize.wrapping_add(dst.sy).wrapping_sub(dy);
     }
-    if sy.wrapping_add(ny) > (*src).hsize.wrapping_add((*src).sy) {
-        ny = (*src).hsize.wrapping_add((*src).sy).wrapping_sub(sy);
+    if sy.wrapping_add(ny) > src.hsize.wrapping_add(src.sy) {
+        ny = src.hsize.wrapping_add(src.sy).wrapping_sub(sy);
     }
-    grid_free_lines(&mut *dst, dy, ny);
-    yy = 0 as u_int;
-    while yy < ny {
-        srcl = (*src).linedata.as_mut_ptr().offset(sy as isize) as *mut grid_line;
-        dstl = (*dst).linedata.as_mut_ptr().offset(dy as isize) as *mut grid_line;
-        *dstl = (*srcl).clone();
-        sy = sy.wrapping_add(1);
-        dy = dy.wrapping_add(1);
-        yy = yy.wrapping_add(1);
+    grid_free_lines(dst, dy, ny);
+    for offset in 0..ny {
+        dst.linedata[dy.wrapping_add(offset) as usize] =
+            src.linedata[sy.wrapping_add(offset) as usize].clone();
     }
 }
 unsafe fn grid_reflow_dead(mut gl: *mut grid_line) {
@@ -2583,11 +2569,38 @@ mod storage_tests {
     }
 
     #[test]
+    fn line_duplication_clips_both_grids_and_preserves_independent_metadata() {
+        unsafe {
+            let mut src = labeled_grid();
+            let mut dst = labeled_grid();
+            src.linedata[1].time = 77;
+            src.linedata[1].flags |= GRID_LINE_WRAPPED as u_short | GRID_LINE_START_PROMPT as u_short;
+            src.linedata[1].osc133_data.prompt_col = 3;
+            grid_duplicate_lines(&mut dst, 3, &src, 1, 3);
+            assert_eq!(labels(&mut dst), b"ABCB");
+            assert_eq!(dst.linedata[3].time, 77);
+            assert_eq!(dst.linedata[3].flags, src.linedata[1].flags);
+            assert_eq!(dst.linedata[3].osc133_data.prompt_col, 3);
+            src.linedata[1].extddata[0].fg = 8;
+            let mut cell = grid_default_cell;
+            grid_get_cell(&dst, 0, 3, &mut cell);
+            assert_eq!(cell.fg, COLOUR_FLAG_RGB | b'B' as i32);
+            grid_duplicate_lines(&mut dst, 0, &src, 3, 3);
+            assert_eq!(labels(&mut dst), b"DBCB");
+            grid_duplicate_lines(&mut dst, 4, &src, 4, 0);
+            assert_eq!(labels(&mut dst), b"DBCB");
+            drop(src);
+            grid_get_cell(&dst, 0, 3, &mut cell);
+            assert_eq!(cell.data.data[0], b'B');
+        }
+    }
+
+    #[test]
     fn line_moves_history_rotation_and_deep_clones_keep_independent_cells() {
         unsafe {
             let mut owner = labeled_grid();
             let mut copy = grid_create_box(8, 4, 0);
-            grid_duplicate_lines(&raw mut *copy, 0, &raw mut *owner, 0, 4);
+            grid_duplicate_lines(&mut copy, 0, &owner, 0, 4);
             assert_ne!(
                 owner.linedata[0].celldata.as_ptr(),
                 copy.linedata[0].celldata.as_ptr()

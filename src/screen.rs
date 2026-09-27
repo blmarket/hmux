@@ -655,9 +655,9 @@ pub unsafe fn screen_alternate_on(
     sy = (*(*s).grid).sy;
     (*s).saved_grid = grid_create(sx, sy, 0);
     grid_duplicate_lines(
-        (*s).saved_grid,
+        &mut *(*s).saved_grid,
         0 as u_int,
-        (*s).grid,
+        &*(*s).grid,
         (*(*s).grid).hsize,
         sy,
     );
@@ -710,10 +710,11 @@ pub unsafe fn screen_alternate_off(
         }
         return 0 as ::core::ffi::c_int;
     }
+    let history = (*(*s).grid).hsize;
     grid_duplicate_lines(
-        (*s).grid,
-        (*(*s).grid).hsize,
-        (*s).saved_grid,
+        &mut *(*s).grid,
+        history,
+        &*(*s).saved_grid,
         0 as u_int,
         (*(*s).saved_grid).sy,
     );

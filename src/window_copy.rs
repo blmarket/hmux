@@ -439,7 +439,7 @@ unsafe fn window_copy_clone_screen(
     ));
     screen_init(dst, (*(*src).grid).sx, sy, (*(*src).grid).hlimit);
     (*(*dst).grid).flags |= GRID_HISTORY;
-    grid_duplicate_lines((*dst).grid, 0 as u_int, (*src).grid, 0 as u_int, sy);
+    grid_duplicate_lines(&mut *(*dst).grid, 0 as u_int, &*(*src).grid, 0 as u_int, sy);
     (*(*dst).grid).sy = sy.wrapping_sub((*(*src).grid).hsize);
     (*(*dst).grid).hsize = (*(*src).grid).hsize;
     (*(*dst).grid).hscrolled = (*(*src).grid).hscrolled;
@@ -512,7 +512,7 @@ unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::f
     }
     kept = old_hsize.wrapping_sub(collected);
     if added == 0 as u_int && collected == 0 as u_int {
-        grid_duplicate_lines(dg, (*dg).hsize, sg, (*sg).hsize, sy);
+        grid_duplicate_lines(&mut *dg, old_hsize, &*sg, new_hsize, sy);
     } else {
         if collected > 0 as u_int {
             grid_free_lines(&mut *dg, 0 as u_int, collected);
@@ -524,9 +524,9 @@ unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::f
             .resize_with(new_hsize.wrapping_add(sy) as usize, grid_line::default);
         (*dg).hsize = new_hsize;
         if added > 0 as u_int {
-            grid_duplicate_lines(dg, kept, sg, kept, added);
+            grid_duplicate_lines(&mut *dg, kept, &*sg, kept, added);
         }
-        grid_duplicate_lines(dg, new_hsize, sg, new_hsize, sy);
+        grid_duplicate_lines(&mut *dg, new_hsize, &*sg, new_hsize, sy);
     }
     (*dg).hscrolled = (*sg).hscrolled;
     if (*src).cy > (*dg).sy.wrapping_sub(1 as u_int) {
