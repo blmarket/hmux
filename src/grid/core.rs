@@ -266,54 +266,32 @@ unsafe fn grid_extended_cell(
     (*gee).link = (*gc).link;
     return gee;
 }
-unsafe fn grid_compact_line(mut gl: *mut grid_line) {
-    let mut new_extdsize: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut new_extddata = GridArray::default();
-    let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
-    let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
-    let mut px: u_int = 0;
-    let mut idx: u_int = 0;
-    if (*gl).extdsize == 0 as u_int {
+unsafe fn grid_compact_line(gl: &mut grid_line) {
+    if gl.extdsize == 0 {
         return;
     }
-    px = 0 as u_int;
-    while px < (*gl).cellsize as u_int {
-        gce = (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
-        if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
-            new_extdsize += 1;
-        }
-        px = px.wrapping_add(1);
-    }
-    if new_extdsize == 0 as ::core::ffi::c_int {
-        (*gl).extddata.clear();
-        (*gl).extdsize = 0 as u_int;
+    let cells = &mut gl.celldata[..gl.cellsize as usize];
+    let count = cells
+        .iter()
+        .filter(|cell| cell.flags as i32 & GRID_FLAG_EXTENDED != 0)
+        .count();
+    if count == 0 {
+        gl.extddata.clear();
+        gl.extdsize = 0;
         return;
     }
-    new_extddata.resize_with(new_extdsize as usize, grid_extd_entry::default);
-    idx = 0 as u_int;
-    px = 0 as u_int;
-    while px < (*gl).cellsize as u_int {
-        gce = (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
-        if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
-            gee = (*gl)
-                .extddata
-                .as_mut_ptr()
-                .offset((*gce).c2rust_unnamed.offset as isize)
-                as *mut grid_extd_entry;
-            memcpy(
-                new_extddata.as_mut_ptr().offset(idx as isize) as *mut grid_extd_entry
-                    as *mut ::core::ffi::c_void,
-                gee as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<grid_extd_entry>() as size_t,
-            );
-            let fresh0 = idx;
-            idx = idx.wrapping_add(1);
-            (*gce).c2rust_unnamed.offset = fresh0;
+    let mut compact = GridArray::default();
+    compact.resize_with(count, grid_extd_entry::default);
+    let mut index = 0;
+    for cell in cells {
+        if cell.flags as i32 & GRID_FLAG_EXTENDED != 0 {
+            compact[index] = gl.extddata[cell.c2rust_unnamed.offset as usize];
+            cell.c2rust_unnamed.offset = index as u_int;
+            index += 1;
         }
-        px = px.wrapping_add(1);
     }
-    (*gl).extddata = new_extddata;
-    (*gl).extdsize = new_extdsize as u_int;
+    gl.extddata = compact;
+    gl.extdsize = count as u_int;
 }
 pub unsafe fn grid_get_line(mut gd: *mut grid, mut line: u_int) -> *mut grid_line {
     return (*gd).linedata.as_mut_ptr().offset(line as isize) as *mut grid_line;
@@ -324,11 +302,11 @@ pub unsafe fn grid_line_time(gl: &grid_line) -> time_t {
     }
     start_time.tv_sec as time_t + gl.time as time_t - 1
 }
-unsafe fn grid_line_set_time(mut gl: *mut grid_line) {
-    if current_time == 0 as time_t {
-        (*gl).time = 0 as u_int;
+unsafe fn grid_line_set_time(gl: &mut grid_line) {
+    gl.time = if current_time == 0 {
+        0
     } else {
-        (*gl).time = (current_time as __time_t - start_time.tv_sec + 1 as __time_t) as u_int;
+        (current_time as __time_t - start_time.tv_sec + 1) as u_int
     };
 }
 pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {
@@ -451,95 +429,71 @@ pub unsafe fn grid_compare(ga: &grid, gb: &grid) -> i32 {
     0
 }
 
-unsafe fn grid_trim_history(mut gd: *mut grid, mut ny: u_int) {
-    grid_free_lines(&mut *gd, 0, ny);
-    let live = (*gd).hsize.wrapping_add((*gd).sy) as usize;
-    (&mut (*gd).linedata)[..live].rotate_left(ny as usize);
+fn grid_trim_history(gd: &mut grid, ny: u_int) {
+    grid_free_lines(gd, 0, ny);
+    let live = gd.hsize.wrapping_add(gd.sy) as usize;
+    gd.linedata[..live].rotate_left(ny as usize);
 }
-pub unsafe fn grid_collect_history(mut gd: *mut grid, mut all: ::core::ffi::c_int) {
-    let mut ny: u_int = 0;
-    if (*gd).hsize == 0 as u_int || (*gd).hsize < (*gd).hlimit {
+pub fn grid_collect_history(gd: &mut grid, all: i32) {
+    if gd.hsize == 0 || gd.hsize < gd.hlimit {
         return;
     }
-    if all != 0 {
-        ny = (*gd).hsize.wrapping_sub((*gd).hlimit);
+    let count = if all != 0 {
+        gd.hsize.wrapping_sub(gd.hlimit)
     } else {
-        ny = (*gd).hlimit.wrapping_div(10 as u_int);
+        gd.hlimit / 10
     }
-    if ny < 1 as u_int {
-        ny = 1 as u_int;
-    }
-    if ny > (*gd).hsize {
-        ny = (*gd).hsize;
-    }
-    grid_trim_history(gd, ny);
-    (*gd).hsize = (*gd).hsize.wrapping_sub(ny);
-    (*gd).scroll_collected = (*gd).scroll_collected.wrapping_add(ny);
-    if (*gd).hscrolled > (*gd).hsize {
-        (*gd).hscrolled = (*gd).hsize;
-    }
+    .max(1)
+    .min(gd.hsize);
+    grid_trim_history(gd, count);
+    gd.hsize = gd.hsize.wrapping_sub(count);
+    gd.scroll_collected = gd.scroll_collected.wrapping_add(count);
+    gd.hscrolled = gd.hscrolled.min(gd.hsize);
 }
-pub unsafe fn grid_remove_history(mut gd: *mut grid, mut ny: u_int) {
-    let mut yy: u_int = 0;
-    let mut start: u_int = 0;
-    if ny > (*gd).hsize {
+pub fn grid_remove_history(gd: &mut grid, ny: u_int) {
+    if ny > gd.hsize {
         return;
     }
-    start = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(ny);
-    yy = 0 as u_int;
-    while yy < ny {
-        grid_free_line(&mut *gd, start.wrapping_add(yy));
-        yy = yy.wrapping_add(1);
+    let start = gd.hsize.wrapping_add(gd.sy).wrapping_sub(ny);
+    for offset in 0..ny {
+        grid_free_line(gd, start.wrapping_add(offset));
     }
-    (*gd).hsize = (*gd).hsize.wrapping_sub(ny);
+    gd.hsize = gd.hsize.wrapping_sub(ny);
 }
-pub unsafe fn grid_scroll_history(mut gd: *mut grid, mut bg: u_int) {
-    let mut yy: u_int = 0;
-    yy = (*gd).hsize.wrapping_add((*gd).sy);
-    (*gd)
-        .linedata
-        .resize_with(yy.wrapping_add(1 as u_int) as usize, grid_line::default);
-    grid_empty_line(&mut *gd, yy, bg);
-    (*gd).hscrolled = (*gd).hscrolled.wrapping_add(1);
-    grid_compact_line((*gd).linedata.as_mut_ptr().offset((*gd).hsize as isize) as *mut grid_line);
-    grid_line_set_time((*gd).linedata.as_mut_ptr().offset((*gd).hsize as isize) as *mut grid_line);
-    (*gd).hsize = (*gd).hsize.wrapping_add(1);
-    (*gd).scroll_added = (*gd).scroll_added.wrapping_add(1);
+pub unsafe fn grid_scroll_history(gd: &mut grid, bg: u_int) {
+    let end = gd.hsize.wrapping_add(gd.sy);
+    gd.linedata
+        .resize_with(end.wrapping_add(1) as usize, grid_line::default);
+    grid_empty_line(gd, end, bg);
+    gd.hscrolled = gd.hscrolled.wrapping_add(1);
+    let history = &mut gd.linedata[gd.hsize as usize];
+    grid_compact_line(history);
+    grid_line_set_time(history);
+    gd.hsize = gd.hsize.wrapping_add(1);
+    gd.scroll_added = gd.scroll_added.wrapping_add(1);
 }
-pub unsafe fn grid_clear_history(mut gd: *mut grid) {
-    grid_trim_history(gd, (*gd).hsize);
-    (*gd).hscrolled = 0 as u_int;
-    (*gd).hsize = 0 as u_int;
-    (*gd).scroll_generation = (*gd).scroll_generation.wrapping_add(1);
-    (*gd)
-        .linedata
-        .resize_with((*gd).sy as usize, grid_line::default);
+pub fn grid_clear_history(gd: &mut grid) {
+    grid_trim_history(gd, gd.hsize);
+    gd.hscrolled = 0;
+    gd.hsize = 0;
+    gd.scroll_generation = gd.scroll_generation.wrapping_add(1);
+    gd.linedata.resize_with(gd.sy as usize, grid_line::default);
 }
-pub unsafe fn grid_scroll_history_region(
-    mut gd: *mut grid,
-    mut upper: u_int,
-    mut lower: u_int,
-    mut bg: u_int,
-) {
-    let mut gl_history: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let _gl_upper: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut yy: u_int = 0;
-    yy = (*gd).hsize.wrapping_add((*gd).sy);
-    (*gd)
-        .linedata
-        .resize_with(yy.wrapping_add(1 as u_int) as usize, grid_line::default);
-    let history = (*gd).hsize as usize;
-    (&mut (*gd).linedata)[history..=yy as usize].rotate_right(1);
-    upper = upper.wrapping_add(1);
-    lower = lower.wrapping_add(1);
-    (*gd).linedata.swap(history, upper as usize);
-    gl_history = (*gd).linedata.as_mut_ptr().add(history);
-    grid_line_set_time(gl_history);
-    (&mut (*gd).linedata)[upper as usize..=lower as usize].rotate_left(1);
-    grid_empty_line(&mut *gd, lower, bg);
-    (*gd).hscrolled = (*gd).hscrolled.wrapping_add(1);
-    (*gd).hsize = (*gd).hsize.wrapping_add(1);
-    (*gd).scroll_added = (*gd).scroll_added.wrapping_add(1);
+pub unsafe fn grid_scroll_history_region(gd: &mut grid, upper: u_int, lower: u_int, bg: u_int) {
+    let end = gd.hsize.wrapping_add(gd.sy);
+    gd.linedata
+        .resize_with(end.wrapping_add(1) as usize, grid_line::default);
+    let history = gd.hsize as usize;
+    gd.linedata[history..=end as usize].rotate_right(1);
+    let upper = upper.wrapping_add(1);
+    let lower = lower.wrapping_add(1);
+    gd.linedata.swap(history, upper as usize);
+    grid_line_set_time(&mut gd.linedata[history]);
+    gd.linedata[upper as usize..=lower as usize].rotate_left(1);
+    grid_empty_line(gd, lower, bg);
+    gd.hscrolled = gd.hscrolled.wrapping_add(1);
+    gd.hsize = gd.hsize.wrapping_add(1);
+    gd.scroll_added = gd.scroll_added.wrapping_add(1);
 }
 unsafe fn grid_expand_line(mut gd: *mut grid, mut py: u_int, mut sx: u_int, mut bg: u_int) {
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
@@ -2341,6 +2295,86 @@ mod storage_tests {
     use super::*;
 
     #[test]
+    fn line_compaction_remaps_live_offsets_and_releases_unused_entries() {
+        unsafe {
+            let mut line = grid_line::default();
+            line.cellsize = 5;
+            line.extdsize = 6;
+            line.flags = GRID_LINE_EXTENDED as u_short;
+            line.celldata.resize_with(6, grid_cell_entry::default);
+            line.extddata.resize_with(6, grid_extd_entry::default);
+            for (index, extended) in line.extddata.iter_mut().enumerate() {
+                extended.fg = 10 + index as i32;
+            }
+            for (column, offset) in [(0, 4), (2, 1), (3, 4), (5, 0)] {
+                line.celldata[column].flags = GRID_FLAG_EXTENDED as u_char;
+                line.celldata[column].c2rust_unnamed.offset = offset;
+            }
+            grid_compact_line(&mut line);
+            assert_eq!(line.extdsize, 3);
+            assert_eq!(
+                line.extddata
+                    .iter()
+                    .map(|entry| entry.fg)
+                    .collect::<Vec<_>>(),
+                [14, 11, 14]
+            );
+            for (column, offset) in [(0, 0), (2, 1), (3, 2)] {
+                let actual = line.celldata[column].c2rust_unnamed.offset;
+                assert_eq!(actual, offset);
+                line.celldata[column].flags = 0;
+            }
+            // The spare cell beyond cellsize does not keep the allocation alive.
+            grid_compact_line(&mut line);
+            assert_eq!(line.extdsize, 0);
+            assert!(line.extddata.is_empty());
+            assert_eq!(line.flags, GRID_LINE_EXTENDED as u_short);
+        }
+    }
+
+    #[test]
+    fn borrowed_history_operations_keep_thresholds_counts_and_spare_rows() {
+        unsafe {
+            let mut owner = labeled_grid();
+            for _ in 0..4 {
+                grid_scroll_history(&mut owner, 8);
+            }
+            assert_eq!(labels(&mut owner), b"ABCD    ");
+            assert_eq!(
+                (owner.hsize, owner.hscrolled, owner.scroll_added),
+                (4, 4, 4)
+            );
+            owner.hlimit = 4;
+            grid_collect_history(&mut owner, 1);
+            assert_eq!(labels(&mut owner), b"BCD    ");
+            assert_eq!(
+                (owner.hsize, owner.hscrolled, owner.scroll_collected),
+                (3, 3, 1)
+            );
+            owner.hlimit = 1;
+            grid_collect_history(&mut owner, 1);
+            assert_eq!(labels(&mut owner), b"D    ");
+            assert_eq!(
+                (owner.hsize, owner.hscrolled, owner.scroll_collected),
+                (1, 1, 3)
+            );
+            grid_remove_history(&mut owner, 2);
+            assert_eq!(owner.hsize, 1);
+            grid_remove_history(&mut owner, 1);
+            assert_eq!(labels(&mut owner), b"D   ");
+            assert_eq!(owner.hscrolled, 1);
+            assert_eq!(owner.linedata.len(), 8);
+            grid_clear_history(&mut owner);
+            assert_eq!(owner.linedata.len(), 4);
+            assert_eq!(
+                (owner.hsize, owner.hscrolled, owner.scroll_generation),
+                (0, 0, 1)
+            );
+            assert_eq!((owner.scroll_added, owner.scroll_collected), (4, 3));
+        }
+    }
+
+    #[test]
     fn borrowed_line_lookup_covers_history_and_rejects_spare_storage() {
         unsafe {
             let mut owner = grid_create_box(8, 2, 10);
@@ -2604,9 +2638,9 @@ mod storage_tests {
             assert_eq!(labels(&mut copy), b"ABCD");
 
             let mut owner = labeled_grid();
-            grid_scroll_history_region(&raw mut *owner, 1, 2, 8);
+            grid_scroll_history_region(&mut *owner, 1, 2, 8);
             assert_eq!(labels(&mut owner), b"BAC D");
-            grid_collect_history(&raw mut *owner, 0);
+            grid_collect_history(&mut *owner, 0);
             assert_eq!(labels(&mut owner), b"AC D");
             // Repeated extended-cell updates and history compaction must retain
             // the active entry while releasing unreachable extended entries.
@@ -2616,13 +2650,13 @@ mod storage_tests {
             for _ in 0..8 {
                 grid_set_cell(&raw mut *owner, 0, 0, &cell);
             }
-            grid_scroll_history(&raw mut *owner, 8);
+            grid_scroll_history(&mut *owner, 8);
             assert_eq!(labels(&mut owner), b"XC D ");
             assert_eq!(
                 owner.linedata[0].extddata.len(),
                 owner.linedata[0].extdsize as usize
             );
-            grid_clear_history(&raw mut *owner);
+            grid_clear_history(&mut *owner);
             assert_eq!(labels(&mut owner), b"C D ");
             assert_eq!(owner.linedata.len(), 4);
         }

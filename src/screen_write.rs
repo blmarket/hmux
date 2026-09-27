@@ -3253,7 +3253,7 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_clearhistory(mut ctx: *mut screen_write_ctx) {
-    grid_clear_history((*(*ctx).s).grid);
+    grid_clear_history(&mut *((*(*ctx).s).grid));
 }
 pub unsafe fn screen_write_fullredraw(mut ctx: *mut screen_write_ctx) {
     let mut ttyctx: tty_ctx = tty_ctx {

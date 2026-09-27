@@ -1130,7 +1130,7 @@ pub unsafe fn session_update_history(mut s: *mut session) {
             gd = (*wp).base.grid;
             osize = (*gd).hsize;
             (*gd).hlimit = limit;
-            grid_collect_history(gd, 1 as ::core::ffi::c_int);
+            grid_collect_history(&mut *gd, 1 as ::core::ffi::c_int);
             if (*gd).hsize != osize {
                 log_debug(format_args!(
                     "{}: %{} {} -> {}",

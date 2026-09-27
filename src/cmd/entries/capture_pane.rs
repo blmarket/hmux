@@ -594,7 +594,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cmd_get_entry(self_0) == &raw const cmd_clear_history_entry {
         window_pane_reset_mode_all(wp);
-        grid_clear_history((*wp).base.grid);
+        grid_clear_history(&mut *((*wp).base.grid));
         if args_has(args, 'H' as i32 as u_char) != 0 {
             screen_reset_hyperlinks((*wp).screen);
         }

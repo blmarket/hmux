@@ -101,7 +101,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if adjust > (*gd).hsize as ::core::ffi::c_int {
             adjust = (*gd).hsize as ::core::ffi::c_int;
         }
-        grid_remove_history(gd, adjust as u_int);
+        grid_remove_history(&mut *gd, adjust as u_int);
         (*wp).base.cy = (*wp).base.cy.wrapping_add(adjust as u_int);
         (*wp).flags |= PANE_REDRAW;
         return CMD_RETURN_NORMAL;

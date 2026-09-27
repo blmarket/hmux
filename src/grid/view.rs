@@ -53,8 +53,8 @@ pub unsafe fn grid_view_clear_history(mut gd: *mut grid, mut bg: u_int) {
     }
     yy = 0 as u_int;
     while yy < last {
-        grid_collect_history(gd, 0 as ::core::ffi::c_int);
-        grid_scroll_history(gd, bg);
+        grid_collect_history(&mut *gd, 0 as ::core::ffi::c_int);
+        grid_scroll_history(&mut *gd, bg);
         yy = yy.wrapping_add(1);
     }
     if last < (*gd).sy {
@@ -88,13 +88,13 @@ pub unsafe fn grid_view_scroll_region_up(
     mut bg: u_int,
 ) {
     if (*gd).flags & GRID_HISTORY != 0 {
-        grid_collect_history(gd, 0 as ::core::ffi::c_int);
+        grid_collect_history(&mut *gd, 0 as ::core::ffi::c_int);
         if rupper == 0 as u_int && rlower == (*gd).sy.wrapping_sub(1 as u_int) {
-            grid_scroll_history(gd, bg);
+            grid_scroll_history(&mut *gd, bg);
         } else {
             rupper = (*gd).hsize.wrapping_add(rupper);
             rlower = (*gd).hsize.wrapping_add(rlower);
-            grid_scroll_history_region(gd, rupper, rlower, bg);
+            grid_scroll_history_region(&mut *gd, rupper, rlower, bg);
         }
     } else {
         rupper = (*gd).hsize.wrapping_add(rupper);
