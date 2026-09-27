@@ -82,7 +82,7 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    template = args_get(args, 'F' as i32 as u_char);
+    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_COMMANDS_TEMPLATE.as_ptr();
     }

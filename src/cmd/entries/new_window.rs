@@ -121,7 +121,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         });
         return CMD_RETURN_ERROR;
     }
-    name = args_get(args, 'n' as i32 as u_char);
+    name = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !name.is_null() {
         let expanded = format_single_cstring(
             item,
@@ -213,7 +213,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         );
     }
     sc.idx = idx;
-    sc.cwd = args_get(args, 'c' as i32 as u_char);
+    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     sc.flags = 0 as ::core::ffi::c_int;
     if args_has(args, 'E' as i32 as u_char) != 0
         || count == 1 as ::core::ffi::c_int
@@ -248,7 +248,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             server_status_session_group(s);
         }
         if args_has(args, 'P' as i32 as u_char) != 0 {
-            template = args_get(args, 'F' as i32 as u_char);
+            template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if template.is_null() {
                 template = NEW_WINDOW_TEMPLATE.as_ptr();
             }

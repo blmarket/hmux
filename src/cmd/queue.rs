@@ -423,7 +423,7 @@ pub unsafe fn cmdq_insert_hook(
         i = i.wrapping_add(1);
     }
     for flag in args_flags(&*args_0) {
-        value = args_get(args_0, flag as u_char);
+        value = args_get(&*(args_0), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         xformat_with(&mut tmp, |out| {
             out.write_all(b"flag_")?;
             out.write_all(&[flag as u8])
@@ -546,7 +546,7 @@ unsafe fn cmdq_find_flag(
         cmd_find_from_client(fs, (*item).target_client, 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    value = args_get(cmd_get_args_mut(&mut *(*item).cmd).map_or(std::ptr::null_mut(), |args| args), flag.flag as u_char);
+    value = args_get(&*(cmd_get_args_mut(&mut *(*item).cmd).map_or(std::ptr::null_mut(), |args| args)), flag.flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if cmd_find_target(fs, item, value, flag.type_0, flag.flags) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
@@ -665,7 +665,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         quiet = 1 as ::core::ffi::c_int;
     }
     if entry.flags & CMD_CLIENT_CFLAG != 0 {
-        tc = cmd_find_client(item, args_get(args, 'c' as i32 as u_char), quiet);
+        tc = cmd_find_client(item, args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()), quiet);
         if tc.is_null() && quiet == 0 {
             retval = CMD_RETURN_ERROR;
             current_block = 7379054416801212160;
@@ -673,7 +673,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
             current_block = 18317007320854588510;
         }
     } else if entry.flags & CMD_CLIENT_TFLAG != 0 {
-        tc = cmd_find_client(item, args_get(args, 't' as i32 as u_char), quiet);
+        tc = cmd_find_client(item, args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()), quiet);
         if tc.is_null() && quiet == 0 {
             retval = CMD_RETURN_ERROR;
             current_block = 7379054416801212160;

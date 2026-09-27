@@ -71,7 +71,7 @@ unsafe fn cmd_show_prompt_history_exec(
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let typestr: *const ::core::ffi::c_char = args_get(args, 'T' as i32 as u_char);
+    let typestr: *const ::core::ffi::c_char = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;
     let mut h: u_int = 0;

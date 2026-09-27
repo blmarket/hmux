@@ -73,7 +73,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut tflag: *const ::core::ffi::c_char = args_get(args, 't' as i32 as u_char);
+    let mut tflag: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
     let mut visible: ::core::ffi::c_int = 0;
@@ -125,7 +125,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*tc).flags |= (CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
         }
     }
-    tablename = args_get(args, 'T' as i32 as u_char);
+    tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tablename.is_null() {
         let Some(table) = key_bindings_get_table(tablename, 0) else {
             cmdq_error(item, |out| {
@@ -138,7 +138,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*tc).keytable = Some(table);
         return CMD_RETURN_NORMAL;
     }
-    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0

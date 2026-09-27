@@ -201,7 +201,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     {
         flag = flags[i as usize];
         if !(args_has(args, flag as u_char) == 0) {
-            argval = args_get(args, flag as u_char);
+            argval = args_get(&*(args), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if argval.is_null() {
                 if args_count(args) == 0 as u_int {
                     argval = b"1\0" as *const u8 as *const ::core::ffi::c_char;

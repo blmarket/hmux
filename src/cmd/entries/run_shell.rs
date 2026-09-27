@@ -176,7 +176,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut i: u_int = 0;
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    delay = args_get(args, 'd' as i32 as u_char);
+    delay = args_get(&*(args), 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !delay.is_null() {
         d = strtod(delay, &raw mut end);
         if *end as ::core::ffi::c_int != '\0' as i32 {
@@ -190,7 +190,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
-        args_get(args, 'c' as i32 as u_char)
+        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     } else {
         server_client_get_cwd(c, s)
     };

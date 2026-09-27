@@ -211,7 +211,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         cmdq_error(item, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
-    value = args_get(args, 'B' as i32 as u_char);
+    value = args_get(&*(args), 'B' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let unsubscribe = args_has(args, 'u' as i32 as u_char) != 0;
     let parsed = monitor_parse_owned(CStr::from_ptr(value));
     let (name_owned, type_0, id, format_owned) = if unsubscribe {

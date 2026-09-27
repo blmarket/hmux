@@ -81,7 +81,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         cdata.item = item;
     }
     cdata.default_yes = args_has(args, 'y' as i32 as u_char);
-    confirm_key = args_get(args, 'c' as i32 as u_char);
+    confirm_key = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !confirm_key.is_null() {
         if *confirm_key.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
             == '\0' as i32
@@ -98,7 +98,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     } else {
         cdata.confirm_key = 'y' as i32 as u_char;
     }
-    prompt = args_get(args, 'p' as i32 as u_char);
+    prompt = args_get(&*(args), 'p' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let new_prompt = if !prompt.is_null() {
         let mut bytes = CStr::from_ptr(prompt).to_bytes().to_vec();
         bytes.push(b' ');

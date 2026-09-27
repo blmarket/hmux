@@ -231,12 +231,12 @@ unsafe fn cmd_attach_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     return cmd_attach_session(
         item,
-        args_get(args, 't' as i32 as u_char),
+        args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
         args_has(args, 'd' as i32 as u_char),
         args_has(args, 'x' as i32 as u_char),
         args_has(args, 'r' as i32 as u_char),
-        args_get(args, 'c' as i32 as u_char),
+        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
         args_has(args, 'E' as i32 as u_char),
-        args_get(args, 'f' as i32 as u_char),
+        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
 }

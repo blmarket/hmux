@@ -464,12 +464,12 @@ unsafe fn window_buffer_init(
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
         CStr::from_ptr(WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr()).to_owned()
     } else {
-        CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
+        CStr::from_ptr(args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
     };
     let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
         CStr::from_ptr(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr()).to_owned()
     } else {
-        CStr::from_ptr(args_get(args, 'K' as i32 as u_char)).to_owned()
+        CStr::from_ptr(args_get(&*(args), 'K' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
     };
     let command = if args.is_null() || args_count(args) == 0 as u_int {
         CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned()

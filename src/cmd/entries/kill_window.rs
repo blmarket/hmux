@@ -75,7 +75,7 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut wl: *mut winlink = (*target).wl;
     let mut w: *mut window = (*wl).window_ptr();
     let mut s: *mut session = (*target).s;
-    let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
+    let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;

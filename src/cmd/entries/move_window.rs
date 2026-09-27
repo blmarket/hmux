@@ -79,7 +79,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut tflag: *const ::core::ffi::c_char = args_get(args, 't' as i32 as u_char);
+    let mut tflag: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut src: *mut session = (*source).s;
     let mut dst: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = (*source).wl;

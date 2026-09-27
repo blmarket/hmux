@@ -82,7 +82,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         );
     }
     sc.idx = -(1 as ::core::ffi::c_int);
-    sc.cwd = args_get(args, 'c' as i32 as u_char);
+    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     sc.flags = SPAWN_RESPAWN;
     if args_has(args, 'E' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_EMPTY;

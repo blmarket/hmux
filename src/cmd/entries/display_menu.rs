@@ -427,7 +427,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
-    xp = args_get(args, 'x' as i32 as u_char);
+    xp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if xp.is_null()
         || strcmp(xp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
@@ -473,7 +473,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         (*px) as u32,
         (w) as u32
     ));
-    yp = args_get(args, 'y' as i32 as u_char);
+    yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if yp.is_null()
         || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
@@ -812,7 +812,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
             |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
-    xp = args_get(args, 'x' as i32 as u_char);
+    xp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if xp.is_null()
         || strcmp(xp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
@@ -859,7 +859,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         (*px) as u32,
         (w) as u32
     ));
-    yp = args_get(args, 'y' as i32 as u_char);
+    yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if yp.is_null()
         || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
@@ -919,13 +919,13 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let event = cmdq_get_event(item);
     let tc = cmdq_get_target_client(item);
-    let style = args_get(args, b's');
-    let border_style = args_get(args, b'S');
-    let selected_style = args_get(args, b'H');
+    let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
+    let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
+    let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
     let o = options_owner_ptr(&mut (*(*(*(*target).s).curw).window_ptr()).options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
-        if std::ffi::CStr::from_ptr(args_get(args, b'C')) == c"-" {
+        if std::ffi::CStr::from_ptr(args_get(&*(args), b'C').map_or(std::ptr::null(), |value| value.as_ptr())) == c"-" {
             starting_choice = -1;
         } else {
             match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
@@ -943,7 +943,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let title = if args_has(args, b'T') != 0 {
         Some(format_single_from_target_cstring(
             item,
-            args_get(args, b'T'),
+            args_get(&*(args), b'T').map_or(std::ptr::null(), |value| value.as_ptr()),
         ))
     } else {
         None
@@ -989,7 +989,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
         return CMD_RETURN_NORMAL;
     }
     let mut lines = BOX_LINES_DEFAULT;
-    let value = args_get(args, b'b');
+    let value = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     if !value.is_null() {
         let oe = options_get(o, c"menu-border-lines".as_ptr());
         let mut cause = None;
@@ -1036,8 +1036,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut shellcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut style: *const ::core::ffi::c_char = args_get(args, 's' as i32 as u_char);
-    let mut border_style: *const ::core::ffi::c_char = args_get(args, 'S' as i32 as u_char);
+    let mut style: *const ::core::ffi::c_char = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut border_style: *const ::core::ffi::c_char = args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_cwd: Option<std::ffi::CString> = None;
     let mut default_cwd: Option<std::ffi::CString> = None;
@@ -1139,7 +1139,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                         {
                             current_block = 6589043366517631393;
                         } else {
-                            value = args_get(args, 'd' as i32 as u_char);
+                            value = args_get(&*(args), 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                             if !value.is_null() {
                                 formatted_cwd =
                                     Some(format_single_from_target_cstring(item, value));
@@ -1202,7 +1202,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     match current_block {
         1345366029464561491 => {
-            value = args_get(args, 'b' as i32 as u_char);
+            value = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if args_has(args, 'B' as i32 as u_char) != 0 {
                 lines = BOX_LINES_NONE;
                 current_block = 8151474771948790331;
@@ -1231,7 +1231,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     if args_has(args, 'T' as i32 as u_char) != 0 {
                         formatted_title = Some(format_single_from_target_cstring(
                             item,
-                            args_get(args, 'T' as i32 as u_char),
+                            args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                         ));
                         title = formatted_title
                             .as_ref()

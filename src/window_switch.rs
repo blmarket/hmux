@@ -467,7 +467,7 @@ unsafe fn window_switch_init(
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
         WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr()
     } else {
-        args_get(args, 'F' as i32 as u_char)
+        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     };
     let command = if args.is_null() || args_count(args) == 0 as u_int {
         WINDOW_SWITCH_DEFAULT_COMMAND.as_ptr()

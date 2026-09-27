@@ -69,7 +69,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         env = global_environ.as_deref_mut().expect("environment");
         current_block = 224731115979188411;
     } else if (*target).s.is_null() {
-        tflag = args_get(args, 't' as i32 as u_char);
+        tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if !tflag.is_null() {
             cmdq_error(item, |out| {
                 out.write_all(b"no such session: ")?;

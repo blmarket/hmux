@@ -49,7 +49,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut note: *const ::core::ffi::c_char = args_get(args, 'N' as i32 as u_char);
+    let mut note: *const ::core::ffi::c_char = args_get(&*(args), 'N' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut count: u_int = args_count(args);
@@ -65,7 +65,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        tablename = args_get(args, 'T' as i32 as u_char);
+        tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
         tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
     } else {

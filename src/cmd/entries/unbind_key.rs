@@ -50,7 +50,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             }
             return CMD_RETURN_ERROR;
         }
-        tablename = args_get(args, 'T' as i32 as u_char);
+        tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if tablename.is_null() {
             if args_has(args, 'n' as i32 as u_char) != 0 {
                 tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
@@ -90,7 +90,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        tablename = args_get(args, 'T' as i32 as u_char);
+        tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item, |out| {

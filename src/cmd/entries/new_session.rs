@@ -189,7 +189,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         });
         return CMD_RETURN_ERROR;
     }
-    tmp = args_get(args, 'n' as i32 as u_char);
+    tmp = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tmp.is_null() {
         let ename = format_single_cstring(
             item,
@@ -214,7 +214,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             .expect("window name was cleaned")
             .as_ptr();
     }
-    tmp = args_get(args, 's' as i32 as u_char);
+    tmp = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tmp.is_null() {
         let ename = format_single_cstring(
             item,
@@ -259,9 +259,9 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                         args_has(args, 'D' as i32 as u_char),
                         args_has(args, 'X' as i32 as u_char),
                         0 as ::core::ffi::c_int,
-                        args_get(args, 'c' as i32 as u_char),
+                        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                         args_has(args, 'E' as i32 as u_char),
-                        args_get(args, 'f' as i32 as u_char),
+                        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                     );
                     return retval;
                 }
@@ -272,7 +272,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     write_cstr(out, sname)
                 });
             } else {
-                group = args_get(args, 't' as i32 as u_char);
+                group = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                 if !group.is_null() {
                     groupwith = (*target).s;
                     if groupwith.is_null() {
@@ -315,7 +315,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                         if !c.is_null() && !(*c).session.is_null() {
                             already_attached = 1 as ::core::ffi::c_int;
                         }
-                        tmp = args_get(args, 'c' as i32 as u_char);
+                        tmp = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                         if !tmp.is_null() {
                             formatted_cwd = Some(format_single_cstring(
                                 item,
@@ -374,7 +374,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                     5193972633326621385 => {}
                                     _ => {
                                         if args_has(args, 'x' as i32 as u_char) != 0 {
-                                            tmp = args_get(args, 'x' as i32 as u_char);
+                                            tmp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                                             if strcmp(
                                                 tmp,
                                                 b"-\0" as *const u8 as *const ::core::ffi::c_char,
@@ -412,7 +412,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                             5193972633326621385 => {}
                                             _ => {
                                                 if args_has(args, 'y' as i32 as u_char) != 0 {
-                                                    tmp = args_get(args, 'y' as i32 as u_char);
+                                                    tmp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                                                     if strcmp(
                                                         tmp,
                                                         b"-\0" as *const u8
@@ -578,7 +578,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         sc.argv = argv_owner;
                                                         sc.idx = -(1 as ::core::ffi::c_int);
                                                         sc.cwd =
-                                                            args_get(args, 'c' as i32 as u_char);
+                                                            args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                                                         sc.flags = 0 as ::core::ffi::c_int;
                                                         if spawn_window(&raw mut sc, &raw mut cause)
                                                             .is_null()
@@ -644,10 +644,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 {
                                                                     server_client_set_flags(
                                                                         c,
-                                                                        args_get(
-                                                                            args,
-                                                                            'f' as i32 as u_char,
-                                                                        ),
+                                                                        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                                                                     );
                                                                 }
                                                                 if already_attached == 0 {
@@ -684,10 +681,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             if args_has(args, 'P' as i32 as u_char)
                                                                 != 0
                                                             {
-                                                                template = args_get(
-                                                                    args,
-                                                                    'F' as i32 as u_char,
-                                                                );
+                                                                template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                                                                 if template.is_null() {
                                                                     template = NEW_SESSION_TEMPLATE
                                                                         .as_ptr();

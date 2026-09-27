@@ -431,7 +431,7 @@ unsafe fn cmd_join_pane_move(
     {
         flag = flags[i as usize];
         if !(args_has(args, flag as u_char) == 0) {
-            argval = args_get(args, flag as u_char);
+            argval = args_get(&*(args), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if argval.is_null() {
                 argval = b"1\0" as *const u8 as *const ::core::ffi::c_char;
             }
@@ -669,11 +669,11 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 return CMD_RETURN_ERROR;
             }
             server_unzoom_window(dst_w);
-            s = args_get(args, 'P' as i32 as u_char);
+            s = args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !s.is_null() {
                 return cmd_join_pane_place(item, dst_wl, dst_wp, s);
             }
-            s = args_get(args, 'z' as i32 as u_char);
+            s = args_get(&*(args), 'z' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !s.is_null() {
                 return cmd_join_pane_zindex(item, dst_wl, dst_wp, s);
             }

@@ -90,7 +90,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut c: *mut client = cmdq_get_client(item);
     let pb;
     let mut flags: ::core::ffi::c_int = 0;
-    let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
+    let mut bufname: *const ::core::ffi::c_char = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if bufname.is_null() {
         pb = paste_get_top(None);
         if pb.is_none() {

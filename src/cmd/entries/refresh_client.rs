@@ -81,7 +81,7 @@ unsafe fn cmd_refresh_client_control_client_size(
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut size: *const ::core::ffi::c_char = args_get(args, 'C' as i32 as u_char);
+    let mut size: *const ::core::ffi::c_char = args_get(&*(args), 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut w: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -304,13 +304,13 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        server_client_set_flags(tc, args_get(args, 'F' as i32 as u_char));
+        server_client_set_flags(tc, args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     }
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        server_client_set_flags(tc, args_get(args, 'f' as i32 as u_char));
+        server_client_set_flags(tc, args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     }
     if args_has(args, 'r' as i32 as u_char) != 0 {
-        cmd_refresh_report(tty, args_get(args, 'r' as i32 as u_char));
+        cmd_refresh_report(tty, args_get(&*(args), 'r' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     }
     if args_has(args, 'A' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {

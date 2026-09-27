@@ -385,7 +385,7 @@ unsafe fn cmd_capture_pane_history(
         };
         (s.grid(), s)
     };
-    Sflag = args_get(args, 'S' as i32 as u_char);
+    Sflag = args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !Sflag.is_null()
         && strcmp(Sflag, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
@@ -415,7 +415,7 @@ unsafe fn cmd_capture_pane_history(
             top = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
         }
     }
-    Eflag = args_get(args, 'E' as i32 as u_char);
+    Eflag = args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !Eflag.is_null()
         && strcmp(Eflag, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
@@ -625,7 +625,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     } else {
         bufname = ::core::ptr::null::<::core::ffi::c_char>();
         if args_has(args, 'b' as i32 as u_char) != 0 {
-            bufname = args_get(args, 'b' as i32 as u_char);
+            bufname = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         }
         if paste_set_owned(
             buf.into_boxed_slice(),

@@ -121,7 +121,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         item,
         name: None,
     });
-    let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
+    let mut bufname: *const ::core::ffi::c_char = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !bufname.is_null() {
         cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }

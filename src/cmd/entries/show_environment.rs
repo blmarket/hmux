@@ -112,7 +112,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
-    tflag = args_get(args, 't' as i32 as u_char);
+    tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tflag.is_null() {
         if (*target).s.is_null() {
             cmdq_error(item, |out| {
@@ -126,7 +126,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
         env = global_environ.as_deref().expect("environment");
     } else {
         if (*target).s.is_null() {
-            tflag = args_get(args, 't' as i32 as u_char);
+            tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !tflag.is_null() {
                 cmdq_error(item, |out| {
                     out.write_all(b"no such session: ")?;

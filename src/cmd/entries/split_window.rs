@@ -252,7 +252,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if empty != 0 {
         flags |= SPAWN_EMPTY;
     }
-    value = args_get(args, 'B' as i32 as u_char);
+    value = args_get(&*(args), 'B' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if value.is_null() {
         lines = window_get_pane_lines(w);
     } else {
@@ -305,7 +305,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         );
     }
     sc.idx = -(1 as ::core::ffi::c_int);
-    sc.cwd = args_get(args, 'c' as i32 as u_char);
+    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     sc.flags = flags;
     new_wp = spawn_pane(&raw mut sc, &raw mut cause);
     if new_wp.is_null() {
@@ -328,7 +328,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if args_has(args, 'D' as i32 as u_char) != 0 && args_has(args, 'O' as i32 as u_char) != 0 {
             (*new_wp).flags |= PANE_CLOSEONCANCEL;
         }
-        style = args_get(args, 's' as i32 as u_char);
+        style = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if !style.is_null() {
             if options_set_string(
                 options_owner_ptr(&mut (*new_wp).options),
@@ -359,7 +359,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         match current_block {
             9814746494299271243 => {}
             _ => {
-                style = args_get(args, 'S' as i32 as u_char);
+                style = args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                 if !style.is_null() {
                     if options_set_string(
                         options_owner_ptr(&mut (*new_wp).options),
@@ -383,7 +383,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 match current_block {
                     9814746494299271243 => {}
                     _ => {
-                        style = args_get(args, 'R' as i32 as u_char);
+                        style = args_get(&*(args), 'R' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                         if !style.is_null() {
                             if options_set_string(
                                 options_owner_ptr(&mut (*new_wp).options),
@@ -433,7 +433,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                             |out| {
                                                 write_cstr(
                                                     out,
-                                                    args_get(args, 'm' as i32 as u_char),
+                                                    args_get(&*(args), 'm' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                                                 )
                                             },
                                         );
@@ -442,7 +442,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                 if args_has(args, 'T' as i32 as u_char) != 0 {
                                     let title = format_single_from_target_cstring(
                                         item,
-                                        args_get(args, 'T' as i32 as u_char),
+                                        args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                                     );
                                     screen_set_title(
                                         &mut (*new_wp).base,
@@ -530,7 +530,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                             cmd_split_window_mouse_resize(tc, &raw mut (*event).m);
                                         }
                                         if args_has(args, 'P' as i32 as u_char) != 0 {
-                                            template = args_get(args, 'F' as i32 as u_char);
+                                            template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                                             if template.is_null() {
                                                 template = SPLIT_WINDOW_TEMPLATE.as_ptr();
                                             }

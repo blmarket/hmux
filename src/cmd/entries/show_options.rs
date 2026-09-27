@@ -265,7 +265,7 @@ unsafe fn cmd_show_options_print(
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = options_name(o);
-    let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
+    let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let value: CString;
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
@@ -404,7 +404,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut type_0: monitor_type = MONITOR_SESSION;
-    let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
+    let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,

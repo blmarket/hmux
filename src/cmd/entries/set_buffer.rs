@@ -66,7 +66,7 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
 unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let tc = cmdq_get_target_client(item);
-    let name = args_get(args, b'b');
+    let name = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
     let mut pb = bufname.as_deref().and_then(paste_get_name);
     let mut cause = None;
@@ -92,7 +92,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         }
         if paste_rename(
             bufname.as_deref(),
-            Some(CStr::from_ptr(args_get(args, b'n'))),
+            Some(CStr::from_ptr(args_get(&*(args), b'n').map_or(std::ptr::null(), |value| value.as_ptr()))),
             Some(&mut cause),
         ) != 0
         {

@@ -320,7 +320,7 @@ unsafe fn cmd_wait_for_event(
     mut args: *mut args,
 ) -> cmd_retval {
     let mut wei: *mut wait_event_item = ::core::ptr::null_mut::<wait_event_item>();
-    let mut filter: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
+    let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if hooks_valid_event_name(name) == 0 {
         cmdq_error(item, |out| {
             out.write_all(b"invalid event: ")?;
@@ -375,7 +375,7 @@ unsafe fn cmd_wait_for_event_wake(
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
 ) -> cmd_retval {
-    let mut client_name: *const ::core::ffi::c_char = args_get(args, 'w' as i32 as u_char);
+    let mut client_name: *const ::core::ffi::c_char = args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut index = 0;
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
         let wei = wait_event_item_at(&raw mut wait_event_items, index);
@@ -417,7 +417,7 @@ unsafe fn cmd_wait_for_wake(
     mut args: *mut args,
     mut wc: *mut wait_channel,
 ) -> cmd_retval {
-    let mut client_name: *const ::core::ffi::c_char = args_get(args, 'w' as i32 as u_char);
+    let mut client_name: *const ::core::ffi::c_char = args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !wc.is_null() {
         let waiters = wait_channel_waiters(wc);
         let mut wi = wait_item_ptr(waiters, 0);

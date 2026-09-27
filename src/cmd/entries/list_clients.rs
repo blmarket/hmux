@@ -71,12 +71,12 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     } else {
         s = ::core::ptr::null_mut::<session>();
     }
-    template = args_get(args, 'F' as i32 as u_char);
+    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_CLIENTS_TEMPLATE.as_ptr();
     }
-    filter = args_get(args, 'f' as i32 as u_char);
-    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0

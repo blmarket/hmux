@@ -565,8 +565,8 @@ pub fn args_set_owned_commands(
 ) {
     args_set_value(args, flag, Some(args_value::commands(cmdlist)), flags);
 }
-pub unsafe fn args_get(args: *mut args, flag: u_char) -> *const ::core::ffi::c_char {
-    args_last_value(&*args, flag).map_or(std::ptr::null(), args_value::string_ptr)
+pub fn args_get(args: &args, flag: u_char) -> Option<&CStr> {
+    args_last_value(args, flag).and_then(args_value::as_string)
 }
 
 #[cfg(test)]

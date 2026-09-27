@@ -74,7 +74,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut msgtype: msgtype = 0 as msgtype;
-    let mut cmd: *const ::core::ffi::c_char = args_get(args, 'E' as i32 as u_char);
+    let mut cmd: *const ::core::ffi::c_char = args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_suspend_client_entry) {
         server_client_suspend(tc);
         return CMD_RETURN_NORMAL;

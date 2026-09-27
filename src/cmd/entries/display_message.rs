@@ -120,7 +120,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     if count != 0 as u_int {
         template = args_string(args, 0 as u_int);
     } else {
-        template = args_get(args, 'F' as i32 as u_char);
+        template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     }
     if args_has(args, 'j' as i32 as u_char) != 0 && template.is_null() {
         template = b"\0" as *const u8 as *const ::core::ffi::c_char;

@@ -73,7 +73,7 @@ pub static cmd_list_keys_entry: cmd_entry = {
 unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     let mut prefix: key_code = 0;
     if args_has(args, 'P' as i32 as u_char) != 0 {
-        return CStr::from_ptr(args_get(args, 'P' as i32 as u_char)).to_owned();
+        return CStr::from_ptr(args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned();
     }
     prefix = options_get_number(
         global_s_options,
@@ -233,7 +233,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
     }
-    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
@@ -242,7 +242,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    tablename = args_get(args, 'T' as i32 as u_char);
+    tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tablename.is_null() {
         table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
         if table.is_none() {
@@ -257,7 +257,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let prefix = cmd_list_keys_get_prefix(args);
     single = args_has(args, '1' as i32 as u_char);
     notes_only = args_has(args, 'N' as i32 as u_char);
-    template = args_get(args, 'F' as i32 as u_char);
+    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }

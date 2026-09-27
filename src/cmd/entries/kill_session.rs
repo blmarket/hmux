@@ -54,7 +54,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut s: *mut session = (*target).s;
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
+    let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
     {

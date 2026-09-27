@@ -171,7 +171,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         args_has(args, 'F' as i32 as u_char),
     ));
     let literal = args_has(args, 'l' as i32 as u_char) != 0;
-    s = args_get(args, 'p' as i32 as u_char);
+    s = args_get(&*(args), 'p' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if s.is_null() {
         if count != 0 as u_int {
             let command = args_make_commands_get_command_cstring(
@@ -187,14 +187,14 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     } else {
         prompt_bytes.extend_from_slice(CStr::from_ptr(s).to_bytes());
     }
-    s = args_get(args, 'I' as i32 as u_char);
+    s = args_get(&*(args), 'I' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let input_bytes = if s.is_null() {
         None
     } else {
         Some(CStr::from_ptr(s).to_bytes())
     };
     cdata.prompts = cmd_command_prompt_rows(&prompt_bytes, input_bytes, literal, space != 0);
-    type_0 = args_get(args, 'T' as i32 as u_char);
+    type_0 = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !type_0.is_null() {
         cdata.prompt_type = prompt_type(CStr::from_ptr(type_0));
         if cdata.prompt_type as ::core::ffi::c_uint

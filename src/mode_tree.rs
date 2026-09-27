@@ -517,10 +517,10 @@ pub unsafe fn mode_tree_start(
     } else {
         (*mtd).preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
     }
-    (*mtd).sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    (*mtd).sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     (*mtd).sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        (*mtd).filter = Some(CStr::from_ptr(args_get(args, 'f' as i32 as u_char)).to_owned());
+        (*mtd).filter = Some(CStr::from_ptr(args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned());
     } else {
         (*mtd).filter = None;
     }

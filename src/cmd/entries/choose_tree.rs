@@ -197,7 +197,7 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut wp: *mut window_pane = (*target).wp;
     let mode: &'static window_mode;
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {

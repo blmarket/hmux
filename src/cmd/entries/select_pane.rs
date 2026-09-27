@@ -292,7 +292,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'm' as i32 as u_char) != 0 || args_has(args, 'M' as i32 as u_char) != 0 {
         return cmd_select_pane_marked_pane(self_0, item);
     }
-    style = args_get(args, 'P' as i32 as u_char);
+    style = args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !style.is_null() {
         o = options_set_string(
             oo,
@@ -360,7 +360,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        let title = format_single_from_target_cstring(item, args_get(args, 'T' as i32 as u_char));
+        let title = format_single_from_target_cstring(item, args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
         if screen_set_title(&mut (*wp).base, &title, 0 as ::core::ffi::c_int) != 0 {
             let mut ep = event_payload_create();
             cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);

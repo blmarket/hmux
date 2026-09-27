@@ -54,7 +54,7 @@ unsafe fn cmd_list_panes_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
@@ -113,7 +113,7 @@ unsafe fn cmd_list_panes_window(
         reversed: 0,
         order_seq: &[],
     };
-    template = args_get(args, 'F' as i32 as u_char);
+    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         match type_0 {
             0 => {
@@ -131,8 +131,8 @@ unsafe fn cmd_list_panes_window(
             _ => {}
         }
     }
-    filter = args_get(args, 'f' as i32 as u_char);
-    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+    filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     let l = sort_get_panes_window((*wl).window_ptr(), &raw mut sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes to list");

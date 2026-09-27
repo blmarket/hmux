@@ -59,7 +59,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     }
     bufname = ::core::ptr::null::<::core::ffi::c_char>();
     if args_has(args, 'b' as i32 as u_char) != 0 {
-        bufname = args_get(args, 'b' as i32 as u_char);
+        bufname = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     }
     if bufname.is_null() {
         pb = paste_get_top(None);
@@ -77,7 +77,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         return CMD_RETURN_NORMAL;
     };
     if !(*wp).flags & PANE_INPUTOFF != 0 {
-        sepstr = args_get(args, 's' as i32 as u_char);
+        sepstr = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if sepstr.is_null() {
             if args_has(args, 'r' as i32 as u_char) != 0 {
                 sepstr = b"\n\0" as *const u8 as *const ::core::ffi::c_char;
