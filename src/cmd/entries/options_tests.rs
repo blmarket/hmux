@@ -116,7 +116,7 @@ fn command_queue_name_keeps_entry_label_and_item_pointer() {
         );
         assert!(written >= 0 && (written as usize) < expected.len());
         assert_eq!(
-            CStr::from_ptr(cmdq_get_name(item)).to_bytes(),
+            cmdq_get_name(&*item).expect("queue item name").to_bytes(),
             CStr::from_ptr(expected.as_ptr()).to_bytes()
         );
         cmdq_free_detached(item);

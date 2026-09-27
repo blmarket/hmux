@@ -187,10 +187,8 @@ impl Drop for cmdq_list {
     }
 }
 
-pub unsafe fn cmdq_get_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
-    return ((*item).name)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+pub fn cmdq_get_name(item: &cmdq_item) -> Option<&std::ffi::CStr> {
+    item.name.as_deref()
 }
 pub unsafe fn cmdq_get_cmd(mut item: *mut cmdq_item) -> *mut cmd {
     return (*item).cmd;
