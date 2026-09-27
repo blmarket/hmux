@@ -51,14 +51,15 @@ use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink
 use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::style::style_apply;
+use crate::src::window::{window_pane_upgrade, window_pane_weak};
 use crate::src::window::{window_pane_reset_mode, window_pane_stack_first};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_client_modedata {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub data: *mut mode_tree_data,
     pub format: CString,
     pub key_format: CString,
@@ -301,7 +302,7 @@ mod tests {
                 (*c).ttyname = Some(c"/dev/pts/7".to_owned());
                 let client_observer = Rc::downgrade(&client_owner);
                 let mut data = window_client_modedata {
-                    wp: std::ptr::null_mut(),
+                    wp: Weak::new(),
                     data: std::ptr::null_mut(),
                     format: c"".to_owned(),
                     key_format: c"".to_owned(),
@@ -516,6 +517,10 @@ unsafe fn window_client_draw(
     mut sy: u_int,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut session: *mut session = (*c).session;
     let mut s: *mut screen = (*ctx).s;
@@ -548,7 +553,7 @@ unsafe fn window_client_draw(
     }
     w = (*(*session).curw).window_ptr();
     wp = (*w).active;
-    if (*data).hide_preview_this_pane != 0 && wp == (*data).wp {
+    if (*data).hide_preview_this_pane != 0 && wp == mode_pane {
         if !window_pane_stack_first(w).is_null() {
             wp = window_pane_stack_first(w);
         } else {
@@ -644,7 +649,11 @@ unsafe fn window_client_menu(
     mut key: key_code,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
-    let mut wp: *mut window_pane = (*data).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active;
     if wme.is_null() || (*wme).data != modedata {
@@ -743,7 +752,7 @@ unsafe fn window_client_init(
         args_string(args, 0 as u_int)
     };
     data = Box::into_raw(Box::new(window_client_modedata {
-        wp: ::core::ptr::null_mut(),
+        wp: Weak::new(),
         data: ::core::ptr::null_mut(),
         format: CStr::from_ptr(format).to_owned(),
         key_format: CStr::from_ptr(key_format).to_owned(),
@@ -754,7 +763,7 @@ unsafe fn window_client_init(
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live client mode data");
-    (*data).wp = wp;
+    (*data).wp = window_pane_weak(wp);
     (*data).hide_preview_this_pane =
         (!args.is_null() && args_has(args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).preview_is_info =
@@ -815,9 +824,13 @@ unsafe fn window_client_resize(mut wme: *mut window_mode_entry, mut sx: u_int, m
 }
 unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_client_do_detach(
     mut data: *mut window_client_modedata,

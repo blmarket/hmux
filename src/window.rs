@@ -2435,6 +2435,19 @@ pub(crate) unsafe fn window_pane_weak(
     crate::src::shared::rc::downgrade(wp)
 }
 
+/// Retain a live pane for an operation through a nonowning model link.
+/// Logical destruction invalidates observers even if another owner keeps the
+/// allocation alive. This is not an accessor for final-drop cleanup.
+pub(crate) unsafe fn window_pane_upgrade(
+    pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    let owner = pane.upgrade()?;
+    if (*crate::src::shared::rc::as_ptr(&owner)).flags & PANE_DESTROYED != 0 {
+        return None;
+    }
+    Some(owner)
+}
+
 pub unsafe fn window_pane_first(w: *mut window) -> *mut window_pane {
     if w.is_null() {
         std::ptr::null_mut()
@@ -4904,6 +4917,30 @@ mod pane_stream_lifecycle_tests {
     use super::*;
     use crate::src::reactor::shutdown_runtime;
     use crate::src::shared::rc;
+
+    #[test]
+    fn pane_observers_expire_on_logical_destruction_before_the_last_guard() {
+        unsafe {
+            let pane = rc::new(window_pane::empty());
+            (*pane).fd = -1;
+            (*pane).pipe_fd = -1;
+            let observer = window_pane_weak(pane);
+            assert_eq!(rc::strong_count(pane), 1);
+            let guard = window_pane_upgrade(&observer).unwrap();
+            assert_eq!(rc::as_ptr(&guard), pane);
+
+            window_pane_destroy(pane);
+
+            // An in-flight operation can still hold the allocation, but new
+            // operations must not follow a mode's link into a destroyed pane.
+            assert!(observer.upgrade().is_some());
+            assert!(window_pane_upgrade(&observer).is_none());
+            assert_ne!((*rc::as_ptr(&guard)).flags & PANE_DESTROYED, 0);
+            drop(guard);
+            assert!(observer.upgrade().is_none());
+            assert!(window_pane_upgrade(&observer).is_none());
+        }
+    }
 
     #[test]
     fn destroying_an_empty_pane_releases_its_stream_callbacks() {

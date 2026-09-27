@@ -59,7 +59,6 @@ use std::ffi::{CStr, CString};
 
 #[repr(C)]
 pub struct window_switch_modedata {
-    pub wp: *mut window_pane,
     pub screen: screen,
     pub zoomed: ::core::ffi::c_int,
     pub format: CString,
@@ -476,7 +475,6 @@ unsafe fn window_switch_init(
         args_string(args, 0 as u_int)
     };
     data = Box::into_raw(Box::new(window_switch_modedata {
-        wp: ::core::ptr::null_mut(),
         screen: screen::empty(),
         zoomed: 0,
         format: CStr::from_ptr(format).to_owned(),
@@ -491,7 +489,6 @@ unsafe fn window_switch_init(
         offset: 0,
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
-    (*data).wp = wp;
     if args_has(args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {

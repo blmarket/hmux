@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
@@ -101,7 +101,7 @@ use crate::src::spawn::{
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
-use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
+use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode, window_pane_upgrade, window_pane_weak};
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {
@@ -115,7 +115,7 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
 
 #[repr(C)]
 pub struct window_customize_modedata {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
@@ -449,6 +449,10 @@ unsafe fn window_customize_check_item(
     item: &window_customize_itemdata,
     mut fsp: *mut cmd_find_state,
 ) -> ::core::ffi::c_int {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return 0;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -464,7 +468,7 @@ unsafe fn window_customize_check_item(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(fsp, &raw mut (*data).fs);
     } else {
-        cmd_find_from_pane(fsp, (*data).wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(fsp, mode_pane, 0 as ::core::ffi::c_int);
     }
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -634,6 +638,10 @@ fn window_customize_copy_item(item: &window_customize_itemdata) -> Box<window_cu
 }
 
 unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -643,7 +651,7 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut screen = (*(*data).wp).screen;
+    let mut s: *mut screen = (*mode_pane).screen;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1633,6 +1641,10 @@ unsafe fn window_customize_build(
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -1648,7 +1660,7 @@ unsafe fn window_customize_build(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
-        cmd_find_from_pane(&raw mut fs, (*data).wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, mode_pane, 0 as ::core::ffi::c_int);
     }
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -2859,7 +2871,11 @@ unsafe fn window_customize_menu(
     mut key: key_code,
 ) {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
-    let mut wp: *mut window_pane = (*data).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active;
     if wme.is_null() || (*wme).data != modedata {
@@ -2914,7 +2930,7 @@ unsafe fn window_customize_init(
         CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
     };
     data = crate::src::shared::rc::new(window_customize_modedata {
-        wp,
+        wp: window_pane_weak(wp),
         dead: 0,
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
@@ -3052,6 +3068,10 @@ unsafe fn window_customize_set_option_callback(
     let mut current_block: u64;
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut oo: *mut options = item.oo;
@@ -3128,7 +3148,7 @@ unsafe fn window_customize_set_option_callback(
             );
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
-            (*(*data).wp).flags |= PANE_REDRAW;
+            (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
     };
@@ -3152,6 +3172,10 @@ unsafe fn window_customize_set_environment_callback(
         return PROMPT_CLOSE;
     };
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut envent: Option<&environ_entry> = None;
     let mut flags: ::core::ffi::c_int = 0;
     if s.is_null() || (*data).dead != 0 {
@@ -3180,7 +3204,7 @@ unsafe fn window_customize_set_environment_callback(
     );
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_set_environment(
@@ -3292,6 +3316,10 @@ unsafe fn window_customize_add_option_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut what: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut namelen: size_t = 0;
@@ -3368,7 +3396,7 @@ unsafe fn window_customize_add_option_callback(
     options_push_changes(name);
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_option(
@@ -3430,6 +3458,10 @@ unsafe fn window_customize_add_environment_callback(
         return PROMPT_CLOSE;
     };
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -3476,7 +3508,7 @@ unsafe fn window_customize_add_environment_callback(
     }
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_environment(
@@ -3598,6 +3630,10 @@ unsafe fn window_customize_start_edit(
     item: &window_customize_itemdata,
     mut c: *mut client,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut envent: Option<&environ_entry> = None;
     let value: Cow<'_, CStr>;
@@ -3682,7 +3718,7 @@ unsafe fn window_customize_start_edit(
     // The callback owns the record and receives editor identity at dispatch.
     // Startup failure and cancellation drop the capture normally.
     let ed = Box::new(window_customize_editdata {
-        wp_id: (*(*data).wp).id,
+        wp_id: (*mode_pane).id,
         edit_type,
         item: window_customize_copy_item(item),
     });
@@ -3879,6 +3915,10 @@ unsafe fn window_customize_set_array_key_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3940,7 +3980,7 @@ unsafe fn window_customize_set_array_key_callback(
         );
         mode_tree_build((*data).data);
         mode_tree_draw((*data).data);
-        (*(*data).wp).flags |= PANE_REDRAW;
+        (*mode_pane).flags |= PANE_REDRAW;
         return PROMPT_CLOSE;
     };
 }
@@ -4113,6 +4153,10 @@ unsafe fn window_customize_set_command_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -4152,7 +4196,7 @@ unsafe fn window_customize_set_command_callback(
             bd.commands = pr.cmdlist.take().expect("successful command parse");
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
-            (*(*data).wp).flags |= PANE_REDRAW;
+            (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
     };
@@ -4166,6 +4210,10 @@ unsafe fn window_customize_set_note_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -4177,7 +4225,7 @@ unsafe fn window_customize_set_note_callback(
     key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
 fn window_customize_key_prompt(key_string: &CStr) -> CString {
@@ -4270,6 +4318,10 @@ unsafe fn window_customize_add_key_callback(
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut key: key_code = 0;
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keylen: size_t = 0;
@@ -4362,7 +4414,7 @@ unsafe fn window_customize_add_key_callback(
             );
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
-            (*(*data).wp).flags |= PANE_REDRAW;
+            (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
     };
@@ -4497,6 +4549,10 @@ unsafe fn window_customize_change_current_callback(
     _key: prompt_key_result,
 ) -> prompt_result {
     let data = owner.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut type_0: window_customize_item_type = WINDOW_CUSTOMIZE_ITEM_OPTION;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
@@ -4582,7 +4638,7 @@ unsafe fn window_customize_change_current_callback(
     }
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_change_tagged_callback(
@@ -4593,6 +4649,10 @@ unsafe fn window_customize_change_tagged_callback(
 ) -> prompt_result {
     let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let data = owner.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -4639,13 +4699,17 @@ unsafe fn window_customize_change_tagged_callback(
     );
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_current(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
 ) -> ::core::ffi::c_int {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return 1;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -4659,7 +4723,7 @@ unsafe fn window_customize_add_current(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
-        cmd_find_from_pane(&raw mut fs, (*data).wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, mode_pane, 0 as ::core::ffi::c_int);
     }
     if name.as_ref() == c"Server Options" {
         window_customize_add_option(
@@ -5061,7 +5125,7 @@ mod item_owner_tests {
         }
         unsafe {
             let data = crate::src::shared::rc::new(window_customize_modedata {
-                wp: std::ptr::null_mut(),
+                wp: Weak::new(),
                 dead: 0,
                 data: std::ptr::null_mut(),
                 editor: std::ptr::null_mut(),

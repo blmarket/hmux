@@ -54,14 +54,16 @@ use crate::src::spawn::{
     spawn_cancel_editor, spawn_editor, spawn_editor_write, spawn_get_editor_pid,
 };
 use crate::src::text::utf8::utf8_strvis;
+use crate::src::window::{window_pane_upgrade, window_pane_weak};
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::cell::UnsafeCell;
+use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_buffer_modedata {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub fs: cmd_find_state,
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
@@ -354,7 +356,11 @@ unsafe fn window_buffer_menu(
     mut key: key_code,
 ) {
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
-    let mut wp: *mut window_pane = (*data).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active;
     if wme.is_null() || (*wme).data != modedata {
@@ -464,7 +470,7 @@ unsafe fn window_buffer_init(
         CStr::from_ptr(args_string(args, 0 as u_int)).to_owned()
     };
     data = Box::into_raw(Box::new(window_buffer_modedata {
-        wp,
+        wp: window_pane_weak(wp),
         fs: Default::default(),
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
@@ -475,7 +481,6 @@ unsafe fn window_buffer_init(
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
-    (*data).wp = wp;
     cmd_find_copy_state(&raw mut (*data).fs, fs);
     (*data).data = mode_tree_start(
         wp,
@@ -534,10 +539,14 @@ unsafe fn window_buffer_resize(mut wme: *mut window_mode_entry, mut sx: u_int, m
 }
 unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
     window_buffer_draw_waiting(data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
@@ -563,6 +572,10 @@ unsafe fn window_buffer_do_paste(
     }
 }
 unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -572,7 +585,7 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut screen = (*(*data).wp).screen;
+    let mut s: *mut screen = (*mode_pane).screen;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -730,6 +743,10 @@ unsafe fn window_buffer_start_edit(
     item: &window_buffer_itemdata,
     mut c: *mut client,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     if !(*data).editor.is_null() {
         return;
     }
@@ -740,7 +757,7 @@ unsafe fn window_buffer_start_edit(
     // The completion callback owns the record. Cancellation drops its capture;
     // dispatch supplies editor identity without sharing the startup record.
     let ed = Box::new(window_buffer_editdata {
-        wp_id: (*(*data).wp).id,
+        wp_id: (*mode_pane).id,
         name: Some(name),
         pb: pb.clone(),
     });

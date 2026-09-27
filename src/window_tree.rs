@@ -70,6 +70,7 @@ use crate::src::sort::{
     sort_would_window_tree_swap,
 };
 use crate::src::style::style_apply;
+use crate::src::window::{window_pane_upgrade, window_pane_weak};
 use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_first,
     window_pane_index, window_pane_next, window_pane_reset_mode, window_winlinks_append,
@@ -77,11 +78,11 @@ use crate::src::window::{
 };
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_tree_modedata {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: *mut mode_tree_data,
     // Callback Rc references keep this record alive after mode shutdown.
@@ -417,6 +418,10 @@ unsafe fn window_tree_build_window(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return 0;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut i: u_int = 0;
     let mut found: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -476,7 +481,7 @@ unsafe fn window_tree_build_window(
     while i < n {
         if !(window_tree_filter_pane(s, wl, l[i as usize], filter) == 0) {
             found = found.wrapping_add(1);
-            if !((*data).hide_preview_this_pane != 0 && l[i as usize] == (*data).wp) {
+            if !((*data).hide_preview_this_pane != 0 && l[i as usize] == mode_pane) {
                 window_tree_build_pane(s, wl, l[i as usize], modedata, &mti);
             }
         }
@@ -732,6 +737,10 @@ unsafe fn window_tree_draw_session(
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut cx: u_int = (*(*ctx).s).cx;
@@ -842,7 +851,7 @@ unsafe fn window_tree_draw_session(
     }
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(&mut (*(*(*data).wp).window).options),
+        options_owner_ptr(&mut (*(*mode_pane).window).options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -984,6 +993,10 @@ unsafe fn window_tree_draw_window(
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut cx: u_int = (*(*ctx).s).cx;
@@ -1033,7 +1046,7 @@ unsafe fn window_tree_draw_window(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     total = window_count_panes(w, 1 as ::core::ffi::c_int);
-    if (*data).hide_preview_this_pane != 0 && (*(*data).wp).window == w {
+    if (*data).hide_preview_this_pane != 0 && (*mode_pane).window == w {
         total = total.wrapping_sub(1);
     }
     if total == 0 as u_int {
@@ -1050,7 +1063,7 @@ unsafe fn window_tree_draw_window(
     current = 0 as u_int;
     wp = window_pane_first(w);
     while !wp.is_null() {
-        if !((*data).hide_preview_this_pane != 0 && wp == (*data).wp) {
+        if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
             if wp == (*w).active {
                 break;
             }
@@ -1102,7 +1115,7 @@ unsafe fn window_tree_draw_window(
     }
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(&mut (*(*(*data).wp).window).options),
+        options_owner_ptr(&mut (*(*mode_pane).window).options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -1150,7 +1163,7 @@ unsafe fn window_tree_draw_window(
     i = loop_0;
     wp = window_pane_first(w);
     while !wp.is_null() {
-        if !((*data).hide_preview_this_pane != 0 && wp == (*data).wp) {
+        if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
             if loop_0 == end {
                 break;
             }
@@ -1238,6 +1251,10 @@ unsafe fn window_tree_draw_info(
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = (*ctx).s;
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -1317,7 +1334,7 @@ unsafe fn window_tree_draw_info(
             }
             window_tree_border_cell(
                 &raw mut gc,
-                options_owner_ptr(&mut (*(*(*data).wp).window).options),
+                options_owner_ptr(&mut (*(*mode_pane).window).options),
                 ::core::ptr::null_mut::<format_tree>(),
             );
             screen_write_cursormove(
@@ -1377,7 +1394,7 @@ unsafe fn window_tree_draw_info(
     if sx > 14 as u_int && i < sy {
         window_tree_border_cell(
             &raw mut gc,
-            options_owner_ptr(&mut (*(*(*data).wp).window).options),
+            options_owner_ptr(&mut (*(*mode_pane).window).options),
             ::core::ptr::null_mut::<format_tree>(),
         );
         screen_write_cursormove(
@@ -1398,6 +1415,10 @@ unsafe fn window_tree_draw(
     mut sy: u_int,
 ) {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1417,7 +1438,7 @@ unsafe fn window_tree_draw(
             window_tree_draw_window(modedata as *mut window_tree_modedata, sp, wl, ctx, sx, sy);
         }
         3 => {
-            if (*data).hide_preview_this_pane == 0 || wp != (*data).wp {
+            if (*data).hide_preview_this_pane == 0 || wp != mode_pane {
                 screen_write_preview(&mut *ctx, &(*wp).base, sx, sy);
             }
         }
@@ -1486,7 +1507,11 @@ unsafe fn window_tree_menu(
     mut key: key_code,
 ) {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
-    let mut wp: *mut window_pane = (*data).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active;
     if wme.is_null() || (*wme).data != modedata {
@@ -1673,7 +1698,7 @@ unsafe fn window_tree_init(
         args_string(args, 0 as u_int)
     };
     data = crate::src::shared::rc::new(window_tree_modedata {
-        wp: ::core::ptr::null_mut(),
+        wp: Weak::new(),
         dead: 0,
         data: ::core::ptr::null_mut(),
         format: CStr::from_ptr(format).to_owned(),
@@ -1695,7 +1720,7 @@ unsafe fn window_tree_init(
         each: 0,
     });
     (*wme).data = data as *mut ::core::ffi::c_void;
-    (*data).wp = wp;
+    (*data).wp = window_pane_weak(wp);
     if args_has(args, 's' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_SESSION;
     } else if args_has(args, 'w' as i32 as u_char) != 0 {
@@ -1780,9 +1805,13 @@ unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut
 }
 unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_tree_get_target(
     item: &window_tree_itemdata,
@@ -1852,9 +1881,13 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
     Some(Box::new(move |_| unsafe {
         let data = crate::src::shared::rc::as_ptr(&mode);
         if (*data).dead == 0 {
+            let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+                return CMD_RETURN_NORMAL;
+            };
+            let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
-            (*(*data).wp).flags |= PANE_REDRAW;
+            (*mode_pane).flags |= PANE_REDRAW;
         }
         CMD_RETURN_NORMAL
     }))
@@ -2335,12 +2368,12 @@ mod queued_refresh_tests {
     use std::ptr::NonNull;
 
     #[test]
-    fn queued_refresh_releases_closed_mode_when_fired_or_cancelled() {
-        for fire in [false, true] {
+    fn queued_refresh_releases_closed_or_orphaned_mode_when_fired_or_cancelled() {
+        for (fire, dead) in [(false, 0), (true, 0), (false, 1), (true, 1)] {
             unsafe {
                 let mode = rc::take(rc::new(window_tree_modedata {
-                    wp: std::ptr::null_mut(),
-                    dead: 1,
+                    wp: Weak::new(),
+                    dead,
                     data: std::ptr::null_mut(),
                     format: c"row format".to_owned(),
                     key_format: c"key format".to_owned(),
@@ -2376,7 +2409,8 @@ mod queued_refresh_tests {
                 if fire {
                     (*item).flags |= CMDQ_FIRED;
                     let callback = (*item).cb.take().unwrap();
-                    // A closed mode has already released its pane and tree.
+                    // Closed modes and modes with expired parents must not
+                    // access the absent pane or tree.
                     assert_eq!(callback(NonNull::new(item).unwrap()), CMD_RETURN_NORMAL);
                     assert!(observed.upgrade().is_none());
                 }

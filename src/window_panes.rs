@@ -54,6 +54,7 @@ use crate::src::shared::window::{
 };
 use crate::src::style::style_apply;
 use crate::src::text::utf8::utf8_set;
+use crate::src::window::{window_pane_upgrade, window_pane_weak};
 use crate::src::window::{
     window_find_by_id, window_get_pane_status, window_pane_at_index, window_pane_find_by_id,
     window_pane_first, window_pane_index, window_pane_is_visible, window_pane_next,
@@ -61,11 +62,13 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
+use std::cell::UnsafeCell;
 use std::ffi::CString;
+use std::rc::Weak;
 
 #[repr(C)]
 pub struct window_panes_modedata {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub session: *mut session,
     pub source_session: u_int,
     pub source_window: u_int,
@@ -166,7 +169,11 @@ unsafe fn window_panes_get_source(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
-    let mut wp: *mut window_pane = (*data).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     let mut src: *mut screen = &raw mut (*wp).base;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -309,8 +316,12 @@ unsafe fn window_panes_get_border_cell(
     mut data: *mut window_panes_modedata,
     mut gc: *mut grid_cell,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut wp: *mut window_pane = (*data).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut s: *mut session = (*data).session;
     memcpy(
         gc as *mut ::core::ffi::c_void,
@@ -1089,6 +1100,10 @@ unsafe fn window_panes_draw_format(
     mut sx: u_int,
     mut gc: *const grid_cell,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut session = (*data).session;
     let mut wl: *mut winlink = (*s).curw;
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1096,7 +1111,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     format = options_get_string(
-        options_owner_ptr(&mut (*(*(*data).wp).window).options),
+        options_owner_ptr(&mut (*(*mode_pane).window).options),
         b"display-panes-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *format as ::core::ffi::c_int == '\0' as i32 {
@@ -1146,10 +1161,14 @@ unsafe fn window_panes_draw_number(
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut session = (*data).session;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wl: *mut winlink = (*s).curw;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*data).wp).window).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options);
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1357,6 +1376,10 @@ unsafe fn window_panes_draw_pane(
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*wp).base;
     let mut pane: u_int = 0;
     let mut x: u_int = 0;
@@ -1410,7 +1433,7 @@ unsafe fn window_panes_draw_pane(
         .as_deref_mut()
         .map_or(::core::ptr::null_mut(), |preview| preview as *mut screen);
     if !preview.is_null()
-        && wp == (*data).wp
+        && wp == mode_pane
         && sx <= (*preview).grid().sx
         && sy <= (*preview).grid().sy
     {
@@ -1425,6 +1448,10 @@ unsafe fn window_panes_draw_pane(
 }
 unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -1505,7 +1532,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         wp = window_pane_z_previous(wp);
     }
     screen_write_stop(&mut ctx);
-    (*(*data).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
@@ -1564,7 +1591,7 @@ unsafe fn window_panes_init(
         };
     }
     data = Box::into_raw(Box::new(window_panes_modedata {
-        wp: ::core::ptr::null_mut(),
+        wp: Weak::new(),
         session: ::core::ptr::null_mut(),
         source_session: 0,
         source_window: 0,
@@ -1578,7 +1605,7 @@ unsafe fn window_panes_init(
         areas: Vec::new(),
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
-    (*data).wp = wp;
+    (*data).wp = window_pane_weak(wp);
     (*data).session = s;
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
     (*data).screen.mode &= !MODE_CURSOR;
