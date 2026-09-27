@@ -553,7 +553,7 @@ pub unsafe fn mode_tree_start(
     (*mtd).sortcb = sortcb;
     (*mtd).helpcb = helpcb;
     *s = &raw mut (*mtd).screen;
-    screen_init(*s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
+    screen_init(&mut **s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
     (**s).mode &= !MODE_CURSOR;
     return mtd;
 }
@@ -657,7 +657,7 @@ pub unsafe fn mode_tree_free(mut mtd: *mut mode_tree_data) {
     mode_tree_clear_prompt(mtd);
     mode_tree_free_items(&raw mut (*mtd).children);
     mode_tree_clear_lines(mtd);
-    screen_free(&raw mut (*mtd).screen);
+    screen_free(&mut (*mtd).screen);
     (*mtd).search = None;
     (*mtd).filter = None;
     (*mtd).dead = 1 as ::core::ffi::c_int;

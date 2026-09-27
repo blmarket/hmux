@@ -2758,11 +2758,11 @@ unsafe fn window_pane_create(
     style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, (*wp).options);
     colour_palette_init(&raw mut (*wp).palette);
     colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);
-    screen_init(&raw mut (*wp).base, sx, sy, hlimit);
+    screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen = &raw mut (*wp).base;
     window_pane_default_cursor(wp);
     screen_init(
-        &raw mut (*wp).status_screen,
+        &mut (*wp).status_screen,
         1 as u_int,
         1 as u_int,
         0 as u_int,
@@ -2897,10 +2897,10 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
     log_debug(format_args!("pane %{} freed", ((*wp).id) as u32));
     window_pane_set_searchstr(&mut *wp, None);
     if (*wp).status_screen.grid.is_some() {
-        screen_free(&raw mut (*wp).status_screen);
+        screen_free(&mut (*wp).status_screen);
     }
     if (*wp).base.grid.is_some() {
-        screen_free(&raw mut (*wp).base);
+        screen_free(&mut (*wp).base);
     }
     if !(*wp).options.is_null() {
         options_free((*wp).options);
@@ -4027,7 +4027,7 @@ pub unsafe fn window_pane_update_used_data(
     (*wpo).used = (*wpo).used.wrapping_add(size);
 }
 pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
-    screen_set_default_cursor((*wp).screen, (*wp).options);
+    screen_set_default_cursor(&mut *(*wp).screen, (*wp).options);
 }
 pub unsafe fn window_pane_mode(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     if !(*wp).modes.active.is_null() {

@@ -520,7 +520,7 @@ unsafe fn window_switch_init(
         (*data).filter.as_ptr(),
     );
     s = &raw mut (*data).screen;
-    screen_init(s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
+    screen_init(&mut *s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
@@ -542,7 +542,7 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     (*data).item_list.clear();
     (*data).matches.clear();
     prompt_free((*data).prompt);
-    screen_free(&raw mut (*data).screen);
+    screen_free(&mut (*data).screen);
     drop(Box::from_raw(data));
 }
 unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {

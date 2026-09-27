@@ -231,7 +231,7 @@ pub unsafe fn status_init(mut c: *mut client) {
         );
         i = i.wrapping_add(1);
     }
-    screen_init(&raw mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
+    screen_init(&mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
     (*sl).active = None;
 }
 pub unsafe fn status_free(mut c: *mut client) {
@@ -254,7 +254,7 @@ pub unsafe fn status_free(mut c: *mut client) {
     if let Some(mut active) = (*sl).active.take() {
         screen_free(&mut *active);
     }
-    screen_free(&raw mut (*sl).screen);
+    screen_free(&mut (*sl).screen);
 }
 pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
@@ -692,10 +692,10 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     screen_write_stop(&raw mut ctx);
     if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
-        screen_free(&raw mut old_screen);
+        screen_free(&mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
-    screen_free(&raw mut old_screen);
+    screen_free(&mut old_screen);
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
@@ -842,10 +842,10 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     prompt_draw((*c).prompt, &raw mut pdd);
     screen_write_stop(&raw mut ctx);
     if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
-        screen_free(&raw mut old_screen);
+        screen_free(&mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
-    screen_free(&raw mut old_screen);
+    screen_free(&mut old_screen);
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn status_prompt_cursor(mut c: *mut client, mut cx: *mut u_int, mut cy: *mut u_int) {

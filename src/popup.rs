@@ -154,7 +154,7 @@ unsafe fn popup_free_resources(pd: *mut popup_data) {
     if !(*pd).ictx.is_null() {
         input_free((*pd).ictx);
     }
-    screen_free(&raw mut (*pd).s);
+    screen_free(&mut (*pd).s);
     colour_palette_free(&raw mut (*pd).palette);
 }
 unsafe fn popup_free(mut pd: *mut popup_data) {
@@ -365,9 +365,9 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
     };
     popup_reapply_styles(pd);
-    screen_init(&raw mut s, (*pd).sx, (*pd).sy, 0 as u_int);
+    screen_init(&mut s, (*pd).sx, (*pd).sy, 0 as u_int);
     if !(*pd).s.hyperlinks.is_null() {
-        screen_share_hyperlinks(&raw mut s, &raw const (*pd).s);
+        screen_share_hyperlinks(&mut s, &(*pd).s);
     }
     screen_write_start(&raw mut ctx, &raw mut s);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
@@ -443,7 +443,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
         );
         i = i.wrapping_add(1);
     }
-    screen_free(&raw mut s);
+    screen_free(&mut s);
     let pd = std::ptr::NonNull::new(pd).expect("live popup");
     (*c).overlay_check = Some(Box::new(move |_, px, py, nx| unsafe {
         popup_check(pd.as_ptr(), px, py, nx)
@@ -1017,8 +1017,8 @@ pub unsafe fn popup_display(
         }
     }
     (*pd).border_cell.attr = 0 as u_short;
-    screen_init(&raw mut (*pd).s, jx, jy, 0 as u_int);
-    screen_set_default_cursor(&raw mut (*pd).s, global_w_options);
+    screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
+    screen_set_default_cursor(&mut (*pd).s, global_w_options);
     colour_palette_init(&raw mut (*pd).palette);
     colour_palette_from_option(&raw mut (*pd).palette, global_w_options);
     memcpy(

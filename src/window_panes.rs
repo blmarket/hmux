@@ -180,7 +180,7 @@ unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     let mut sy: u_int = (*src).grid().sy;
     (*data).preview = Some(Box::new(screen::empty()));
     let dst = (*data).preview.as_deref_mut().unwrap() as *mut screen;
-    screen_init(dst, sx, sy, 0 as u_int);
+    screen_init(&mut *dst, sx, sy, 0 as u_int);
     screen_write_start(&raw mut ctx, dst);
     screen_write_fast_copy(&raw mut ctx, src, 0 as u_int, (*src).grid().hsize, sx, sy);
     screen_write_stop(&raw mut ctx);
@@ -1579,7 +1579,7 @@ unsafe fn window_panes_init(
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     (*data).session = s;
-    screen_init(&raw mut (*data).screen, sx, sy, 0 as u_int);
+    screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
     (*data).screen.mode &= !MODE_CURSOR;
     (*data).state = args_make_commands_prepare(
         self_0,
@@ -1641,9 +1641,9 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     }
     window_panes_free_areas(data);
     if let Some(mut preview) = (*data).preview.take() {
-        screen_free(&raw mut *preview);
+        screen_free(&mut *preview);
     }
-    screen_free(&raw mut (*data).screen);
+    screen_free(&mut (*data).screen);
     drop(Box::from_raw(data));
 }
 unsafe fn window_panes_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {

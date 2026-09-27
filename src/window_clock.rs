@@ -680,7 +680,7 @@ unsafe fn window_clock_init(
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;
-    screen_init(s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
+    screen_init(&mut *s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
     (*s).mode &= !MODE_CURSOR;
     window_clock_draw_screen(wme);
     return s;
@@ -688,7 +688,7 @@ unsafe fn window_clock_init(
 unsafe fn window_clock_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     event_del(&raw mut (*data).timer);
-    screen_free(&raw mut (*data).screen);
+    screen_free(&mut (*data).screen);
     drop(Box::from_raw(data));
 }
 unsafe fn window_clock_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {

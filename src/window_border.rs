@@ -102,7 +102,7 @@ unsafe fn window_set_fill_cell(
     );
     let expanded = format_expand_cstring(ft, value);
     format_free(ft);
-    screen_init(&raw mut s, 1 as u_int, 1 as u_int, 0 as u_int);
+    screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);
     screen_write_start(&raw mut ctx, &raw mut s);
     format_draw(
         &raw mut ctx,
@@ -121,7 +121,7 @@ unsafe fn window_set_fill_cell(
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
     }
-    screen_free(&raw mut s);
+    screen_free(&mut s);
 }
 pub unsafe fn window_set_fill_cells(mut w: *mut window) {
     window_set_fill_cell(w, 1 as ::core::ffi::c_int, &raw mut (*w).inside_cell);
@@ -300,7 +300,7 @@ pub unsafe fn window_make_pane_status(
     );
     let expanded = format_expand_time_cstring(ft, fmt);
     old = std::ptr::replace(&raw mut (*wp).status_screen, screen::empty());
-    screen_init(&raw mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
+    screen_init(&mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
     screen_write_start(&raw mut ctx, &raw mut (*wp).status_screen);
     window_pane_get_border_style(wp, c, &raw mut gc);
@@ -331,9 +331,9 @@ pub unsafe fn window_make_pane_status(
     screen_write_stop(&raw mut ctx);
     format_free(ft);
     if grid_compare((*wp).status_screen.grid(), old.grid()) == 0 as ::core::ffi::c_int {
-        screen_free(&raw mut old);
+        screen_free(&mut old);
         return 0 as ::core::ffi::c_int;
     }
-    screen_free(&raw mut old);
+    screen_free(&mut old);
     return 1 as ::core::ffi::c_int;
 }

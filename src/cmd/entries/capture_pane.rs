@@ -580,7 +580,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         window_pane_reset_mode_all(wp);
         grid_clear_history((*wp).base.grid_mut());
         if args_has(args, 'H' as i32 as u_char) != 0 {
-            screen_reset_hyperlinks((*wp).screen);
+            screen_reset_hyperlinks(&mut *(*wp).screen);
         }
         server_redraw_window((*wp).window as *mut window);
         return CMD_RETURN_NORMAL;

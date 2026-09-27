@@ -437,7 +437,7 @@ unsafe fn window_copy_clone_screen(
         ((*hint).grid().sx) as u32,
         ((*src).grid().hsize.wrapping_add((*src).grid().sy)) as u32
     ));
-    screen_init(dst, (*src).grid().sx, sy, (*src).grid().hlimit);
+    screen_init(&mut *dst, (*src).grid().sx, sy, (*src).grid().hlimit);
     (*dst).grid_mut().flags |= GRID_HISTORY;
     grid_duplicate_lines((*dst).grid_mut(), 0 as u_int, (*src).grid(), 0 as u_int, sy);
     (*dst).grid_mut().sy = sy.wrapping_sub((*src).grid().hsize);
@@ -562,12 +562,12 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
     (*data).jumptype = WINDOW_COPY_OFF as ::core::ffi::c_int;
     (*data).line_numbers = 1 as ::core::ffi::c_int;
     screen_init(
-        &raw mut (*data).screen,
+        &mut (*data).screen,
         (*base).grid().sx,
         (*base).grid().sy,
         0 as u_int,
     );
-    screen_set_default_cursor(&raw mut (*data).screen, global_w_options);
+    screen_set_default_cursor(&mut (*data).screen, global_w_options);
     (*data).modekeys = options_get_number(
         (*(*wp).window).options,
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
@@ -627,7 +627,7 @@ unsafe fn window_copy_init(
     (*data).scroll_exit = args_has(args, 'e' as i32 as u_char);
     (*data).hide_position = args_has(args, 'H' as i32 as u_char);
     if !(*base).hyperlinks.is_null() {
-        screen_share_hyperlinks(&raw mut (*data).screen, base);
+        screen_share_hyperlinks(&mut (*data).screen, &*base);
     }
     (*data).screen.cx = window_copy_cursor_offset(wme, (*data).cx, (*data).screen.grid().sx);
     (*data).screen.cy = (*data).cy;
@@ -668,7 +668,7 @@ unsafe fn window_copy_view_init(
     (*data).viewmode = 1 as ::core::ffi::c_int;
     (*data).line_numbers = 0 as ::core::ffi::c_int;
     (*data).backing = Box::into_raw(Box::new(screen::empty()));
-    screen_init((*data).backing, sx, (*base).grid().sy, UINT_MAX);
+    screen_init(&mut *(*data).backing, sx, (*base).grid().sy, UINT_MAX);
     (*data).ictx = input_init(
         ::core::ptr::null_mut::<window_pane>(),
         ::core::ptr::null_mut::<bufferevent>(),
@@ -691,9 +691,9 @@ unsafe fn window_copy_free(mut wme: *mut window_mode_entry) {
     if !(*data).ictx.is_null() {
         input_free((*data).ictx);
     }
-    screen_free((*data).backing);
+    screen_free(&mut *(*data).backing);
     drop(Box::from_raw((*data).backing));
-    screen_free(&raw mut (*data).screen);
+    screen_free(&mut (*data).screen);
     drop(Box::from_raw(data));
 }
 pub unsafe fn window_copy_add(
@@ -3452,7 +3452,7 @@ unsafe fn window_copy_do_refresh(mut wme: *mut window_mode_entry, mut follow: ::
     }
     oy_from_top = (*(*data).backing).grid().hsize.wrapping_sub((*data).oy);
     if window_copy_sync_backing(wme) == 0 {
-        screen_free((*data).backing);
+        screen_free(&mut *(*data).backing);
         drop(Box::from_raw((*data).backing));
         (*data).backing = window_copy_clone_screen(
             &raw mut (*wp).base,
@@ -6133,7 +6133,7 @@ unsafe fn window_copy_search(
     if ssx == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    screen_init(&raw mut ss, ssx, 1 as u_int, 0 as u_int);
+    screen_init(&mut ss, ssx, 1 as u_int, 0 as u_int);
     screen_write_start(&raw mut ctx, &raw mut ss);
     screen_write_nputs(
         &raw mut ctx,
@@ -6219,7 +6219,7 @@ unsafe fn window_copy_search(
         }
     }
     window_copy_redraw_screen(wme);
-    screen_free(&raw mut ss);
+    screen_free(&mut ss);
     return found;
 }
 unsafe fn window_copy_visible_lines(
@@ -6410,7 +6410,7 @@ unsafe fn window_copy_search_marks(
     if ssp.is_null() {
         // Preserve the previous libc %s rendering for an absent search string.
         width = screen_write_strlen((*data).searchstr.as_deref().unwrap_or(c"(null)")) as u_int;
-        screen_init(&raw mut ss, width, 1 as u_int, 0 as u_int);
+        screen_init(&mut ss, width, 1 as u_int, 0 as u_int);
         screen_write_start(&raw mut ctx, &raw mut ss);
         screen_write_nputs(
             &raw mut ctx,
@@ -6538,7 +6538,7 @@ unsafe fn window_copy_search_marks(
         }
     }
     if ssp == &raw mut ss {
-        screen_free(&raw mut ss);
+        screen_free(&mut ss);
     }
     drop(regex_owner);
     return 1 as ::core::ffi::c_int;

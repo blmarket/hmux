@@ -364,7 +364,7 @@ unsafe fn menu_free_data(mut md: *mut menu_data) {
         if let Some(callback) = (*md).cb.take() {
             callback(MenuSelection::Cancelled);
         }
-        screen_free(&raw mut (*md).s);
+        screen_free(&mut (*md).s);
         menu_free((*md).menu);
         drop(Box::from_raw(md));
     }
@@ -2245,7 +2245,7 @@ pub unsafe fn menu_display(
     {
         cmd_find_clear_state(&raw mut (*md).fs, 0 as ::core::ffi::c_int);
     }
-    screen_init(&raw mut (*md).s, sx, sy, 0 as u_int);
+    screen_init(&mut (*md).s, sx, sy, 0 as u_int);
     if !(*md).flags & MENU_NOMOUSE != 0 {
         (*md).s.mode |= MODE_MOUSE_ALL | MODE_MOUSE_BUTTON;
     }

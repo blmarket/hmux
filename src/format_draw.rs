@@ -1068,7 +1068,7 @@ pub unsafe fn format_draw(
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
         screen_init(
-            (&raw mut s as *mut screen).offset(i as isize) as *mut screen,
+            &mut s[i as usize],
             size as u_int,
             1 as u_int,
             0 as u_int,
@@ -1663,7 +1663,7 @@ pub unsafe fn format_draw(
     }
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
-        screen_free((&raw mut s as *mut screen).offset(i as isize) as *mut screen);
+        screen_free(&mut s[i as usize]);
         i = i.wrapping_add(1);
     }
     screen_write_cursormove(

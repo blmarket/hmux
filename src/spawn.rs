@@ -554,7 +554,7 @@ pub unsafe fn spawn_pane(
             (*(*sc).wp0).fd = -(1 as ::core::ffi::c_int);
         }
         window_pane_reset_mode_all((*sc).wp0);
-        screen_reinit(&raw mut (*(*sc).wp0).base, 0 as ::core::ffi::c_int);
+        screen_reinit(&mut (*(*sc).wp0).base, 0 as ::core::ffi::c_int);
         if !(*(*sc).wp0).ictx.is_null() {
             input_free((*(*sc).wp0).ictx);
             (*(*sc).wp0).ictx = ::core::ptr::null_mut::<input_ctx>();

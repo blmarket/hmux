@@ -35,76 +35,76 @@ use std::ffi::{CStr, CString};
 fn screen_free_titles(s: &mut screen) {
     s.titles = VecDeque::new();
 }
-pub unsafe fn screen_init(mut s: *mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
-    (*s).grid = Some(grid_create(sx, sy, hlimit));
-    (*s).saved_grid = None;
-    (*s).title = CString::default();
-    (*s).titles = VecDeque::new();
-    (*s).path = None;
-    (*s).cstyle = SCREEN_CURSOR_DEFAULT;
-    (*s).default_cstyle = SCREEN_CURSOR_DEFAULT;
-    (*s).mode = MODE_CURSOR;
-    (*s).default_mode = 0 as ::core::ffi::c_int;
-    (*s).ccolour = -(1 as ::core::ffi::c_int);
-    (*s).default_ccolour = -(1 as ::core::ffi::c_int);
-    (*s).tabs = Vec::new();
-    std::ptr::write(&raw mut (*s).sel, None);
-    (*s).write_list = ::core::ptr::null_mut::<screen_write_cline>();
-    (*s).hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
+pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
+    s.grid = Some(grid_create(sx, sy, hlimit));
+    s.saved_grid = None;
+    s.title = CString::default();
+    s.titles = VecDeque::new();
+    s.path = None;
+    s.cstyle = SCREEN_CURSOR_DEFAULT;
+    s.default_cstyle = SCREEN_CURSOR_DEFAULT;
+    s.mode = MODE_CURSOR;
+    s.default_mode = 0 as ::core::ffi::c_int;
+    s.ccolour = -(1 as ::core::ffi::c_int);
+    s.default_ccolour = -(1 as ::core::ffi::c_int);
+    s.tabs = Vec::new();
+    s.sel = None;
+    s.write_list = ::core::ptr::null_mut::<screen_write_cline>();
+    s.hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
     screen_reinit(s, 1 as ::core::ffi::c_int);
 }
-pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
-    (*s).cx = 0 as u_int;
-    (*s).cy = 0 as u_int;
-    (*s).rupper = 0 as u_int;
-    (*s).rlower = (*s).grid().sy.wrapping_sub(1 as u_int);
-    (*s).mode = MODE_CURSOR | MODE_WRAP | (*s).mode & MODE_CRLF;
+pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
+    s.cx = 0 as u_int;
+    s.cy = 0 as u_int;
+    s.rupper = 0 as u_int;
+    s.rlower = s.grid().sy.wrapping_sub(1 as u_int);
+    s.mode = MODE_CURSOR | MODE_WRAP | s.mode & MODE_CRLF;
     if options_get_number(
         global_options,
         b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 2 as ::core::ffi::c_longlong
     {
-        (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
+        s.mode = s.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
-    if (*s).saved_grid.is_some() {
-        screen_alternate_off(&mut *s, None, 0);
+    if s.saved_grid.is_some() {
+        screen_alternate_off(s, None, 0);
     }
-    (*s).saved_cx = UINT_MAX as u_int;
-    (*s).saved_cy = UINT_MAX as u_int;
-    screen_reset_tabs(&mut *s);
+    s.saved_cx = UINT_MAX as u_int;
+    s.saved_cy = UINT_MAX as u_int;
+    screen_reset_tabs(s);
     if check != 0 {
         grid_check_is_clear();
     }
-    let hsize = (*s).grid().hsize;
-    let sy = (*s).grid().sy;
-    grid_clear_lines((*s).grid_mut(), hsize, sy, 8);
-    screen_clear_selection(&mut *s);
-    screen_free_titles(&mut *s);
-    screen_set_progress_bar(&mut *s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
+    let hsize = s.grid().hsize;
+    let sy = s.grid().sy;
+    grid_clear_lines(s.grid_mut(), hsize, sy, 8);
+    screen_clear_selection(s);
+    screen_free_titles(s);
+    screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
     screen_reset_hyperlinks(s);
 }
-pub unsafe fn screen_reset_hyperlinks(mut s: *mut screen) {
-    if (*s).hyperlinks.is_null() {
-        (*s).hyperlinks = hyperlinks_init();
+pub unsafe fn screen_reset_hyperlinks(s: &mut screen) {
+    if s.hyperlinks.is_null() {
+        s.hyperlinks = hyperlinks_init();
     } else {
-        hyperlinks_reset((*s).hyperlinks);
+        hyperlinks_reset(s.hyperlinks);
     };
 }
-pub unsafe fn screen_free(mut s: *mut screen) {
-    drop((*s).sel.take());
-    (*s).tabs = Vec::new();
-    (*s).path = None;
-    (*s).title = CString::default();
-    if !(*s).write_list.is_null() {
+pub unsafe fn screen_free(s: &mut screen) {
+    drop(s.sel.take());
+    s.tabs = Vec::new();
+    s.path = None;
+    s.title = CString::default();
+    if !s.write_list.is_null() {
         screen_write_free_list(s);
     }
-    drop((*s).saved_grid.take());
-    drop((*s).grid.take());
-    if !(*s).hyperlinks.is_null() {
-        hyperlinks_free((*s).hyperlinks);
+    drop(s.saved_grid.take());
+    drop(s.grid.take());
+    if !s.hyperlinks.is_null() {
+        hyperlinks_free(s.hyperlinks);
     }
-    screen_free_titles(&mut *s);
-    (*s).hyperlinks = std::ptr::null_mut();
+    screen_free_titles(s);
+    s.hyperlinks = std::ptr::null_mut();
 }
 pub unsafe fn screen_reset_tabs(s: &mut screen) {
     let bytes = (s.grid().sx as usize).div_ceil(8);
@@ -121,16 +121,16 @@ pub unsafe fn screen_reset_tabs(s: &mut screen) {
         i = i.wrapping_add(8 as u_int);
     }
 }
-pub(crate) unsafe fn screen_share_hyperlinks(dst: *mut screen, src: *const screen) {
-    let shared = if (*src).hyperlinks.is_null() {
+pub(crate) unsafe fn screen_share_hyperlinks(dst: &mut screen, src: &screen) {
+    let shared = if src.hyperlinks.is_null() {
         std::ptr::null_mut()
     } else {
-        crate::src::hyperlinks::hyperlinks_copy((*src).hyperlinks)
+        crate::src::hyperlinks::hyperlinks_copy(src.hyperlinks)
     };
-    if !(*dst).hyperlinks.is_null() {
-        crate::src::hyperlinks::hyperlinks_free((*dst).hyperlinks);
+    if !dst.hyperlinks.is_null() {
+        crate::src::hyperlinks::hyperlinks_free(dst.hyperlinks);
     }
-    (*dst).hyperlinks = shared;
+    dst.hyperlinks = shared;
 }
 pub(crate) unsafe fn screen_has_tab(s: &screen, column: u_int) -> bool {
     *s.tabs.get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
@@ -147,7 +147,7 @@ pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
-pub unsafe fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options) {
+pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -169,17 +169,13 @@ pub unsafe fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options
         b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );
-    (*s).default_ccolour = gc.fg;
+    s.default_ccolour = gc.fg;
     c = options_get_number(
         oo,
         b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    (*s).default_mode = 0 as ::core::ffi::c_int;
-    screen_set_cursor_style(
-        c as u_int,
-        &mut (*s).default_cstyle,
-        &mut (*s).default_mode,
-    );
+    s.default_mode = 0 as ::core::ffi::c_int;
+    screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
 }
 pub fn screen_set_cursor_style(
     style: u_int,

@@ -2389,7 +2389,7 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
     if px + width > sx {
         width = sx - px;
     }
-    screen_init(&raw mut screen, (*wp).sx, 1 as u_int, 0 as u_int);
+    screen_init(&mut screen, (*wp).sx, 1 as u_int, 0 as u_int);
     screen_write_start(&raw mut ctx, &raw mut screen);
     pdd.ctx = &raw mut ctx;
     pdd.cursor_x = &raw mut (*wp).prompt_cx;
@@ -2408,7 +2408,7 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
         cy as u_int,
         ::core::ptr::null::<tty_style_ctx>(),
     );
-    screen_free(&raw mut screen);
+    screen_free(&mut screen);
 }
 unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: ::core::ffi::c_int) {
     let mut dctx: redraw_draw_ctx = redraw_draw_ctx {
