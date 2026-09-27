@@ -357,7 +357,7 @@ unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, ica
 }
 unsafe fn window_buffer_menu(
     mut modedata: *mut ::core::ffi::c_void,
-    mut c: *mut client,
+    c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut key: key_code,
 ) {
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
@@ -369,7 +369,7 @@ unsafe fn window_buffer_menu(
     }
     window_buffer_key(
         wme,
-        c,
+        crate::src::shared::rc::as_ptr(c),
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),
         key,
@@ -507,7 +507,7 @@ unsafe fn window_buffer_init(
         Some(Box::new(move |client, key| {
             window_buffer_menu(
                 data_handle.as_ptr().cast(),
-                client.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                client,
                 key,
             )
         })),

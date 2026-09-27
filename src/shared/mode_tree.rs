@@ -239,7 +239,7 @@ pub type mode_tree_key_cb = Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
 
-pub type mode_tree_menu_cb = Option<Box<dyn FnMut(Option<std::ptr::NonNull<client>>, key_code)>>;
+pub type mode_tree_menu_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, key_code)>>;
 
 pub type mode_tree_search_cb =
     Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &std::ffi::CStr, bool) -> bool>>;

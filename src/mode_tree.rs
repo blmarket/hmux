@@ -29,7 +29,7 @@ use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
+use crate::src::shared::client::{client, CLIENT_DEAD};
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;
@@ -40,7 +40,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::{menu_item, MenuSelection};
+use crate::src::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
@@ -1653,6 +1653,37 @@ unsafe fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
+fn mode_tree_menu_callback(
+    tree: Rc<UnsafeCell<mode_tree_data>>,
+    client: Weak<UnsafeCell<client>>,
+    line: u_int,
+) -> menu_choice_cb {
+    Some(Box::new(move |selection| unsafe {
+        let MenuSelection::Selected { key, .. } = selection else {
+            return;
+        };
+        let mtd = crate::src::shared::rc::as_ptr(&tree);
+        if (*mtd).dead != 0 || key == KEYC_NONE || line >= mode_tree_line_count(&*mtd) {
+            return;
+        }
+        let Some(client) = client.upgrade() else {
+            return;
+        };
+        if (*crate::src::shared::rc::as_ptr(&client)).flags & CLIENT_DEAD as uint64_t != 0 {
+            return;
+        }
+        (*mtd).current = line;
+        let callback = (*mtd).menucb.take();
+        if let Some(mut callback) = callback {
+            callback(&client, key);
+            // The handler may close the mode or install another callback.
+            if (*mtd).dead == 0 && (*mtd).menucb.is_none() {
+                (*mtd).menucb = Some(callback);
+            }
+        }
+    }))
+}
+
 unsafe fn mode_tree_display_menu(
     mut mtd: *mut mode_tree_data,
     mut c: *mut client,
@@ -1681,7 +1712,10 @@ unsafe fn mode_tree_display_menu(
     let mut menu = menu_create(&title);
     menu_add_items(&mut menu, items, c);
     drop(title);
-    crate::src::shared::rc::retain(mtd);
+    let tree = crate::src::shared::rc::downgrade(mtd)
+        .upgrade()
+        .expect("live mode tree");
+    let client = crate::src::shared::rc::downgrade(c);
     if x >= (*menu)
         .width
         .wrapping_add(4 as u_int)
@@ -1711,19 +1745,7 @@ unsafe fn mode_tree_display_menu(
         None,
         None,
         ::core::ptr::null_mut::<cmd_find_state>(),
-        Some(Box::new(move |selection| {
-            if let MenuSelection::Selected { key, .. } = selection {
-                if !((*mtd).dead != 0 || key == KEYC_NONE as ::core::ffi::c_ulong as key_code)
-                    && line < mode_tree_line_count(&*mtd)
-                {
-                    (*mtd).current = line;
-                    if let Some(callback) = (*mtd).menucb.as_mut() {
-                        callback(std::ptr::NonNull::new(c), key);
-                    }
-                }
-            }
-            mode_tree_remove_ref(mtd);
-        })),
+        mode_tree_menu_callback(tree, client, line),
     );
 }
 unsafe fn mode_tree_draw_help_line(
@@ -2732,6 +2754,160 @@ mod queued_prompt_accept_tests {
                 }
                 cmdq_free_detached(item);
                 assert!(observed.upgrade().is_none());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod menu_callback_owner_tests {
+    use super::*;
+    use crate::src::shared::rc;
+    use std::cell::Cell;
+
+    unsafe fn one_line(tree: &Rc<UnsafeCell<mode_tree_data>>) {
+        (*rc::as_ptr(tree)).lines.push(mode_tree_line {
+            item: std::ptr::null_mut(),
+            depth: 0,
+            last: 1,
+            flat: 0,
+        });
+    }
+
+    #[test]
+    fn callbacks_release_the_tree_on_selection_cancellation_and_discard() {
+        for outcome in 0..6 {
+            unsafe {
+                let tree = rc::take(mode_tree_alloc_data());
+                let observer = Rc::downgrade(&tree);
+                one_line(&tree);
+                if outcome == 4 {
+                    (*rc::as_ptr(&tree)).dead = 1;
+                }
+                let client = client::new();
+                let client_observer = Rc::downgrade(&client);
+                let calls = Rc::new(Cell::new(0));
+                let callback_calls = Rc::clone(&calls);
+                let expected_client = client_observer.clone();
+                (*rc::as_ptr(&tree)).menucb = Some(Box::new(move |client, key| {
+                    assert!(Rc::ptr_eq(client, &expected_client.upgrade().unwrap()));
+                    assert_eq!(key, b't' as key_code);
+                    callback_calls.set(callback_calls.get() + 1);
+                }));
+                let callback = mode_tree_menu_callback(
+                    tree,
+                    client_observer,
+                    if outcome == 3 { 1 } else { 0 },
+                );
+                assert!(observer.upgrade().is_some());
+                assert_eq!(Rc::strong_count(&client), 1);
+                if outcome == 0 {
+                    drop(callback);
+                } else {
+                    callback.unwrap()(if outcome == 1 {
+                        MenuSelection::Cancelled
+                    } else {
+                        MenuSelection::Selected {
+                            index: 0,
+                            key: if outcome == 2 {
+                                KEYC_NONE
+                            } else {
+                                b't' as key_code
+                            },
+                        }
+                    });
+                }
+                assert_eq!(calls.get(), if outcome == 5 { 1 } else { 0 });
+                assert!(observer.upgrade().is_none());
+                assert_eq!(Rc::strong_count(&calls), 1);
+                assert_eq!(Rc::strong_count(&client), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn expired_and_disconnected_clients_cannot_dispatch_menu_actions() {
+        for expired in [false, true] {
+            unsafe {
+                let tree = rc::take(mode_tree_alloc_data());
+                one_line(&tree);
+                let mtd = rc::as_ptr(&tree);
+                (*mtd).current = 7;
+                let calls = Rc::new(Cell::new(0));
+                let callback_calls = Rc::clone(&calls);
+                (*mtd).menucb = Some(Box::new(move |_, _| {
+                    callback_calls.set(callback_calls.get() + 1)
+                }));
+                let mut client = Some(client::new());
+                let observer = Rc::downgrade(client.as_ref().unwrap());
+                let callback =
+                    mode_tree_menu_callback(Rc::clone(&tree), observer.clone(), 0).unwrap();
+                if expired {
+                    drop(client.take());
+                    assert!(observer.upgrade().is_none());
+                } else {
+                    (*rc::as_ptr(client.as_ref().unwrap())).flags |= CLIENT_DEAD as uint64_t;
+                }
+                callback(MenuSelection::Selected {
+                    index: 0,
+                    key: b't' as key_code,
+                });
+                assert_eq!(calls.get(), 0);
+                assert_eq!((*mtd).current, 7);
+                drop(tree);
+                assert_eq!(Rc::strong_count(&calls), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn menu_handlers_can_close_the_mode_or_replace_themselves() {
+        for close_mode in [false, true] {
+            unsafe {
+                let mtd = mode_tree_alloc_data();
+                let observer = rc::downgrade(mtd);
+                let mut pane = window_pane::empty();
+                (*mtd).wp = &mut pane;
+                (*mtd).zoomed = 1;
+                one_line(&observer.upgrade().unwrap());
+                let calls = Rc::new(Cell::new(0));
+                let callback_calls = Rc::clone(&calls);
+                let callback_tree = observer.clone();
+                (*mtd).menucb = Some(Box::new(move |_, _| {
+                    let retained = callback_tree.upgrade().unwrap();
+                    let mtd = rc::as_ptr(&retained);
+                    assert!((*mtd).menucb.is_none());
+                    assert_eq!((*mtd).current, 0);
+                    callback_calls.set(callback_calls.get() + 1);
+                    if close_mode {
+                        mode_tree_free(mtd);
+                    } else {
+                        let replacement_calls = Rc::clone(&callback_calls);
+                        (*mtd).menucb = Some(Box::new(move |_, _| {
+                            replacement_calls.set(replacement_calls.get() + 10);
+                        }));
+                    }
+                }));
+                let client = client::new();
+                let callback =
+                    mode_tree_menu_callback(observer.upgrade().unwrap(), Rc::downgrade(&client), 0)
+                        .unwrap();
+                callback(MenuSelection::Selected {
+                    index: 0,
+                    key: b't' as key_code,
+                });
+                assert_eq!(calls.get(), 1);
+                if !close_mode {
+                    mode_tree_menu_callback(observer.upgrade().unwrap(), Rc::downgrade(&client), 0)
+                        .unwrap()(MenuSelection::Selected {
+                        index: 0,
+                        key: b't' as key_code,
+                    });
+                    assert_eq!(calls.get(), 11);
+                    mode_tree_free(mtd);
+                }
+                assert!(observer.upgrade().is_none());
+                assert_eq!(Rc::strong_count(&calls), 1);
             }
         }
     }
