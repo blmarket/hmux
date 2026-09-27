@@ -9668,6 +9668,7 @@ mod backing_owner_tests {
                 swp: &mut pane,
                 mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),
+            data_owner: None,
                 screen: std::ptr::null_mut(),
                 prefix: 0,
                 kill: 0,

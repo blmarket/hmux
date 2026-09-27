@@ -82,6 +82,7 @@ use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_tree_modedata {
+    observer: Weak<UnsafeCell<window_tree_modedata>>,
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
@@ -1704,7 +1705,8 @@ unsafe fn window_tree_init(
     } else {
         args_string(args, 0 as u_int)
     };
-    data = crate::src::shared::rc::new(window_tree_modedata {
+    let owner = Rc::new_cyclic(|observer| UnsafeCell::new(window_tree_modedata {
+        observer: observer.clone(),
         wp: Weak::new(),
         dead: 0,
         data: None,
@@ -1725,7 +1727,9 @@ unsafe fn window_tree_init(
         start: 0,
         end: 0,
         each: 0,
-    });
+    }));
+    data = crate::src::shared::rc::as_ptr(&owner);
+    (*wme).data_owner = Some(Box::new(owner));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = window_pane_weak(wp);
     if args_has(args, 's' as i32 as u_char) != 0 {
@@ -1794,9 +1798,6 @@ unsafe fn window_tree_init(
     (*data).type_0 = WINDOW_TREE_NONE;
     return s;
 }
-unsafe fn window_tree_destroy(mut data: *mut window_tree_modedata) {
-    crate::src::shared::rc::release(data);
-}
 unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     if data.is_null() {
@@ -1804,7 +1805,8 @@ unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     }
     (*data).dead = 1 as ::core::ffi::c_int;
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    window_tree_destroy(data);
+    drop((*wme).data_owner.take());
+    (*wme).data = std::ptr::null_mut();
 }
 unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
@@ -1900,8 +1902,7 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
     }))
 }
 unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tree_modedata) {
-    crate::src::shared::rc::retain(data);
-    let mode = crate::src::shared::rc::take(data);
+    let Some(mode) = (*data).observer.upgrade() else { return; };
     let item = cmdq_get_callback_owned(
         c"window_tree_command_done".as_ptr(),
         window_tree_command_done(mode),
@@ -1934,9 +1935,6 @@ unsafe fn window_tree_command_callback(
     (*data).entered = None;
     window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
-}
-unsafe fn window_tree_command_free(mut data: *mut window_tree_modedata) {
-    window_tree_destroy(data);
 }
 unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -2278,7 +2276,7 @@ unsafe fn window_tree_key(
                 0 | _ => None,
             };
             if let Some(prompt) = prompt {
-                crate::src::shared::rc::retain(data);
+                let mode = (*data).observer.upgrade().expect("live tree mode");
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
                     c,
@@ -2294,7 +2292,7 @@ unsafe fn window_tree_key(
                             key,
                         )
                     })),
-                    Some(Box::new(move || unsafe { window_tree_command_free(data) })),
+                    Some(Box::new(move || drop(mode))),
                 );
             }
         }
@@ -2302,7 +2300,7 @@ unsafe fn window_tree_key(
             tagged = mode_tree_count_tagged((*data).data_ptr());
             if !(tagged == 0 as u_int) {
                 let prompt = CString::new(format!("Kill {tagged} tagged? ")).unwrap();
-                crate::src::shared::rc::retain(data);
+                let mode = (*data).observer.upgrade().expect("live tree mode");
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
                     c,
@@ -2318,7 +2316,7 @@ unsafe fn window_tree_key(
                             key,
                         )
                     })),
-                    Some(Box::new(move || unsafe { window_tree_command_free(data) })),
+                    Some(Box::new(move || drop(mode))),
                 );
             }
         }
@@ -2329,7 +2327,7 @@ unsafe fn window_tree_key(
             } else {
                 CString::new("(current) ").unwrap()
             };
-            crate::src::shared::rc::retain(data);
+            let mode = (*data).observer.upgrade().expect("live tree mode");
             mode_tree_set_prompt(
                 (*data).data.as_ref().expect("mode tree owner").clone(),
                 c,
@@ -2345,7 +2343,7 @@ unsafe fn window_tree_key(
                         key,
                     )
                 })),
-                Some(Box::new(move || unsafe { window_tree_command_free(data) })),
+                Some(Box::new(move || drop(mode))),
             );
         }
         13 => {
@@ -2378,7 +2376,8 @@ mod queued_refresh_tests {
     fn queued_refresh_releases_closed_or_orphaned_mode_when_fired_or_cancelled() {
         for (fire, dead) in [(false, 0), (true, 0), (false, 1), (true, 1)] {
             unsafe {
-                let mode = rc::take(rc::new(window_tree_modedata {
+                let mode = Rc::new_cyclic(|observer| UnsafeCell::new(window_tree_modedata {
+                    observer: observer.clone(),
                     wp: Weak::new(),
                     dead,
                     data: None,
