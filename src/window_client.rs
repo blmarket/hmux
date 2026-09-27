@@ -146,51 +146,46 @@ static mut window_client_info_lines: [*const ::core::ffi::c_char; 23] = [
     b"#[fg=themelightgrey]escape-time   #[#{E:tree-mode-border-style},acs]x#[default] #{escape-time} ms\0"
         as *const u8 as *const ::core::ffi::c_char,
 ];
-static mut window_client_menu_items: [menu_item; 9] = [
+static window_client_menu_items: [menu_item<'static>; 8] = [
     menu_item {
-        name: b"Detach\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Detach",
         key: 'd' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Detach Tagged\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Detach Tagged",
         key: 'D' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag",
         key: 't' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag All\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag All",
         key: '\u{14}' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag None\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag None",
         key: 'T' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Cancel\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cancel",
         key: 'q' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
-    },
-    menu_item {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
 ];
 pub static mut window_client_mode: window_mode = {
@@ -737,7 +732,7 @@ unsafe fn window_client_init(
         None,
         Some(window_client_sort),
         Some(window_client_help),
-        &raw const window_client_menu_items as *const menu_item,
+        &window_client_menu_items,
         &raw mut s,
     );
     mode_tree_zoom((*data).data, args);

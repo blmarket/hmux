@@ -1,12 +1,12 @@
 use hmux2::src::environ::{environ_create, environ_free};
-use hmux2::src::menu::{menu_add_item, menu_create, menu_free};
+use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create, menu_free};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::shared::client::client;
 use hmux2::src::shared::key::KEYC_NONE;
 use hmux2::src::shared::menu::menu_item;
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
-use std::ffi::{CStr, CString};
-use std::ptr::{null, null_mut};
+use std::ffi::CString;
+use std::ptr::null_mut;
 
 #[test]
 fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
@@ -24,39 +24,53 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         let owner = client::new();
         let client = hmux2::src::shared::rc::as_ptr(&owner);
         (*client).tty.sx = 120;
-        let menu = menu_create(c"Rows".as_ptr());
+        let menu = menu_create(c"Rows");
         let separator = menu_item {
-            name: c"".as_ptr(),
+            name: c"",
             key: KEYC_NONE,
-            command: null(),
+            command: None,
         };
-        menu_add_item(menu, &separator, null_mut(), client, null_mut());
+        menu_add_item(&mut *menu, None, null_mut(), client, null_mut());
+        menu_add_items(&mut *menu, &[], client);
+        menu_add_item(&mut *menu, Some(&separator), null_mut(), client, null_mut());
         assert_eq!((*menu).count, 0);
 
         for index in 0..64 {
             let name = CString::new(format!("Row {index}")).unwrap();
             let command = CString::new(format!("display-message {index}")).unwrap();
             let definition = menu_item {
-                name: name.as_ptr(),
+                name: &name,
                 key: KEYC_NONE,
-                command: command.as_ptr(),
+                command: Some(&command),
             };
-            menu_add_item(menu, &definition, null_mut(), client, null_mut());
+            menu_add_item(
+                &mut *menu,
+                Some(&definition),
+                null_mut(),
+                client,
+                null_mut(),
+            );
             // Definitions expire on each iteration; runtime strings must survive.
         }
         let suppressed = menu_item {
-            name: c"#{?0,shown,}".as_ptr(),
+            name: c"#{?0,shown,}",
             key: KEYC_NONE,
-            command: null(),
+            command: None,
         };
-        menu_add_item(menu, &suppressed, null_mut(), client, null_mut());
+        menu_add_item(
+            &mut *menu,
+            Some(&suppressed),
+            null_mut(),
+            client,
+            null_mut(),
+        );
         assert_eq!((*menu).count, 64);
-        menu_add_item(menu, &separator, null_mut(), client, null_mut());
-        menu_add_item(menu, &separator, null_mut(), client, null_mut());
+        menu_add_item(&mut *menu, Some(&separator), null_mut(), client, null_mut());
+        menu_add_item(&mut *menu, Some(&separator), null_mut(), client, null_mut());
         assert_eq!((*menu).count, 65);
         for (index, row) in (&(*menu).items)[..64].iter().enumerate() {
             assert_eq!(
-                CStr::from_ptr(row.name_ptr()).to_bytes(),
+                row.name.as_ref().unwrap().as_bytes(),
                 format!("Row {index}").as_bytes()
             );
             assert_eq!(
@@ -66,6 +80,31 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         }
         assert!((&(*menu).items)[64].name.is_none());
         assert!((&(*menu).items)[64].command.is_none());
+        {
+            let names = [
+                CString::new("借用").unwrap(),
+                CString::new("Last row").unwrap(),
+            ];
+            let definitions = [
+                menu_item {
+                    name: &names[0],
+                    key: KEYC_NONE,
+                    command: None,
+                },
+                menu_item {
+                    name: &names[1],
+                    key: KEYC_NONE,
+                    command: Some(c""),
+                },
+            ];
+            // A bounded stack array needs no terminal item, and its text may expire.
+            menu_add_items(&mut *menu, &definitions, client);
+        }
+        assert_eq!((*menu).count, 67);
+        assert_eq!((&(*menu).items)[65].name.as_deref(), Some(c"借用"));
+        assert!((&(*menu).items)[65].command.is_none());
+        assert_eq!((&(*menu).items)[66].name.as_deref(), Some(c"Last row"));
+        assert_eq!((&(*menu).items)[66].command.as_deref(), Some(c""));
         menu_free(menu);
         hmux2::src::reactor::event_loop();
         assert_eq!(std::rc::Rc::strong_count(&owner), 1);

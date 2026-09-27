@@ -3,7 +3,7 @@ use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_free_state, cmdq_get_error, cmdq_get_event, cmdq_new_state,
 };
-use crate::src::ffi::libc::{memcpy, strlen};
+use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
     format_create_defaults, format_free, format_single_cstring, format_single_from_state_cstring,
 };
@@ -58,140 +58,104 @@ impl menu {
         index
     }
 }
-pub unsafe fn menu_add_items(mut menu: *mut menu, mut items: *const menu_item, mut c: *mut client) {
-    let mut qitem: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut fs: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
-    let mut loop_0: *const menu_item = ::core::ptr::null::<menu_item>();
-    loop_0 = items;
-    while !(*loop_0).name.is_null() {
-        menu_add_item(menu, loop_0, qitem, c, fs);
-        loop_0 = loop_0.offset(1);
+pub unsafe fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], c: *mut client) {
+    for item in items {
+        menu_add_item(
+            menu,
+            Some(item),
+            std::ptr::null_mut(),
+            c,
+            std::ptr::null_mut(),
+        );
     }
 }
 pub unsafe fn menu_add_item(
-    mut menu: *mut menu,
-    mut item: *const menu_item,
-    mut qitem: *mut cmdq_item,
-    mut c: *mut client,
-    mut fs: *mut cmd_find_state,
+    menu: &mut menu,
+    item: Option<&menu_item<'_>>,
+    qitem: *mut cmdq_item,
+    c: *mut client,
+    fs: *mut cmd_find_state,
 ) {
-    let index: usize;
-    let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut key_owned: Option<std::ffi::CString> = None;
-    let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut width: u_int = 0;
-    let mut max_width: u_int = 0;
-    let mut line: ::core::ffi::c_int = 0;
-    let mut keylen: size_t = 0;
-    let mut slen: size_t = 0;
-    line = (item.is_null()
-        || (*item).name.is_null()
-        || *(*item).name as ::core::ffi::c_int == '\0' as i32) as ::core::ffi::c_int;
-    if line != 0 && (*menu).count == 0 as u_int {
+    let Some(item) = item.filter(|item| !item.name.is_empty()) else {
+        if menu.items.last().is_some_and(|row| row.name.is_some()) {
+            menu.push_empty();
+        }
         return;
-    }
-    if line != 0
-        && (*(*menu)
-            .items
-            .as_mut_ptr()
-            .offset((*menu).count.wrapping_sub(1 as u_int) as isize))
-        .name_ptr()
-        .is_null()
-    {
-        return;
-    }
-    index = (*(menu as *mut menu)).push_empty();
-    if line != 0 {
-        return;
-    }
-    let s = if !fs.is_null() {
-        format_single_from_state_cstring(qitem, (*item).name, c, fs)
+    };
+    let index = menu.push_empty();
+    let expanded = if !fs.is_null() {
+        format_single_from_state_cstring(qitem, item.name.as_ptr(), c, fs)
     } else {
         format_single_cstring(
             qitem,
-            (*item).name,
+            item.name.as_ptr(),
             c,
-            ::core::ptr::null_mut::<session>(),
-            ::core::ptr::null_mut::<winlink>(),
-            ::core::ptr::null_mut::<window_pane>(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
-    if s.is_empty() {
-        let owner = &mut *(menu as *mut menu);
-        // The menu is still local during formatting, so this placeholder is
-        // the last row if expansion suppresses it.
-        owner.items.pop();
-        owner.refresh_items();
+    if expanded.is_empty() {
+        // Construction has not published this menu, so the placeholder is last.
+        menu.items.pop();
+        menu.refresh_items();
         return;
     }
-    max_width = (*c).tty.sx.wrapping_sub(4 as u_int);
-    slen = strlen(s.as_ptr());
-    if *s.as_ptr() as ::core::ffi::c_int != '-' as i32
-        && (*item).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
-        && (*item).key != KEYC_NONE as ::core::ffi::c_ulong as key_code
-    {
-        key_owned = Some(key_string_format((*item).key, false));
-        key = key_owned.as_ref().unwrap().as_ptr();
-        keylen = strlen(key).wrapping_add(3 as size_t);
-        if keylen <= max_width.wrapping_div(4 as u_int) as size_t {
-            max_width = (max_width as size_t).wrapping_sub(keylen) as u_int as u_int;
-        } else if keylen >= max_width as size_t
-            || slen >= (max_width as size_t).wrapping_sub(keylen)
-        {
-            key = ::core::ptr::null::<::core::ffi::c_char>();
-        }
-    }
-    if slen > max_width as size_t {
-        max_width = max_width.wrapping_sub(1);
-        suffix = b">\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    let mut name = format_trim_right_bytes(s.as_c_str(), max_width);
-    name.extend_from_slice(CStr::from_ptr(suffix).to_bytes());
-    if !key.is_null() {
-        name.extend_from_slice(b"#[default] #[align=right](");
-        name.extend_from_slice(CStr::from_ptr(key).to_bytes());
-        name.push(b')');
-    }
-    {
-        let owner = &mut *(menu as *mut menu);
-        owner.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
-    }
-    cmd = (*item).command;
-    let command = if !cmd.is_null() {
-        if !fs.is_null() {
-            Some(format_single_from_state_cstring(qitem, cmd, c, fs))
-        } else {
-            Some(format_single_cstring(
-                qitem,
-                cmd,
-                c,
-                ::core::ptr::null_mut::<session>(),
-                ::core::ptr::null_mut::<winlink>(),
-                ::core::ptr::null_mut::<window_pane>(),
-            ))
-        }
+    let mut max_width = (*c).tty.sx.wrapping_sub(4);
+    let text = expanded.as_bytes();
+    let mut key = if text[0] != b'-' && item.key != KEYC_UNKNOWN && item.key != KEYC_NONE {
+        Some(key_string_format(item.key, false))
     } else {
         None
     };
-    {
-        let owner = &mut *(menu as *mut menu);
-        if let Some(command) = command {
-            owner.items[index].command = Some(command);
+    if let Some(label) = &key {
+        let keylen = label.as_bytes().len().wrapping_add(3);
+        if keylen <= (max_width / 4) as usize {
+            max_width = (max_width as usize).wrapping_sub(keylen) as u_int;
+        } else if keylen >= max_width as usize
+            || text.len() >= (max_width as usize).wrapping_sub(keylen)
+        {
+            key = None;
         }
-        owner.items[index].key = (*item).key;
     }
-    let row_name = (*(*menu).items.as_mut_ptr().add(index)).name_ptr();
-    width = format_width(row_name);
-    if *row_name as ::core::ffi::c_int == '-' as i32 {
+    let truncated = text.len() > max_width as usize;
+    if truncated {
+        max_width = max_width.wrapping_sub(1);
+    }
+    let mut name = format_trim_right_bytes(&expanded, max_width);
+    if truncated {
+        name.push(b'>');
+    }
+    if let Some(key) = &key {
+        name.extend_from_slice(b"#[default] #[align=right](");
+        name.extend_from_slice(key.as_bytes());
+        name.push(b')');
+    }
+    menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
+    menu.items[index].command = item.command.map(|command| {
+        if !fs.is_null() {
+            format_single_from_state_cstring(qitem, command.as_ptr(), c, fs)
+        } else {
+            format_single_cstring(
+                qitem,
+                command.as_ptr(),
+                c,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        }
+    });
+    menu.items[index].key = item.key;
+    let row_name = menu.items[index].name.as_ref().unwrap();
+    let mut width = format_width(row_name.as_ptr());
+    if row_name.as_bytes().starts_with(b"-") {
         width = width.wrapping_sub(1);
     }
-    if width > (*menu).width {
-        (*menu).width = width;
-    }
+    menu.width = menu.width.max(width);
 }
-pub unsafe fn menu_create(mut title: *const ::core::ffi::c_char) -> *mut menu {
-    let title = CStr::from_ptr(title).to_owned();
+pub unsafe fn menu_create(title: &CStr) -> *mut menu {
+    let title = title.to_owned();
     let width = format_width(title.as_ptr());
     let owner = Box::new(menu {
         title: title,

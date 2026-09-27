@@ -8,12 +8,14 @@ use super::layout::box_lines;
 use super::mouse::mouse_event;
 use super::screen::screen;
 use super::window::window;
+use std::ffi::CStr;
+
+/// A borrowed menu definition. An empty name denotes a separator.
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub struct menu_item {
-    pub name: *const ::core::ffi::c_char,
+pub struct menu_item<'a> {
+    pub name: &'a CStr,
     pub key: key_code,
-    pub command: *const ::core::ffi::c_char,
+    pub command: Option<&'a CStr>,
 }
 /// A runtime menu row owns its expanded text. Static definitions use `menu_item`.
 #[derive(Default)]

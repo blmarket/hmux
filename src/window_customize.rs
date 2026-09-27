@@ -222,66 +222,61 @@ pub const WINDOW_CUSTOMIZE_DEFAULT_FORMAT: [::core::ffi::c_char; 227] = unsafe {
         *b"#{?is_option,#{?option_is_global,,#[reverse](#{option_scope})#[default] }#[fg=themelightgrey]#[ignore]#{option_value}#{?option_unit, #{option_unit},},#{?is_environment,#[fg=themelightgrey]#[ignore]#{environment_value},#{key}}}\0",
     )
 };
-static mut window_customize_menu_items: [menu_item; 12] = [
+static window_customize_menu_items: [menu_item<'static>; 11] = [
     menu_item {
-        name: b"Select\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Select",
         key: '\r' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Edit\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Edit",
         key: 'e' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Expand\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Expand",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag",
         key: 't' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag All\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag All",
         key: '\u{14}' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag None\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag None",
         key: 'T' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Changed Only\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Changed Only",
         key: 'C' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Cancel\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cancel",
         key: 'q' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
-    },
-    menu_item {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
 ];
 pub static mut window_customize_mode: window_mode = {
@@ -2941,7 +2936,7 @@ unsafe fn window_customize_init(
         None,
         None,
         Some(window_customize_help),
-        &raw const window_customize_menu_items as *const menu_item,
+        &window_customize_menu_items,
         &raw mut s,
     );
     mode_tree_zoom((*data).data, args);

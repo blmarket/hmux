@@ -922,11 +922,6 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
-    let mut menu_item: menu_item = menu_item {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
-        key: 0,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
-    };
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -986,7 +981,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             };
             let title = formatted_title
                 .as_ref()
-                .map_or(c"".as_ptr(), |title| title.as_ptr());
+                .map_or(c"", |title| title.as_c_str());
             menu = menu_create(title);
             i = 0 as u_int;
             loop {
@@ -998,7 +993,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 i = i.wrapping_add(1);
                 name = args_string(args, fresh3);
                 if *name as ::core::ffi::c_int == '\0' as i32 {
-                    menu_add_item(menu, ::core::ptr::null::<menu_item>(), item, tc, target);
+                    menu_add_item(&mut *menu, None, item, tc, target);
                 } else if count.wrapping_sub(i) < 2 as u_int {
                     cmdq_error(item, |out| out.write_all(b"not enough arguments"));
                     current_block = 17658167438033882251;
@@ -1007,13 +1002,15 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                     let fresh4 = i;
                     i = i.wrapping_add(1);
                     key = args_string(args, fresh4);
-                    menu_item.name = name;
-                    menu_item.key = key_string_parse_cstr(std::ffi::CStr::from_ptr(key))
-                        .unwrap_or(KEYC_UNKNOWN);
                     let fresh5 = i;
                     i = i.wrapping_add(1);
-                    menu_item.command = args_string(args, fresh5);
-                    menu_add_item(menu, &raw mut menu_item, item, tc, target);
+                    let definition = menu_item {
+                        name: std::ffi::CStr::from_ptr(name),
+                        key: key_string_parse_cstr(std::ffi::CStr::from_ptr(key))
+                            .unwrap_or(KEYC_UNKNOWN),
+                        command: Some(std::ffi::CStr::from_ptr(args_string(args, fresh5))),
+                    };
+                    menu_add_item(&mut *menu, Some(&definition), item, tc, target);
                 }
             }
             match current_block {

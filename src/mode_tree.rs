@@ -101,31 +101,26 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     };
 }
 pub const UINT64_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
-static mut mode_tree_menu_items: [menu_item; 5] = [
+static mode_tree_menu_items: [menu_item<'static>; 4] = [
     menu_item {
-        name: b"Scroll Left\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Scroll Left",
         key: '<' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Scroll Right\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Scroll Right",
         key: '>' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Cancel\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cancel",
         key: 'q' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
-    },
-    menu_item {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
 ];
 static mode_tree_help_start: &[&'static CStr] = &[
@@ -521,7 +516,7 @@ pub unsafe fn mode_tree_start(
     swapcb: mode_tree_swap_cb,
     sortcb: mode_tree_sort_cb,
     helpcb: mode_tree_help_cb,
-    menu: *const menu_item,
+    menu: &'static [menu_item<'static>],
     s: *mut *mut screen,
 ) -> *mut mode_tree_data {
     let mut mtd: *mut mode_tree_data = ::core::ptr::null_mut::<mode_tree_data>();
@@ -1667,7 +1662,7 @@ unsafe fn mode_tree_display_menu(
 ) {
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
-    let mut items: *const menu_item = ::core::ptr::null::<menu_item>();
+    let items: &[menu_item<'_>];
     let mut line: u_int = 0;
     if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
         line = (*mtd).current;
@@ -1681,11 +1676,11 @@ unsafe fn mode_tree_display_menu(
         bytes.extend_from_slice((*mti).name.as_bytes());
         CString::new(bytes).expect("mode tree item names contain no NUL")
     } else {
-        items = &raw const mode_tree_menu_items as *const menu_item;
+        items = &mode_tree_menu_items;
         c"".to_owned()
     };
-    menu = menu_create(title.as_ptr());
-    menu_add_items(menu, items, c);
+    menu = menu_create(&title);
+    menu_add_items(&mut *menu, items, c);
     drop(title);
     crate::src::shared::rc::retain(mtd);
     if x >= (*menu)

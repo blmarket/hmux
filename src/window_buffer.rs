@@ -98,66 +98,61 @@ pub const WINDOW_BUFFER_DEFAULT_KEY_FORMAT: [::core::ffi::c_char; 83] = unsafe {
         *b"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}\0",
     )
 };
-static mut window_buffer_menu_items: [menu_item; 12] = [
+static window_buffer_menu_items: [menu_item<'static>; 11] = [
     menu_item {
-        name: b"Paste\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Paste",
         key: 'p' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Paste Tagged\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Paste Tagged",
         key: 'P' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag",
         key: 't' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag All\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag All",
         key: '\u{14}' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Tag None\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tag None",
         key: 'T' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Delete\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Delete",
         key: 'd' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Delete Tagged\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Delete Tagged",
         key: 'D' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"",
         key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
     menu_item {
-        name: b"Cancel\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cancel",
         key: 'q' as i32 as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
-    },
-    menu_item {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: ::core::ptr::null::<::core::ffi::c_char>(),
+        command: None,
     },
 ];
 pub static mut window_buffer_mode: window_mode = {
@@ -523,7 +518,7 @@ unsafe fn window_buffer_init(
         None,
         Some(window_buffer_sort),
         Some(window_buffer_help),
-        &raw const window_buffer_menu_items as *const menu_item,
+        &window_buffer_menu_items,
         &raw mut s,
     );
     mode_tree_zoom((*data).data, args);

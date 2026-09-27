@@ -23,7 +23,7 @@ pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
     pub zoomed: ::core::ffi::c_int,
     pub wp: *mut window_pane,
-    pub menu: *const menu_item,
+    pub menu: &'static [menu_item<'static>],
     pub sort_crit: sort_criteria,
     pub view_name: Option<&'static ::std::ffi::CStr>,
     pub buildcb: mode_tree_build_cb,
@@ -64,7 +64,7 @@ impl Default for mode_tree_data {
             dead: 0,
             zoomed: 0,
             wp: std::ptr::null_mut(),
-            menu: std::ptr::null(),
+            menu: &[],
             sort_crit: sort_criteria {
                 order: 0,
                 reversed: 0,
