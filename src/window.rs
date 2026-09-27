@@ -52,7 +52,7 @@ use crate::src::server_fn::{
 };
 use crate::src::session::session_has;
 use crate::src::shared::events::event_payload;
-use crate::src::shared::pane::window_pane_tree;
+use crate::src::shared::pane::{window_pane_tree, WindowPanePromptRef};
 use crate::src::shared::prompt::prompt_create_data;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::status::status_at_line;
@@ -67,7 +67,9 @@ use crate::src::style::{
 use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
+use std::rc::{Rc, Weak};
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -2312,7 +2314,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         searchstr: None,
         searchregex: 0,
         prompt: None,
-        prompt_data: ::core::ptr::null_mut::<window_pane_prompt>(),
+        prompt_data: Weak::new(),
         prompt_cx: 0,
         border_gc_set: 0,
         border_gc: grid_cell {
@@ -3189,26 +3191,41 @@ pub unsafe fn window_pane_reset_mode_all(mut wp: *mut window_pane) {
         window_pane_reset_mode(wp);
     }
 }
-unsafe fn window_pane_prompt_input_callback(
-    mut wpp: *mut window_pane_prompt,
-    s: Option<&CStr>,
-    mut key: prompt_key_result,
+fn window_pane_prompt_input_callback(
+    data: &WindowPanePromptRef,
+    input: Option<&CStr>,
+    key: prompt_key_result,
 ) -> prompt_result {
-    if let Some(inputcb) = (*wpp).inputcb.as_mut() {
-        return inputcb(std::ptr::NonNull::new((*wpp).c), s, key);
-    }
-    return PROMPT_CLOSE;
+    let (client, callback) = {
+        let mut state = data.borrow_mut();
+        (state.c.upgrade(), state.inputcb.take())
+    };
+    let Some(mut callback) = callback else {
+        return PROMPT_CLOSE;
+    };
+    let result = callback(
+        client
+            .as_ref()
+            .and_then(|client| std::ptr::NonNull::new(crate::src::shared::rc::as_ptr(client))),
+        input,
+        key,
+    );
+    data.borrow_mut().inputcb = Some(callback);
+    result
 }
-unsafe fn window_pane_prompt_free_callback(mut wpp: *mut window_pane_prompt) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = window_pane_find_by_id((*wpp).wp_id);
-    if !wp.is_null() && (*wp).prompt_data == wpp {
-        (*wp).prompt_data = ::core::ptr::null_mut::<window_pane_prompt>();
+unsafe fn window_pane_prompt_free_callback(data: &WindowPanePromptRef) {
+    let (wp_id, callback, inputcb) = {
+        let mut state = data.borrow_mut();
+        (state.wp_id, state.freecb.take(), state.inputcb.take())
+    };
+    let wp = window_pane_find_by_id(wp_id);
+    if !wp.is_null() && (*wp).prompt_data.ptr_eq(&Rc::downgrade(data)) {
+        (*wp).prompt_data = Weak::new();
     }
-    if let Some(freecb) = (*wpp).freecb.take() {
-        freecb();
+    if let Some(callback) = callback {
+        callback();
     }
-    drop(Box::from_raw(wpp));
+    drop(inputcb);
 }
 pub unsafe fn window_pane_set_prompt(
     mut wp: *mut window_pane,
@@ -3223,14 +3240,17 @@ pub unsafe fn window_pane_set_prompt(
 ) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut pd = prompt_create_data::default();
-    let mut wpp: *mut window_pane_prompt = ::core::ptr::null_mut::<window_pane_prompt>();
     if !c.is_null() {
         s = (*c).session;
     }
     window_pane_clear_prompt(wp);
-    wpp = Box::into_raw(Box::new(window_pane_prompt {
+    let wpp = Rc::new(RefCell::new(window_pane_prompt {
         wp_id: (*wp).id,
-        c,
+        c: if c.is_null() {
+            Weak::new()
+        } else {
+            crate::src::shared::rc::downgrade(c)
+        },
         inputcb,
         freecb,
         type_0,
@@ -3245,15 +3265,17 @@ pub unsafe fn window_pane_set_prompt(
     };
     pd.type_0 = type_0;
     pd.flags = flags;
-    pd.inputcb = Some(Box::new(move |s, key| unsafe {
-        window_pane_prompt_input_callback(wpp, s, key)
+    let input_data = wpp.clone();
+    pd.inputcb = Some(Box::new(move |s, key| {
+        window_pane_prompt_input_callback(&input_data, s, key)
     }));
+    let free_data = wpp.clone();
     pd.freecb = Some(Box::new(move || unsafe {
-        window_pane_prompt_free_callback(wpp)
+        window_pane_prompt_free_callback(&free_data)
     }));
     let prompt = prompt_create(pd);
     (*wp).prompt = Some(prompt.clone());
-    (*wp).prompt_data = wpp;
+    (*wp).prompt_data = Rc::downgrade(&wpp);
     (*wp).flags |= PANE_REDRAW;
     prompt_incremental_start(&prompt);
     window_fire_pane_prompt(
@@ -3264,11 +3286,11 @@ pub unsafe fn window_pane_set_prompt(
 }
 pub unsafe fn window_pane_clear_prompt(mut wp: *mut window_pane) {
     let prompt = (*wp).prompt.take();
-    let mut wpp: *mut window_pane_prompt = (*wp).prompt_data;
+    let wpp = (*wp).prompt_data.upgrade();
     let mut type_0: prompt_type = PROMPT_TYPE_INVALID;
     if let Some(prompt) = prompt {
-        if !wpp.is_null() {
-            type_0 = (*wpp).type_0;
+        if let Some(wpp) = wpp {
+            type_0 = wpp.borrow().type_0;
         }
         prompt_free(&prompt);
         (*wp).flags |= PANE_REDRAW;
@@ -3305,7 +3327,7 @@ pub unsafe fn window_pane_prompt_key(
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
     let prompt = (*wp).prompt.clone();
-    let mut wpp: *mut window_pane_prompt = (*wp).prompt_data;
+    let wpp = (*wp).prompt_data.upgrade();
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut wp_id: u_int = (*wp).id;
     let mut x: u_int = 0;
@@ -3315,8 +3337,12 @@ pub unsafe fn window_pane_prompt_key(
     let Some(prompt) = prompt else {
         return PROMPT_KEY_NOT_HANDLED;
     };
-    if !wpp.is_null() {
-        (*wpp).c = c;
+    if let Some(wpp) = &wpp {
+        wpp.borrow_mut().c = if c.is_null() {
+            Weak::new()
+        } else {
+            crate::src::shared::rc::downgrade(c)
+        };
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -3360,8 +3386,10 @@ pub unsafe fn window_pane_prompt_key(
     if wp.is_null() {
         return result;
     }
-    if !wpp.is_null() && (*wp).prompt_data == wpp {
-        (*wpp).c = ::core::ptr::null_mut::<client>();
+    if let Some(wpp) = &wpp {
+        if (*wp).prompt_data.ptr_eq(&Rc::downgrade(wpp)) {
+            wpp.borrow_mut().c = Weak::new();
+        }
     }
     if (*wp)
         .prompt
@@ -4534,5 +4562,151 @@ impl Drop for window {
 impl Drop for window_pane {
     fn drop(&mut self) {
         unsafe { window_pane_free(self) }
+    }
+}
+
+#[cfg(test)]
+mod pane_prompt_data_tests {
+    use super::*;
+    use crate::src::shared::rc;
+    use crate::src::text::utf8::utf8_fromcstr_vec;
+    use std::cell::Cell;
+
+    fn data(wp_id: u_int) -> WindowPanePromptRef {
+        Rc::new(RefCell::new(window_pane_prompt {
+            wp_id,
+            c: Weak::new(),
+            inputcb: None,
+            freecb: None,
+            type_0: PROMPT_TYPE_COMMAND,
+        }))
+    }
+
+    fn attach(data: &WindowPanePromptRef) -> PromptRef {
+        let pr = Rc::new(RefCell::new(prompt {
+            flags: PROMPT_SINGLE,
+            buffer: utf8_fromcstr_vec(c""),
+            ..Default::default()
+        }));
+        let input = data.clone();
+        pr.borrow_mut().inputcb = Some(Box::new(move |text, key| {
+            window_pane_prompt_input_callback(&input, text, key)
+        }));
+        let freed = data.clone();
+        pr.borrow_mut().freecb = Some(Box::new(move || unsafe {
+            window_pane_prompt_free_callback(&freed)
+        }));
+        pr
+    }
+
+    #[test]
+    fn callback_client_is_weak_between_calls_and_retained_during_dispatch() {
+        unsafe {
+            let client = client::new();
+            let weak_client = Rc::downgrade(&client);
+            let pointer = rc::as_ptr(&client);
+            let client_slot = Rc::new(RefCell::new(Some(client)));
+            let data = data(u_int::MAX);
+            data.borrow_mut().c = weak_client.clone();
+            let weak_data = Rc::downgrade(&data);
+            let calls = Rc::new(Cell::new(0));
+            let count = calls.clone();
+            let slot = client_slot.clone();
+            let current = weak_data.clone();
+            let observed = weak_client.clone();
+            data.borrow_mut().inputcb = Some(Box::new(move |client, text, key| {
+                assert_eq!(text, Some(c"input"));
+                assert_eq!(key, PROMPT_KEY_HANDLED);
+                if count.get() == 0 {
+                    assert_eq!(client.unwrap().as_ptr(), pointer);
+                    drop(slot.borrow_mut().take());
+                    assert!(observed.upgrade().is_some());
+                    // Dispatch must release the data borrow before callbacks.
+                    current.upgrade().unwrap().borrow_mut().c = Weak::new();
+                } else {
+                    assert!(client.is_none());
+                }
+                count.set(count.get() + 1);
+                PROMPT_CONTINUE
+            }));
+            assert_eq!(
+                window_pane_prompt_input_callback(&data, Some(c"input"), PROMPT_KEY_HANDLED),
+                PROMPT_CONTINUE
+            );
+            assert!(weak_client.upgrade().is_none());
+            assert!(client_slot.borrow().is_none());
+            assert_eq!(
+                window_pane_prompt_input_callback(&data, Some(c"input"), PROMPT_KEY_HANDLED),
+                PROMPT_CONTINUE
+            );
+            assert_eq!(calls.get(), 2);
+            let frees = Rc::new(Cell::new(0));
+            let freed = frees.clone();
+            data.borrow_mut().freecb = Some(Box::new(move || freed.set(freed.get() + 1)));
+            window_pane_prompt_free_callback(&data);
+            window_pane_prompt_free_callback(&data);
+            assert_eq!(frees.get(), 1);
+            assert!(data.borrow().inputcb.is_none());
+            drop(data);
+            assert!(weak_data.upgrade().is_none());
+            assert_eq!(Rc::strong_count(&calls), 1);
+        }
+    }
+
+    #[test]
+    fn callback_replacement_keeps_new_pane_data_and_releases_the_old_record() {
+        unsafe {
+            let pane = rc::take(rc::new(window_pane::empty()));
+            let wp = rc::as_ptr(&pane);
+            (*wp).id = u_int::MAX - 1;
+            // This fixture exercises cleanup without firing pane hook events.
+            (*wp).flags = PANE_DESTROYED;
+            assert!(window_pane_tree_insert(&raw mut all_window_panes, wp).is_null());
+            let old_data = data((*wp).id);
+            let old_weak = Rc::downgrade(&old_data);
+            let old_prompt = attach(&old_data);
+            let replacement = data((*wp).id);
+            let replacement_weak = Rc::downgrade(&replacement);
+            let replacement_prompt = attach(&replacement);
+            let next_data = replacement.clone();
+            let next_prompt = replacement_prompt.clone();
+            old_data.borrow_mut().inputcb = Some(Box::new(move |_, text, kind| {
+                assert_eq!(text, Some(c"x"));
+                assert_eq!(kind, PROMPT_KEY_CLOSE);
+                window_pane_clear_prompt(wp);
+                (*wp).prompt = Some(next_prompt.clone());
+                (*wp).prompt_data = Rc::downgrade(&next_data);
+                PROMPT_CLOSE
+            }));
+            let frees = Rc::new(Cell::new(0));
+            let count = frees.clone();
+            old_data.borrow_mut().freecb = Some(Box::new(move || count.set(count.get() + 1)));
+            (*wp).prompt = Some(old_prompt.clone());
+            (*wp).prompt_data = old_weak.clone();
+            assert_eq!(
+                window_pane_prompt_key(
+                    wp,
+                    std::ptr::null_mut(),
+                    b'x' as key_code,
+                    std::ptr::null_mut()
+                ),
+                PROMPT_KEY_CLOSE
+            );
+            assert_eq!(frees.get(), 1);
+            assert!((*wp).prompt_data.ptr_eq(&replacement_weak));
+            assert!(Rc::ptr_eq(
+                (*wp).prompt.as_ref().unwrap(),
+                &replacement_prompt
+            ));
+            drop(old_prompt);
+            drop(old_data);
+            assert!(old_weak.upgrade().is_none());
+            window_pane_clear_prompt(wp);
+            assert!((*wp).prompt_data.upgrade().is_none());
+            drop(replacement_prompt);
+            drop(replacement);
+            assert!(replacement_weak.upgrade().is_none());
+            assert_eq!(window_pane_tree_remove(&raw mut all_window_panes, wp), wp);
+        }
     }
 }

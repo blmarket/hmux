@@ -1,7 +1,9 @@
 //! Authoritative pane declarations, shared by the C translation units.
 
+use std::cell::{RefCell, UnsafeCell};
 use std::collections::VecDeque;
 use std::ffi::CString;
+use std::rc::{Rc, Weak};
 
 use super::abi::{bitstr_t, pid_t, size_t, time_t, timeval, u_int, uint64_t};
 use super::client::client;
@@ -134,9 +136,12 @@ pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
+pub type WindowPanePromptRef = Rc<RefCell<window_pane_prompt>>;
+pub type WindowPanePromptWeak = Weak<RefCell<window_pane_prompt>>;
+
 pub struct window_pane_prompt {
     pub wp_id: u_int,
-    pub c: *mut client,
+    pub c: Weak<UnsafeCell<client>>,
     pub inputcb: status_prompt_input_cb,
     pub freecb: prompt_free_cb,
     pub type_0: prompt_type,
@@ -206,8 +211,8 @@ pub struct window_pane {
     pub searchstr: Option<CString>,
     pub searchregex: ::core::ffi::c_int,
     pub prompt: Option<PromptRef>,
-    /// Box-owned prompt data while `prompt` is active; the free callback clears it.
-    pub prompt_data: *mut window_pane_prompt,
+    /// Callback-owned data; this observer cannot keep a closed prompt alive.
+    pub prompt_data: WindowPanePromptWeak,
     pub prompt_cx: u_int,
     pub border_gc_set: ::core::ffi::c_int,
     pub border_gc: grid_cell,
