@@ -161,7 +161,7 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
         let detached = key_tables_remove(&raw mut key_tables, table);
         c = clients.first();
         while !c.is_null() {
-            if key_table_owner_ptr(&(*c).keytable) == table {
+            if key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get()) == table {
                 server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
             }
             c = clients.next(c);

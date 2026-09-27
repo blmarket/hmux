@@ -1098,7 +1098,7 @@ pub unsafe fn server_client_set_key_table(
     }
     drop((*c).keytable.take());
     (*c).keytable = key_bindings_get_table(name, 1);
-    if gettimeofday(&raw mut (*key_table_owner_ptr(&(*c).keytable)).activity_time, NULL) != 0 as ::core::ffi::c_int {
+    if gettimeofday(&raw mut (*key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get())).activity_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
 }
@@ -1107,8 +1107,8 @@ unsafe fn server_client_key_table_activity_diff(mut c: *mut client) -> uint64_t 
         tv_sec: 0,
         tv_usec: 0,
     };
-    diff.tv_sec = (*c).activity_time.tv_sec - (*key_table_owner_ptr(&(*c).keytable)).activity_time.tv_sec;
-    diff.tv_usec = (*c).activity_time.tv_usec - (*key_table_owner_ptr(&(*c).keytable)).activity_time.tv_usec;
+    diff.tv_sec = (*c).activity_time.tv_sec - (*key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get())).activity_time.tv_sec;
+    diff.tv_usec = (*c).activity_time.tv_usec - (*key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get())).activity_time.tv_usec;
     if diff.tv_usec < 0 as __suseconds_t {
         diff.tv_sec -= 1;
         diff.tv_usec += 1000000 as __suseconds_t;
@@ -2849,7 +2849,7 @@ unsafe fn server_client_key_callback(
                     {
                         current_block = 15469183920764600035;
                     } else {
-                        if server_client_is_default_key_table(c, key_table_owner_ptr(&(*c).keytable) as *mut key_table)
+                        if server_client_is_default_key_table(c, key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get()) as *mut key_table)
                             != 0
                             && !wp.is_null()
                             && {
@@ -2865,7 +2865,7 @@ unsafe fn server_client_key_callback(
                         } else {
                             table_owner = (*c).keytable.clone();
                         }
-                        table = key_table_owner_ptr(&table_owner);
+                        table = key_table_owner_ptr(&table_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
                         first = table;
                         '_table_changed: loop {
                             prefix = options_get_number(
@@ -2947,7 +2947,7 @@ unsafe fn server_client_key_callback(
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                             );
                                             table_owner = (*c).keytable.clone();
-                                        table = key_table_owner_ptr(&table_owner);
+                                        table = key_table_owner_ptr(&table_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
                                             first = table;
                                             server_status_client(c);
                                             continue '_table_changed;
@@ -3058,7 +3058,7 @@ unsafe fn server_client_key_callback(
                                             ::core::ptr::null::<::core::ffi::c_char>(),
                                         );
                                         table_owner = (*c).keytable.clone();
-                                        table = key_table_owner_ptr(&table_owner);
+                                        table = key_table_owner_ptr(&table_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
                                         if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
                                             first = table;
                                         }
@@ -3077,7 +3077,7 @@ unsafe fn server_client_key_callback(
                                             ::core::ptr::null::<::core::ffi::c_char>(),
                                         );
                                         table_owner = (*c).keytable.clone();
-                                        table = key_table_owner_ptr(&table_owner);
+                                        table = key_table_owner_ptr(&table_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
                                         first = table;
                                         (*c).flags &= !CLIENT_REPEAT as uint64_t;
                                         server_status_client(c);

@@ -1088,7 +1088,7 @@ unsafe fn format_cb_client_height(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_client_key_table(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some((*key_table_owner_ptr(&(*(*ft).c).keytable)).name.clone());
+        return Some((*key_table_owner_ptr(&(*(*ft).c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get())).name.clone());
     }
     return None;
 }
@@ -1130,7 +1130,7 @@ unsafe fn format_cb_client_prefix(mut ft: *mut format_tree) -> Option<CString> {
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !(*ft).c.is_null() {
         name = server_client_get_key_table((*ft).c);
-        if strcmp(((*key_table_owner_ptr(&(*(*ft).c).keytable)).name).as_ptr().cast_mut(), name)
+        if strcmp(((*key_table_owner_ptr(&(*(*ft).c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get())).name).as_ptr().cast_mut(), name)
             == 0 as ::core::ffi::c_int
         {
             return Some(c"0".to_owned());

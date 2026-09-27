@@ -1588,6 +1588,6 @@ impl KeyBindingCommand {
 }
 
 /// One of the key table's existing strong references.
-pub fn key_table_owner_ptr(owner: &Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>>) -> *mut key_table {
-    owner.as_ref().map_or(std::ptr::null_mut(), super::rc::as_ptr)
+pub fn key_table_owner_ptr(owner: &Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>>) -> Option<&std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
+    owner.as_ref()
 }
