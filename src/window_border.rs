@@ -311,7 +311,7 @@ pub unsafe fn window_make_pane_status(
     }
     gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

@@ -103,7 +103,7 @@ unsafe fn format_draw_put(
     mut width: u_int,
 ) {
     screen_write_cursormove(
-        octx,
+        &mut *octx,
         ocx.wrapping_add(offset) as ::core::ffi::c_int,
         ocy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -141,7 +141,7 @@ unsafe fn format_draw_put_list(
     }
     if start != 0 as u_int && width > (*list_left).cx {
         screen_write_cursormove(
-            octx,
+            &mut *octx,
             ocx.wrapping_add(offset) as ::core::ffi::c_int,
             ocy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -160,7 +160,7 @@ unsafe fn format_draw_put_list(
     }
     if start.wrapping_add(width) < (*list).cx && width > (*list_right).cx {
         screen_write_cursormove(
-            octx,
+            &mut *octx,
             ocx.wrapping_add(offset)
                 .wrapping_add(width)
                 .wrapping_sub((*list_right).cx) as ::core::ffi::c_int,
@@ -1078,7 +1078,7 @@ pub unsafe fn format_draw(
             (&raw mut s as *mut screen).offset(i as isize) as *mut screen,
         );
         screen_write_clearendofline(
-            (&raw mut ctx as *mut screen_write_ctx).offset(i as isize) as *mut screen_write_ctx,
+            &mut ctx[i as usize],
             current_default.bg as u_int,
         );
         width[i as usize] = 0 as u_int;
@@ -1657,7 +1657,7 @@ pub unsafe fn format_draw(
         i = i.wrapping_add(1);
     }
     screen_write_cursormove(
-        octx,
+        &mut *octx,
         ocx as ::core::ffi::c_int,
         ocy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

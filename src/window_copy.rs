@@ -644,7 +644,7 @@ unsafe fn window_copy_init(
         i = i.wrapping_add(1);
     }
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         window_copy_cursor_offset(wme, (*data).cx, (*data).screen.grid().sx) as ::core::ffi::c_int,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -741,8 +741,8 @@ pub unsafe fn window_copy_add(
     old_hsize = (*(*data).backing).grid().hsize;
     screen_write_start(&mut backing_ctx, backing);
     if (*data).backing_written != 0 {
-        screen_write_carriagereturn(&raw mut backing_ctx);
-        screen_write_linefeed(&raw mut backing_ctx, 0 as ::core::ffi::c_int, 8 as u_int);
+        screen_write_carriagereturn(&mut backing_ctx);
+        screen_write_linefeed(&mut backing_ctx, 0 as ::core::ffi::c_int, 8 as u_int);
     } else {
         (*data).backing_written = 1 as ::core::ffi::c_int;
     }
@@ -6833,7 +6833,7 @@ unsafe fn window_copy_write_one(
     let mut i: u_int = 0;
     let mut width: u_int = 0;
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         px as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -6847,7 +6847,7 @@ unsafe fn window_copy_write_one(
                 if (*(*ctx).s).cy == py && (*(*ctx).s).cx <= px.wrapping_add(fx) {
                     gc.flags = (gc.flags as ::core::ffi::c_int & !GRID_FLAG_PADDING) as u_char;
                     screen_write_cursormove(
-                        ctx,
+                        &mut *ctx,
                         px.wrapping_add(fx) as ::core::ffi::c_int,
                         py as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -7162,7 +7162,7 @@ unsafe fn window_copy_write_line(
         content_sx = sx;
     }
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         0 as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -7246,7 +7246,7 @@ unsafe fn window_copy_write_line(
             line_number = (*data).cy.wrapping_sub(py);
         }
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             0 as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -7301,7 +7301,7 @@ unsafe fn window_copy_write_line(
             let expanded = format_expand_cstring(ft, value);
             if !expanded.is_empty() {
                 screen_write_cursormove(
-                    ctx,
+                    &mut *ctx,
                     width as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -7319,7 +7319,7 @@ unsafe fn window_copy_write_line(
     }
     if py == (*data).cy && (*data).cx >= content_sx {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -7386,7 +7386,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
             i = i.wrapping_add(1);
         }
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -7406,7 +7406,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
         i = i.wrapping_add(1);
     }
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -7573,7 +7573,7 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
         }
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -7594,7 +7594,7 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
     } else {
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -8017,7 +8017,7 @@ unsafe fn window_copy_copy_buffer(
         }
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
-            &raw mut ctx,
+            &mut ctx,
             b"\0" as *const u8 as *const ::core::ffi::c_char,
             buf.as_ptr() as *mut u_char,
             buf.len() as u_int,
@@ -8128,7 +8128,7 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     {
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
-            &raw mut ctx,
+            &mut ctx,
             b"\0" as *const u8 as *const ::core::ffi::c_char,
             buf.as_mut_ptr(),
             buf.len() as u_int,
@@ -9045,12 +9045,12 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         }
         screen_write_start(&mut ctx, &raw mut (*data).screen);
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_deleteline(&raw mut ctx, ny, 8 as u_int);
+        screen_write_deleteline(&mut ctx, ny, 8 as u_int);
         window_copy_write_lines(wme, &raw mut ctx, (*s).grid().sy.wrapping_sub(ny), ny);
         window_copy_write_line(wme, &raw mut ctx, 0 as u_int);
         if (*s).grid().sy > 1 as u_int {
@@ -9067,7 +9067,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
             );
         }
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -9082,12 +9082,12 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
     }
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_deleteline(&raw mut ctx, ny, 8 as u_int);
+    screen_write_deleteline(&mut ctx, ny, 8 as u_int);
     window_copy_write_lines(wme, &raw mut ctx, (*s).grid().sy.wrapping_sub(ny), ny);
     window_copy_write_line(wme, &raw mut ctx, 0 as u_int);
     if (*s).grid().sy > 1 as u_int {
@@ -9104,7 +9104,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         );
     }
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -9158,12 +9158,12 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         }
         screen_write_start(&mut ctx, &raw mut (*data).screen);
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_insertline(&raw mut ctx, ny, 8 as u_int);
+        screen_write_insertline(&mut ctx, ny, 8 as u_int);
         window_copy_write_lines(wme, &raw mut ctx, 0 as u_int, ny);
         if !(*s).sel.is_none() && (*s).grid().sy > ny {
             window_copy_write_line(wme, &raw mut ctx, ny);
@@ -9171,7 +9171,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
             window_copy_write_line(wme, &raw mut ctx, 1 as u_int);
         }
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -9186,12 +9186,12 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
     }
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_insertline(&raw mut ctx, ny, 8 as u_int);
+    screen_write_insertline(&mut ctx, ny, 8 as u_int);
     window_copy_write_lines(wme, &raw mut ctx, 0 as u_int, ny);
     if !(*s).sel.is_none() && (*s).grid().sy > ny {
         window_copy_write_line(wme, &raw mut ctx, ny);
@@ -9199,7 +9199,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         window_copy_write_line(wme, &raw mut ctx, 1 as u_int);
     }
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

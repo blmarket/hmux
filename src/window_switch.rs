@@ -368,7 +368,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         prompt_line: 0,
     };
     screen_write_start(&mut ctx, s);
-    screen_write_clearscreen(&raw mut ctx, 8 as u_int);
+    screen_write_clearscreen(&mut ctx, 8 as u_int);
     if sy <= 1 as u_int {
         screen_write_stop(&mut ctx);
         return;
@@ -394,7 +394,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         }
         item = (&(*data).matches)[idx as usize];
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             0 as ::core::ffi::c_int,
             i as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -409,7 +409,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
                 0 as ::core::ffi::c_int,
             );
         } else {
-            screen_write_clearendofline(&raw mut ctx, sgc.bg as u_int);
+            screen_write_clearendofline(&mut ctx, sgc.bg as u_int);
             format_draw(
                 &raw mut ctx,
                 &raw mut sgc,
@@ -433,7 +433,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
                     gc.fg = mgc.fg;
                     gc.bg = mgc.bg;
                     screen_write_cursormove(
-                        &raw mut ctx,
+                        &mut ctx,
                         j as ::core::ffi::c_int,
                         i as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -454,7 +454,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         (*s).mode |= MODE_CURSOR;
         prompt_draw((*data).prompt, &raw mut pdd);
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             (*data).prompt_cx as ::core::ffi::c_int,
             sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,

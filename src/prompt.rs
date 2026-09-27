@@ -560,7 +560,7 @@ unsafe fn prompt_draw_complete(
     );
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE) as u_short;
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         cx as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -900,18 +900,18 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
     cx = (*pd).cursor_x;
     *cx = pl.cursor_x;
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         ax as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
     if sy.fill != 8 as ::core::ffi::c_int {
-        screen_write_clearcharacter(ctx, aw, sy.fill as u_int);
+        screen_write_clearcharacter(&mut *ctx, aw, sy.fill as u_int);
     }
     pcursor = utf8_strwidth(&(*pr).buffer, (*pr).index as ssize_t);
     if pl.content_width != 0 as u_int {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             pl.content_x as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -927,7 +927,7 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
             );
         }
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             pl.input_x as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,

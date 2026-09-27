@@ -2155,12 +2155,12 @@ unsafe fn input_restore_state(mut ictx: *mut input_ctx) {
         ::core::mem::size_of::<input_cell>() as size_t,
     );
     if (*ictx).old_mode & MODE_ORIGIN != 0 {
-        screen_write_mode_set(sctx, MODE_ORIGIN);
+        screen_write_mode_set(&mut *sctx, MODE_ORIGIN);
     } else {
-        screen_write_mode_clear(sctx, MODE_ORIGIN);
+        screen_write_mode_clear(&mut *sctx, MODE_ORIGIN);
     }
     screen_write_cursormove(
-        sctx,
+        &mut *sctx,
         (*ictx).old_cx as ::core::ffi::c_int,
         (*ictx).old_cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -2219,7 +2219,7 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
         } else {
             screen_write_start(&mut *sctx, &raw mut (*wp).base);
         }
-        screen_write_reset(sctx);
+        screen_write_reset(&mut *sctx);
         screen_write_stop(&mut *sctx);
     }
     input_clear(ictx);
@@ -2269,7 +2269,7 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
         }
         state = (*ictx).state as *const input_state;
         if (*itr).handler != Some(input_print) {
-            screen_write_collect_end(sctx);
+            screen_write_collect_end(&mut *sctx);
         }
         if (*itr).handler.is_some()
             && (*itr).handler.expect("non-null function pointer")(ictx) != 0 as ::core::ffi::c_int
@@ -2613,7 +2613,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         }
         8 => {
-            screen_write_backspace(sctx);
+            screen_write_backspace(&mut *sctx);
         }
         9 => {
             cx = (*s).cx;
@@ -2652,13 +2652,13 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         }
         10..=12 => {
-            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(&mut *sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
             if (*s).mode & MODE_CRLF != 0 {
-                screen_write_carriagereturn(sctx);
+                screen_write_carriagereturn(&mut *sctx);
             }
         }
         13 => {
-            screen_write_carriagereturn(sctx);
+            screen_write_carriagereturn(&mut *sctx);
         }
         14 => {
             (*ictx).cell.set = 1 as ::core::ffi::c_int;
@@ -2705,15 +2705,15 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         9 => {
             colour_palette_clear((*ictx).palette);
             input_reset_cell(ictx);
-            screen_write_reset(sctx);
-            screen_write_fullredraw(sctx);
+            screen_write_reset(&mut *sctx);
+            screen_write_fullredraw(&mut *sctx);
         }
         6 => {
-            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(&mut *sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
         }
         7 => {
-            screen_write_carriagereturn(sctx);
-            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_carriagereturn(&mut *sctx);
+            screen_write_linefeed(&mut *sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
         }
         5 => {
             if (*s).cx < (*s).grid().sx {
@@ -2722,13 +2722,13 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         }
         8 => {
-            screen_write_reverseindex(sctx, (*ictx).cell.cell.bg as u_int);
+            screen_write_reverseindex(&mut *sctx, (*ictx).cell.cell.bg as u_int);
         }
         1 => {
-            screen_write_mode_set(sctx, MODE_KKEYPAD);
+            screen_write_mode_set(&mut *sctx, MODE_KKEYPAD);
         }
         2 => {
-            screen_write_mode_clear(sctx, MODE_KKEYPAD);
+            screen_write_mode_clear(&mut *sctx, MODE_KKEYPAD);
         }
         4 => {
             input_save_state(ictx);
@@ -2737,7 +2737,7 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             input_restore_state(ictx);
         }
         0 => {
-            screen_write_alignmenttest(sctx);
+            screen_write_alignmenttest(&mut *sctx);
         }
         11 => {
             (*ictx).cell.g0set = 1 as ::core::ffi::c_int;
@@ -2829,7 +2829,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursorleft(sctx, n as u_int);
+                screen_write_cursorleft(&mut *sctx, n as u_int);
             }
         }
         4 => {
@@ -2840,7 +2840,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursordown(sctx, n as u_int);
+                screen_write_cursordown(&mut *sctx, n as u_int);
             }
         }
         5 => {
@@ -2851,7 +2851,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursorright(sctx, n as u_int);
+                screen_write_cursorright(&mut *sctx, n as u_int);
             }
         }
         6 => {
@@ -2869,7 +2869,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) && m != -(1 as ::core::ffi::c_int) {
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     m - 1 as ::core::ffi::c_int,
                     n - 1 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
@@ -2895,11 +2895,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
                 ) as ::core::ffi::c_int;
                 if !(ek == 0 as ::core::ffi::c_int) {
-                    screen_write_mode_clear(sctx, EXTENDED_KEY_MODES);
+                    screen_write_mode_clear(&mut *sctx, EXTENDED_KEY_MODES);
                     if m == 2 as ::core::ffi::c_int {
-                        screen_write_mode_set(sctx, MODE_KEYS_EXTENDED_2);
+                        screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED_2);
                     } else if m == 1 as ::core::ffi::c_int || ek == 2 as ::core::ffi::c_int {
-                        screen_write_mode_set(sctx, MODE_KEYS_EXTENDED);
+                        screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED);
                     }
                 }
             }
@@ -2912,13 +2912,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 0 as ::core::ffi::c_int,
             );
             if !(n != 4 as ::core::ffi::c_int) {
-                screen_write_mode_clear(sctx, MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2);
+                screen_write_mode_clear(&mut *sctx, MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2);
                 if options_get_number(
                     global_options,
                     b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 2 as ::core::ffi::c_longlong
                 {
-                    screen_write_mode_set(sctx, MODE_KEYS_EXTENDED);
+                    screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED);
                 }
             }
         }
@@ -2933,7 +2933,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursorup(sctx, n as u_int);
+                screen_write_cursorup(&mut *sctx, n as u_int);
             }
         }
         1 => {
@@ -2944,8 +2944,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_carriagereturn(sctx);
-                screen_write_cursordown(sctx, n as u_int);
+                screen_write_carriagereturn(&mut *sctx);
+                screen_write_cursordown(&mut *sctx, n as u_int);
             }
         }
         2 => {
@@ -2956,8 +2956,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_carriagereturn(sctx);
-                screen_write_cursorup(sctx, n as u_int);
+                screen_write_carriagereturn(&mut *sctx);
+                screen_write_cursorup(&mut *sctx, n as u_int);
             }
         }
         8 => {
@@ -3012,7 +3012,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_clearcharacter(sctx, n as u_int, bg);
+                screen_write_clearcharacter(&mut *sctx, n as u_int, bg);
             }
         }
         10 => {
@@ -3023,7 +3023,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_deletecharacter(sctx, n as u_int, bg);
+                screen_write_deletecharacter(&mut *sctx, n as u_int, bg);
             }
         }
         12 => {
@@ -3041,7 +3041,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) && m != -(1 as ::core::ffi::c_int) {
                 screen_write_scrollregion(
-                    sctx,
+                    &mut *sctx,
                     (n - 1 as ::core::ffi::c_int) as u_int,
                     (m - 1 as ::core::ffi::c_int) as u_int,
                 );
@@ -3055,7 +3055,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_deleteline(sctx, n as u_int, bg);
+                screen_write_deleteline(&mut *sctx, n as u_int, bg);
             }
         }
         15 => {
@@ -3286,13 +3286,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    screen_write_clearendofscreen(sctx, bg);
+                    screen_write_clearendofscreen(&mut *sctx, bg);
                 }
                 1 => {
-                    screen_write_clearstartofscreen(sctx, bg);
+                    screen_write_clearstartofscreen(&mut *sctx, bg);
                 }
                 2 => {
-                    screen_write_clearscreen(sctx, bg);
+                    screen_write_clearscreen(&mut *sctx, bg);
                 }
                 3 => {
                     if input_get(
@@ -3302,7 +3302,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         0 as ::core::ffi::c_int,
                     ) == 0 as ::core::ffi::c_int
                     {
-                        screen_write_clearhistory(sctx);
+                        screen_write_clearhistory(&mut *sctx);
                     }
                 }
                 _ => {
@@ -3323,13 +3323,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    screen_write_clearendofline(sctx, bg);
+                    screen_write_clearendofline(&mut *sctx, bg);
                 }
                 1 => {
-                    screen_write_clearstartofline(sctx, bg);
+                    screen_write_clearstartofline(&mut *sctx, bg);
                 }
                 2 => {
-                    screen_write_clearline(sctx, bg);
+                    screen_write_clearline(&mut *sctx, bg);
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3349,7 +3349,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) {
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     n - 1 as ::core::ffi::c_int,
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
@@ -3364,7 +3364,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_insertcharacter(sctx, n as u_int, bg);
+                screen_write_insertcharacter(&mut *sctx, n as u_int, bg);
             }
         }
         21 => {
@@ -3375,7 +3375,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_insertline(sctx, n as u_int, bg);
+                screen_write_insertline(&mut *sctx, n as u_int, bg);
             }
         }
         27 => {
@@ -3446,7 +3446,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_scrollup(sctx, n as u_int, bg);
+                screen_write_scrollup(&mut *sctx, n as u_int, bg);
             }
         }
         31 => {
@@ -3457,7 +3457,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_scrolldown(sctx, n as u_int, bg);
+                screen_write_scrolldown(&mut *sctx, n as u_int, bg);
             }
         }
         37 => {
@@ -3495,7 +3495,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) {
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     -(1 as ::core::ffi::c_int),
                     n - 1 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
@@ -3512,7 +3512,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             if !(n == -(1 as ::core::ffi::c_int)) {
                 screen_set_cursor_style(n as u_int, &mut (*s).cstyle, &mut (*s).mode);
                 if n == 0 as ::core::ffi::c_int {
-                    screen_write_mode_clear(sctx, MODE_CURSOR_BLINKING_SET);
+                    screen_write_mode_clear(&mut *sctx, MODE_CURSOR_BLINKING_SET);
                 }
             }
         }
@@ -3544,10 +3544,10 @@ unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             4 => {
-                screen_write_mode_clear(sctx, MODE_INSERT);
+                screen_write_mode_clear(&mut *sctx, MODE_INSERT);
             }
             34 => {
-                screen_write_mode_set(sctx, MODE_CURSOR_VERY_VISIBLE);
+                screen_write_mode_set(&mut *sctx, MODE_CURSOR_VERY_VISIBLE);
             }
             _ => {
                 log_debug(format_args!(
@@ -3569,47 +3569,47 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             1 => {
-                screen_write_mode_clear(sctx, MODE_KCURSOR);
+                screen_write_mode_clear(&mut *sctx, MODE_KCURSOR);
             }
             3 => {
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
-                screen_write_clearscreen(sctx, (*gc).bg as u_int);
+                screen_write_clearscreen(&mut *sctx, (*gc).bg as u_int);
             }
             6 => {
-                screen_write_mode_clear(sctx, MODE_ORIGIN);
+                screen_write_mode_clear(&mut *sctx, MODE_ORIGIN);
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
             }
             7 => {
-                screen_write_mode_clear(sctx, MODE_WRAP);
+                screen_write_mode_clear(&mut *sctx, MODE_WRAP);
             }
             12 => {
-                screen_write_mode_clear(sctx, MODE_CURSOR_BLINKING);
-                screen_write_mode_set(sctx, MODE_CURSOR_BLINKING_SET);
+                screen_write_mode_clear(&mut *sctx, MODE_CURSOR_BLINKING);
+                screen_write_mode_set(&mut *sctx, MODE_CURSOR_BLINKING_SET);
             }
             25 => {
-                screen_write_mode_clear(sctx, MODE_CURSOR);
+                screen_write_mode_clear(&mut *sctx, MODE_CURSOR);
             }
             1000..=1003 => {
-                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
+                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
             }
             1004 => {
-                screen_write_mode_clear(sctx, MODE_FOCUSON);
+                screen_write_mode_clear(&mut *sctx, MODE_FOCUSON);
             }
             1005 => {
-                screen_write_mode_clear(sctx, MODE_MOUSE_UTF8);
+                screen_write_mode_clear(&mut *sctx, MODE_MOUSE_UTF8);
             }
             1006 => {
-                screen_write_mode_clear(sctx, MODE_MOUSE_SGR);
+                screen_write_mode_clear(&mut *sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
                 screen_write_alternateoff(&mut *sctx, &mut *gc, 0 as ::core::ffi::c_int);
@@ -3618,13 +3618,13 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
                 screen_write_alternateoff(&mut *sctx, &mut *gc, 1 as ::core::ffi::c_int);
             }
             2004 => {
-                screen_write_mode_clear(sctx, MODE_BRACKETPASTE);
+                screen_write_mode_clear(&mut *sctx, MODE_BRACKETPASTE);
             }
             2026 => {
-                screen_write_end_sync(sctx);
+                screen_write_end_sync(&mut *sctx);
             }
             2031 => {
-                screen_write_mode_clear(sctx, MODE_THEME_UPDATES);
+                screen_write_mode_clear(&mut *sctx, MODE_THEME_UPDATES);
                 if !(*ictx).wp.is_null() {
                     (*(*ictx).wp).flags &= !PANE_THEMECHANGED;
                 }
@@ -3648,10 +3648,10 @@ unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             4 => {
-                screen_write_mode_set(sctx, MODE_INSERT);
+                screen_write_mode_set(&mut *sctx, MODE_INSERT);
             }
             34 => {
-                screen_write_mode_clear(sctx, MODE_CURSOR_VERY_VISIBLE);
+                screen_write_mode_clear(&mut *sctx, MODE_CURSOR_VERY_VISIBLE);
             }
             _ => {
                 log_debug(format_args!(
@@ -3673,56 +3673,56 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             1 => {
-                screen_write_mode_set(sctx, MODE_KCURSOR);
+                screen_write_mode_set(&mut *sctx, MODE_KCURSOR);
             }
             3 => {
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
-                screen_write_clearscreen(sctx, (*ictx).cell.cell.bg as u_int);
+                screen_write_clearscreen(&mut *sctx, (*ictx).cell.cell.bg as u_int);
             }
             6 => {
-                screen_write_mode_set(sctx, MODE_ORIGIN);
+                screen_write_mode_set(&mut *sctx, MODE_ORIGIN);
                 screen_write_cursormove(
-                    sctx,
+                    &mut *sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
             }
             7 => {
-                screen_write_mode_set(sctx, MODE_WRAP);
+                screen_write_mode_set(&mut *sctx, MODE_WRAP);
             }
             12 => {
-                screen_write_mode_set(sctx, MODE_CURSOR_BLINKING);
-                screen_write_mode_set(sctx, MODE_CURSOR_BLINKING_SET);
+                screen_write_mode_set(&mut *sctx, MODE_CURSOR_BLINKING);
+                screen_write_mode_set(&mut *sctx, MODE_CURSOR_BLINKING_SET);
             }
             25 => {
-                screen_write_mode_set(sctx, MODE_CURSOR);
+                screen_write_mode_set(&mut *sctx, MODE_CURSOR);
             }
             1000 => {
-                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
-                screen_write_mode_set(sctx, MODE_MOUSE_STANDARD);
+                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
+                screen_write_mode_set(&mut *sctx, MODE_MOUSE_STANDARD);
             }
             1002 => {
-                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
-                screen_write_mode_set(sctx, MODE_MOUSE_BUTTON);
+                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
+                screen_write_mode_set(&mut *sctx, MODE_MOUSE_BUTTON);
             }
             1003 => {
-                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
-                screen_write_mode_set(sctx, MODE_MOUSE_ALL);
+                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
+                screen_write_mode_set(&mut *sctx, MODE_MOUSE_ALL);
             }
             1004 => {
-                screen_write_mode_set(sctx, MODE_FOCUSON);
+                screen_write_mode_set(&mut *sctx, MODE_FOCUSON);
             }
             1005 => {
-                screen_write_mode_set(sctx, MODE_MOUSE_UTF8);
+                screen_write_mode_set(&mut *sctx, MODE_MOUSE_UTF8);
             }
             1006 => {
-                screen_write_mode_set(sctx, MODE_MOUSE_SGR);
+                screen_write_mode_set(&mut *sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
                 screen_write_alternateon(&mut *sctx, &*gc, 0 as ::core::ffi::c_int);
@@ -3731,10 +3731,10 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
                 screen_write_alternateon(&mut *sctx, &*gc, 1 as ::core::ffi::c_int);
             }
             2004 => {
-                screen_write_mode_set(sctx, MODE_BRACKETPASTE);
+                screen_write_mode_set(&mut *sctx, MODE_BRACKETPASTE);
             }
             2031 => {
-                screen_write_mode_set(sctx, MODE_THEME_UPDATES);
+                screen_write_mode_set(&mut *sctx, MODE_THEME_UPDATES);
                 if !(*ictx).wp.is_null() {
                     (*(*ictx).wp).last_theme = window_pane_get_theme((*ictx).wp);
                     (*(*ictx).wp).flags &= !PANE_THEMECHANGED;
@@ -4518,7 +4518,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         ) == 0 as ::core::ffi::c_int
     {
         screen_write_rawstring(
-            sctx,
+            &mut *sctx,
             buf.offset(prefixlen as isize),
             len.wrapping_sub(prefixlen as size_t) as u_int,
             (allow_passthrough == 2 as ::core::ffi::c_longlong) as ::core::ffi::c_int,
@@ -4908,7 +4908,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
         log_debug(format_args!("bad OSC 4: {}", log_cstr((p) as *const _)));
     }
     if redraw != 0 {
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
     }
 }
 unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5109,7 +5109,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
     }
 }
 unsafe fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5122,7 +5122,7 @@ unsafe fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
     }
 }
 unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5153,7 +5153,7 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
     }
 }
 unsafe fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5166,7 +5166,7 @@ unsafe fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
     }
 }
 unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5579,7 +5579,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     } else {
         screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
-            &raw mut ctx,
+            &mut ctx,
             &raw mut clip as *mut ::core::ffi::c_char,
             out.as_mut_ptr(),
             out.len() as u_int,
@@ -5599,7 +5599,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if *p as ::core::ffi::c_int == '\0' as i32 {
         colour_palette_clear((*ictx).palette);
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
         return;
     }
     let mut copy = std::ffi::CStr::from_ptr(p).to_bytes_with_nul().to_vec();
@@ -5630,7 +5630,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
         log_debug(format_args!("bad OSC 104: {}", log_cstr((p) as *const _)));
     }
     if redraw != 0 {
-        screen_write_fullredraw(&raw mut (*ictx).ctx);
+        screen_write_fullredraw(&mut (*ictx).ctx);
     }
 }
 pub unsafe fn input_reply_clipboard(

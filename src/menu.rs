@@ -337,7 +337,7 @@ pub unsafe fn menu_update(mut md: *mut menu_data) {
     };
     menu_reapply_styles(md);
     screen_write_start(&mut ctx, s);
-    screen_write_clearscreen(&raw mut ctx, 8 as u_int);
+    screen_write_clearscreen(&mut ctx, 8 as u_int);
     if (*md).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_box(
             &mut ctx,

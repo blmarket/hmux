@@ -315,7 +315,7 @@ unsafe fn window_buffer_draw(
         utf8_strvis(&mut buf, line, VIS_OCTAL | VIS_CSTYLE | VIS_TAB);
         let escaped = CStr::from_bytes_until_nul(&buf).expect("escaped line is terminated");
         if !escaped.is_empty() {
-            screen_write_cursormove(ctx, cx as i32, cy.wrapping_add(row as u_int) as i32, 0);
+            screen_write_cursormove(&mut *ctx, cx as i32, cy.wrapping_add(row as u_int) as i32, 0);
             screen_write_nputs(&mut *ctx, sx as ssize_t, &grid_default_cell, |out| {
                 out.write_all(escaped.to_bytes())
             });
@@ -748,7 +748,7 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     );
     screen_write_start(&mut ctx, s);
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -762,14 +762,14 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
         None,
     );
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         x.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         y.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_clearcharacter(&raw mut ctx, box_w.wrapping_sub(2 as u_int), gc.bg as u_int);
+    screen_write_clearcharacter(&mut ctx, box_w.wrapping_sub(2 as u_int), gc.bg as u_int);
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         text_x as ::core::ffi::c_int,
         y.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

@@ -502,14 +502,14 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
             );
             if *s as ::core::ffi::c_int != '\0' as i32 {
                 screen_write_start_pane(&mut ctx, wp, &raw mut (*wp).base);
-                screen_write_scrollregion(&raw mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
+                screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
-                    &raw mut ctx,
+                    &mut ctx,
                     0 as ::core::ffi::c_int,
                     sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_linefeed(&raw mut ctx, 1 as ::core::ffi::c_int, 8 as u_int);
+                screen_write_linefeed(&mut ctx, 1 as ::core::ffi::c_int, 8 as u_int);
                 memcpy(
                     &raw mut gc as *mut ::core::ffi::c_void,
                     &raw const grid_default_cell as *const ::core::ffi::c_void,

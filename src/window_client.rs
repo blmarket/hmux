@@ -396,7 +396,7 @@ unsafe fn window_client_draw_info(
         );
     }
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         cx as ::core::ffi::c_int,
         cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -411,7 +411,7 @@ unsafe fn window_client_draw_info(
         }
         let expanded = format_expand_cstring(ft, window_client_info_lines[i as usize]);
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -439,7 +439,7 @@ unsafe fn window_client_draw_info(
             ::core::ptr::null_mut::<format_tree>(),
         );
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -506,7 +506,7 @@ unsafe fn window_client_draw(
         at = 0 as u_int;
     }
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         cx as ::core::ffi::c_int,
         cy.wrapping_add(at) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -521,14 +521,14 @@ unsafe fn window_client_draw(
     }
     if at != 0 as u_int {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(2 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
     } else {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy)
                 .wrapping_sub(1 as u_int)
@@ -557,14 +557,14 @@ unsafe fn window_client_draw(
     );
     if at != 0 as u_int {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
     } else {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy).wrapping_sub(lines) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,

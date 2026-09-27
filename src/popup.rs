@@ -370,10 +370,10 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
         screen_share_hyperlinks(&mut s, &(*pd).s);
     }
     screen_write_start(&mut ctx, &raw mut s);
-    screen_write_clearscreen(&raw mut ctx, 8 as u_int);
+    screen_write_clearscreen(&mut ctx, 8 as u_int);
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -396,7 +396,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
             (*pd).title.as_deref(),
         );
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             1 as ::core::ffi::c_int,
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,

@@ -363,7 +363,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         i = 0 as u_int;
         while i < lines {
             screen_write_cursormove(
-                &raw mut ctx,
+                &mut ctx,
                 0 as ::core::ffi::c_int,
                 i as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -389,7 +389,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                         n = n.wrapping_add(1);
                     }
                     screen_write_cursormove(
-                        &raw mut ctx,
+                        &mut ctx,
                         0 as ::core::ffi::c_int,
                         i as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -677,7 +677,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         lines,
     );
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         ax as ::core::ffi::c_int,
         messageline as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

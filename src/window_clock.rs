@@ -813,7 +813,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
             tm,
         );
     }
-    screen_write_clearscreen(&raw mut ctx, 8 as u_int);
+    screen_write_clearscreen(&mut ctx, 8 as u_int);
     if ((*s).grid().sx as size_t)
         < (6 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char))
         || (*s).grid().sy < 6 as u_int
@@ -826,7 +826,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
             ) as u_int;
             y = (*s).grid().sy.wrapping_div(2 as u_int);
             screen_write_cursormove(
-                &raw mut ctx,
+                &mut ctx,
                 x as ::core::ffi::c_int,
                 y as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -889,7 +889,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
                     i = 0 as u_int;
                     while i < 5 as u_int {
                         screen_write_cursormove(
-                            &raw mut ctx,
+                            &mut ctx,
                             x.wrapping_add(i) as ::core::ffi::c_int,
                             y.wrapping_add(j) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,

@@ -882,7 +882,7 @@ unsafe fn window_panes_draw_borders(
                     CELL_BORDERS[cell_type as usize] as u_char,
                 );
                 screen_write_cursormove(
-                    ctx,
+                    &mut *ctx,
                     xx as ::core::ffi::c_int,
                     yy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -994,7 +994,7 @@ unsafe fn window_panes_draw_floating_border(
                     CELL_BORDERS[cell_type as usize] as u_char,
                 );
                 screen_write_cursormove(
-                    ctx,
+                    &mut *ctx,
                     xx as ::core::ffi::c_int,
                     yy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -1070,7 +1070,7 @@ unsafe fn window_panes_clear_floating_area(
     }
     yy = y;
     while yy <= y2 {
-        screen_write_cursormove(ctx, x, yy, 0 as ::core::ffi::c_int);
+        screen_write_cursormove(&mut *ctx, x, yy, 0 as ::core::ffi::c_int);
         xx = x;
         while xx <= x2 {
             screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
@@ -1120,7 +1120,7 @@ unsafe fn window_panes_draw_format(
     );
     if !expanded.is_empty() {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             x as ::core::ffi::c_int,
             y as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1280,7 +1280,7 @@ unsafe fn window_panes_draw_number(
             as u_int;
         cy = y.wrapping_add(sy.wrapping_div(2 as u_int));
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1311,7 +1311,7 @@ unsafe fn window_panes_draw_number(
                 while i < 5 as u_int {
                     if !(window_clock_table[idx as usize][j as usize][i as usize] == 0) {
                         screen_write_cursormove(
-                            ctx,
+                            &mut *ctx,
                             x.wrapping_add(px).wrapping_add(i) as ::core::ffi::c_int,
                             y.wrapping_add(py).wrapping_add(j) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
@@ -1336,7 +1336,7 @@ unsafe fn window_panes_draw_number(
             .wrapping_sub(1 as size_t) as u_int;
         cy = y.wrapping_add(py).wrapping_add(5 as u_int);
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1399,7 +1399,7 @@ unsafe fn window_panes_draw_pane(
     }
     window_panes_add_area(data, wp, x, y, sx, sy);
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1476,7 +1476,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     sy = (*data).screen.grid().sy;
     window_panes_free_areas(data);
     screen_write_start(&mut ctx, &raw mut (*data).screen);
-    screen_write_clearscreen(&raw mut ctx, 8 as u_int);
+    screen_write_clearscreen(&mut ctx, 8 as u_int);
     wp = window_pane_first(w);
     while !wp.is_null() {
         if !(window_panes_pane_floating(wp) != 0) {

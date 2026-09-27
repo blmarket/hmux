@@ -672,7 +672,7 @@ unsafe fn window_tree_draw_label(
         .wrapping_div(2 as u_int);
     oy = sy.wrapping_add(1 as u_int).wrapping_div(2 as u_int);
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         px.wrapping_add(ox).wrapping_sub(2 as u_int) as ::core::ffi::c_int,
         py.wrapping_add(oy).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -686,18 +686,18 @@ unsafe fn window_tree_draw_label(
         None,
     );
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         px.wrapping_add(ox).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
         py.wrapping_add(oy) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
     screen_write_clearcharacter(
-        ctx,
+        &mut *ctx,
         width.wrapping_add(2 as u_int),
         (*border_gc).bg as u_int,
     );
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         px.wrapping_add(ox) as ::core::ffi::c_int,
         py.wrapping_add(oy) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -851,14 +851,14 @@ unsafe fn window_tree_draw_session(
     if left != 0 {
         (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -870,14 +870,14 @@ unsafe fn window_tree_draw_session(
     if right != 0 {
         (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -938,7 +938,7 @@ unsafe fn window_tree_draw_session(
                 width = each.wrapping_sub(1 as u_int);
             }
             screen_write_cursormove(
-                ctx,
+                &mut *ctx,
                 cx.wrapping_add(offset) as ::core::ffi::c_int,
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -966,7 +966,7 @@ unsafe fn window_tree_draw_session(
             format_free(ft);
             if loop_0 != end.wrapping_sub(1 as u_int) {
                 screen_write_cursormove(
-                    ctx,
+                    &mut *ctx,
                     cx.wrapping_add(offset).wrapping_add(width) as ::core::ffi::c_int,
                     cy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -1111,14 +1111,14 @@ unsafe fn window_tree_draw_window(
     if left != 0 {
         (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1130,14 +1130,14 @@ unsafe fn window_tree_draw_window(
     if right != 0 {
         (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_vline(&mut *ctx, sy, Some(&gc));
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1192,7 +1192,7 @@ unsafe fn window_tree_draw_window(
                     width = each.wrapping_sub(1 as u_int);
                 }
                 screen_write_cursormove(
-                    ctx,
+                    &mut *ctx,
                     cx.wrapping_add(offset) as ::core::ffi::c_int,
                     cy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -1220,7 +1220,7 @@ unsafe fn window_tree_draw_window(
                 format_free(ft);
                 if loop_0 != end.wrapping_sub(1 as u_int) {
                     screen_write_cursormove(
-                        ctx,
+                        &mut *ctx,
                         cx.wrapping_add(offset).wrapping_add(width) as ::core::ffi::c_int,
                         cy as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -1325,7 +1325,7 @@ unsafe fn window_tree_draw_info(
                 ::core::ptr::null_mut::<format_tree>(),
             );
             screen_write_cursormove(
-                ctx,
+                &mut *ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(i) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1341,7 +1341,7 @@ unsafe fn window_tree_draw_info(
             if sx > 14 as u_int {
                 gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
                 screen_write_cursormove(
-                    ctx,
+                    &mut *ctx,
                     cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
                     cy.wrapping_add(i) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -1357,7 +1357,7 @@ unsafe fn window_tree_draw_info(
             }
             let expanded = format_expand_cstring(ft, *lines[j as usize].offset(k as isize));
             screen_write_cursormove(
-                ctx,
+                &mut *ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(i) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1385,7 +1385,7 @@ unsafe fn window_tree_draw_info(
             ::core::ptr::null_mut::<format_tree>(),
         );
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,

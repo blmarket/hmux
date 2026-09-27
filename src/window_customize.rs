@@ -685,7 +685,7 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
     );
     screen_write_start(&mut ctx, s);
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -699,14 +699,14 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
         None,
     );
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         x.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         y.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_clearcharacter(&raw mut ctx, box_w.wrapping_sub(2 as u_int), gc.bg as u_int);
+    screen_write_clearcharacter(&mut ctx, box_w.wrapping_sub(2 as u_int), gc.bg as u_int);
     screen_write_cursormove(
-        &raw mut ctx,
+        &mut ctx,
         text_x as ::core::ffi::c_int,
         y.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1823,7 +1823,7 @@ unsafe fn window_customize_draw_key(
         return;
     }
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         cx as ::core::ffi::c_int,
         (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1869,7 +1869,7 @@ unsafe fn window_customize_draw_key(
         return;
     }
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         cx as ::core::ffi::c_int,
         (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -2022,7 +2022,7 @@ unsafe fn window_customize_draw_option(
     ) == 0)
     {
         screen_write_cursormove(
-            ctx,
+            &mut *ctx,
             cx as ::core::ffi::c_int,
             (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -2211,7 +2211,7 @@ unsafe fn window_customize_draw_option(
                                 4086289836260337793 => {}
                                 _ => {
                                     screen_write_cursormove(
-                                        ctx,
+                                        &mut *ctx,
                                         cx as ::core::ffi::c_int,
                                         (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                                         0 as ::core::ffi::c_int,
@@ -2531,7 +2531,7 @@ write_cstr(out, unit)
                                                                                             4086289836260337793 => {}
                                                                                             _ => {
                                                                                                 screen_write_cursormove(
-                                                                                                    ctx,
+                                                                                                    &mut *ctx,
                                                                                                     cx as ::core::ffi::c_int,
                                                                                                     (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                                                                                                     0 as ::core::ffi::c_int,
@@ -2716,7 +2716,7 @@ unsafe fn window_customize_draw_environment(
         }
     }
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         cx as ::core::ffi::c_int,
         (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

@@ -866,7 +866,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     dfg = gc.fg;
     dfg0 = gc0.fg;
     screen_write_start(&mut ctx, s);
-    screen_write_clearscreen(&raw mut ctx, 8 as u_int);
+    screen_write_clearscreen(&mut ctx, 8 as u_int);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
@@ -914,7 +914,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 as *mut mode_tree_line;
             mti = (*line).item;
             screen_write_cursormove(
-                &raw mut ctx,
+                &mut ctx,
                 0 as ::core::ffi::c_int,
                 i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1086,7 +1086,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 gc0.fg = COLOUR_THEME_CYAN as ::core::ffi::c_int | COLOUR_FLAG_THEME;
             }
             if i != (*mtd).current {
-                screen_write_clearendofline(&raw mut ctx, 8 as u_int);
+                screen_write_clearendofline(&mut ctx, 8 as u_int);
                 format_draw(
                     &raw mut ctx,
                     &raw const grid_default_cell,
@@ -1097,7 +1097,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 );
                 if left != 0 as u_int {
                     screen_write_cursormove(
-                        &raw mut ctx,
+                        &mut ctx,
                         prefix_width as ::core::ffi::c_int,
                         i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -1112,7 +1112,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     );
                     if !(*mti).text.is_none() && width < w {
                         screen_write_cursormove(
-                            &raw mut ctx,
+                            &mut ctx,
                             width as ::core::ffi::c_int,
                             i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
@@ -1130,7 +1130,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     }
                 }
             } else {
-                screen_write_clearendofline(&raw mut ctx, gc.bg as u_int);
+                screen_write_clearendofline(&mut ctx, gc.bg as u_int);
                 format_draw(
                     &raw mut ctx,
                     &raw mut gc,
@@ -1141,7 +1141,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 );
                 if left != 0 as u_int {
                     screen_write_cursormove(
-                        &raw mut ctx,
+                        &mut ctx,
                         prefix_width as ::core::ffi::c_int,
                         i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -1156,7 +1156,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     );
                     if !(*mti).text.is_none() && width < w {
                         screen_write_cursormove(
-                            &raw mut ctx,
+                            &mut ctx,
                             width as ::core::ffi::c_int,
                             i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
@@ -1197,7 +1197,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 mti = (*mti).parent;
             }
             screen_write_cursormove(
-                &raw mut ctx,
+                &mut ctx,
                 0 as ::core::ffi::c_int,
                 h as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1235,7 +1235,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             let label_len = label.as_bytes().len() as size_t;
             if w.wrapping_sub(2 as u_int) as size_t >= label_len {
                 screen_write_cursormove(
-                    &raw mut ctx,
+                    &mut ctx,
                     1 as ::core::ffi::c_int,
                     h as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -1279,7 +1279,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             box_y = sy.wrapping_sub(h).wrapping_sub(2 as u_int);
             if box_x != 0 as u_int && box_y != 0 as u_int {
                 screen_write_cursormove(
-                    &raw mut ctx,
+                    &mut ctx,
                     2 as ::core::ffi::c_int,
                     h.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -1301,7 +1301,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     } else {
         (*s).mode &= !MODE_CURSOR;
         screen_write_cursormove(
-            &raw mut ctx,
+            &mut ctx,
             0 as ::core::ffi::c_int,
             (*mtd).current.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1337,7 +1337,7 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, mut ctx: *mut scre
     (*s).mode |= MODE_CURSOR;
     prompt_draw((*mtd).prompt, &raw mut pdd);
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         (*mtd).prompt_cx as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1732,14 +1732,14 @@ unsafe fn mode_tree_draw_help_line(
     let expanded = format_expand_cstring(ft, replaced.as_ptr());
     drop(replaced);
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_clearcharacter(ctx, w, (*gc).bg as u_int);
+    screen_write_clearcharacter(&mut *ctx, w, (*gc).bg as u_int);
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1829,7 +1829,7 @@ unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen
         (*mtd).wp,
     );
     screen_write_cursormove(
-        ctx,
+        &mut *ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
