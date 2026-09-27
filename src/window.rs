@@ -1116,7 +1116,9 @@ pub unsafe fn window_create(
 }
 unsafe fn window_destroy(mut w: *mut window) {
     log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));
-    window_unzoom(w, 0 as ::core::ffi::c_int);
+    // The final Rc owner is already being dropped. Restore the layout links,
+    // but do not resize dying panes: their events would retain this window.
+    window_unzoom_internal(w, 0, false);
     if (*w).entry.owner.is_some() {
         windows_remove(&raw mut windows, w);
     }
@@ -1747,9 +1749,14 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     redraw_invalidate_scene(w);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn window_unzoom(
-    mut w: *mut window,
-    mut notify: ::core::ffi::c_int,
+pub unsafe fn window_unzoom(w: *mut window, notify: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    window_unzoom_internal(w, notify, true)
+}
+
+unsafe fn window_unzoom_internal(
+    w: *mut window,
+    notify: ::core::ffi::c_int,
+    resize_panes: bool,
 ) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut zoomed: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1810,7 +1817,9 @@ pub unsafe fn window_unzoom(
             }
         }
     }
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    if resize_panes {
+        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    }
     if notify != 0 {
         events_fire_window(
             b"window-unzoomed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4859,6 +4868,129 @@ mod pane_stream_lifecycle_tests {
             assert!(observer.upgrade().is_none());
             assert!(callback.upgrade().is_none());
             shutdown_runtime();
+        }
+    }
+}
+
+#[cfg(test)]
+mod zoom_teardown_tests {
+    use super::*;
+    use crate::src::events::{events_add_sink, events_remove_sink};
+    use crate::src::events_payload::event_payload_get_window;
+    use crate::src::grid::grid_create;
+    use crate::src::layout::{layout_create_cell, layout_make_leaf, layout_set_size};
+    use crate::src::options::{options_create, options_default};
+    use crate::src::options_table::options_table;
+    use crate::src::shared::events::events_callback;
+    use crate::src::shared::rc;
+    use std::cell::Cell;
+
+    unsafe fn zoomed_window() -> *mut window {
+        let w = rc::new(window::default());
+        (*w).options = options_create(std::ptr::null_mut());
+        let entry = options_table
+            .iter()
+            .find(|entry| {
+                !entry.name.is_null() && CStr::from_ptr(entry.name) == c"pane-border-status"
+            })
+            .unwrap();
+        options_default((*w).options, entry);
+        let pane = rc::new(window_pane::empty());
+        (*pane).window = w;
+        (*pane).fd = -1;
+        (*pane).pipe_fd = -1;
+        (*pane).sx = 80;
+        (*pane).sy = 24;
+        (*pane).base.grid = Some(grid_create(80, 24, 0));
+        (*pane).screen = &raw mut (*pane).base;
+        (*pane).flags = PANE_ZOOMED;
+        (*w).active = pane;
+        (*w).panes.push_back(rc::downgrade(pane));
+        (*w).z_index.push_back(rc::downgrade(pane));
+        let mut saved = layout_create_cell();
+        layout_set_size(&mut *saved, 40, 24, 0, 0);
+        layout_make_leaf(&mut *saved, pane);
+        (*pane).saved_layout_cell = &mut *saved;
+        let mut zoomed = layout_create_cell();
+        layout_set_size(&mut *zoomed, 80, 24, 0, 0);
+        layout_make_leaf(&mut *zoomed, pane);
+        (*w).layout_root = Some(zoomed);
+        (*w).saved_layout_root = Some(saved);
+        (*w).flags = WINDOW_ZOOMED;
+        w
+    }
+
+    #[test]
+    fn raw_and_typed_final_owners_destroy_zoomed_windows_without_resize_events() {
+        unsafe {
+            for typed in [false, true] {
+                let w = zoomed_window();
+                let observer = rc::downgrade(w);
+                let pane_observer = rc::downgrade((*w).active);
+                let resized = Rc::new(Cell::new(0));
+                let resize_count = resized.clone();
+                let resize_sink = events_add_sink(
+                    c"pane-resized",
+                    events_callback(move |_, _| {
+                        resize_count.set(resize_count.get() + 1);
+                    }),
+                );
+                let closed = Rc::new(Cell::new(0));
+                let close_count = closed.clone();
+                let live = observer.clone();
+                let close_sink = events_add_sink(
+                    c"window-closed",
+                    events_callback(move |_, payload| {
+                        assert!(live.upgrade().is_some());
+                        assert_ne!(
+                            (*event_payload_get_window(payload)).flags & WINDOW_ZOOMED,
+                            0
+                        );
+                        close_count.set(close_count.get() + 1);
+                    }),
+                );
+                if typed {
+                    drop(rc::take(w));
+                } else {
+                    window_remove_ref(w, c"test final raw owner".as_ptr());
+                }
+                assert_eq!(resized.get(), 0);
+                assert_eq!(closed.get(), usize::from(!typed));
+                assert!(observer.upgrade().is_none());
+                assert!(pane_observer.upgrade().is_none());
+                events_remove_sink(resize_sink);
+                events_remove_sink(close_sink);
+            }
+        }
+    }
+
+    #[test]
+    fn live_unzoom_keeps_pane_resize_and_window_notifications() {
+        unsafe {
+            let w = zoomed_window();
+            let pane = (*w).active;
+            let notifications = Rc::new(RefCell::new(Vec::new()));
+            let mut sinks = Vec::new();
+            for name in [c"pane-resized", c"window-unzoomed", c"window-closed"] {
+                let notifications = notifications.clone();
+                sinks.push(events_add_sink(
+                    name,
+                    events_callback(move |_, _| {
+                        notifications.borrow_mut().push(name);
+                    }),
+                ));
+            }
+            assert_eq!(window_unzoom(w, 1), 0);
+            assert_eq!(((*pane).sx, (*pane).sy), (40, 24));
+            assert!((*w).saved_layout_root.is_none());
+            window_remove_ref(w, c"test live close".as_ptr());
+            assert_eq!(
+                *notifications.borrow(),
+                [c"pane-resized", c"window-unzoomed", c"window-closed"]
+            );
+            for sink in sinks {
+                events_remove_sink(sink);
+            }
         }
     }
 }
