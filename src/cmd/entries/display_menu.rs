@@ -194,9 +194,9 @@ unsafe fn cmd_display_menu_get_popup_pos(
             )
         },
     );
-    top = status_at_line(tc);
+    top = status_at_line(&*tc);
     if top != -(1 as ::core::ffi::c_int) {
-        lines = status_line_size(tc);
+        lines = status_line_size(&*tc);
         if top == 0 as ::core::ffi::c_int {
             top = lines as ::core::ffi::c_int;
         } else {
@@ -608,12 +608,12 @@ unsafe fn cmd_display_menu_get_menu_pos(
         b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", ((*window).menu_last_py.wrapping_add(h)) as u32),
     );
-    lines = status_line_size(tc);
+    lines = status_line_size(&*tc);
     position = options_get_number(
         (*s).options,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    if status_at_line(tc) != -(1 as ::core::ffi::c_int) && lines != 0 as u_int {
+    if status_at_line(&*tc) != -(1 as ::core::ffi::c_int) && lines != 0 as u_int {
         line = 0 as u_int;
         while line < lines {
             ranges = &raw mut (*(&raw mut (*tc).status.entries as *mut style_line_entry)

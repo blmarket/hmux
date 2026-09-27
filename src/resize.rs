@@ -264,7 +264,7 @@ unsafe fn clients_calculate_size(
                     || cy == 0 as u_int
                 {
                     cx = (*loop_0).tty.sx;
-                    cy = (*loop_0).tty.sy.wrapping_sub(status_line_size(loop_0));
+                    cy = (*loop_0).tty.sy.wrapping_sub(status_line_size(&*loop_0));
                 }
                 if type_0 == WINDOW_SIZE_LARGEST {
                     if cx > *sx {
@@ -411,7 +411,7 @@ pub unsafe fn default_window_size(
     }
     if type_0 == WINDOW_SIZE_LATEST && !c.is_null() && ignore_client_size(c) == 0 {
         *sx = (*c).tty.sx;
-        *sy = (*c).tty.sy.wrapping_sub(status_line_size(c));
+        *sy = (*c).tty.sy.wrapping_sub(status_line_size(&*c));
         *xpixel = (*c).tty.xpixel;
         *ypixel = (*c).tty.ypixel;
         log_debug(format_args!(

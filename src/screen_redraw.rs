@@ -2283,7 +2283,7 @@ unsafe fn redraw_set_draw_context(mut dctx: *mut redraw_draw_ctx, mut scene: *mu
         (*dctx).marked = marked_pane.wp;
     }
     (*dctx).active = (*(*(*s).curw).window).active;
-    lines = status_line_size(c);
+    lines = status_line_size(&*c);
     if options_get_number(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,

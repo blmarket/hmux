@@ -496,11 +496,11 @@ unsafe fn window_client_draw(
             wp = ::core::ptr::null_mut::<window_pane>();
         }
     }
-    lines = status_line_size(c);
+    lines = status_line_size(&*c);
     if lines >= sy {
         lines = 0 as u_int;
     }
-    if status_at_line(c) == 0 as ::core::ffi::c_int {
+    if status_at_line(&*c) == 0 as ::core::ffi::c_int {
         at = lines;
     } else {
         at = 0 as u_int;

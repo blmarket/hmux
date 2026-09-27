@@ -3332,7 +3332,7 @@ pub unsafe fn window_pane_prompt_key(
         {
             result = PROMPT_KEY_NOT_HANDLED;
         } else {
-            if !c.is_null() && status_at_line(c) == 0 as ::core::ffi::c_int {
+            if !c.is_null() && status_at_line(&*c) == 0 as ::core::ffi::c_int {
                 py = 0 as u_int;
             } else {
                 py = (*wp).sy.wrapping_sub(1 as u_int);

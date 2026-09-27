@@ -213,9 +213,9 @@ fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
         (*ttyctx).xoff = (*ttyctx).rxoff;
         (*ttyctx).ryoff = (*wp).yoff;
         (*ttyctx).yoff = (*ttyctx).ryoff;
-        if status_at_line(c) == 0 {
+        if status_at_line(&*c) == 0 {
             (*ttyctx).yoff =
-                ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(c)) as ::core::ffi::c_int;
+                ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(&*c)) as ::core::ffi::c_int;
         }
         1
     }))

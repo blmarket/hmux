@@ -1968,8 +1968,8 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
     (*m).w = -(1 as ::core::ffi::c_int);
     (*m).wp = -(1 as ::core::ffi::c_int);
     (*m).ignore = ignore;
-    (*m).statusat = status_at_line(c);
-    (*m).statuslines = status_line_size(c);
+    (*m).statusat = status_at_line(&*c);
+    (*m).statuslines = status_line_size(&*c);
     if (*m).statusat != -(1 as ::core::ffi::c_int)
         && y >= (*m).statusat as u_int
         && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
@@ -3070,8 +3070,8 @@ unsafe fn server_client_handle_menu_key(
                     << 32 as ::core::ffi::c_int
     {
         m = &raw mut new_event.m;
-        (*m).statusat = status_at_line(c);
-        (*m).statuslines = status_line_size(c);
+        (*m).statusat = status_at_line(&*c);
+        (*m).statuslines = status_line_size(&*c);
         let tty_window_view { ox, oy, .. } = tty_window_offset(&(*c).tty);
         (*m).x = (*m).x.wrapping_add(ox);
         if (*m).statusat == 0 as ::core::ffi::c_int {
@@ -3537,22 +3537,29 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
         bufferevent_enable((*wp).event, EV_READ as ::core::ffi::c_short);
     };
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PromptCursor {
+    mode: ::core::ffi::c_int,
+    cx: u_int,
+    cy: u_int,
+}
+
+// No prompt leaves the caller's cursor unchanged. A clipped prompt still owns
+// the cursor but hides it, retaining the incoming coordinates outside the view.
 unsafe fn server_client_prompt_cursor(
-    mut c: *mut client,
-    mut wp: *mut window_pane,
-    mut mode: *mut ::core::ffi::c_int,
-    mut cx: *mut u_int,
-    mut cy: *mut u_int,
-) -> ::core::ffi::c_int {
+    c: &client,
+    wp: *mut window_pane,
+    mut cursor: PromptCursor,
+) -> Option<PromptCursor> {
     let mut r = Vec::new();
-    let mut tty: *mut tty = &raw mut (*c).tty;
+    let tty = &c.tty;
     let mut px: ::core::ffi::c_int = 0;
     let mut py: ::core::ffi::c_int = 0;
     if window_pane_has_prompt(wp) == 0 {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
-    *mode &= !MODE_CURSOR;
-    let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
+    cursor.mode &= !MODE_CURSOR;
+    let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(tty);
     if status_at_line(c) == 0 as ::core::ffi::c_int {
         py = (*wp).yoff;
     } else {
@@ -3566,25 +3573,102 @@ unsafe fn server_client_prompt_cursor(
         || py < oy as ::core::ffi::c_int
         || py > oy.wrapping_add(sy) as ::core::ffi::c_int
     {
-        return 1 as ::core::ffi::c_int;
+        return Some(cursor);
     }
-    *cx = (px as u_int).wrapping_sub(ox);
-    *cy = (py as u_int).wrapping_sub(oy);
+    cursor.cx = (px as u_int).wrapping_sub(ox);
+    cursor.cy = (py as u_int).wrapping_sub(oy);
     window_visible_ranges(
         wp,
-        *cx as ::core::ffi::c_int,
-        *cy as ::core::ffi::c_int,
+        cursor.cx as ::core::ffi::c_int,
+        cursor.cy as ::core::ffi::c_int,
         1 as u_int,
         &mut r,
     );
-    if window_position_is_visible(&r, *cx) {
+    if window_position_is_visible(&r, cursor.cx) {
         if status_at_line(c) == 0 as ::core::ffi::c_int {
-            *cy = (*cy).wrapping_add(status_line_size(c));
+            cursor.cy = cursor.cy.wrapping_add(status_line_size(c));
         }
-        *mode |= MODE_CURSOR;
+        cursor.mode |= MODE_CURSOR;
     }
-    return 1 as ::core::ffi::c_int;
+    return Some(cursor);
 }
+
+#[cfg(test)]
+mod prompt_cursor_tests {
+    use super::*;
+    use crate::src::shared::prompt::prompt;
+    use crate::src::shared::rc;
+    use crate::src::shared::screen::MODE_WRAP;
+
+    #[test]
+    fn pane_prompt_cursor_preserves_clipped_and_occluded_coordinates() {
+        unsafe {
+            let mut c = client::empty();
+            let mut session = session::empty();
+            c.session = &raw mut session;
+            c.tty.sy = 24;
+            session.statuslines = 2;
+            (c.tty.oox, c.tty.ooy, c.tty.osx, c.tty.osy) = (10, 5, 80, 20);
+            let incoming = PromptCursor {
+                mode: MODE_CURSOR | MODE_WRAP,
+                cx: 67,
+                cy: 68,
+            };
+
+            // Golden mode/coordinates from tmux e880cf63e0a9's cursor helper.
+            // Its viewport comparisons intentionally include the right/bottom edge.
+            for (at, has_prompt, x, y, covered, expected) in [
+                (22, false, 15, 8, false, None),
+                (22, true, 15, 8, false, Some((17, 7, 6))),
+                (0, true, 15, 8, false, Some((17, 7, 5))),
+                (-1, true, 15, 8, false, Some((17, 7, 6))),
+                (22, true, 5, 8, false, Some((16, 67, 68))),
+                (22, true, 89, 8, false, Some((16, 67, 68))),
+                (22, true, 88, 8, false, Some((17, 80, 6))),
+                (22, true, 15, 1, false, Some((16, 67, 68))),
+                (22, true, 15, 23, false, Some((16, 67, 68))),
+                (22, true, 15, 22, false, Some((17, 7, 20))),
+                (22, true, 15, 8, true, Some((16, 7, 6))),
+                (0, true, 15, 8, true, Some((16, 7, 3))),
+            ] {
+                session.statusat = if at == 0 { 0 } else { 1 };
+                c.flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
+                let mut window = window::default();
+                window.sx = 100;
+                window.sy = 40;
+                let mut prompt = prompt::default();
+                let base = rc::take(rc::new(window_pane::empty()));
+                let wp = rc::as_ptr(&base);
+                (*wp).window = &raw mut window;
+                (*wp).xoff = x;
+                (*wp).yoff = y;
+                (*wp).sy = 4;
+                (*wp).prompt_cx = 2;
+                if has_prompt {
+                    (*wp).prompt = &raw mut prompt;
+                }
+                window.z_index.push_front(std::rc::Rc::downgrade(&base));
+                let blocker = rc::take(rc::new(window_pane::empty()));
+                if covered {
+                    let cover = rc::as_ptr(&blocker);
+                    (*cover).window = &raw mut window;
+                    (*cover).xoff = 6;
+                    (*cover).yoff = if at == 0 { 3 } else { 6 };
+                    (*cover).sx = 3;
+                    (*cover).sy = 1;
+                    window.z_index.push_front(std::rc::Rc::downgrade(&blocker));
+                }
+                let result = server_client_prompt_cursor(&c, wp, incoming);
+                assert_eq!(
+                    result.map(|cursor| (cursor.mode, cursor.cx, cursor.cy)),
+                    expected,
+                    "status {at}, prompt {has_prompt}, pane {x},{y}, covered {covered}"
+                );
+            }
+        }
+    }
+}
+
 unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
@@ -3646,7 +3730,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     tty_margin_off(tty);
     if !(*c).prompt.is_null() {
         prompt = 1 as u_int;
-        status_prompt_cursor(c, &raw mut cx, &raw mut cy);
+        (cx, cy) = status_prompt_cursor(&*c);
     } else if !wp.is_null() && (*c).overlay_draw.is_none() {
         if !(*w).menu.is_null() {
             let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
@@ -3655,14 +3739,18 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
             } else {
                 cx = cx.wrapping_sub(ox);
                 cy = cy.wrapping_sub(oy);
-                if status_at_line(c) == 0 as ::core::ffi::c_int {
-                    cy = cy.wrapping_add(status_line_size(c));
+                if status_at_line(&*c) == 0 as ::core::ffi::c_int {
+                    cy = cy.wrapping_add(status_line_size(&*c));
                 }
             }
             prompt = 1 as u_int;
         } else {
-            prompt = server_client_prompt_cursor(c, wp, &raw mut mode, &raw mut cx, &raw mut cy)
-                as u_int;
+            if let Some(cursor) = server_client_prompt_cursor(&*c, wp, PromptCursor { mode, cx, cy }) {
+                prompt = 1;
+                mode = cursor.mode;
+                cx = cursor.cx;
+                cy = cursor.cy;
+            }
         }
         if prompt == 0 {
             cursor = 0 as ::core::ffi::c_int;
@@ -3703,8 +3791,8 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                         cursor = 0 as ::core::ffi::c_int;
                     }
                 }
-                if status_at_line(c) == 0 as ::core::ffi::c_int {
-                    cy = cy.wrapping_add(status_line_size(c));
+                if status_at_line(&*c) == 0 as ::core::ffi::c_int {
+                    cy = cy.wrapping_add(status_line_size(&*c));
                 }
             }
             if cursor == 0 {
