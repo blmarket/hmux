@@ -142,7 +142,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if args_has(args, 'i' as i32 as u_char) != 0 {
         wait = 0 as ::core::ffi::c_int;
     }
-    let cdata = Box::into_raw(Box::new(cmd_command_prompt_cdata {
+    let mut cdata = Box::new(cmd_command_prompt_cdata {
         item: ::core::ptr::null_mut(),
         state: ::core::ptr::null_mut(),
         flags: 0,
@@ -151,14 +151,14 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         prompts: Vec::new(),
         current: 0,
         argv: Vec::new(),
-    }));
+    });
     if wait != 0 {
-        (*cdata).item = item;
+        cdata.item = item;
     }
     if pane != 0 {
-        (*cdata).wp = wp;
+        cdata.wp = wp;
     }
-    (*cdata).state = args_make_commands_prepare(
+    cdata.state = args_make_commands_prepare(
         self_0,
         item,
         0 as u_int,
@@ -170,7 +170,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     s = args_get(args, 'p' as i32 as u_char);
     if s.is_null() {
         if count != 0 as u_int {
-            let command = args_make_commands_get_command_cstring((*cdata).state);
+            let command = args_make_commands_get_command_cstring(cdata.state);
             prompt_bytes.push(b'(');
             prompt_bytes.extend_from_slice(command.as_bytes());
             prompt_bytes.push(b')');
@@ -187,50 +187,44 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     } else {
         Some(CStr::from_ptr(s).to_bytes())
     };
-    (*cdata).prompts = cmd_command_prompt_rows(&prompt_bytes, input_bytes, literal, space != 0);
+    cdata.prompts = cmd_command_prompt_rows(&prompt_bytes, input_bytes, literal, space != 0);
     type_0 = args_get(args, 'T' as i32 as u_char);
     if !type_0.is_null() {
-        (*cdata).prompt_type = prompt_type(CStr::from_ptr(type_0));
-        if (*cdata).prompt_type as ::core::ffi::c_uint
+        cdata.prompt_type = prompt_type(CStr::from_ptr(type_0));
+        if cdata.prompt_type as ::core::ffi::c_uint
             == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             cmdq_error(item, |out| {
                 out.write_all(b"unknown type: ")?;
                 write_cstr(out, type_0)
             });
-            cmd_command_prompt_free(cdata);
             return CMD_RETURN_ERROR;
         }
     } else {
-        (*cdata).prompt_type = PROMPT_TYPE_COMMAND;
+        cdata.prompt_type = PROMPT_TYPE_COMMAND;
     }
     if args_has(args, '1' as i32 as u_char) != 0 {
-        (*cdata).flags |= PROMPT_SINGLE;
+        cdata.flags |= PROMPT_SINGLE;
     } else if args_has(args, 'N' as i32 as u_char) != 0 {
-        (*cdata).flags |= PROMPT_NUMERIC;
+        cdata.flags |= PROMPT_NUMERIC;
     } else if args_has(args, 'i' as i32 as u_char) != 0 {
-        (*cdata).flags |= PROMPT_INCREMENTAL;
+        cdata.flags |= PROMPT_INCREMENTAL;
     } else if args_has(args, 'k' as i32 as u_char) != 0 {
-        (*cdata).flags |= PROMPT_KEY;
+        cdata.flags |= PROMPT_KEY;
     } else if args_has(args, 'e' as i32 as u_char) != 0 {
-        (*cdata).flags |= PROMPT_BSPACE_EXIT;
+        cdata.flags |= PROMPT_BSPACE_EXIT;
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
-        (*cdata).flags |= PROMPT_NOFREEZE;
+        cdata.flags |= PROMPT_NOFREEZE;
     }
-    let (prompt_ptr, input_ptr) = (&(*cdata).prompts)[0].pointers();
-    let inputcb: crate::src::shared::status::status_prompt_input_cb =
-        Some(Box::new(move |c, s, key| unsafe {
-            cmd_command_prompt_callback(
-                c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-                cdata,
-                s,
-                key,
-            )
-        }));
-    let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_command_prompt_free(cdata) }));
     if pane != 0 {
-        (*cdata).flags |= PROMPT_ISPANE;
+        cdata.flags |= PROMPT_ISPANE;
+    }
+    let (prompt_ptr, input_ptr) = cdata.prompts[0].pointers();
+    let flags = cdata.flags;
+    let prompt_type = cdata.prompt_type;
+    let inputcb = cdata.into_callback();
+    if pane != 0 {
         window_pane_set_prompt(
             wp,
             tc,
@@ -238,9 +232,9 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             prompt_ptr,
             input_ptr,
             inputcb,
-            freecb,
-            (*cdata).flags,
-            (*cdata).prompt_type,
+            None,
+            flags,
+            prompt_type,
         );
     } else {
         status_prompt_set(
@@ -249,9 +243,9 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             prompt_ptr,
             input_ptr,
             inputcb,
-            freecb,
-            (*cdata).flags,
-            (*cdata).prompt_type,
+            None,
+            flags,
+            prompt_type,
         );
     }
     if wait == 0 {
@@ -261,12 +255,12 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
 }
 unsafe fn cmd_command_prompt_callback(
     mut c: *mut client,
-    mut cdata: *mut cmd_command_prompt_cdata,
+    cdata: &mut cmd_command_prompt_cdata,
     mut s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
     let mut current_block: u64;
-    let mut item: *mut cmdq_item = (*cdata).item;
+    let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if !(s.is_none()
         || key as ::core::ffi::c_uint
@@ -275,16 +269,16 @@ unsafe fn cmd_command_prompt_callback(
         if key as ::core::ffi::c_uint
             == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if (*cdata).flags & PROMPT_INCREMENTAL != 0 {
+            if cdata.flags & PROMPT_INCREMENTAL != 0 {
                 current_block = 11745758271394821990;
             } else {
-                cmd_append_argv(&mut (*cdata).argv, s.expect("prompt text is present"));
-                (*cdata).current = (*cdata).current.wrapping_add(1);
-                if ((*cdata).current as usize) != (*cdata).prompts.len() {
+                cmd_append_argv(&mut cdata.argv, s.expect("prompt text is present"));
+                cdata.current = cdata.current.wrapping_add(1);
+                if (cdata.current as usize) != cdata.prompts.len() {
                     let (prompt_ptr, input_ptr) =
-                        (&(*cdata).prompts)[(*cdata).current as usize].pointers();
-                    if !(*cdata).wp.is_null() {
-                        window_pane_update_prompt((*cdata).wp, prompt_ptr, input_ptr);
+                        (&cdata.prompts)[cdata.current as usize].pointers();
+                    if !cdata.wp.is_null() {
+                        window_pane_update_prompt(cdata.wp, prompt_ptr, input_ptr);
                     } else {
                         status_prompt_update(c, prompt_ptr, input_ptr);
                     }
@@ -298,15 +292,15 @@ unsafe fn cmd_command_prompt_callback(
         match current_block {
             11745758271394821990 => {}
             _ => {
-                let mut argv_owner = (*cdata).argv.clone();
+                let mut argv_owner = cdata.argv.clone();
                 if key as ::core::ffi::c_uint
                     != PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     cmd_append_argv(&mut argv_owner, s.expect("prompt text is present"));
                 } else {
-                    (*cdata).argv = argv_owner.clone();
+                    cdata.argv = argv_owner.clone();
                 }
-                match args_make_commands((*cdata).state, &argv_owner) {
+                match args_make_commands(cdata.state, &argv_owner) {
                     Err(error) => {
                         cmdq_append(
                             c,
@@ -328,31 +322,106 @@ unsafe fn cmd_command_prompt_callback(
                         cmd_list_free(cmdlist);
                     }
                 }
-                if (*cdata).flags & PROMPT_INCREMENTAL != 0 {
+                if cdata.flags & PROMPT_INCREMENTAL != 0 {
                     return PROMPT_CONTINUE;
                 }
             }
         }
     }
     if !item.is_null() {
-        (*cdata).item = ::core::ptr::null_mut::<cmdq_item>();
+        cdata.item = ::core::ptr::null_mut::<cmdq_item>();
         cmdq_continue(item);
     }
     return PROMPT_CLOSE;
 }
-unsafe fn cmd_command_prompt_free(mut cdata: *mut cmd_command_prompt_cdata) {
-    let mut cdata = Box::from_raw(cdata);
-    if !cdata.item.is_null() {
-        cmdq_continue(cdata.item);
-        cdata.item = ::core::ptr::null_mut::<cmdq_item>();
+impl cmd_command_prompt_cdata {
+    fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
+        Some(Box::new(move |client, text, key| unsafe {
+            cmd_command_prompt_callback(
+                client.map_or(std::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                &mut self,
+                text,
+                key,
+            )
+        }))
     }
-    cdata.prompts.clear();
-    args_make_commands_free(cdata.state);
+}
+
+impl Drop for cmd_command_prompt_cdata {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.item.is_null() {
+                cmdq_continue(self.item);
+            }
+            self.prompts.clear();
+            if !self.state.is_null() {
+                args_make_commands_free(self.state);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::cmd_command_prompt_rows;
+    use super::*;
+    use crate::src::cmd::cmd_list_new;
+    use crate::src::prompt::{prompt_free, prompt_key};
+    use crate::src::shared::rc;
+    use crate::src::text::utf8::utf8_fromcstr_vec;
+    use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn owned_callback_releases_waiting_command_and_state_on_every_close_path() {
+        unsafe {
+            for close_path in 0..3 {
+                let mut item = cmdq_item::empty();
+                item.flags = CMDQ_WAITING;
+                let cmdlist = cmd_list_new();
+                let commands = rc::downgrade(cmdlist);
+                let state = Box::new(args_command_state {
+                    cmdlist,
+                    ..args_command_state::empty()
+                });
+                let data = Box::new(cmd_command_prompt_cdata {
+                    item: &mut item,
+                    // The command-state API still transfers this separate allocation.
+                    state: Box::into_raw(state),
+                    flags: 0,
+                    prompt_type: PROMPT_TYPE_COMMAND,
+                    wp: std::ptr::null_mut(),
+                    prompts: cmd_command_prompt_rows(b"owner:", None, false, true),
+                    current: 0,
+                    argv: Vec::new(),
+                });
+                let owner = Rc::new(RefCell::new(prompt {
+                    flags: 0,
+                    buffer: utf8_fromcstr_vec(c""),
+                    ..Default::default()
+                }));
+                let active = Rc::downgrade(&owner);
+                let observed = commands.clone();
+                let mut callback = data.into_callback().unwrap();
+                owner.borrow_mut().inputcb = Some(Box::new(move |text, key| {
+                    let result = callback(None, text, key);
+                    if close_path == 2 {
+                        prompt_free(&active.upgrade().unwrap());
+                        assert!(observed.upgrade().is_some());
+                    }
+                    result
+                }));
+                if close_path != 0 {
+                    assert_eq!(prompt_key(&owner, 27, &mut 0), PROMPT_KEY_CLOSE);
+                    assert_eq!(item.flags & CMDQ_WAITING, 0);
+                }
+                prompt_free(&owner);
+                assert_eq!(item.flags & CMDQ_WAITING, 0);
+                assert!(commands.upgrade().is_none());
+                assert!(owner.borrow().inputcb.is_none());
+                // Retaining the closed prompt does not retain its callback record.
+                prompt_free(&owner);
+            }
+        }
+    }
 
     #[test]
     fn split_prompts_keep_empty_fields_and_fill_missing_inputs() {
