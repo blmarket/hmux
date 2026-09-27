@@ -700,12 +700,7 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
     }
     tty_raw(
         tty,
-        tty_term_string_ii(
-            tty_term_owner_ptr(&(*tty).term),
-            TTYC_CSR,
-            0 as ::core::ffi::c_int,
-            ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
-        ),
+        tty_term_string_ii(tty_term_owner_ptr(&(*tty).term), TTYC_CSR, 0 as ::core::ffi::c_int, ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int).as_ptr(),
     );
     if tty_acs_needed(tty.as_ref()) != 0 {
         tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term)), TTYC_RMACS).as_ptr());
@@ -727,7 +722,7 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
         } else if tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_SS) != 0 {
             tty_raw(
                 tty,
-                tty_term_string_i(tty_term_owner_ptr(&(*tty).term), TTYC_SS, 0 as ::core::ffi::c_int),
+                tty_term_string_i(tty_term_owner_ptr(&(*tty).term), TTYC_SS, 0 as ::core::ffi::c_int).as_ptr(),
             );
         }
     }
@@ -865,7 +860,7 @@ pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: :
     }
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string_i(tty_term_owner_ptr(&(*tty).term), code, a)),
+        std::ffi::CStr::from_ptr(tty_term_string_i(tty_term_owner_ptr(&(*tty).term), code, a).as_ptr()),
     );
 }
 pub unsafe fn tty_putcode_ii(
@@ -879,7 +874,7 @@ pub unsafe fn tty_putcode_ii(
     }
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string_ii(tty_term_owner_ptr(&(*tty).term), code, a, b)),
+        std::ffi::CStr::from_ptr(tty_term_string_ii(tty_term_owner_ptr(&(*tty).term), code, a, b).as_ptr()),
     );
 }
 pub unsafe fn tty_putcode_iii(
@@ -894,7 +889,7 @@ pub unsafe fn tty_putcode_iii(
     }
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string_iii(tty_term_owner_ptr(&(*tty).term), code, a, b, c)),
+        std::ffi::CStr::from_ptr(tty_term_string_iii(tty_term_owner_ptr(&(*tty).term), code, a, b, c).as_ptr()),
     );
 }
 pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char) {
@@ -902,7 +897,7 @@ pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char
     if !a.is_null() {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string_s(tty_term_owner_ptr(&(*tty).term), code, a)),
+            std::ffi::CStr::from_ptr(tty_term_string_s(tty_term_owner_ptr(&(*tty).term), code, a).as_ptr()),
         );
     }
 }
@@ -915,7 +910,7 @@ pub unsafe fn tty_putcode_ss(
     if !a.is_null() && !b.is_null() {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string_ss(tty_term_owner_ptr(&(*tty).term), code, a, b)),
+            std::ffi::CStr::from_ptr(tty_term_string_ss(tty_term_owner_ptr(&(*tty).term), code, a, b).as_ptr()),
         );
     }
 }

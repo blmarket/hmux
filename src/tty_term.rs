@@ -1240,12 +1240,7 @@ unsafe fn tty_term_validate(mut term: *mut tty_term) {
     if !matches!((&(*term).codes)[TTYC_MS as usize], tty_code::String(_)) {
         return;
     }
-    if *tty_term_string_ss(
-        term,
-        TTYC_MS,
-        b"c\0" as *const u8 as *const ::core::ffi::c_char,
-        b"?\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int
+    if *tty_term_string_ss(term, TTYC_MS, b"c\0" as *const u8 as *const ::core::ffi::c_char, b"?\0" as *const u8 as *const ::core::ffi::c_char).as_ptr() as ::core::ffi::c_int
         != '\0' as i32
     {
         (*term).flags &= !TERM_INVALIDMS;
@@ -1635,7 +1630,7 @@ pub unsafe fn tty_term_string_i(
     mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a);
@@ -1644,16 +1639,16 @@ pub unsafe fn tty_term_string_i(
             "could not expand {}",
             log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
         ));
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
+        return std::ffi::CString::default();
     }
-    return s;
+    std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_ii(
     mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(2 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b);
@@ -1662,9 +1657,9 @@ pub unsafe fn tty_term_string_ii(
             "could not expand {}",
             log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
         ));
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
+        return std::ffi::CString::default();
     }
-    return s;
+    std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_iii(
     mut term: *const tty_term,
@@ -1672,7 +1667,7 @@ pub unsafe fn tty_term_string_iii(
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(3 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b, c);
@@ -1681,15 +1676,15 @@ pub unsafe fn tty_term_string_iii(
             "could not expand {}",
             log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
         ));
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
+        return std::ffi::CString::default();
     }
-    return s;
+    std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_s(
     mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: *const ::core::ffi::c_char,
-) -> *const ::core::ffi::c_char {
+) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int, x, a);
@@ -1698,16 +1693,16 @@ pub unsafe fn tty_term_string_s(
             "could not expand {}",
             log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
         ));
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
+        return std::ffi::CString::default();
     }
-    return s;
+    std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_ss(
     mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: *const ::core::ffi::c_char,
     mut b: *const ::core::ffi::c_char,
-) -> *const ::core::ffi::c_char {
+) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(2 as ::core::ffi::c_int, 3 as ::core::ffi::c_int, x, a, b);
@@ -1716,9 +1711,9 @@ pub unsafe fn tty_term_string_ss(
             "could not expand {}",
             log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
         ));
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
+        return std::ffi::CString::default();
     }
-    return s;
+    std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_number(term: *const tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&(*term).codes)[code as usize] {
