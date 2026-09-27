@@ -415,13 +415,13 @@ pub struct tty_term_entry {
 }
 
 #[derive(Default)]
-pub struct tty_ctx {
+pub struct tty_ctx<'a> {
     pub s: *mut screen,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
     pub cell: *const grid_cell,
     pub flags: ::core::ffi::c_int,
-    pub c2rust_unnamed: tty_ctx_c2rust_unnamed,
+    pub data: tty_command_data<'a>,
     pub ocx: u_int,
     pub ocy: u_int,
     pub orupper: u_int,
@@ -449,40 +449,44 @@ pub struct tty_style_ctx {
     pub hyperlinks: *mut hyperlinks,
 }
 
+/// Payload borrowed for the synchronous terminal command dispatch.
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub union tty_ctx_c2rust_unnamed {
-    pub n: u_int,
-    pub data: tty_ctx_c2rust_unnamed_data,
-    pub sel: tty_ctx_c2rust_unnamed_sel,
+pub enum tty_command_data<'a> {
+    Count(u_int),
+    Bytes(&'a [u8]),
+    Selection {
+        clip: &'a std::ffi::CStr,
+        data: &'a [u8],
+    },
 }
 
-impl Default for tty_ctx_c2rust_unnamed {
+impl Default for tty_command_data<'_> {
     fn default() -> Self {
-        // Initialize the largest union member so every variant starts empty.
-        Self {
-            sel: tty_ctx_c2rust_unnamed_sel {
-                clip: std::ptr::null(),
-                data: std::ptr::null(),
-                size: 0,
-            },
-        }
+        Self::Count(0)
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty_ctx_c2rust_unnamed_sel {
-    pub clip: *const ::core::ffi::c_char,
-    pub data: *const ::core::ffi::c_char,
-    pub size: size_t,
-}
+impl<'a> tty_command_data<'a> {
+    pub fn count(self) -> u_int {
+        match self {
+            Self::Count(count) => count,
+            _ => panic!("terminal command requires a count"),
+        }
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty_ctx_c2rust_unnamed_data {
-    pub data: *const ::core::ffi::c_char,
-    pub size: size_t,
+    pub fn bytes(self) -> &'a [u8] {
+        match self {
+            Self::Bytes(bytes) => bytes,
+            _ => panic!("terminal command requires text bytes"),
+        }
+    }
+
+    pub fn selection(self) -> (&'a std::ffi::CStr, &'a [u8]) {
+        match self {
+            Self::Selection { clip, data } => (clip, data),
+            _ => panic!("terminal command requires a selection"),
+        }
+    }
 }
 
 pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &mut client) -> i32>>;

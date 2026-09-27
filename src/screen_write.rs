@@ -12,7 +12,7 @@ use crate::src::grid::{
     grid_get_line_mut,
 };
 use crate::src::layout::layout_fix_panes;
-use crate::src::log::{fatal, fatalx, log_bytes, log_cstr_n, log_debug, log_get_level};
+use crate::src::log::{fatal, fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::screen::{
@@ -49,7 +49,7 @@ use crate::src::shared::screen_write::{
 use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
 use crate::src::shared::style::*;
 use crate::src::shared::tty::{
-    tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
+    tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
 };
 use crate::src::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
@@ -1331,14 +1331,14 @@ unsafe fn screen_write_redraw_line(
             cx = (*ri).px.wrapping_sub(xoff as u_int);
             if !(cx >= sx) {
                 if cx.wrapping_add((*ri).nx) > sx {
-                    ttyctx.c2rust_unnamed.n = sx.wrapping_sub(cx);
+                    ttyctx.data = tty_command_data::Count(sx.wrapping_sub(cx));
                 } else {
-                    ttyctx.c2rust_unnamed.n = (*ri).nx;
+                    ttyctx.data = tty_command_data::Count((*ri).nx);
                 }
-                if !(ttyctx.c2rust_unnamed.n == 0 as u_int) {
+                if !(ttyctx.data.count() == 0 as u_int) {
                     ttyctx.ocx = cx;
                     ttyctx.ocy = yy;
-                    if ttyctx.c2rust_unnamed.n != 1 as u_int {
+                    if ttyctx.data.count() != 1 as u_int {
                         tty_write(tty_cmd_redrawline, ttyctx);
                     } else {
                         grid_view_get_cell((*s).grid(), cx, yy, &mut gc);
@@ -1512,7 +1512,7 @@ pub unsafe fn screen_write_insertcharacter(
     ttyctx.bg = bg;
     grid_view_insert_cells((*s).grid_mut(), (*s).cx, (*s).cy, nx, bg);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_insertcharacter");
-    ttyctx.c2rust_unnamed.n = nx;
+    ttyctx.data = tty_command_data::Count(nx);
     if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
         return;
     }
@@ -1551,7 +1551,7 @@ pub unsafe fn screen_write_deletecharacter(
     ttyctx.bg = bg;
     grid_view_delete_cells((*s).grid_mut(), (*s).cx, (*s).cy, nx, bg);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_deletecharacter");
-    ttyctx.c2rust_unnamed.n = nx;
+    ttyctx.data = tty_command_data::Count(nx);
     if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
         return;
     }
@@ -1590,7 +1590,7 @@ pub unsafe fn screen_write_clearcharacter(
     ttyctx.bg = bg;
     grid_view_clear((*s).grid_mut(), (*s).cx, (*s).cy, nx, 1 as u_int, bg);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_clearcharacter");
-    ttyctx.c2rust_unnamed.n = nx;
+    ttyctx.data = tty_command_data::Count(nx);
     if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
         return;
     }
@@ -1624,7 +1624,7 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
         ttyctx.bg = bg;
         grid_view_insert_lines(&mut *gd, (*s).cy, ny, bg);
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_insertline");
-        ttyctx.c2rust_unnamed.n = ny;
+        ttyctx.data = tty_command_data::Count(ny);
         if screen_write_should_draw_lines(ctx, (*s).cy, sy.wrapping_sub((*s).cy)) == 0 {
             return;
         }
@@ -1654,7 +1654,7 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
         grid_view_insert_lines_region(&mut *gd, (*s).rlower, (*s).cy, ny, bg);
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_insertline");
-    ttyctx.c2rust_unnamed.n = ny;
+    ttyctx.data = tty_command_data::Count(ny);
     if screen_write_should_draw_lines(
         ctx,
         (*s).cy,
@@ -1694,7 +1694,7 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
         ttyctx.bg = bg;
         grid_view_delete_lines(&mut *gd, (*s).cy, ny, bg);
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_deleteline");
-        ttyctx.c2rust_unnamed.n = ny;
+        ttyctx.data = tty_command_data::Count(ny);
         ry = (*s)
             .rlower
             .wrapping_add(1 as u_int)
@@ -1729,7 +1729,7 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
         grid_view_delete_lines_region(&mut *gd, (*s).rlower, (*s).cy, ny, bg);
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_deleteline");
-    ttyctx.c2rust_unnamed.n = ny;
+    ttyctx.data = tty_command_data::Count(ny);
     if screen_write_should_draw_lines(ctx, (*s).cy, ry) == 0 {
         return;
     }
@@ -2009,7 +2009,7 @@ pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_i
         i = i.wrapping_add(1);
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_scrolldown");
-    ttyctx.c2rust_unnamed.n = lines;
+    ttyctx.data = tty_command_data::Count(lines);
     ry = (*s)
         .rlower
         .wrapping_add(1 as u_int)
@@ -2438,7 +2438,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
                 .wrapping_sub((*(*wp).window).sy),
         );
     }
-    ttyctx.c2rust_unnamed.n = ctx.scrolled;
+    ttyctx.data = tty_command_data::Count(ctx.scrolled);
     ttyctx.bg = ctx.bg;
     tty_write(tty_cmd_scrollup, &mut ttyctx);
     if !wp.is_null() {
@@ -2551,7 +2551,7 @@ unsafe fn screen_write_collect_flush_line(
                                     0 as ::core::ffi::c_int,
                                 );
                                 ttyctx.bg = ci.bg;
-                                ttyctx.c2rust_unnamed.n = w_length;
+                                ttyctx.data = tty_command_data::Count(w_length);
                                 tty_write(tty_cmd_clearcharacter, &mut ttyctx);
                             } else {
                                 screen_write_initctx(
@@ -2564,9 +2564,10 @@ unsafe fn screen_write_collect_flush_line(
                                 if ci.wrapped != 0 {
                                     ttyctx.flags |= TTY_CTX_WRAPPED;
                                 }
-                                ttyctx.c2rust_unnamed.data.data =
-                                    cl.data.as_mut_ptr().offset(w_start as isize);
-                                ttyctx.c2rust_unnamed.data.size = w_length as size_t;
+                                ttyctx.data = tty_command_data::Bytes(
+                                    &cl.data
+                                        [w_start as usize..w_start as usize + w_length as usize],
+                                );
                                 tty_write(tty_cmd_cells, &mut ttyctx);
                             }
                             items = items.wrapping_add(1);
@@ -2783,10 +2784,7 @@ pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
         "{}: {} {} (at {},{})",
         "screen_write_collect_end",
         (used) as u32,
-        log_cstr_n(
-            (cl.data.as_ptr().offset(start as isize)) as *const _,
-            used as ::core::ffi::c_int
-        ),
+        log_bytes(&cl.data[start as usize..start as usize + used as usize]),
         ((*s).cx) as u32,
         ((*s).cy) as u32
     ));
@@ -2918,7 +2916,7 @@ pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cel
     }
     let used = ci.used;
     ci.used = used.wrapping_add(1);
-    row.data[(*s).cx.wrapping_add(used) as usize] = gc.data.data[0] as ::core::ffi::c_char;
+    row.data[(*s).cx.wrapping_add(used) as usize] = gc.data.data[0];
 }
 pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let mut r = Vec::new();
@@ -3095,7 +3093,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     }
     if (*s).mode & MODE_INSERT != 0 {
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_cell");
-        ttyctx.c2rust_unnamed.n = width;
+        ttyctx.data = tty_command_data::Count(width);
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
             tty_write(tty_cmd_insertcharacter, &mut ttyctx);
         }
@@ -3387,9 +3385,7 @@ pub unsafe fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    ttyctx.c2rust_unnamed.sel.clip = clip.as_ptr();
-    ttyctx.c2rust_unnamed.sel.data = data.as_ptr().cast();
-    ttyctx.c2rust_unnamed.sel.size = data.len();
+    ttyctx.data = tty_command_data::Selection { clip, data };
     // tty_write consumes the borrowed payload synchronously.
     tty_write(tty_cmd_setselection, &mut ttyctx);
 }
@@ -3408,8 +3404,7 @@ pub unsafe fn screen_write_rawstring(
     if allow_invisible_panes != 0 {
         ttyctx.flags |= TTY_CTX_INVISIBLE_PANES;
     }
-    ttyctx.c2rust_unnamed.data.data = data.as_ptr().cast();
-    ttyctx.c2rust_unnamed.data.size = data.len();
+    ttyctx.data = tty_command_data::Bytes(data);
     // tty_write consumes the borrowed payload synchronously.
     tty_write(tty_cmd_rawstring, &mut ttyctx);
 }
@@ -3697,7 +3692,7 @@ mod write_row_tests {
             let mut allocations = Vec::new();
             for (index, row) in s.write_rows_mut().iter_mut().enumerate() {
                 row.data
-                    .resize_with(4, || (b'A' + index as u8) as ::core::ffi::c_char);
+                    .resize_with(4, || b'A' + index as u8);
                 allocations.push(row.data.as_ptr());
                 let mut item = screen_write_get_citem();
                 item.bg = index as u_int;
@@ -3714,7 +3709,7 @@ mod write_row_tests {
                 assert_eq!((*item).bg, expected);
                 assert!(row.items.get(1).is_none());
             }
-            assert_eq!(s.write_rows()[3].data[0], b'B' as ::core::ffi::c_char);
+            assert_eq!(s.write_rows()[3].data[0], b'B');
             let item = s.write_rows()[3].items.get(0).unwrap();
             assert_eq!(((*item).x, (*item).used, (*item).type_0), (0, 4, CLEAR));
 
@@ -3756,7 +3751,7 @@ mod write_row_tests {
             for y in 0..3 {
                 let row = &mut s.write_rows_mut()[y];
                 row.data
-                    .resize_with(4, || (b'A' + y as u8) as ::core::ffi::c_char);
+                    .resize_with(4, || b'A' + y as u8);
                 pointers.push(row.data.as_ptr());
             }
             let mut ctx: screen_write_ctx = Default::default();

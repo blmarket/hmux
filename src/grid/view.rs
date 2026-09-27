@@ -19,7 +19,7 @@ pub unsafe fn grid_view_set_cells(
     px: u_int,
     py: u_int,
     gc: &grid_cell,
-    bytes: &[std::ffi::c_char],
+    bytes: &[u8],
 ) {
     grid_set_cells(gd, px, gd.hsize.wrapping_add(py), gc, bytes);
 }
@@ -246,7 +246,6 @@ mod tests {
                     }
                 );
                 let bytes = *b"ABCDEFGH";
-                let bytes = bytes.map(|byte| byte as std::ffi::c_char);
                 grid_view_set_cells(&mut gd, 0, 1, &grid_default_cell, &bytes);
                 grid_view_insert_cells(&mut gd, 1, 1, 2, 8);
                 grid_view_delete_cells(&mut gd, 1, 1, 2, 8);

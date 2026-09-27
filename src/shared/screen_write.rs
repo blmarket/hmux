@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 #[derive(Default)]
 pub struct screen_write_cline {
     /// Text bytes owned by this row; scrolling moves the collection.
-    pub data: GridArray<::core::ffi::c_char>,
+    pub data: GridArray<u8>,
     pub items: screen_write_items,
 }
 #[derive(Default)]

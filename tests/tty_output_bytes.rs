@@ -1,7 +1,9 @@
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::shared::client::client;
-use hmux2::src::shared::tty::{tty, tty_term, TERM_NOAM, TTY_BLOCK};
-use hmux2::src::tty::{tty_putn, tty_repeat_space};
+use hmux2::src::shared::tty::{
+    tty, tty_command_data, tty_ctx, tty_term, TERM_NOAM, TTY_BLOCK, TTY_NOBLOCK,
+};
+use hmux2::src::tty::{tty_cmd_rawstring, tty_putn, tty_repeat_space};
 
 #[test]
 fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
@@ -135,5 +137,40 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
             assert_eq!((terminal.cx, terminal.cy), (count, 0));
             assert_eq!(client.written, count as usize);
         }
+    }
+}
+
+#[test]
+fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
+    unsafe {
+        let mut client = client::empty();
+        let mut terminal = tty {
+            client: &raw mut client,
+            out: Some(evbuffer_new()),
+            cx: 3,
+            cy: 1,
+            ..Default::default()
+        };
+        let mut bytes = *b"raw\0\xff";
+        {
+            let ctx = tty_ctx {
+                data: tty_command_data::Bytes(&bytes),
+                ..Default::default()
+            };
+            tty_cmd_rawstring(&raw mut terminal, &ctx);
+        }
+        bytes.fill(b'X');
+        let ctx = tty_ctx {
+            data: tty_command_data::Bytes(&[]),
+            ..Default::default()
+        };
+        tty_cmd_rawstring(&raw mut terminal, &ctx);
+        assert_eq!(
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            b"raw\0\xff"
+        );
+        assert_eq!((terminal.cx, terminal.cy), (u32::MAX, u32::MAX));
+        assert_ne!(terminal.flags & TTY_NOBLOCK, 0);
+        assert_eq!(client.written, 5);
     }
 }

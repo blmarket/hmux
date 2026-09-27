@@ -3,8 +3,10 @@ use hmux2::src::reactor::{
 };
 use hmux2::src::shared::client::client;
 use hmux2::src::shared::event::EV_WRITE;
-use hmux2::src::shared::tty::{tty, tty_code, tty_term, TTYC_MS, TTY_NOBLOCK, TTY_STARTED};
-use hmux2::src::tty::tty_set_selection;
+use hmux2::src::shared::tty::{
+    tty, tty_code, tty_command_data, tty_ctx, tty_term, TTYC_MS, TTY_NOBLOCK, TTY_STARTED,
+};
+use hmux2::src::tty::{tty_cmd_setselection, tty_set_selection};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 
@@ -47,7 +49,16 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
             (c"c", b"".as_slice(), b"\x1b]52;c;\x07".as_slice()),
         ] {
             let mut bytes = input.to_vec();
-            tty_set_selection(&raw mut terminal, selector, &bytes);
+            {
+                let ctx = tty_ctx {
+                    data: tty_command_data::Selection {
+                        clip: selector,
+                        data: &bytes,
+                    },
+                    ..Default::default()
+                };
+                tty_cmd_setselection(&raw mut terminal, &ctx);
+            }
             bytes.fill(b'X');
             assert_ne!(terminal.flags & TTY_NOBLOCK, 0);
             let output = terminal.out.as_deref_mut().unwrap();

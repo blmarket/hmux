@@ -1903,7 +1903,7 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx) {
         ctx,
         ctx.ocx,
         ctx.ocy,
-        ctx.c2rust_unnamed.n,
+        ctx.data.count(),
         &raw mut i,
         &raw mut x,
         &raw mut rx,
@@ -2087,7 +2087,7 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
-    tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, ctx.c2rust_unnamed.n);
+    tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, ctx.data.count());
 }
 pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     let mut c: *mut client = (*tty).client;
@@ -2102,11 +2102,11 @@ pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     }
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
-    tty_emulate_repeat(tty, TTYC_DCH, TTYC_DCH1, ctx.c2rust_unnamed.n);
+    tty_emulate_repeat(tty, TTYC_DCH, TTYC_DCH1, ctx.data.count());
 }
 pub unsafe fn tty_cmd_clearcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
-    tty_clear_pane_line(tty, ctx, ctx.ocy, ctx.ocx, ctx.c2rust_unnamed.n, ctx.bg);
+    tty_clear_pane_line(tty, ctx, ctx.ocy, ctx.ocx, ctx.data.count(), ctx.bg);
 }
 pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx) {
     let mut c: *mut client = (*tty).client;
@@ -2126,7 +2126,7 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
     tty_margin_off(tty);
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
-    tty_emulate_repeat(tty, TTYC_IL, TTYC_IL1, ctx.c2rust_unnamed.n);
+    tty_emulate_repeat(tty, TTYC_IL, TTYC_IL1, ctx.data.count());
     (*tty).cy = UINT_MAX as u_int;
     (*tty).cx = (*tty).cy;
 }
@@ -2148,7 +2148,7 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
     tty_margin_off(tty);
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
-    tty_emulate_repeat(tty, TTYC_DL, TTYC_DL1, ctx.c2rust_unnamed.n);
+    tty_emulate_repeat(tty, TTYC_DL, TTYC_DL1, ctx.data.count());
     (*tty).cy = UINT_MAX as u_int;
     (*tty).cx = (*tty).cy;
 }
@@ -2198,14 +2198,14 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
     tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
     tty_margin_pane(tty, ctx);
-    if ctx.c2rust_unnamed.n == 1 as u_int || tty_term_has((*tty).term, TTYC_INDN) == 0 {
+    if ctx.data.count() == 1 as u_int || tty_term_has((*tty).term, TTYC_INDN) == 0 {
         if (*(*tty).term).flags & TERM_DECSLRM == 0 {
             tty_cursor(tty, 0 as u_int, (*tty).rlower);
         } else {
             tty_cursor(tty, (*tty).rright, (*tty).rlower);
         }
         i = 0 as u_int;
-        while i < ctx.c2rust_unnamed.n {
+        while i < ctx.data.count() {
             tty_putc(tty, '\n' as i32 as u_char);
             i = i.wrapping_add(1);
         }
@@ -2215,7 +2215,7 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx) {
         } else {
             tty_cursor(tty, 0 as u_int, (*tty).cy);
         }
-        tty_putcode_i(tty, TTYC_INDN, ctx.c2rust_unnamed.n as ::core::ffi::c_int);
+        tty_putcode_i(tty, TTYC_INDN, ctx.data.count() as ::core::ffi::c_int);
     };
 }
 pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx) {
@@ -2239,10 +2239,10 @@ pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_margin_pane(tty, ctx);
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.orupper);
     if tty_term_has((*tty).term, TTYC_RIN) != 0 {
-        tty_putcode_i(tty, TTYC_RIN, ctx.c2rust_unnamed.n as ::core::ffi::c_int);
+        tty_putcode_i(tty, TTYC_RIN, ctx.data.count() as ::core::ffi::c_int);
     } else {
         i = 0 as u_int;
-        while i < ctx.c2rust_unnamed.n {
+        while i < ctx.data.count() {
             tty_putcode(tty, TTYC_RI);
             i = i.wrapping_add(1);
         }
@@ -2389,10 +2389,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx) {
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut cx: u_int = 0;
-    let data = std::slice::from_raw_parts(
-        ctx.c2rust_unnamed.data.data.cast::<u8>(),
-        ctx.c2rust_unnamed.data.size,
-    );
+    let data = ctx.data.bytes();
     let n = data.len();
     if tty_is_visible(ctx, ctx.ocx, ctx.ocy, n as u_int, 1 as u_int) == 0 {
         return;
@@ -2445,14 +2442,8 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx) {
     }
 }
 pub unsafe fn tty_cmd_setselection(mut tty: *mut tty, ctx: &tty_ctx) {
-    tty_set_selection(
-        tty,
-        CStr::from_ptr(ctx.c2rust_unnamed.sel.clip),
-        std::slice::from_raw_parts(
-            ctx.c2rust_unnamed.sel.data.cast(),
-            ctx.c2rust_unnamed.sel.size,
-        ),
-    );
+    let (clip, data) = ctx.data.selection();
+    tty_set_selection(tty, clip, data);
 }
 pub unsafe fn tty_set_selection(mut tty: *mut tty, clip: &CStr, data: &[u8]) {
     let mut size: size_t = 0;
@@ -2476,13 +2467,7 @@ pub unsafe fn tty_set_selection(mut tty: *mut tty, clip: &CStr, data: &[u8]) {
 }
 pub unsafe fn tty_cmd_rawstring(mut tty: *mut tty, ctx: &tty_ctx) {
     (*tty).flags |= TTY_NOBLOCK;
-    tty_add(
-        tty,
-        std::slice::from_raw_parts(
-            ctx.c2rust_unnamed.data.data.cast(),
-            ctx.c2rust_unnamed.data.size,
-        ),
-    );
+    tty_add(tty, ctx.data.bytes());
     tty_invalidate(tty);
 }
 pub unsafe fn tty_cmd_syncstart(mut tty: *mut tty, ctx: &tty_ctx) {

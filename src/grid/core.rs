@@ -548,13 +548,7 @@ pub unsafe fn grid_set_padding(gd: &mut grid, px: u_int, py: u_int, bg: i32) {
     cell.bg = bg;
     grid_set_cell(gd, px, py, &cell);
 }
-pub unsafe fn grid_set_cells(
-    gd: &mut grid,
-    px: u_int,
-    py: u_int,
-    gc: &grid_cell,
-    bytes: &[std::ffi::c_char],
-) {
+pub unsafe fn grid_set_cells(gd: &mut grid, px: u_int, py: u_int, gc: &grid_cell, bytes: &[u8]) {
     if grid_check_y(gd, "grid_set_cells", py) != 0 {
         return;
     }
@@ -1635,7 +1629,7 @@ mod storage_tests {
     fn borrowed_bulk_writes_keep_embedded_nuls_bytes_and_empty_extent() {
         unsafe {
             let mut owner = grid_create(16, 3, 0);
-            let bytes = [0, b'A' as std::ffi::c_char, 0xff_u8 as std::ffi::c_char];
+            let bytes = [0, b'A', 0xff];
             let mut cell = grid_default_cell;
             for row in 0..2 {
                 if row == 1 {
