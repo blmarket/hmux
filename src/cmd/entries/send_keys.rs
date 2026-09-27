@@ -2,6 +2,7 @@ use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::ffi::libc::strtol;
+use crate::src::format::bytes::write_cstr;
 use crate::src::input::input_reset;
 use crate::src::key_bindings::{
     key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
@@ -220,10 +221,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         && (*tc).flags & CLIENT_READONLY as uint64_t != 0
         && args_has(args, 'X' as i32 as u_char) == 0
     {
-        cmdq_error(
-            item,
-            b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"client is read-only"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'N' as i32 as u_char) != 0 {
@@ -236,20 +234,16 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"repeat count %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"repeat count ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
         if !wme.is_null() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
             if (*(*wme).mode).command.is_none() {
-                cmdq_error(
-                    item,
-                    b"not in a mode\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"not in a mode"));
                 return CMD_RETURN_ERROR;
             }
             (*wme).prefix = np;
@@ -257,10 +251,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     if args_has(args, 'X' as i32 as u_char) != 0 {
         if wme.is_null() || (*(*wme).mode).command.is_none() {
-            cmdq_error(
-                item,
-                b"not in a mode\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"not in a mode"));
             return CMD_RETURN_ERROR;
         }
         if (*m).valid == 0 {
@@ -272,10 +263,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'M' as i32 as u_char) != 0 {
         wp = cmd_mouse_pane(m, &raw mut s, ::core::ptr::null_mut::<*mut winlink>());
         if wp.is_null() {
-            cmdq_error(
-                item,
-                b"no mouse target\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"no mouse target"));
             return CMD_RETURN_ERROR;
         }
         window_pane_key(wp, tc, s, wl, (*m).key, m);

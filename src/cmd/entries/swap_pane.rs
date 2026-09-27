@@ -84,10 +84,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     src_wp = (*source).wp;
     src_idx = (*(*source).wl).idx;
     if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
-        cmdq_error(
-            item,
-            b"pane is modal\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
     if window_push_zoom(
@@ -100,10 +97,9 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     if args_has(args, 'D' as i32 as u_char) != 0 {
         if window_pane_is_floating(dst_wp) != 0 {
-            cmdq_error(
-                item,
-                b"cannot swap down on floating pane\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"cannot swap down on floating pane")
+            });
             return CMD_RETURN_ERROR;
         }
         src_w = dst_w;
@@ -115,10 +111,9 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
     } else if args_has(args, 'U' as i32 as u_char) != 0 {
         if window_pane_is_floating(dst_wp) != 0 {
-            cmdq_error(
-                item,
-                b"cannot swap up on floating pane\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"cannot swap up on floating pane")
+            });
             return CMD_RETURN_ERROR;
         }
         src_w = dst_w;

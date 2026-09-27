@@ -7,6 +7,7 @@ use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::strcmp;
+use crate::src::format::bytes::write_cstr;
 use crate::src::layout::{
     layout_assign_pane, layout_close_pane, layout_fix_offsets, layout_fix_panes,
     layout_get_tiled_cell, layout_insert_tile,
@@ -334,11 +335,10 @@ unsafe fn cmd_join_pane_place(
             window_pane_z_insert_front(w, wp);
         }
     } else {
-        cmdq_error(
-            item,
-            b"unknown position: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            position,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"unknown position: ")?;
+            write_cstr(out, position)
+        });
         return CMD_RETURN_ERROR;
     }
     if xoff != (*lc).g.xoff || yoff != (*lc).g.yoff {
@@ -387,11 +387,10 @@ unsafe fn cmd_join_pane_move(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"position ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
@@ -412,11 +411,10 @@ unsafe fn cmd_join_pane_move(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"position ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
@@ -444,11 +442,10 @@ unsafe fn cmd_join_pane_move(
                 &raw mut errstr,
             ) as ::core::ffi::c_int;
             if !errstr.is_null() {
-                cmdq_error(
-                    item,
-                    b"offset %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    errstr,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"offset ")?;
+                    write_cstr(out, errstr)
+                });
                 return CMD_RETURN_ERROR;
             }
             if flag as ::core::ffi::c_int == 'U' as i32 {
@@ -560,11 +557,10 @@ unsafe fn cmd_join_pane_zindex(
         &raw mut errstr,
     ) as u_int;
     if !errstr.is_null() {
-        cmdq_error(
-            item,
-            b"z-index %s\0" as *const u8 as *const ::core::ffi::c_char,
-            errstr,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"z-index ")?;
+            write_cstr(out, errstr)
+        });
         return CMD_RETURN_ERROR;
     }
     window_pane_z_remove(w, wp);
@@ -601,18 +597,13 @@ unsafe fn cmd_join_pane_tile(
 ) -> cmd_retval {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     if window_pane_is_floating(wp) == 0 {
-        cmdq_error(
-            item,
-            b"pane is not floating\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"pane is not floating"));
         return CMD_RETURN_ERROR;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 {
-        cmdq_error(
-            item,
-            b"can't tile a pane while window is zoomed\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"can't tile a pane while window is zoomed")
+        });
         return CMD_RETURN_ERROR;
     }
     (*lc).fg.sx = (*lc).g.sx;
@@ -620,10 +611,7 @@ unsafe fn cmd_join_pane_tile(
     (*lc).fg.xoff = (*lc).g.xoff;
     (*lc).fg.yoff = (*lc).g.yoff;
     if layout_insert_tile(w, lc) != 0 as ::core::ffi::c_int {
-        cmdq_error(
-            item,
-            b"no space for a new pane\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"no space for a new pane"));
         return CMD_RETURN_ERROR;
     }
     (*lc).flags &= !LAYOUT_CELL_FLOATING;
@@ -677,10 +665,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             || args_has(args, 'R' as i32 as u_char) != 0
         {
             if window_pane_is_floating(dst_wp) == 0 {
-                cmdq_error(
-                    item,
-                    b"pane is not floating\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"pane is not floating"));
                 return CMD_RETURN_ERROR;
             }
             server_unzoom_window(dst_w);
@@ -699,10 +684,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     src_wp = (*source).wp;
     src_w = (*src_wl).window;
     if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
-        cmdq_error(
-            item,
-            b"pane is modal\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
     server_unzoom_window(dst_w);
@@ -711,11 +693,9 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         if window_pane_is_floating(src_wp) != 0 {
             return cmd_join_pane_tile(item, args, src_w, src_wp);
         }
-        cmdq_error(
-            item,
-            b"source and target panes must be different\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"source and target panes must be different")
+        });
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'h' as i32 as u_char) != 0 {
@@ -730,7 +710,10 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     lc = match layout_get_tiled_cell(item, args, dst_w, dst_wp, flags) {
         Ok(cell) => cell,
         Err(cause) => {
-            cmdq_error(item, c"size or position %s".as_ptr(), cause.as_ptr());
+            cmdq_error(item, |out| {
+                out.write_all(b"size or position ")?;
+                write_cstr(out, cause.as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
     };

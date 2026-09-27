@@ -11,6 +11,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::options::{options_get_string, options_set_string};
 use crate::src::screen::screen_set_title;
@@ -254,10 +255,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             }
         }
         if lastwp.is_null() {
-            cmdq_error(
-                item,
-                b"no last pane\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"no last pane"));
             return CMD_RETURN_ERROR;
         }
         if args_has(args, 'e' as i32 as u_char) != 0 {
@@ -297,35 +295,33 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             oo,
             b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            style,
+            |out| write_cstr(out, style),
         );
         if o.is_null() {
-            cmdq_error(
-                item,
-                b"bad style: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                style,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"bad style: ")?;
+                write_cstr(out, style)
+            });
             return CMD_RETURN_ERROR;
         }
         options_set_string(
             oo,
             b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            style,
+            |out| write_cstr(out, style),
         );
         (*wp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
     }
     if args_has(args, 'g' as i32 as u_char) != 0 {
-        cmdq_print(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            options_get_string(
-                oo,
-                b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
-            ),
-        );
+        cmdq_print(item, |out| {
+            write_cstr(
+                out,
+                options_get_string(
+                    oo,
+                    b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
+                ),
+            )
+        });
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'L' as i32 as u_char) != 0 {
@@ -375,8 +371,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             event_payload_set_string(
                 ep,
                 b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                title.as_ptr(),
+                |out| write_cstr(out, title.as_ptr()),
             );
             events_fire(
                 b"pane-title-changed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -402,12 +397,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if window_set_active_pane(w, wp, 1 as ::core::ffi::c_int) != 0 {
         cmd_find_from_winlink_pane(current, wl, wp, 0 as ::core::ffi::c_int);
     }
-    cmdq_insert_hook(
-        s,
-        item,
-        current,
-        b"after-select-pane\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    cmdq_insert_hook(s, item, current, |out| out.write_all(b"after-select-pane"));
     cmd_select_pane_redraw(w);
     if visible == 0 && window_pop_zoom(w) != 0 {
         server_redraw_window(w);

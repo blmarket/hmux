@@ -1,11 +1,13 @@
 use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
     options_get_string,
 };
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
-use crate::src::xmalloc::{xcalloc, xvasprintf_cstring};
+use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString, NulError};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
@@ -93,13 +95,9 @@ impl EnvironOwner {
     /// Set a value using the ordered index and byte-preserving C strings.
     pub fn set_cstr(&mut self, name: &CStr, flags: ::core::ffi::c_int, value: &CStr) {
         unsafe {
-            environ_set(
-                self.as_ptr(),
-                name.as_ptr(),
-                flags,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                value.as_ptr(),
-            );
+            environ_set(self.as_ptr(), name.as_ptr(), flags, |out| {
+                write_cstr(out, value.as_ptr())
+            });
         }
     }
 
@@ -288,10 +286,14 @@ pub unsafe fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut environ) {
                 dstenv,
                 ((*envent).name).as_ptr().cast_mut(),
                 (*envent).flags,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*envent).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                |out| {
+                    write_cstr(
+                        out,
+                        ((*envent).value)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                },
             );
         }
     }
@@ -307,18 +309,15 @@ pub unsafe fn environ_find(
         .unwrap_or(std::ptr::null_mut())
 }
 
-pub unsafe extern "C" fn environ_set(
+pub unsafe fn environ_set(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
     // Format before replacing the old value: a caller may pass that value as
     // a `%s` argument while updating the same entry.
-    let mut value = Some(xvasprintf_cstring(fmt, ap));
+    let mut value = Some(format_message_with(write));
     let inserted = {
         if let Some(owned) = (*env).entries.get_mut(CStr::from_ptr(name).to_bytes()) {
             owned.flags = flags;
@@ -357,13 +356,9 @@ pub unsafe fn environ_put(
     let name = CString::new(&var[..equals]).expect("environment name contains no NUL");
     let value = CStr::from_bytes_with_nul(&var[equals + 1..])
         .expect("environment value ends at the input NUL");
-    environ_set(
-        env,
-        name.as_ptr(),
-        flags,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value.as_ptr(),
-    );
+    environ_set(env, name.as_ptr(), flags, |out| {
+        write_cstr(out, value.as_ptr())
+    });
 }
 pub unsafe fn environ_unset(mut env: *mut environ, mut name: *const ::core::ffi::c_char) {
     (*env).entries.remove(CStr::from_ptr(name).to_bytes());
@@ -401,10 +396,14 @@ pub unsafe fn environ_update(mut oo: *mut options, mut src: *mut environ, mut ds
                     dst,
                     ((*envent).name).as_ptr().cast_mut(),
                     0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*envent).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    |out| {
+                        write_cstr(
+                            out,
+                            ((*envent).value)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        )
+                    },
                 );
                 found = 1 as ::core::ffi::c_int;
             }
@@ -437,14 +436,11 @@ pub unsafe fn environ_push(mut env: *mut environ) {
     }
     drop(seed_owner);
 }
-pub unsafe extern "C" fn environ_log(
+pub unsafe fn environ_log(
     mut env: *mut environ,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let prefix = xvasprintf_cstring(fmt, ap);
+    let prefix = format_message_with(write);
     for entry in environ_iter(&*env) {
         let envent = entry.as_ptr();
         if !(*envent).value.is_none()
@@ -485,28 +481,25 @@ pub unsafe fn environ_for_session(
             env,
             b"TERM\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            value,
+            |out| write_cstr(out, value),
         );
         environ_set(
             env,
             b"TERM_PROGRAM\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, b"tmux\0" as *const u8 as *const ::core::ffi::c_char),
         );
         environ_set(
             env,
             b"TERM_PROGRAM_VERSION\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            getversion(),
+            |out| write_cstr(out, getversion()),
         );
         environ_set(
             env,
             b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"truecolor\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"truecolor"),
         );
     }
     environ_clear(
@@ -530,10 +523,15 @@ pub unsafe fn environ_for_session(
         env,
         b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
-        b"%s,%ld,%d\0" as *const u8 as *const ::core::ffi::c_char,
-        socket_path,
-        getpid() as ::core::ffi::c_long,
-        idx,
+        |out| {
+            write_cstr(out, socket_path)?;
+            write!(
+                out,
+                ",{},{}",
+                (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long,
+                (idx) as i32
+            )
+        },
     );
     return env;
 }

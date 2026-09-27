@@ -7,6 +7,7 @@ use crate::src::cmd::queue::{
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free};
+use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::prompt_type;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -193,11 +194,10 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         if (*cdata).prompt_type as ::core::ffi::c_uint
             == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            cmdq_error(
-                item,
-                b"unknown type: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                type_0,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"unknown type: ")?;
+                write_cstr(out, type_0)
+            });
             cmd_command_prompt_free(cdata);
             return CMD_RETURN_ERROR;
         }

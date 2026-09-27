@@ -1,5 +1,6 @@
 //! Environment-owner compatibility and lifetime checks.
 use hmux2::src::environ::{environ, EnvironOwner, ENVIRON_HIDDEN};
+use hmux2::src::format::bytes::write_cstr;
 
 #[test]
 fn owner_preserves_missing_valueless_flags_order_and_bytes() {
@@ -124,8 +125,10 @@ fn variadic_updates_can_read_the_previous_value_before_replacement() {
             env.as_ptr(),
             ((*entry).name).as_ptr().cast_mut(),
             0x40,
-            c"%s-new".as_ptr(),
-            (*entry).value.as_ref().unwrap().as_ptr(),
+            |out| {
+                write_cstr(out, (*entry).value.as_ref().unwrap().as_ptr())?;
+                out.write_all(b"-new")
+            },
         );
         assert_eq!(entry, env.find_bytes(b"VAR").unwrap().unwrap().as_ptr());
         assert_eq!(

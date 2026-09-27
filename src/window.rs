@@ -16,6 +16,7 @@ use crate::src::ffi::libc::{
 };
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait};
+use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
@@ -452,14 +453,12 @@ unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::f
     event_payload_set_string(
         ep,
         b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        old_name,
+        |out| write_cstr(out, old_name),
     );
     event_payload_set_string(
         ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).name.as_ptr().cast_mut(),
+        |out| write_cstr(out, (*w).name.as_ptr().cast_mut()),
     );
     events_fire(
         b"window-renamed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -597,16 +596,14 @@ unsafe fn window_fire_pane_mode_changed(
         event_payload_set_string(
             ep,
             b"current_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            current,
+            |out| write_cstr(out, current),
         );
     }
     if !previous.is_null() {
         event_payload_set_string(
             ep,
             b"previous_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            previous,
+            |out| write_cstr(out, previous),
         );
     }
     event_payload_set_int(
@@ -644,8 +641,7 @@ unsafe fn window_fire_pane_prompt(
     event_payload_set_string(
         ep,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        type_string,
+        |out| write_cstr(out, type_string),
     );
     events_fire(name, ep);
 }
@@ -672,7 +668,7 @@ pub unsafe fn winlink_find_by_index(
         entry: winlink_entry { owner: None },
     };
     if idx < 0 as ::core::ffi::c_int {
-        fatalx(b"bad index\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad index"));
     }
     wl.idx = idx;
     return winlinks_find(&*wwl, &wl);
@@ -1072,7 +1068,7 @@ pub unsafe fn window_create(
     (*w).id = fresh0;
     windows_insert(&raw mut windows, w);
     if gettimeofday(&raw mut (*w).creation_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"gettimeofday failed"));
     }
     window_update_activity(w);
     log_debug(format_args!(
@@ -1254,7 +1250,7 @@ pub unsafe fn window_pane_send_resize(mut wp: *mut window_pane, mut sx: u_int, m
     if ioctl((*wp).fd, TIOCSWINSZ as ::core::ffi::c_ulong, &raw mut ws)
         == -(1 as ::core::ffi::c_int)
     {
-        fatal(b"ioctl failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"ioctl failed"));
     }
 }
 pub unsafe fn window_has_pane(mut w: *mut window, mut wp: *mut window_pane) -> ::core::ffi::c_int {
@@ -2978,7 +2974,7 @@ pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
         }),
     );
     if (*wp).event.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     (*wp).ictx = input_init(
         wp,

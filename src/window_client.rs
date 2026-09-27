@@ -386,13 +386,13 @@ unsafe fn window_client_draw_info(
         format_add(
             ft,
             b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
-            b"1\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"1"),
         );
     } else {
         format_add(
             ft,
             b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
-            b"0\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"0"),
         );
     }
     screen_write_cursormove(
@@ -625,8 +625,7 @@ unsafe fn window_client_get_key(
     format_add(
         ft,
         b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        line,
+        |out| write!(out, "{}", (line) as u32),
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);

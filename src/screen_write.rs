@@ -1,4 +1,5 @@
 use crate::src::ffi::libc::{memcpy, memset, strlen};
+use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::view::{
     grid_view_clear, grid_view_clear_history, grid_view_delete_cells, grid_view_delete_lines,
@@ -77,7 +78,6 @@ use crate::src::window::{
     window_pane_scrollbar_redraw, window_pane_send_resize, window_pane_z_previous,
 };
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::CStr;
 
 pub const PADDED_BORDERS: [::core::ffi::c_char; 14] =
@@ -292,7 +292,7 @@ unsafe fn screen_write_should_draw_lines(
                 let bytes = (sy.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize;
                 let mut dirty = Vec::<bitstr_t>::new();
                 if dirty.try_reserve_exact(bytes).is_err() {
-                    fatal(b"bit_alloc failed\0" as *const u8 as *const ::core::ffi::c_char);
+                    fatal(|out| out.write_all(b"bit_alloc failed"));
                 }
                 dirty.resize(bytes, 0);
                 (*wp).sync_dirty = Box::into_raw(dirty.into_boxed_slice()) as *mut bitstr_t;
@@ -397,7 +397,7 @@ unsafe fn screen_write_initctx(
 }
 pub unsafe fn screen_write_make_list(mut s: *mut screen) {
     if (*(*s).grid).sy == 0 {
-        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"xcalloc: zero size"));
     }
     let rows = (0..(*(*s).grid).sy)
         .map(|_| screen_write_cline::default())
@@ -579,18 +579,16 @@ pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
     }
     return size;
 }
-pub unsafe extern "C" fn screen_write_text(
+pub unsafe fn screen_write_text(
     mut ctx: *mut screen_write_ctx,
     mut cx: u_int,
     mut width: u_int,
     mut lines: u_int,
     mut more: ::core::ffi::c_int,
     mut gcp: *const grid_cell,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> ::core::ffi::c_int {
     let mut s: *mut screen = (*ctx).s;
-    let mut ap: ::core::ffi::VaList;
     let mut cy: u_int = (*s).cy;
     let mut i: u_int = 0;
     let mut end: u_int = 0;
@@ -617,9 +615,8 @@ pub unsafe extern "C" fn screen_write_text(
         gcp as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    ap = args.clone();
     let cells = {
-        let tmp = xvasprintf_cstring(fmt, ap);
+        let tmp = format_message_with(write);
         utf8_fromcstr_vec(tmp.as_c_str())
     };
     let text = cells.as_ptr();
@@ -710,33 +707,18 @@ pub unsafe extern "C" fn screen_write_text(
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe extern "C" fn screen_write_puts(
+pub unsafe fn screen_write_puts(
     mut ctx: *mut screen_write_ctx,
     mut gcp: *const grid_cell,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    screen_write_vnputs(ctx, -(1 as ::core::ffi::c_int) as ssize_t, gcp, fmt, ap);
+    screen_write_nputs(ctx, -(1 as ::core::ffi::c_int) as ssize_t, gcp, write);
 }
-pub unsafe extern "C" fn screen_write_nputs(
+pub unsafe fn screen_write_nputs(
     mut ctx: *mut screen_write_ctx,
     mut maxlen: ssize_t,
     mut gcp: *const grid_cell,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    screen_write_vnputs(ctx, maxlen, gcp, fmt, ap);
-}
-pub unsafe fn screen_write_vnputs(
-    mut ctx: *mut screen_write_ctx,
-    mut maxlen: ssize_t,
-    mut gcp: *const grid_cell,
-    mut fmt: *const ::core::ffi::c_char,
-    mut ap: ::core::ffi::VaList,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -761,7 +743,7 @@ pub unsafe fn screen_write_vnputs(
         gcp as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    let msg = xvasprintf_cstring(fmt, ap);
+    let msg = format_message_with(write);
     let mut ptr = msg.as_ptr() as *const u_char;
     while *ptr as ::core::ffi::c_int != '\0' as i32 {
         if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int
@@ -3627,11 +3609,14 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
             ((*ci).used) as u32
         ));
         if last != UINT_MAX && (*ci).x <= last {
-            fatalx(
-                b"collect list bad order: %u <= %u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ci).x,
-                last,
-            );
+            fatalx(|out| {
+                write!(
+                    out,
+                    "collect list bad order: {} <= {}",
+                    ((*ci).x) as u32,
+                    (last) as u32
+                )
+            });
         }
         w_length = 0 as u_int;
         written = 0 as ::core::ffi::c_int;
@@ -4067,7 +4052,7 @@ pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *
     if (&(*(*(*ctx).s).write_list.offset((*s).cy as isize)).data).is_empty() {
         let width = (*(*(*ctx).s).grid).sx as usize;
         if width == 0 {
-            fatalx(b"xmalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"xmalloc: zero size"));
         }
         let ref mut fresh11 = (*(*(*ctx).s).write_list.offset((*s).cy as isize)).data;
         fresh11.resize_with(width, || 0);

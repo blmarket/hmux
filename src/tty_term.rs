@@ -1580,7 +1580,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
                 }
             }
             _ => {
-                fatalx(b"unknown capability type\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"unknown capability type"));
             }
         }
         match current_block_23 {
@@ -1634,7 +1634,7 @@ pub unsafe fn tty_term_string(
     match &(&(*term).codes)[code as usize] {
         tty_code::None => c"".as_ptr(),
         tty_code::String(value) => value.as_ptr(),
-        _ => fatalx(c"not a string: %d".as_ptr(), code),
+        _ => fatalx(|out| write!(out, "not a string: {}", (code) as i32)),
     }
 }
 pub unsafe fn tty_term_string_i(
@@ -1730,14 +1730,14 @@ pub unsafe fn tty_term_number(term: *mut tty_term, code: tty_code_code) -> ::cor
     match &(&(*term).codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Number(value) => *value,
-        _ => fatalx(c"not a number: %d".as_ptr(), code),
+        _ => fatalx(|out| write!(out, "not a number: {}", (code) as i32)),
     }
 }
 pub unsafe fn tty_term_flag(term: *mut tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&(*term).codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Flag(value) => *value,
-        _ => fatalx(c"not a flag: %d".as_ptr(), code),
+        _ => fatalx(|out| write!(out, "not a flag: {}", (code) as i32)),
     }
 }
 pub unsafe fn tty_term_describe(

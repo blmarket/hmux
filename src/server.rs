@@ -8,6 +8,7 @@ use crate::src::ffi::libc::{
     listen, malloc_trim, memset, sigfillset, sigprocmask, socket, stat, stderr, strerror, strlcpy,
     strsignal, time, umask, unlink, waitpid,
 };
+use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
 use crate::src::hooks::hooks_build_events;
 use crate::src::input_keys::input_key_build;
@@ -40,7 +41,6 @@ use crate::src::window::{
     all_window_panes, window_pane_destroy_ready, window_pane_first, window_pane_next,
     window_pane_wait_finish, windows_minmax, windows_next,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 
 use std::ffi::{CStr, CString};
 
@@ -274,7 +274,7 @@ pub(crate) unsafe fn server_start(
     proc_clear_signals(client, 0 as ::core::ffi::c_int);
     server_client_flags = flags;
     if event_reinit() != 0 as ::core::ffi::c_int {
-        fatalx(b"event_reinit failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"event_reinit failed"));
     }
     server_proc = proc_start(b"server\0" as *const u8 as *const ::core::ffi::c_char);
     proc_set_signals(
@@ -290,7 +290,7 @@ pub(crate) unsafe fn server_start(
         tty_create_log();
     }
     if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        fatal(b"pledge failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"pledge failed"));
     }
     input_key_build();
     utf8_update_width_cache();
@@ -533,7 +533,7 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
             server_add_accept(1 as ::core::ffi::c_int);
             return;
         }
-        fatal(b"accept failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"accept failed"));
     }
     if server_exit != 0 {
         close(newfd);
@@ -615,7 +615,7 @@ unsafe fn server_child_signal() {
                 if *__errno_location() == ECHILD {
                     return;
                 }
-                fatal(b"waitpid failed\0" as *const u8 as *const ::core::ffi::c_char);
+                fatal(|out| out.write_all(b"waitpid failed"));
             }
             0 => return,
             _ => {}
@@ -685,11 +685,11 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     }
     job_check_died(pid, status);
 }
-pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
-    let mut ap: ::core::ffi::VaList;
+pub unsafe fn server_add_message(
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) {
     let mut limit: u_int = 0;
-    ap = args.clone();
-    let s = xvasprintf_cstring(fmt, ap);
+    let s = format_message_with(write);
     log_debug(format_args!(
         "message: {}",
         log_cstr((s.as_ptr()) as *const _)

@@ -9,6 +9,7 @@ use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
     setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::options::options_get_string;
 use crate::src::proc::proc_clear_signals;
@@ -227,8 +228,7 @@ pub unsafe fn job_run(
                                 env,
                                 b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
                                 0 as ::core::ffi::c_int,
-                                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                cwd.as_ptr(),
+                                |out| write_cstr(out, cwd.as_ptr()),
                             );
                         } else {
                             home = find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
@@ -237,8 +237,7 @@ pub unsafe fn job_run(
                                     env,
                                     b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
                                     0 as ::core::ffi::c_int,
-                                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                    home,
+                                    |out| write_cstr(out, home),
                                 );
                             } else if chdir(b"/\0" as *const u8 as *const ::core::ffi::c_char)
                                 == 0 as ::core::ffi::c_int
@@ -247,7 +246,7 @@ pub unsafe fn job_run(
                                     env,
                                     b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
                                     0 as ::core::ffi::c_int,
-                                    b"/\0" as *const u8 as *const ::core::ffi::c_char,
+                                    |out| out.write_all(b"/"),
                                 );
                             } else {
                                 _exit(1 as ::core::ffi::c_int);
@@ -389,7 +388,7 @@ pub unsafe fn job_run(
                         }),
                     );
                     if (*job).event.is_null() {
-                        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+                        fatalx(|out| out.write_all(b"out of memory"));
                     }
                     bufferevent_enable((*job).event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
                     log_debug(format_args!(
@@ -472,7 +471,7 @@ pub unsafe fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
     if ioctl((*job).fd, TIOCSWINSZ as ::core::ffi::c_ulong, &raw mut ws)
         == -(1 as ::core::ffi::c_int)
     {
-        fatal(b"ioctl failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"ioctl failed"));
     }
 }
 unsafe fn job_read_callback(mut data: *mut ::core::ffi::c_void) {
@@ -611,24 +610,27 @@ pub unsafe fn job_print_summary(mut item: *mut cmdq_item, mut blank: ::core::ffi
     job = all_jobs.lh_first;
     while !job.is_null() {
         if blank != 0 {
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_print(item, |out| {
+                write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
+            });
             blank = 0 as ::core::ffi::c_int;
         }
-        cmdq_print(
-            item,
-            b"Job %u: %s [fd=%d, pid=%ld, status=%d]\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
-            ((*job).cmd)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*job).fd,
-            (*job).pid as ::core::ffi::c_long,
-            (*job).status,
-        );
+        cmdq_print(item, |out| {
+            write!(out, "Job {}: ", (n) as u32)?;
+            write_cstr(
+                out,
+                ((*job).cmd)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )?;
+            write!(
+                out,
+                " [fd={}, pid={}, status={}]",
+                ((*job).fd) as i32,
+                ((*job).pid as ::core::ffi::c_long) as ::core::ffi::c_long,
+                ((*job).status) as i32
+            )
+        });
         n = n.wrapping_add(1);
         job = (*job).entry.le_next;
     }

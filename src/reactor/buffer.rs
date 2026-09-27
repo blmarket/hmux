@@ -1,8 +1,9 @@
 //! C-call-site compatibility for runtime-owned byte storage.
+use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::{size_t, ssize_t};
 pub use hmux_buffer::SegmentedBuf as evbuffer;
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf as ByteBuffer};
-use std::ffi::{c_char, c_int, c_void, CStr, VaList};
+use std::ffi::{c_char, c_int, c_void, CStr};
 
 pub unsafe fn evbuffer_new() -> *mut ByteBuffer {
     Box::into_raw(Box::new(ByteBuffer::default()))
@@ -99,15 +100,11 @@ pub unsafe fn evbuffer_readln(b: *mut ByteBuffer) -> Option<Vec<u8>> {
 pub unsafe fn evbuffer_readline(b: *mut ByteBuffer) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Legacy)
 }
-pub unsafe extern "C" fn evbuffer_add_printf(
+pub unsafe fn evbuffer_add_formatted(
     b: *mut ByteBuffer,
-    fmt: *const c_char,
-    args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> c_int {
-    evbuffer_add_vprintf(b, fmt, args.clone())
-}
-pub unsafe fn evbuffer_add_vprintf(b: *mut ByteBuffer, fmt: *const c_char, args: VaList) -> c_int {
-    let Some(mut formatted) = format_buffer(CStr::from_ptr(fmt), args) else {
+    let Some(mut formatted) = format_buffer(write) else {
         return -1;
     };
     let count = formatted.remaining();
@@ -116,50 +113,30 @@ pub unsafe fn evbuffer_add_vprintf(b: *mut ByteBuffer, fmt: *const c_char, args:
     count as c_int
 }
 
-/// Format C variadic arguments into one owned segment, or return `None` on
-/// a formatting error. The trailing NUL is stored in spare capacity and is
-/// excluded from the readable length, matching `evbuffer_add_vprintf`.
-/// Moving this buffer with `append` preserves that allocation and capacity.
-///
-/// # Safety
-/// `args` must contain valid arguments of the types required by `format`.
-unsafe fn format_buffer(format: &CStr, args: VaList) -> Option<ByteBuffer> {
-    let mut bytes = Vec::<u8>::with_capacity(1024);
-    loop {
-        // Each attempt consumes its own copy of the argument list.
-        let count = unsafe {
-            crate::src::ffi::libc::vsnprintf(
-                bytes.as_mut_ptr().cast(),
-                bytes.capacity(),
-                format.as_ptr(),
-                args.clone(),
-            )
-        };
-        if count < 0 {
-            return None;
-        }
-        let count = count as usize;
-        if count < bytes.capacity() {
-            // vsnprintf initialized count payload bytes and a trailing NUL.
-            // Keep the NUL in the allocation without adding it to the payload.
-            unsafe { bytes.set_len(count) };
-            return Some(ByteBuffer::from(bytes));
-        }
-        bytes.reserve(count.checked_add(1)?);
+/// Keep a trailing NUL in spare capacity, excluded from the readable payload.
+/// Moving this segment with append preserves its allocation and capacity.
+fn format_buffer(
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) -> Option<ByteBuffer> {
+    let mut bytes = crate::src::format::bytes::format_bytes_with(write).ok()?;
+    if bytes.len() > c_int::MAX as usize {
+        return None;
     }
+    bytes.try_reserve(1).ok()?;
+    bytes.push(0);
+    bytes.pop();
+    Some(ByteBuffer::from(bytes))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::ffi::CString;
-    unsafe extern "C" fn append_formatted(
+    unsafe fn append_formatted(
         destination: *mut ByteBuffer,
-        format: *const c_char,
-        args: ...
+        write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     ) -> c_int {
-        let Some(mut formatted) = (unsafe { format_buffer(CStr::from_ptr(format), args.clone()) })
-        else {
+        let Some(mut formatted) = format_buffer(write) else {
             return -1;
         };
         let count = formatted.remaining();
@@ -180,13 +157,10 @@ mod tests {
             let mut buffer = ByteBuffer::default();
             assert_eq!(
                 unsafe {
-                    append_formatted(
-                        &mut buffer,
-                        c"%s:%d:%zu".as_ptr(),
-                        text.as_ptr(),
-                        -7i32,
-                        42usize,
-                    )
+                    append_formatted(&mut buffer, |out| {
+                        write_cstr(out, text.as_ptr())?;
+                        write!(out, ":{}:{}", (-7i32) as i32, (42usize) as usize)
+                    })
                 },
                 (size + 6) as c_int
             );
@@ -214,12 +188,15 @@ mod tests {
         let mut buffer = ByteBuffer::from(b"prefix".to_vec());
         unsafe {
             assert_eq!(
-                append_formatted(&mut buffer, c"%s".as_ptr(), c"".as_ptr()),
+                append_formatted(&mut buffer, |out| { write_cstr(out, c"".as_ptr()) }),
                 0
             );
             assert_eq!(buffer.remaining(), 6);
             assert_eq!(
-                append_formatted(&mut buffer, c"%c:%d".as_ptr(), 0i32, 7i32),
+                append_formatted(&mut buffer, |out| {
+                    out.write_all(&[(0i32) as u8])?;
+                    write!(out, ":{}", (7i32) as i32)
+                }),
                 3
             );
         }

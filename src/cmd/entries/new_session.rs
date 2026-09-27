@@ -14,6 +14,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
 use crate::src::ffi::libc::{sscanf, strcmp, tcgetattr};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::log::fatal;
 use crate::src::options::{
@@ -187,11 +188,9 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 't' as i32 as u_char) != 0
         && (count != 0 as u_int || args_has(args, 'n' as i32 as u_char) != 0)
     {
-        cmdq_error(
-            item,
-            b"command or window name given with target\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"command or window name given with target")
+        });
         return CMD_RETURN_ERROR;
     }
     tmp = args_get(args, 'n' as i32 as u_char);
@@ -205,11 +204,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             ::core::ptr::null_mut::<window_pane>(),
         );
         if check_name(ename.as_ptr()) == 0 {
-            cmdq_error(
-                item,
-                b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ename.as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"invalid window name: ")?;
+                write_cstr(out, ename.as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
@@ -232,11 +230,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             ::core::ptr::null_mut::<window_pane>(),
         );
         if check_name(ename.as_ptr()) == 0 {
-            cmdq_error(
-                item,
-                b"invalid session name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ename.as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"invalid session name: ")?;
+                write_cstr(out, ename.as_ptr())
+            });
             current_block = 5193972633326621385;
         } else {
             sname_owned = Some(
@@ -275,11 +272,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 }
             }
             if !sname.is_null() && !session_find(sname).is_null() {
-                cmdq_error(
-                    item,
-                    b"duplicate session: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    sname,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"duplicate session: ")?;
+                    write_cstr(out, sname)
+                });
             } else {
                 group = args_get(args, 't' as i32 as u_char);
                 if !group.is_null() {
@@ -298,12 +294,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                         );
                         current_block = 6717214610478484138;
                     } else if check_name(group) == 0 {
-                        cmdq_error(
-                            item,
-                            b"invalid session group name: %s\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            group,
-                        );
+                        cmdq_error(item, |out| {
+                            out.write_all(b"invalid session group name: ")?;
+                            write_cstr(out, group)
+                        });
                         current_block = 5193972633326621385;
                     } else {
                         prefix = Some(utf8_stravis_cstring(
@@ -352,19 +346,13 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             && !(*c).flags & CLIENT_CONTROL as uint64_t != 0
                         {
                             if server_client_check_nested(cmdq_get_client(item)) != 0 {
-                                cmdq_error(
-                                    item,
-                                    b"sessions should be nested with care, unset $TMUX to force\0"
-                                        as *const u8
-                                        as *const ::core::ffi::c_char,
-                                );
+                                cmdq_error(item, |out| {
+                                    out.write_all(b"sessions should be nested with care, unset $TMUX to force")
+                                });
                                 current_block = 5193972633326621385;
                             } else {
                                 if tcgetattr((*c).fd, &raw mut tio) != 0 as ::core::ffi::c_int {
-                                    fatal(
-                                        b"tcgetattr failed\0" as *const u8
-                                            as *const ::core::ffi::c_char,
-                                    );
+                                    fatal(|out| out.write_all(b"tcgetattr failed"));
                                 }
                                 tiop = &raw mut tio;
                                 current_block = 6545907279487748450;
@@ -378,12 +366,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             _ => {
                                 if detached == 0 && already_attached == 0 {
                                     if let Err(open_error) = server_client_open(c) {
-                                        cmdq_error(
-                                            item,
-                                            b"open terminal failed: %s\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            open_error.as_ptr(),
-                                        );
+                                        cmdq_error(item, |out| {
+                                            out.write_all(b"open terminal failed: ")?;
+                                            write_cstr(out, open_error.as_ptr())
+                                        });
                                         current_block = 5193972633326621385;
                                     } else {
                                         current_block = 5181772461570869434;
@@ -416,12 +402,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                 )
                                                     as u_int;
                                                 if !errstr.is_null() {
-                                                    cmdq_error(
-                                                        item,
-                                                        b"width %s\0" as *const u8
-                                                            as *const ::core::ffi::c_char,
-                                                        errstr,
-                                                    );
+                                                    cmdq_error(item, |out| {
+                                                        out.write_all(b"width ")?;
+                                                        write_cstr(out, errstr)
+                                                    });
                                                     current_block = 5193972633326621385;
                                                 } else {
                                                     current_block = 5873035170358615968;
@@ -457,12 +441,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         )
                                                             as u_int;
                                                         if !errstr.is_null() {
-                                                            cmdq_error(
-                                                                item,
-                                                                b"height %s\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                errstr,
-                                                            );
+                                                            cmdq_error(item, |out| {
+                                                                out.write_all(b"height ")?;
+                                                                write_cstr(out, errstr)
+                                                            });
                                                             current_block = 5193972633326621385;
                                                         } else {
                                                             current_block = 15855550149339537395;
@@ -545,10 +527,14 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 b"default-size\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                                 0 as ::core::ffi::c_int,
-                                                                b"%ux%u\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                dsx,
-                                                                dsy,
+                                                                |out| {
+                                                                    write!(
+                                                                        out,
+                                                                        "{}x{}",
+                                                                        (dsx) as u32,
+                                                                        (dsy) as u32
+                                                                    )
+                                                                },
                                                             );
                                                         }
                                                         env = environ_create();
@@ -607,16 +593,18 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                     as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                             );
-                                                            cmdq_error(
-                                                                item,
-                                                                b"create window failed: %s\0"
-                                                                    as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                cause.as_ref().map_or(
-                                                                    ::core::ptr::null(),
-                                                                    |value| value.as_ptr(),
-                                                                ),
-                                                            );
+                                                            cmdq_error(item, |out| {
+                                                                out.write_all(
+                                                                    b"create window failed: ",
+                                                                )?;
+                                                                write_cstr(
+                                                                    out,
+                                                                    cause.as_ref().map_or(
+                                                                        ::core::ptr::null(),
+                                                                        |value| value.as_ptr(),
+                                                                    ),
+                                                                )
+                                                            });
                                                         } else {
                                                             if !group.is_null() {
                                                                 if sg.is_null() {
@@ -718,11 +706,9 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                     >(
                                                                     ),
                                                                 );
-                                                                cmdq_print(
-                                                                    item,
-                                                                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                                                    cp.as_ptr(),
-                                                                );
+                                                                cmdq_print(item, |out| {
+                                                                    write_cstr(out, cp.as_ptr())
+                                                                });
                                                             }
                                                             if detached == 0 {
                                                                 (*c).flags |=
@@ -746,8 +732,11 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 s,
                                                                 item,
                                                                 &raw mut fs,
-                                                                b"after-new-session\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
+                                                                |out| {
+                                                                    out.write_all(
+                                                                        b"after-new-session",
+                                                                    )
+                                                                },
                                                             );
                                                             if cfg_finished != 0 {
                                                                 cfg_show_causes(s);

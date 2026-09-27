@@ -2,6 +2,7 @@ use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_res
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::compat::strtonum::strtonum;
+use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_set_number;
 use crate::src::resize::{default_window_size, recalculate_size};
 use crate::src::shared::abi::*;
@@ -65,11 +66,10 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             &raw mut errstr,
         ) as u_int;
         if !errstr.is_null() {
-            cmdq_error(
-                item,
-                b"adjustment %s\0" as *const u8 as *const ::core::ffi::c_char,
-                errstr,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"adjustment ")?;
+                write_cstr(out, errstr)
+            });
             return CMD_RETURN_ERROR;
         }
     }
@@ -84,11 +84,10 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"width ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
@@ -102,11 +101,10 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"height ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };

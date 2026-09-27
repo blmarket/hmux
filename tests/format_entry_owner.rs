@@ -1,4 +1,5 @@
 //! Exercise lazy format-entry caching through the owned expansion path.
+use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::format::{
     format_add, format_add_owned_cb, format_create, format_expand_cstring, format_free, format_tree,
 };
@@ -37,12 +38,9 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         }
         assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);
 
-        format_add(
-            ft,
-            key,
-            b"%s\0".as_ptr() as *const core::ffi::c_char,
-            b"replacement\0".as_ptr() as *const core::ffi::c_char,
-        );
+        format_add(ft, key, |out| {
+            write_cstr(out, b"replacement\0".as_ptr() as *const core::ffi::c_char)
+        });
         let expanded = format_expand_cstring(ft, expression);
         assert_eq!(expanded.as_bytes(), b"replacement");
         assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);

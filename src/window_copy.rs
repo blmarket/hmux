@@ -7,6 +7,8 @@ use crate::src::ffi::libc::{
     __ctype_tolower_loc, abs, llabs, memcmp, memcpy, regcomp, regexec, strcasecmp, strchr, strcmp,
     strcspn, strlen, strncmp,
 };
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
     format_get_pane, format_grid_hyperlink_cstring, format_single_cstring,
@@ -40,7 +42,7 @@ use crate::src::screen_write::{
     screen_write_carriagereturn, screen_write_cell, screen_write_cursormove,
     screen_write_deleteline, screen_write_insertline, screen_write_linefeed, screen_write_nputs,
     screen_write_putc, screen_write_setselection, screen_write_start, screen_write_start_pane,
-    screen_write_stop, screen_write_strlen, screen_write_vnputs,
+    screen_write_stop, screen_write_strlen,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
@@ -86,7 +88,6 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_pane_set_searchstr, window_set_active_pane,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -696,21 +697,10 @@ unsafe fn window_copy_free(mut wme: *mut window_mode_entry) {
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
-pub unsafe extern "C" fn window_copy_add(
+pub unsafe fn window_copy_add(
     mut wp: *mut window_pane,
     mut parse: ::core::ffi::c_int,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    window_copy_vadd(wp, parse, fmt, ap);
-}
-pub unsafe fn window_copy_vadd(
-    mut wp: *mut window_pane,
-    mut parse: ::core::ffi::c_int,
-    mut fmt: *const ::core::ffi::c_char,
-    mut ap: ::core::ffi::VaList,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
@@ -759,7 +749,7 @@ pub unsafe fn window_copy_vadd(
     }
     old_cy = (*backing).cy;
     if parse != 0 {
-        let text = xvasprintf_cstring(fmt, ap);
+        let text = format_message_with(write);
         input_parse_screen(
             (*data).ictx,
             backing,
@@ -773,7 +763,7 @@ pub unsafe fn window_copy_vadd(
             &raw const grid_default_cell as *const ::core::ffi::c_void,
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
-        screen_write_vnputs(&raw mut backing_ctx, 0 as ssize_t, &raw mut gc, fmt, ap);
+        screen_write_nputs(&raw mut backing_ctx, 0 as ssize_t, &raw mut gc, write);
     }
     screen_write_stop(&raw mut backing_ctx);
     (*data).oy = (*data)
@@ -1170,14 +1160,12 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
     format_add(
         ft,
         b"top_line_time\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%llu\0" as *const u8 as *const ::core::ffi::c_char,
-        t as ::core::ffi::c_ulonglong,
+        |out| write!(out, "{}", (t as ::core::ffi::c_ulonglong) as u64),
     );
     format_add(
         ft,
         b"scroll_position\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).oy,
+        |out| write!(out, "{}", ((*data).oy) as i32),
     );
     if window_copy_line_number_is_absolute(wme) != 0 {
         position = hsize.wrapping_sub((*data).oy).wrapping_add(1 as u_int);
@@ -1189,69 +1177,58 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
     format_add(
         ft,
         b"copy_position\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        position,
+        |out| write!(out, "{}", (position) as u32),
     );
     format_add(
         ft,
         b"copy_position_limit\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        limit,
+        |out| write!(out, "{}", (limit) as u32),
     );
     format_add(
         ft,
         b"copy_line_numbers\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        window_copy_line_numbers_active(wme),
+        |out| write!(out, "{}", (window_copy_line_numbers_active(wme)) as i32),
     );
     format_add(
         ft,
         b"refresh_active\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).refresh_active,
+        |out| write!(out, "{}", ((*data).refresh_active) as i32),
     );
     format_add(
         ft,
         b"rectangle_toggle\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).rectflag,
+        |out| write!(out, "{}", ((*data).rectflag) as i32),
     );
     format_add(
         ft,
         b"copy_cursor_x\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).cx,
+        |out| write!(out, "{}", ((*data).cx) as i32),
     );
     format_add(
         ft,
         b"copy_cursor_y\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).cy,
+        |out| write!(out, "{}", ((*data).cy) as i32),
     );
     if !(*data).screen.sel.is_none() {
         format_add(
             ft,
             b"selection_start_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).selx,
+            |out| write!(out, "{}", ((*data).selx) as i32),
         );
         format_add(
             ft,
             b"selection_start_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).sely,
+            |out| write!(out, "{}", ((*data).sely) as i32),
         );
         format_add(
             ft,
             b"selection_end_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).endselx,
+            |out| write!(out, "{}", ((*data).endselx) as i32),
         );
         format_add(
             ft,
             b"selection_end_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).endsely,
+            |out| write!(out, "{}", ((*data).endsely) as i32),
         );
         if (*data).cursordrag as ::core::ffi::c_uint
             != CURSORDRAG_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1259,38 +1236,38 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
             format_add(
                 ft,
                 b"selection_active\0" as *const u8 as *const ::core::ffi::c_char,
-                b"1\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"1"),
             );
         } else {
             format_add(
                 ft,
                 b"selection_active\0" as *const u8 as *const ::core::ffi::c_char,
-                b"0\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"0"),
             );
         }
         if (*data).endselx != (*data).selx || (*data).endsely != (*data).sely {
             format_add(
                 ft,
                 b"selection_present\0" as *const u8 as *const ::core::ffi::c_char,
-                b"1\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"1"),
             );
         } else {
             format_add(
                 ft,
                 b"selection_present\0" as *const u8 as *const ::core::ffi::c_char,
-                b"0\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"0"),
             );
         }
     } else {
         format_add(
             ft,
             b"selection_active\0" as *const u8 as *const ::core::ffi::c_char,
-            b"0\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"0"),
         );
         format_add(
             ft,
             b"selection_present\0" as *const u8 as *const ::core::ffi::c_char,
-            b"0\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"0"),
         );
     }
     match (*data).selflag as ::core::ffi::c_uint {
@@ -1298,21 +1275,21 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
             format_add(
                 ft,
                 b"selection_mode\0" as *const u8 as *const ::core::ffi::c_char,
-                b"char\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"char"),
             );
         }
         1 => {
             format_add(
                 ft,
                 b"selection_mode\0" as *const u8 as *const ::core::ffi::c_char,
-                b"word\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"word"),
             );
         }
         2 => {
             format_add(
                 ft,
                 b"selection_mode\0" as *const u8 as *const ::core::ffi::c_char,
-                b"line\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"line"),
             );
         }
         _ => {}
@@ -1320,27 +1297,29 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
     format_add(
         ft,
         b"search_present\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (!(*data).searchmark.is_empty()) as ::core::ffi::c_int,
+        |out| {
+            write!(
+                out,
+                "{}",
+                ((!(*data).searchmark.is_empty()) as ::core::ffi::c_int) as i32
+            )
+        },
     );
     format_add(
         ft,
         b"search_timed_out\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).timeout,
+        |out| write!(out, "{}", ((*data).timeout) as i32),
     );
     if (*data).searchcount != -(1 as ::core::ffi::c_int) {
         format_add(
             ft,
             b"search_count\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).searchcount,
+            |out| write!(out, "{}", ((*data).searchcount) as i32),
         );
         format_add(
             ft,
             b"search_count_partial\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).searchmore,
+            |out| write!(out, "{}", ((*data).searchmore) as i32),
         );
     }
     format_add_owned_cb(ft, c"search_match", |ft| unsafe {
@@ -5131,7 +5110,7 @@ unsafe fn window_copy_command(
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
+                    |out| out.write_all(b"client is read-only"),
                 );
                 return;
             }
@@ -6209,8 +6188,7 @@ unsafe fn window_copy_search(
         &raw mut ctx,
         -(1 as ::core::ffi::c_int) as ssize_t,
         &raw const grid_default_cell,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        str,
+        |out| write_cstr(out, str),
     );
     screen_write_stop(&raw mut ctx);
     wrapflag = options_get_number(
@@ -6410,17 +6388,20 @@ fn window_copy_clear_searchmark(data: &mut window_copy_mode_data) {
 unsafe fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u_int, sy: u_int) {
     window_copy_clear_searchmark(data);
     if sx == 0 || sy == 0 {
-        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"xcalloc: zero size"));
     }
     let Some(len) = (sx as usize).checked_mul(sy as usize) else {
-        fatalx(b"xcalloc: nmemb * size > SIZE_MAX\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"xcalloc: nmemb * size > SIZE_MAX"));
     };
     let marks = &mut data.searchmark;
     if marks.try_reserve_exact(len).is_err() {
-        fatal(
-            b"xcalloc: allocating %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-            len as size_t,
-        );
+        fatal(|out| {
+            write!(
+                out,
+                "xcalloc: allocating {} bytes",
+                (len as size_t) as usize
+            )
+        });
     }
     marks.resize(len, 0);
 }
@@ -6493,8 +6474,7 @@ unsafe fn window_copy_search_marks(
             &raw mut ctx,
             -(1 as ::core::ffi::c_int) as ssize_t,
             &raw const grid_default_cell,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            window_copy_searchstr(&*data),
+            |out| write_cstr(out, window_copy_searchstr(&*data)),
         );
         screen_write_stop(&raw mut ctx);
         ssp = &raw mut ss;
@@ -6972,7 +6952,7 @@ unsafe fn window_copy_line_number_is_absolute(
         0 | 1 => return 0 as ::core::ffi::c_int,
         _ => {}
     }
-    fatalx(b"bad line number mode\0" as *const u8 as *const ::core::ffi::c_char);
+    fatalx(|out| out.write_all(b"bad line number mode"));
 }
 unsafe fn window_copy_line_numbers_active(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
     return (window_copy_line_number_mode(wme) != WINDOW_COPY_LINE_NUMBERS_OFF as ::core::ffi::c_int)
@@ -7333,9 +7313,25 @@ unsafe fn window_copy_write_line(
             } else {
                 &raw mut ln_gc
             },
-            b"%*u \0" as *const u8 as *const ::core::ffi::c_char,
-            width as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
-            line_number,
+            |out| {
+                let width = (width as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32;
+                if width < 0 {
+                    write!(
+                        out,
+                        "{:<width$}",
+                        (line_number) as u32,
+                        width = width.unsigned_abs() as usize
+                    )
+                } else {
+                    write!(
+                        out,
+                        "{:>width$}",
+                        (line_number) as u32,
+                        width = width as usize
+                    )
+                }?;
+                out.write_all(b" ")
+            },
         );
     }
     window_copy_write_one(

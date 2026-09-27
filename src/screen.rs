@@ -116,7 +116,7 @@ pub unsafe fn screen_reset_tabs(mut s: *mut screen) {
     let bytes = ((*(*s).grid).sx as usize).div_ceil(8);
     (*s).tabs.clear();
     if (*s).tabs.try_reserve_exact(bytes).is_err() {
-        fatal(b"bit_alloc failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"bit_alloc failed"));
     }
     (*s).tabs.resize(bytes, 0);
     let mut i: u_int = 8;
@@ -377,7 +377,7 @@ unsafe fn screen_resize_y(
     let mut oldy: u_int = 0;
     let mut i: u_int = 0;
     if sy == 0 as u_int {
-        fatalx(b"zero size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"zero size"));
     }
     oldy = (*(*s).grid).sy;
     if sy < oldy {

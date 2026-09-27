@@ -11,6 +11,8 @@ use crate::src::ffi::libc::{
     memcpy, memset, strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol, time,
 };
 use crate::src::ffi::resolv::{__b64_ntop, __b64_pton};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::grid::{
     grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line, grid_set_tab,
@@ -63,7 +65,6 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
@@ -286,12 +287,10 @@ mod input_request_ownership_tests {
             input_client_requests(&mut c).push(pending);
             (*ictx).request_count = 1;
 
-            input_reply(
-                ictx,
-                1,
-                b"reply:%s\0".as_ptr().cast(),
-                b"\xff\xfe\0".as_ptr().cast::<::core::ffi::c_char>(),
-            );
+            input_reply(ictx, 1, |out| {
+                out.write_all(b"reply:")?;
+                write_cstr(out, b"\xff\xfe\0".as_ptr().cast::<::core::ffi::c_char>())
+            });
             let queued = *input_ctx_request_handles(ictx).last().unwrap();
             assert_eq!((*queued).type_0, INPUT_REQUEST_QUEUE);
             assert_eq!(
@@ -330,7 +329,7 @@ mod input_request_ownership_tests {
             input_client_requests(&mut c).push(pending);
             (*ictx).request_count = 1;
 
-            input_reply(ictx, 1, b"queued\0".as_ptr().cast());
+            input_reply(ictx, 1, |out| out.write_all(b"queued"));
             let mut reply = input_request_palette_data { idx: 7, c: -1 };
             input_request_reply(&mut c, INPUT_REQUEST_PALETTE, (&raw mut reply).cast());
 
@@ -345,7 +344,7 @@ mod input_request_ownership_tests {
     fn reply_without_pending_request_does_not_queue() {
         unsafe {
             let ictx = Box::into_raw(Box::new(input_ctx::new()));
-            input_reply(ictx, 1, b"\x1b[0n\0".as_ptr().cast());
+            input_reply(ictx, 1, |out| out.write_all(b"\x1b[0n"));
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
             drop(Box::from_raw(ictx));
@@ -2095,8 +2094,7 @@ unsafe fn input_fire_pane_title_changed(
     event_payload_set_string(
         ep,
         b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        title,
+        |out| write_cstr(out, title),
     );
     events_fire(
         b"pane-title-changed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2182,7 +2180,7 @@ pub unsafe fn input_init(
     (*ictx).c = c;
     (*ictx).since_ground = evbuffer_new();
     if (*ictx).since_ground.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     event_set(
         &raw mut (*ictx).ground_timer,
@@ -2271,7 +2269,7 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
             if (*itr).first == -(1 as ::core::ffi::c_int)
                 || (*itr).last == -(1 as ::core::ffi::c_int)
             {
-                fatalx(b"no transition from state\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"no transition from state"));
             }
         }
         state = (*ictx).state as *const input_state;
@@ -2466,16 +2464,13 @@ unsafe fn input_send_reply(mut ictx: *mut input_ctx, mut reply: *const ::core::f
         );
     }
 }
-unsafe extern "C" fn input_reply(
+unsafe fn input_reply(
     mut ictx: *mut input_ctx,
     mut add: ::core::ffi::c_int,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let reply = xvasprintf_cstring(fmt, ap);
+    let reply = format_message_with(write);
     if add != 0 && !input_ctx_requests(ictx).is_empty() {
         ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
         (*ir).data = Some(reply);
@@ -2979,11 +2974,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[?1;2c\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        out.write_all(b"\x1B[?1;2c")
+                    });
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3003,11 +2996,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[>84;0;0c\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        out.write_all(b"\x1B[>84;0;0c")
+                    });
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3105,13 +3096,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 }
             }
             if m > 0 as ::core::ffi::c_int {
-                input_reply(
-                    ictx,
-                    1 as ::core::ffi::c_int,
-                    b"\x1B[%d;%d$y\0" as *const u8 as *const ::core::ffi::c_char,
-                    m,
-                    n,
-                );
+                input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                    write!(out, "\x1B[{};{}$y", (m) as i32, (n) as i32)
+                });
             }
         }
         25 => {
@@ -3258,13 +3245,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 }
             }
             if m > 0 as ::core::ffi::c_int {
-                input_reply(
-                    ictx,
-                    1 as ::core::ffi::c_int,
-                    b"\x1B[?%d;%d$y\0" as *const u8 as *const ::core::ffi::c_char,
-                    m,
-                    n,
-                );
+                input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                    write!(out, "\x1B[?{};{}$y", (m) as i32, (n) as i32)
+                });
             }
         }
         14 => {
@@ -3276,20 +3259,19 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 5 => {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[0n\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        out.write_all(b"\x1B[0n")
+                    });
                 }
                 6 => {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[%u;%uR\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*s).cy.wrapping_add(1 as u_int),
-                        (*s).cx.wrapping_add(1 as u_int),
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        write!(
+                            out,
+                            "\x1B[{};{}R",
+                            ((*s).cy.wrapping_add(1 as u_int)) as u32,
+                            ((*s).cx.wrapping_add(1 as u_int)) as u32
+                        )
+                    });
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3547,12 +3529,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 0 as ::core::ffi::c_int,
             );
             if n == 0 as ::core::ffi::c_int {
-                input_reply(
-                    ictx,
-                    1 as ::core::ffi::c_int,
-                    b"\x1BP>|tmux %s\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-                    getversion(),
-                );
+                input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                    out.write_all(b"\x1BP>|tmux ")?;
+                    write_cstr(out, getversion())?;
+                    out.write_all(b"\x1B\\")
+                });
             }
         }
         _ => {}
@@ -3827,13 +3808,14 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 if w.is_null() {
                     current_block_25 = 980989089337379490;
                 } else {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[4;%u;%ut\0" as *const u8 as *const ::core::ffi::c_char,
-                        y.wrapping_mul((*w).ypixel),
-                        x.wrapping_mul((*w).xpixel),
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        write!(
+                            out,
+                            "\x1B[4;{};{}t",
+                            (y.wrapping_mul((*w).ypixel)) as u32,
+                            (x.wrapping_mul((*w).xpixel)) as u32
+                        )
+                    });
                     current_block_25 = 980989089337379490;
                 }
             }
@@ -3841,13 +3823,14 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 if w.is_null() {
                     current_block_25 = 980989089337379490;
                 } else {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[5;%u;%ut\0" as *const u8 as *const ::core::ffi::c_char,
-                        y.wrapping_mul((*w).ypixel),
-                        x.wrapping_mul((*w).xpixel),
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        write!(
+                            out,
+                            "\x1B[5;{};{}t",
+                            (y.wrapping_mul((*w).ypixel)) as u32,
+                            (x.wrapping_mul((*w).xpixel)) as u32
+                        )
+                    });
                     current_block_25 = 980989089337379490;
                 }
             }
@@ -3855,34 +3838,27 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 if w.is_null() {
                     current_block_25 = 980989089337379490;
                 } else {
-                    input_reply(
-                        ictx,
-                        1 as ::core::ffi::c_int,
-                        b"\x1B[6;%u;%ut\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*w).ypixel,
-                        (*w).xpixel,
-                    );
+                    input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                        write!(
+                            out,
+                            "\x1B[6;{};{}t",
+                            ((*w).ypixel) as u32,
+                            ((*w).xpixel) as u32
+                        )
+                    });
                     current_block_25 = 980989089337379490;
                 }
             }
             18 => {
-                input_reply(
-                    ictx,
-                    1 as ::core::ffi::c_int,
-                    b"\x1B[8;%u;%ut\0" as *const u8 as *const ::core::ffi::c_char,
-                    y,
-                    x,
-                );
+                input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                    write!(out, "\x1B[8;{};{}t", (y) as u32, (x) as u32)
+                });
                 current_block_25 = 980989089337379490;
             }
             19 => {
-                input_reply(
-                    ictx,
-                    1 as ::core::ffi::c_int,
-                    b"\x1B[9;%u;%ut\0" as *const u8 as *const ::core::ffi::c_char,
-                    y,
-                    x,
-                );
+                input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+                    write!(out, "\x1B[9;{};{}t", (y) as u32, (x) as u32)
+                });
                 current_block_25 = 980989089337379490;
             }
             22 => {
@@ -4426,11 +4402,9 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         || *buf.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ' ' as i32
         || *buf.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != 'q' as i32
     {
-        input_reply(
-            ictx,
-            1 as ::core::ffi::c_int,
-            b"\x1BP0$r\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+            out.write_all(b"\x1BP0$r\x1B\\")
+        });
         return 0 as ::core::ffi::c_int;
     } else {
         if (*s).cstyle as ::core::ffi::c_uint
@@ -4490,12 +4464,9 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ((*s).cstyle as ::core::ffi::c_uint) as i32,
             log_hex((((*s).mode) as u32) as u64)
         ));
-        input_reply(
-            ictx,
-            1 as ::core::ffi::c_int,
-            b"\x1BP1$r q%d q\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-            ps,
-        );
+        input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
+            write!(out, "\x1BP1$r q{} q\x1B\\", (ps) as i32)
+        });
         return 0 as ::core::ffi::c_int;
     };
 }
@@ -4845,36 +4816,36 @@ unsafe fn input_osc_colour_reply(
         end = b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if n == 4 as u_int {
-        input_reply(
-            ictx,
-            add,
-            b"\x1B]%u;%d;rgb:%02hhx%02hhx/%02hhx%02hhx/%02hhx%02hhx%s\0" as *const u8
-                as *const ::core::ffi::c_char,
-            n,
-            idx,
-            r as ::core::ffi::c_int,
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-            end,
-        );
+        input_reply(ictx, add, |out| {
+            write!(
+                out,
+                "\x1B]{};{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}",
+                (n) as u32,
+                (idx) as i32,
+                (r as ::core::ffi::c_int) as u8,
+                (r as ::core::ffi::c_int) as u8,
+                (g as ::core::ffi::c_int) as u8,
+                (g as ::core::ffi::c_int) as u8,
+                (b as ::core::ffi::c_int) as u8,
+                (b as ::core::ffi::c_int) as u8
+            )?;
+            write_cstr(out, end)
+        });
     } else {
-        input_reply(
-            ictx,
-            add,
-            b"\x1B]%u;rgb:%02hhx%02hhx/%02hhx%02hhx/%02hhx%02hhx%s\0" as *const u8
-                as *const ::core::ffi::c_char,
-            n,
-            r as ::core::ffi::c_int,
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-            end,
-        );
+        input_reply(ictx, add, |out| {
+            write!(
+                out,
+                "\x1B]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}",
+                (n) as u32,
+                (r as ::core::ffi::c_int) as u8,
+                (r as ::core::ffi::c_int) as u8,
+                (g as ::core::ffi::c_int) as u8,
+                (g as ::core::ffi::c_int) as u8,
+                (b as ::core::ffi::c_int) as u8,
+                (b as ::core::ffi::c_int) as u8
+            )?;
+            write_cstr(out, end)
+        });
     };
 }
 unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -6010,11 +5981,9 @@ unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
                     "input_report_current_theme",
                     ((*wp).id) as u32
                 ));
-                input_reply(
-                    ictx,
-                    0 as ::core::ffi::c_int,
-                    b"\x1B[?997;1n\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                input_reply(ictx, 0 as ::core::ffi::c_int, |out| {
+                    out.write_all(b"\x1B[?997;1n")
+                });
             }
             1 => {
                 log_debug(format_args!(
@@ -6022,11 +5991,9 @@ unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
                     "input_report_current_theme",
                     ((*wp).id) as u32
                 ));
-                input_reply(
-                    ictx,
-                    0 as ::core::ffi::c_int,
-                    b"\x1B[?997;2n\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                input_reply(ictx, 0 as ::core::ffi::c_int, |out| {
+                    out.write_all(b"\x1B[?997;2n")
+                });
             }
             0 => {
                 log_debug(format_args!(

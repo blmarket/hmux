@@ -58,10 +58,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if !filter.is_null()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
     {
-        cmdq_error(
-            item,
-            b"-f only valid with -a\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {

@@ -1,6 +1,7 @@
 use crate::src::ffi::libc::{
     clock_gettime, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;
@@ -837,12 +838,9 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
             );
             gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
             gc.fg = colour;
-            screen_write_puts(
-                &raw mut ctx,
-                &raw mut gc,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut tim as *mut ::core::ffi::c_char,
-            );
+            screen_write_puts(&raw mut ctx, &raw mut gc, |out| {
+                write_cstr(out, &raw mut tim as *mut ::core::ffi::c_char)
+            });
         }
         screen_write_stop(&raw mut ctx);
         return;

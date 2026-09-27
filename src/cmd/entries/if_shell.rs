@@ -9,6 +9,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::__ctype_toupper_loc;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
@@ -153,11 +154,10 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     )
     .is_null()
     {
-        cmdq_error(
-            item,
-            b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            shellcmd.as_ptr(),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"failed to run command: ")?;
+            write_cstr(out, shellcmd.as_ptr())
+        });
         cmd_if_shell_free(cdata);
         return CMD_RETURN_ERROR;
     }
@@ -192,15 +192,10 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_i
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        error_ptr,
+                        |out| write_cstr(out, error_ptr),
                     );
                 } else {
-                    cmdq_error(
-                        (*cdata).item,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        error_ptr,
-                    );
+                    cmdq_error((*cdata).item, |out| write_cstr(out, error_ptr));
                 }
             }
             Ok(commands) if item.is_null() => {

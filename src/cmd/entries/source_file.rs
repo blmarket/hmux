@@ -8,6 +8,7 @@ use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
 use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -153,12 +154,11 @@ unsafe fn cmd_source_file_done(
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     if error != 0 as ::core::ffi::c_int {
-        cmdq_error(
-            item,
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(error),
-            path,
-        );
+        cmdq_error(item, |out| {
+            write_cstr(out, strerror(error))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path)
+        });
     } else if bsize != 0 as size_t {
         if load_cfg_from_buffer(
             bdata,
@@ -239,10 +239,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut j: u_int = 0;
     if c.is_null() {
         if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-            cmdq_error(
-                item,
-                b"too many nested files\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"too many nested files"));
             return CMD_RETURN_ERROR;
         }
         cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
@@ -253,10 +250,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         ));
     } else {
         if (*c).source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-            cmdq_error(
-                item,
-                b"too many nested files\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"too many nested files"));
             return CMD_RETURN_ERROR;
         }
         (*c).source_file_depth = (*c).source_file_depth.wrapping_add(1);
@@ -336,12 +330,11 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     } else {
                         error = strerror(EINVAL);
                     }
-                    cmdq_error(
-                        item,
-                        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        error,
-                        path,
-                    );
+                    cmdq_error(item, |out| {
+                        write_cstr(out, error)?;
+                        out.write_all(b": ")?;
+                        write_cstr(out, path)
+                    });
                     retval = CMD_RETURN_ERROR;
                 }
                 drop(pattern);

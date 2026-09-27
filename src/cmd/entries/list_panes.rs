@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
@@ -57,10 +58,7 @@ unsafe fn cmd_list_panes_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(
-            item,
-            b"invalid sort order\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
@@ -148,8 +146,7 @@ unsafe fn cmd_list_panes_window(
         format_add(
             ft,
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as u32),
         );
         format_defaults(ft, c, s, wl, wp);
         if !filter.is_null() {
@@ -160,11 +157,7 @@ unsafe fn cmd_list_panes_window(
         }
         if flag != 0 {
             let line = format_expand_cstring(ft, template);
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                line.as_ptr(),
-            );
+            cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
         }
         format_free(ft);
         i = i.wrapping_add(1);

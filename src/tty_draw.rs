@@ -318,11 +318,9 @@ pub unsafe fn tty_draw_line(
                     gcp = &raw const grid_default_cell;
                 } else {
                     if i > nx {
-                        fatalx(
-                            b"position %u > width %u\0" as *const u8 as *const ::core::ffi::c_char,
-                            i,
-                            nx,
-                        );
+                        fatalx(|out| {
+                            write!(out, "position {} > width {}", (i) as u32, (nx) as u32)
+                        });
                     }
                     if px >= ex || i >= ex.wrapping_sub(px) {
                         empty = nx.wrapping_sub(i) as ::core::ffi::c_int;

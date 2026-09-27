@@ -806,7 +806,7 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
                 if replacement.len() >= usize::MAX / 4
                     || output.len() > usize::MAX - replacement.len() * 4 - 1
                 {
-                    fatalx(b"argument too long\0".as_ptr().cast());
+                    fatalx(|out| out.write_all(b"argument too long"));
                 }
                 output.reserve(replacement.len() * 4);
                 for &byte in replacement {
@@ -823,7 +823,7 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
             }
         }
         if output.len() > usize::MAX - 2 {
-            fatalx(b"argument too long\0".as_ptr().cast());
+            fatalx(|out| out.write_all(b"argument too long"));
         }
         output.push(ch);
     }

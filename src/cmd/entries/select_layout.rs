@@ -2,6 +2,7 @@ use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::events::events_fire_window;
+use crate::src::format::bytes::write_cstr;
 use crate::src::layout::custom::{layout_dump_owned, layout_parse};
 use crate::src::layout::layout_spread_out;
 use crate::src::layout::set::{
@@ -167,14 +168,16 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             _ => {
                 if !layoutname.is_null() {
                     if layout_parse(w, layoutname, &raw mut cause) == -(1 as ::core::ffi::c_int) {
-                        cmdq_error(
-                            item,
-                            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            cause
-                                .as_ref()
-                                .map_or(::core::ptr::null(), |message| message.as_ptr()),
-                            layoutname,
-                        );
+                        cmdq_error(item, |out| {
+                            write_cstr(
+                                out,
+                                cause
+                                    .as_ref()
+                                    .map_or(::core::ptr::null(), |message| message.as_ptr()),
+                            )?;
+                            out.write_all(b": ")?;
+                            write_cstr(out, layoutname)
+                        });
                         drop(window_replace_old_layout(w, oldlayout.take()));
                         return CMD_RETURN_ERROR;
                     }

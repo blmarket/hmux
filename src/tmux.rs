@@ -19,6 +19,7 @@ use crate::src::ffi::libc::{
     getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr,
     stdout, strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
 use crate::src::options::{
@@ -837,8 +838,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
             global_environ,
             b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cwd,
+            |out| write_cstr(out, cwd),
         );
     }
     let mut config_paths = expand_paths(CStr::from_ptr(TMUX_CONF.as_ptr()), true);
@@ -984,8 +984,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
         global_s_options,
         b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        getshell(),
+        |out| write_cstr(out, getshell()),
     );
     s = getenv(b"VISUAL\0" as *const u8 as *const ::core::ffi::c_char);
     if !s.is_null() || {
@@ -996,8 +995,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
             global_options,
             b"editor\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            s,
+            |out| write_cstr(out, s),
         );
         if !strrchr(s, '/' as i32).is_null() {
             s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);

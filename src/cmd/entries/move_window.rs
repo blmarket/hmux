@@ -2,6 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_get_number;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_link_window, server_status_session, server_unlink_window};
@@ -131,11 +132,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if let Err(cause) =
         server_link_window(src, wl, dst, idx, kflag, (dflag == 0) as ::core::ffi::c_int)
     {
-        cmdq_error(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause.as_ptr(),
-        );
+        cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
         return CMD_RETURN_ERROR;
     }
     if cmd_get_entry(self_0) == &raw const cmd_move_window_entry {

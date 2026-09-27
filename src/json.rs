@@ -1,7 +1,8 @@
 use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, strlen, strncmp, strtoll};
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::fatalx;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_add, evbuffer_add_formatted, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup,
 };
 use crate::src::shared::abi::*;
@@ -606,7 +607,7 @@ unsafe fn json_create_node(
         NODE_BOOLEAN => JsonValue::Boolean(0),
         NODE_OBJECT => JsonValue::Object(json_fields::default()),
         NODE_ARRAY => JsonValue::Array(Default::default()),
-        _ => fatalx(c"unknown node type".as_ptr()),
+        _ => fatalx(|out| out.write_all(b"unknown node type")),
     };
     if !val.is_null() {
         json_assign_value(node, val);
@@ -668,7 +669,7 @@ unsafe fn json_assign_value(mut node: *mut json_node, mut val: *mut ::core::ffi:
             }
         }
         _ => {
-            fatalx(b"unknown node type\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"unknown node type"));
         }
     };
 }
@@ -1126,18 +1127,20 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
     let mut comma: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match (*node).type_0() as ::core::ffi::c_uint {
         0 => {
-            evbuffer_add_printf(
-                buffer,
-                b"\"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-                (*node).value.string_ptr(),
-            );
+            evbuffer_add_formatted(buffer, |out| {
+                out.write_all(b"\"")?;
+                write_cstr(out, (*node).value.string_ptr())?;
+                out.write_all(b"\"")
+            });
         }
         1 => {
-            evbuffer_add_printf(
-                buffer,
-                b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                (*node).value.number() as ::core::ffi::c_longlong,
-            );
+            evbuffer_add_formatted(buffer, |out| {
+                write!(
+                    out,
+                    "{}",
+                    ((*node).value.number() as ::core::ffi::c_longlong) as i64
+                )
+            });
         }
         2 => {
             if (*node).value.boolean() != 0 {
@@ -1163,13 +1166,16 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
                         1 as size_t,
                     );
                 }
-                evbuffer_add_printf(
-                    buffer,
-                    b"\"%s\":\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*field).key)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                );
+                evbuffer_add_formatted(buffer, |out| {
+                    out.write_all(b"\"")?;
+                    write_cstr(
+                        out,
+                        ((*field).key)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )?;
+                    out.write_all(b"\":")
+                });
                 json_string_append(buffer, field);
                 comma = 1 as ::core::ffi::c_int;
                 field = json_fields_next((*node).value.fields(), &*field);
@@ -1216,7 +1222,7 @@ pub unsafe fn json_to_string(node: *mut json_node) -> Option<CString> {
     }
     buffer = evbuffer_new();
     if buffer.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     json_string_append(buffer, node);
     let len = evbuffer_get_length(&*(buffer));

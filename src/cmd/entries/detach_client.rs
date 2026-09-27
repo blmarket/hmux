@@ -84,10 +84,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             || args_has(args, 'a' as i32 as u_char) != 0
             || c != tc
         {
-            cmdq_error(
-                item,
-                b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"client is read-only"));
             return CMD_RETURN_ERROR;
         }
     }

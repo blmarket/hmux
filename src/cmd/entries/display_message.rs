@@ -4,12 +4,13 @@ use crate::src::cmd::find::cmd_find_best_client;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client, cmdq_print,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create, format_defaults, format_each, format_expand_time_cstring, format_free,
 };
 use crate::src::json::{json_destroy_node, json_parse, json_to_string};
 use crate::src::log::fatalx;
-use crate::src::reactor::{evbuffer_add_printf, evbuffer_free, evbuffer_new};
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_free, evbuffer_new};
 use crate::src::server_client::server_client_print;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -89,11 +90,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         }
         match window_pane_start_input(wp, item) {
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.as_ptr(),
-                );
+                cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
                 return CMD_RETURN_ERROR;
             }
             Ok(1) => return CMD_RETURN_NORMAL,
@@ -102,11 +99,9 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         }
     }
     if args_has(args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
-        cmdq_error(
-            item,
-            b"only one of -F or argument must be given\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"only one of -F or argument must be given")
+        });
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
@@ -118,11 +113,10 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"delay %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"delay ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
@@ -153,12 +147,11 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     format_defaults(ft, c, s, wl, wp);
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
-            cmdq_print(
-                item,
-                b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                key.as_ptr(),
-                value.as_ptr(),
-            );
+            cmdq_print(item, |out| {
+                write_cstr(out, key.as_ptr())?;
+                out.write_all(b"=")?;
+                write_cstr(out, value.as_ptr())
+            });
         });
         format_free(ft);
         return CMD_RETURN_NORMAL;
@@ -171,13 +164,14 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     if args_has(args, 'j' as i32 as u_char) != 0 {
         jn = json_parse(msg.as_ptr(), &raw mut cause);
         if jn.is_null() {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |message| message.as_ptr()),
-            );
+            cmdq_error(item, |out| {
+                write_cstr(
+                    out,
+                    cause
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |message| message.as_ptr()),
+                )
+            });
             drop(msg);
             format_free(ft);
             return CMD_RETURN_ERROR;
@@ -187,39 +181,24 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         json_destroy_node(jn);
     }
     if cmdq_get_client(item).is_null() {
-        cmdq_error(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.as_ptr(),
-        );
+        cmdq_error(item, |out| write_cstr(out, msg.as_ptr()));
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        cmdq_print(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.as_ptr(),
-        );
+        cmdq_print(item, |out| write_cstr(out, msg.as_ptr()));
     } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
         evb = evbuffer_new();
         if evb.is_null() {
-            fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"out of memory"));
         }
-        evbuffer_add_printf(
-            evb,
-            b"%%message %s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.as_ptr(),
-        );
+        evbuffer_add_formatted(evb, |out| {
+            out.write_all(b"%message ")?;
+            write_cstr(out, msg.as_ptr())
+        });
         server_client_print(tc, 0 as ::core::ffi::c_int, evb);
         evbuffer_free(evb);
     } else if !tc.is_null() {
-        status_message_set(
-            tc,
-            delay,
-            0 as ::core::ffi::c_int,
-            Nflag,
-            Cflag,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.as_ptr(),
-        );
+        status_message_set(tc, delay, 0 as ::core::ffi::c_int, Nflag, Cflag, |out| {
+            write_cstr(out, msg.as_ptr())
+        });
     }
     drop(msg);
     format_free(ft);

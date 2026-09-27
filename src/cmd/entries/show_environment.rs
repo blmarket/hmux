@@ -2,6 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
 use crate::src::environ::{environ_find, environ_iter};
+use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -68,38 +69,40 @@ unsafe fn cmd_show_environment_print(
     }
     if args_has(args, 's' as i32 as u_char) == 0 {
         if !(*envent).value.is_none() {
-            cmdq_print(
-                item,
-                b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*envent).name).as_ptr().cast_mut(),
-                ((*envent).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            cmdq_print(item, |out| {
+                write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+                out.write_all(b"=")?;
+                write_cstr(
+                    out,
+                    ((*envent).value)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+            });
         } else {
-            cmdq_print(
-                item,
-                b"-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*envent).name).as_ptr().cast_mut(),
-            );
+            cmdq_print(item, |out| {
+                out.write_all(b"-")?;
+                write_cstr(out, ((*envent).name).as_ptr().cast_mut())
+            });
         }
         return;
     }
     if !(*envent).value.is_none() {
         let escaped = cmd_show_environment_escape(&*envent);
-        cmdq_print(
-            item,
-            b"%s=\"%s\"; export %s;\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*envent).name).as_ptr().cast_mut(),
-            escaped.as_ptr(),
-            ((*envent).name).as_ptr().cast_mut(),
-        );
+        cmdq_print(item, |out| {
+            write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+            out.write_all(b"=\"")?;
+            write_cstr(out, escaped.as_ptr())?;
+            out.write_all(b"\"; export ")?;
+            write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+            out.write_all(b";")
+        });
     } else {
-        cmdq_print(
-            item,
-            b"unset %s;\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*envent).name).as_ptr().cast_mut(),
-        );
+        cmdq_print(item, |out| {
+            out.write_all(b"unset ")?;
+            write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+            out.write_all(b";")
+        });
     };
 }
 unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
@@ -112,11 +115,10 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     tflag = args_get(args, 't' as i32 as u_char);
     if !tflag.is_null() {
         if (*target).s.is_null() {
-            cmdq_error(
-                item,
-                b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                tflag,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"no such session: ")?;
+                write_cstr(out, tflag)
+            });
             return CMD_RETURN_ERROR;
         }
     }
@@ -126,16 +128,12 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
         if (*target).s.is_null() {
             tflag = args_get(args, 't' as i32 as u_char);
             if !tflag.is_null() {
-                cmdq_error(
-                    item,
-                    b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    tflag,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"no such session: ")?;
+                    write_cstr(out, tflag)
+                });
             } else {
-                cmdq_error(
-                    item,
-                    b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"no current session"));
             }
             return CMD_RETURN_ERROR;
         }
@@ -144,11 +142,10 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     if !name.is_null() {
         envent = environ_find(env, name);
         if envent.is_null() {
-            cmdq_error(
-                item,
-                b"unknown variable: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"unknown variable: ")?;
+                write_cstr(out, name)
+            });
             return CMD_RETURN_ERROR;
         }
         cmd_show_environment_print(self_0, item, envent);

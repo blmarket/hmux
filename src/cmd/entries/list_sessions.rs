@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
@@ -74,10 +75,7 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(
-            item,
-            b"invalid sort order\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
@@ -94,8 +92,7 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         format_add(
             ft,
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
+            |out| write!(out, "{}", (i) as u32),
         );
         format_defaults(
             ft,
@@ -112,11 +109,7 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         if flag != 0 {
             let line = format_expand_cstring(ft, template);
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                line.as_ptr(),
-            );
+            cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
         }
         format_free(ft);
         i = i.wrapping_add(1);

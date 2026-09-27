@@ -3,6 +3,7 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string, args_va
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::src::cmd::queue::cmdq_error;
+use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_add;
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::shared::abi::*;
@@ -58,11 +59,10 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
-        cmdq_error(
-            item,
-            b"unknown key: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            args_string(args, 0 as u_int),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"unknown key: ")?;
+            write_cstr(out, args_string(args, 0 as u_int))
+        });
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
@@ -106,13 +106,14 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     match pr.status as ::core::ffi::c_uint {
         0 => {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                pr.error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-            );
+            cmdq_error(item, |out| {
+                write_cstr(
+                    out,
+                    pr.error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                )
+            });
             return CMD_RETURN_ERROR;
         }
         1 | _ => {}

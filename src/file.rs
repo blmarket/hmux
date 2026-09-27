@@ -10,7 +10,7 @@ use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
 use crate::src::reactor::{
     bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_add,
-    evbuffer_add_vprintf, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_add_formatted, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup, event_once,
 };
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
@@ -171,7 +171,7 @@ pub unsafe fn file_create_with_peer(
     (*cf).stream = stream;
     (*cf).buffer = evbuffer_new();
     if (*cf).buffer.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     (*cf).cb = cb;
     (*cf).peer = peer;
@@ -193,7 +193,7 @@ unsafe fn file_create_with_client(
     (*cf).stream = stream;
     (*cf).buffer = evbuffer_new();
     if (*cf).buffer.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     (*cf).cb = cb;
     if !(*cf).c.is_null() {
@@ -287,19 +287,9 @@ pub unsafe fn file_can_print(mut c: *mut client) -> ::core::ffi::c_int {
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe extern "C" fn file_print(
+pub unsafe fn file_print(
     mut c: *mut client,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    file_vprint(c, fmt, ap);
-}
-pub unsafe fn file_vprint(
-    mut c: *mut client,
-    mut fmt: *const ::core::ffi::c_char,
-    mut ap: ::core::ffi::VaList,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -316,7 +306,7 @@ pub unsafe fn file_vprint(
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_vprintf((*cf).buffer, fmt, ap);
+        evbuffer_add_formatted((*cf).buffer, write);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -328,7 +318,7 @@ pub unsafe fn file_vprint(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
-        evbuffer_add_vprintf((*cf).buffer, fmt, ap);
+        evbuffer_add_formatted((*cf).buffer, write);
         file_push(cf);
     };
 }
@@ -368,10 +358,9 @@ pub unsafe fn file_print_buffer(
         file_push(cf);
     };
 }
-pub unsafe extern "C" fn file_error(
+pub unsafe fn file_error(
     mut c: *mut client,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut find: client_file = client_file::empty();
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -380,17 +369,15 @@ pub unsafe extern "C" fn file_error(
         fd: 0,
         flags: 0,
     };
-    let mut ap: ::core::ffi::VaList;
     if file_can_print(c) == 0 {
         return;
     }
-    ap = args.clone();
     find.stream = 2 as ::core::ffi::c_int;
     cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
         cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_vprintf((*cf).buffer, fmt, ap);
+        evbuffer_add_formatted((*cf).buffer, write);
         msg.stream = 2 as ::core::ffi::c_int;
         msg.fd = STDERR_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -402,7 +389,7 @@ pub unsafe extern "C" fn file_error(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
-        evbuffer_add_vprintf((*cf).buffer, fmt, ap);
+        evbuffer_add_formatted((*cf).buffer, write);
         file_push(cf);
     };
 }
@@ -890,7 +877,7 @@ pub unsafe fn file_write_open(
 ) {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_write_open>() {
-        fatalx(b"bad MSG_WRITE_OPEN size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad MSG_WRITE_OPEN size"));
     }
     let msg = read_imsg_payload::<msg_write_open>(imsg).unwrap();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -949,7 +936,7 @@ pub unsafe fn file_write_open(
                     }),
                 );
                 if (*cf).event.is_null() {
-                    fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+                    fatalx(|out| out.write_all(b"out of memory"));
                 }
                 bufferevent_enable((*cf).event, EV_WRITE as ::core::ffi::c_short);
             }
@@ -968,7 +955,7 @@ pub unsafe fn file_write_open(
 pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_write_data>() {
-        fatalx(b"bad MSG_WRITE size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad MSG_WRITE size"));
     }
     let msg = read_imsg_payload::<msg_write_data>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
@@ -977,7 +964,7 @@ pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
-        fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"unknown stream number"));
     }
     log_debug(format_args!(
         "write {} to file {}",
@@ -997,7 +984,7 @@ pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
 pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_close>() {
-        fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad MSG_WRITE_CLOSE size"));
     }
     let msg = read_imsg_payload::<msg_write_close>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
@@ -1005,7 +992,7 @@ pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
-        fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"unknown stream number"));
     }
     log_debug(format_args!("close file {}", ((*cf).stream) as i32));
     (*cf).closed = 1 as ::core::ffi::c_int;
@@ -1098,7 +1085,7 @@ pub unsafe fn file_read_open(
 ) {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_read_open>() {
-        fatalx(b"bad MSG_READ_OPEN size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad MSG_READ_OPEN size"));
     }
     let msg = read_imsg_payload::<msg_read_open>(imsg).unwrap();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1157,7 +1144,7 @@ pub unsafe fn file_read_open(
                     }),
                 );
                 if (*cf).event.is_null() {
-                    fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+                    fatalx(|out| out.write_all(b"out of memory"));
                 }
                 bufferevent_enable((*cf).event, EV_READ as ::core::ffi::c_short);
                 return;
@@ -1177,7 +1164,7 @@ pub unsafe fn file_read_open(
 pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_cancel>() {
-        fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad MSG_READ_CANCEL size"));
     }
     let msg = read_imsg_payload::<msg_read_cancel>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
@@ -1185,7 +1172,7 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
     find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
-        fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"unknown stream number"));
     }
     log_debug(format_args!("cancel file {}", ((*cf).stream) as i32));
     file_read_error_callback(0 as ::core::ffi::c_short, cf as *mut ::core::ffi::c_void);

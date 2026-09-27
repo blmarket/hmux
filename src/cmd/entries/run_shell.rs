@@ -10,6 +10,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
@@ -116,11 +117,7 @@ unsafe fn cmd_run_shell_print(
     }
     if wp.is_null() {
         if !(*cdata).item.is_null() {
-            cmdq_print(
-                (*cdata).item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                msg,
-            );
+            cmdq_print((*cdata).item, |out| write_cstr(out, msg));
             return;
         }
         if !(*cdata).client.is_null() && !(*(*cdata).client).session.is_null() {
@@ -147,12 +144,7 @@ unsafe fn cmd_run_shell_print(
             ::core::ptr::null_mut::<args>(),
         );
     }
-    window_copy_add(
-        wp,
-        1 as ::core::ffi::c_int,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        msg,
-    );
+    window_copy_add(wp, 1 as ::core::ffi::c_int, |out| write_cstr(out, msg));
 }
 
 fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
@@ -191,11 +183,10 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !delay.is_null() {
         d = strtod(delay, &raw mut end);
         if *end as ::core::ffi::c_int != '\0' as i32 {
-            cmdq_error(
-                item,
-                b"invalid delay time: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                delay,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"invalid delay time: ")?;
+                write_cstr(out, delay)
+            });
             return CMD_RETURN_ERROR;
         }
     } else if args_count(args) == 0 as u_int {
@@ -224,12 +215,9 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             i = 1 as u_int;
             while i < args_count(args) {
                 xformat(&mut key, format_args!("{}", i as u32));
-                format_add(
-                    ft,
-                    &raw mut key as *mut ::core::ffi::c_char,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    args_string(args, i),
-                );
+                format_add(ft, &raw mut key as *mut ::core::ffi::c_char, |out| {
+                    write_cstr(out, args_string(args, i))
+                });
                 i = i.wrapping_add(1);
             }
             (*cdata).cmd = Some(format_expand_cstring(ft, cmd));
@@ -330,15 +318,16 @@ unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cmd.unwrap().as_ptr(),
+                    |out| {
+                        out.write_all(b"failed to run command: ")?;
+                        write_cstr(out, cmd.unwrap().as_ptr())
+                    },
                 );
             } else {
-                cmdq_error(
-                    (*cdata).item,
-                    b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cmd.unwrap().as_ptr(),
-                );
+                cmdq_error((*cdata).item, |out| {
+                    out.write_all(b"failed to run command: ")?;
+                    write_cstr(out, cmd.unwrap().as_ptr())
+                });
                 cmdq_continue((*cdata).item);
             }
             cmd_run_shell_free(cdata);
@@ -360,15 +349,10 @@ unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error_ptr,
+                    |out| write_cstr(out, error_ptr),
                 );
             } else {
-                cmdq_error(
-                    (*cdata).item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error_ptr,
-                );
+                cmdq_error((*cdata).item, |out| write_cstr(out, error_ptr));
             }
         }
         Ok(commands) if item.is_null() => {

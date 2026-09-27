@@ -50,20 +50,14 @@ unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut wp: *mut window_pane = (*target).wp;
     let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
-        cmdq_error(
-            item,
-            b"-f only valid with -a\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_pane_all(item, filter);
     }
     if wp.is_null() {
-        cmdq_error(
-            item,
-            b"no active pane to kill\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"no active pane to kill"));
         return CMD_RETURN_ERROR;
     }
     server_kill_pane(wp);

@@ -115,3 +115,32 @@ fn inventory_handles_aliases_callbacks_variadics_and_misleading_text() {
     let s = scan("fn local() {} static G: i32 = 0; extern \"C\" { fn local(); static G: i32; }");
     assert_eq!(s.defined, s.foreign);
 }
+
+#[test]
+fn rust_implementations_do_not_define_c_variadic_functions() {
+    struct NoVariadics;
+    impl<'ast> Visit<'ast> for NoVariadics {
+        fn visit_item_fn(&mut self, function: &'ast syn::ItemFn) {
+            assert!(
+                function.sig.variadic.is_none(),
+                "Rust variadic definition: {}",
+                function.sig.ident
+            );
+            visit::visit_item_fn(self, function);
+        }
+    }
+    fn check(directory: &std::path::Path) {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                check(&path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let source = std::fs::read_to_string(&path).unwrap();
+                let syntax = syn::parse_file(&source)
+                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+                NoVariadics.visit_file(&syntax);
+            }
+        }
+    }
+    check(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+}

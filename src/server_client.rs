@@ -29,6 +29,7 @@ use crate::src::file::{
     file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::bytes::xformat;
+use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_expand_time_cstring, format_free,
     format_lost_client,
@@ -1004,7 +1005,7 @@ pub unsafe fn server_client_set_key_table(
     (*c).keytable = key_bindings_get_table(name, 1 as ::core::ffi::c_int) as *mut key_table;
     crate::src::shared::rc::retain((*c).keytable);
     if gettimeofday(&raw mut (*(*c).keytable).activity_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"gettimeofday failed"));
     }
 }
 unsafe fn server_client_key_table_activity_diff(mut c: *mut client) -> uint64_t {
@@ -1061,7 +1062,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
         Box::new(move |message| unsafe { server_client_dispatch(c, message) }),
     );
     if gettimeofday(&raw mut (*c).creation_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"gettimeofday failed"));
     }
     memcpy(
         &raw mut (*c).activity_time as *mut ::core::ffi::c_void,
@@ -2653,7 +2654,7 @@ unsafe fn server_client_key_callback(
             ::core::mem::size_of::<timeval>() as size_t,
         );
         if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
-            fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
+            fatal(|out| out.write_all(b"gettimeofday failed"));
         }
         session_update_activity(s, &raw mut (*c).activity_time);
         (*m).valid = 0 as ::core::ffi::c_int;
@@ -4317,7 +4318,7 @@ unsafe fn server_client_dispatch(
                 } else {
                     s = (*c).session;
                     if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
-                        fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
+                        fatal(|out| out.write_all(b"gettimeofday failed"));
                     }
                     tty_start_tty(&raw mut (*c).tty);
                     server_redraw_client(c);
@@ -4384,10 +4385,7 @@ unsafe fn server_client_dispatch(
     };
 }
 unsafe fn server_client_read_only(mut item: *mut cmdq_item) -> cmd_retval {
-    cmdq_error(
-        item,
-        b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    cmdq_error(item, |out| out.write_all(b"client is read-only"));
     return CMD_RETURN_ERROR;
 }
 unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval {
@@ -5112,22 +5110,20 @@ pub unsafe fn server_client_print(
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
                 let sanitized = utf8_sanitize_cstring(CStr::from_ptr(msg));
                 if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                    control_write(
-                        c,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        sanitized.as_ptr(),
-                    );
+                    control_write(c, |out| write_cstr(out, sanitized.as_ptr()));
                 } else {
-                    file_print(
-                        c,
-                        b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        sanitized.as_ptr(),
-                    );
+                    file_print(c, |out| {
+                        write_cstr(out, sanitized.as_ptr())?;
+                        out.write_all(b"\n")
+                    });
                 }
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                control_write(c, b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);
+                control_write(c, |out| write_cstr(out, msg));
             } else {
-                file_print(c, b"%s\n\0" as *const u8 as *const ::core::ffi::c_char, msg);
+                file_print(c, |out| {
+                    write_cstr(out, msg)?;
+                    out.write_all(b"\n")
+                });
             }
         } else {
             wp = (*(*(*(*c).session).curw).window).active;
@@ -5147,32 +5143,20 @@ pub unsafe fn server_client_print(
                     let Some(line) = evbuffer_readln(evb) else {
                         break;
                     };
-                    window_copy_add(
-                        wp,
-                        1 as ::core::ffi::c_int,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        line.as_ptr().cast::<::core::ffi::c_char>(),
-                    );
+                    window_copy_add(wp, 1 as ::core::ffi::c_int, |out| {
+                        write_cstr(out, line.as_ptr().cast::<::core::ffi::c_char>())
+                    });
                 }
                 size = evbuffer_get_length(&*(evb));
                 if size != 0 as size_t {
                     line = evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
                         as *mut ::core::ffi::c_char;
-                    window_copy_add(
-                        wp,
-                        1 as ::core::ffi::c_int,
-                        b"%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-                        size as ::core::ffi::c_int,
-                        line,
-                    );
+                    window_copy_add(wp, 1 as ::core::ffi::c_int, |out| {
+                        write_cstr_n(out, line, (size as ::core::ffi::c_int) as i32)
+                    });
                 }
             } else {
-                window_copy_add(
-                    wp,
-                    0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    msg,
-                );
+                window_copy_add(wp, 0 as ::core::ffi::c_int, |out| write_cstr(out, msg));
             }
         }
     }

@@ -5,10 +5,10 @@ use crate::src::ffi::libc::{
     strerror,
 };
 use crate::src::format::bytes::format_bytes;
+use crate::src::format::bytes::try_format_message_with;
 use crate::src::shared::abi::*;
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::xmalloc::try_vasprintf_cstring;
 use std::ffi::{CStr, CString};
 use std::fmt;
 
@@ -72,16 +72,15 @@ pub unsafe fn log_toggle(mut name: *const ::core::ffi::c_char) {
 pub unsafe fn log_close() {
     log_file = None;
 }
-unsafe fn log_vwrite(
-    mut msg: *const ::core::ffi::c_char,
-    mut ap: ::core::ffi::VaList,
+unsafe fn log_message(
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     mut prefix: *const ::core::ffi::c_char,
 ) {
     let file = log_file_ptr();
     if file.is_null() {
         return;
     }
-    let Some(s) = try_vasprintf_cstring(msg, ap) else {
+    let Some(s) = try_format_message_with(write) else {
         return;
     };
     // strvis writes at most four bytes per input byte plus the terminator.
@@ -143,9 +142,8 @@ pub unsafe fn log_debug(args: fmt::Arguments<'_>) {
     message.push(0);
     log_write_escaped(CStr::from_bytes_until_nul(&message).unwrap(), c"");
 }
-pub unsafe extern "C" fn fatal(mut msg: *const ::core::ffi::c_char, mut args: ...) -> ! {
+pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
     let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
-    let mut ap: ::core::ffi::VaList;
     if snprintf(
         &raw mut tmp as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
@@ -155,16 +153,12 @@ pub unsafe extern "C" fn fatal(mut msg: *const ::core::ffi::c_char, mut args: ..
     {
         exit(1 as ::core::ffi::c_int);
     }
-    ap = args.clone();
-    log_vwrite(msg, ap, &raw mut tmp as *mut ::core::ffi::c_char);
+    log_message(write, &raw mut tmp as *mut ::core::ffi::c_char);
     exit(1 as ::core::ffi::c_int);
 }
-pub unsafe extern "C" fn fatalx(mut msg: *const ::core::ffi::c_char, mut args: ...) -> ! {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    log_vwrite(
-        msg,
-        ap,
+pub unsafe fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
+    log_message(
+        write,
         b"fatal: \0" as *const u8 as *const ::core::ffi::c_char,
     );
     exit(1 as ::core::ffi::c_int);
@@ -176,16 +170,19 @@ mod tests {
     use std::io::{Read, Seek, SeekFrom};
     use std::os::fd::FromRawFd;
 
-    unsafe extern "C" fn legacy_message(fmt: *const ::core::ffi::c_char, args: ...) -> Vec<u8> {
-        let raw = try_vasprintf_cstring(fmt, args.clone()).unwrap();
-        let mut escaped = vec![0u8; raw.as_bytes().len() * 4 + 1];
-        strvis(
-            escaped.as_mut_ptr().cast(),
-            raw.as_ptr(),
-            VIS_CSTYLE | VIS_NL | VIS_OCTAL | VIS_TAB,
-        );
-        escaped.truncate(escaped.iter().position(|&byte| byte == 0).unwrap());
-        escaped
+    // Keep the comparison against libc without defining a variadic Rust function.
+    macro_rules! legacy_message {
+        ($format:expr $(, $arg:expr)* $(,)?) => {{
+            let count = snprintf(std::ptr::null_mut(), 0, $format $(, $arg)*);
+            assert!(count >= 0);
+            let mut raw = vec![0u8; count as usize + 1];
+            assert_eq!(snprintf(raw.as_mut_ptr().cast(), raw.len(), $format $(, $arg)*), count);
+            let raw = CStr::from_ptr(raw.as_ptr().cast());
+            let mut escaped = vec![0u8; raw.to_bytes().len() * 4 + 1];
+            strvis(escaped.as_mut_ptr().cast(), raw.as_ptr(), VIS_CSTYLE | VIS_NL | VIS_OCTAL | VIS_TAB);
+            escaped.truncate(escaped.iter().position(|&byte| byte == 0).unwrap());
+            escaped
+        }};
     }
 
     fn message(args: fmt::Arguments<'_>) -> Vec<u8> {
@@ -206,17 +203,17 @@ mod tests {
                         "before {} after",
                         log_cstr(bytes.as_ptr().cast())
                     )),
-                    legacy_message(c"before %s after".as_ptr(), bytes.as_ptr()),
+                    legacy_message!(c"before %s after".as_ptr(), bytes.as_ptr()),
                     "C string byte {byte}"
                 );
                 assert_eq!(
                     message(format_args!("before {}7 after", log_byte(byte))),
-                    legacy_message(c"before %c7 after".as_ptr(), byte as i32),
+                    legacy_message!(c"before %c7 after".as_ptr(), byte as i32),
                     "character byte {byte}"
                 );
                 assert_eq!(
                     message(format_args!("before {} after", log_bytes(&bytes))),
-                    legacy_message(c"before %s after".as_ptr(), bytes.as_ptr()),
+                    legacy_message!(c"before %s after".as_ptr(), bytes.as_ptr()),
                     "slice byte {byte}"
                 );
             }
@@ -234,20 +231,20 @@ mod tests {
                         "[{}]",
                         log_cstr_n(bytes.as_ptr().cast(), precision)
                     )),
-                    legacy_message(c"[%.*s]".as_ptr(), precision, bytes.as_ptr())
+                    legacy_message!(c"[%.*s]".as_ptr(), precision, bytes.as_ptr())
                 );
             }
             let bytes = c"\xff\\\n";
             for precision in [-1, 0, 1, 2, 3, 20] {
                 assert_eq!(
                     message(format_args!("[{}]", log_cstr_n(bytes.as_ptr(), precision))),
-                    legacy_message(c"[%.*s]".as_ptr(), precision, bytes.as_ptr())
+                    legacy_message!(c"[%.*s]".as_ptr(), precision, bytes.as_ptr())
                 );
             }
             for width in [-8, -1, 0, 1, 8] {
                 assert_eq!(
                     message(format_args!("[{}]", log_cstr_width(bytes.as_ptr(), width))),
-                    legacy_message(c"[%*s]".as_ptr(), width, bytes.as_ptr())
+                    legacy_message!(c"[%*s]".as_ptr(), width, bytes.as_ptr())
                 );
             }
             for precision in [-1, 0, 1, 5, 6, 8] {
@@ -256,7 +253,7 @@ mod tests {
                         "[{}]",
                         log_cstr_n(std::ptr::null(), precision)
                     )),
-                    legacy_message(
+                    legacy_message!(
                         c"[%.*s]".as_ptr(),
                         precision,
                         std::ptr::null::<::core::ffi::c_char>()
@@ -276,13 +273,13 @@ mod tests {
             ] {
                 assert_eq!(
                     message(format_args!("{}", log_pointer(ptr))),
-                    legacy_message(c"%p".as_ptr(), ptr)
+                    legacy_message!(c"%p".as_ptr(), ptr)
                 );
             }
             for value in [0u64, 1, 0xff, u64::MAX] {
                 assert_eq!(
                     message(format_args!("{}", log_hex(value))),
-                    legacy_message(c"%#llx".as_ptr(), value)
+                    legacy_message!(c"%#llx".as_ptr(), value)
                 );
             }
         }
@@ -308,6 +305,10 @@ mod tests {
         unsafe {
             let _restore = RestoreLog((&raw mut log_file).replace(None));
             log_debug(format_args!("{}", MustNotFormat));
+            log_message(
+                |_| panic!("disabled logger invoked the message writer"),
+                c"fatal: ".as_ptr(),
+            );
         }
     }
 

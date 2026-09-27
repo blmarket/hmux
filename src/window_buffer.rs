@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strlen, strstr};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
@@ -338,13 +339,9 @@ unsafe fn window_buffer_draw(
                 cy.wrapping_add(i) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_nputs(
-                ctx,
-                sx as ssize_t,
-                &raw const grid_default_cell,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                buf.as_ptr().cast::<::core::ffi::c_char>(),
-            );
+            screen_write_nputs(ctx, sx as ssize_t, &raw const grid_default_cell, |out| {
+                write_cstr(out, buf.as_ptr().cast::<::core::ffi::c_char>())
+            });
         }
         if end == pdata.offset(psize as isize) {
             break;
@@ -539,8 +536,7 @@ unsafe fn window_buffer_get_key(
     format_add(
         ft,
         b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        line,
+        |out| write!(out, "{}", (line) as u32),
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
@@ -810,8 +806,7 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
         &raw mut ctx,
         box_w.wrapping_sub(2 as u_int) as ssize_t,
         &raw mut gc,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut text as *mut ::core::ffi::c_char,
+        |out| write_cstr(out, &raw mut text as *mut ::core::ffi::c_char),
     );
     screen_write_stop(&raw mut ctx);
 }

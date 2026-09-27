@@ -6,6 +6,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_g
 use crate::src::cmd::{cmd_append_argv, cmd_get_args};
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::{strcmp, strtol};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
     format_single_from_target_cstring,
@@ -173,27 +174,29 @@ unsafe fn cmd_display_menu_get_popup_pos(
         format_add(
             ft,
             b"popup_mouse_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*event).m.x,
+            |out| write!(out, "{}", ((*event).m.x) as u32),
         );
         format_add(
             ft,
             b"popup_mouse_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*event).m.y,
+            |out| write!(out, "{}", ((*event).m.y) as u32),
         );
     }
     format_add(
         ft,
         b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(*target).w).menu_last_px,
+        |out| write!(out, "{}", ((*(*target).w).menu_last_px) as u32),
     );
     format_add(
         ft,
         b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(*target).w).menu_last_py.wrapping_add(h),
+        |out| {
+            write!(
+                out,
+                "{}",
+                ((*(*target).w).menu_last_py.wrapping_add(h)) as u32
+            )
+        },
     );
     top = status_at_line(tc);
     if top != -(1 as ::core::ffi::c_int) {
@@ -233,22 +236,31 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_window_status_line_x\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*sr).start,
+                |out| write!(out, "{}", ((*sr).start) as u32),
             );
             if position == 0 as u_int {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    line.wrapping_add(1 as u_int).wrapping_add(h),
+                    |out| {
+                        write!(
+                            out,
+                            "{}",
+                            (line.wrapping_add(1 as u_int).wrapping_add(h)) as u32
+                        )
+                    },
                 );
             } else {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*tty).sy.wrapping_sub(lines).wrapping_add(line),
+                    |out| {
+                        write!(
+                            out,
+                            "{}",
+                            ((*tty).sy.wrapping_sub(lines).wrapping_add(line)) as u32
+                        )
+                    },
                 );
             }
         }
@@ -256,15 +268,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                lines.wrapping_add(h),
+                |out| write!(out, "{}", (lines.wrapping_add(h)) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tty).sy.wrapping_sub(lines),
+                |out| write!(out, "{}", ((*tty).sy.wrapping_sub(lines)) as u32),
             );
         }
     } else {
@@ -273,14 +283,12 @@ unsafe fn cmd_display_menu_get_popup_pos(
     format_add(
         ft,
         b"popup_width\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        |out| write!(out, "{}", (w) as u32),
     );
     format_add(
         ft,
         b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        h,
+        |out| write!(out, "{}", (h) as u32),
     );
     n = (*tty).sx.wrapping_sub(1 as u_int) as ::core::ffi::c_long / 2 as ::core::ffi::c_long
         - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
@@ -288,15 +296,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
         format_add(
             ft,
             b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
+            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
         );
     } else {
         format_add(
             ft,
             b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     n = (*tty)
@@ -308,15 +314,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
         format_add(
             ft,
             b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*tty).sy.wrapping_sub(h),
+            |out| write!(out, "{}", ((*tty).sy.wrapping_sub(h)) as u32),
         );
     } else {
         format_add(
             ft,
             b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     if (*event).m.valid != 0 {
@@ -325,15 +329,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
+                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
         n = (*event).m.y.wrapping_sub(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
@@ -341,15 +343,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tty).sy.wrapping_sub(h),
+                |out| write!(out, "{}", ((*tty).sy.wrapping_sub(h)) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
         n = (*event).m.y as ::core::ffi::c_long + h as ::core::ffi::c_long;
@@ -357,15 +357,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tty).sy.wrapping_sub(1 as u_int),
+                |out| write!(out, "{}", ((*tty).sy.wrapping_sub(1 as u_int)) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
         n = (*event).m.y.wrapping_sub(h) as ::core::ffi::c_long;
@@ -373,15 +371,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
+                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
     }
@@ -399,30 +395,32 @@ unsafe fn cmd_display_menu_get_popup_pos(
         format_add(
             ft,
             b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*tty).sy.wrapping_sub(h),
+            |out| write!(out, "{}", ((*tty).sy.wrapping_sub(h)) as u32),
         );
     } else {
         format_add(
             ft,
             b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     format_add(
         ft,
         b"popup_pane_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        ((top + (*wp).yoff) as u_int)
-            .wrapping_add((*wp).sy)
-            .wrapping_sub(oy),
+        |out| {
+            write!(
+                out,
+                "{}",
+                (((top + (*wp).yoff) as u_int)
+                    .wrapping_add((*wp).sy)
+                    .wrapping_sub(oy)) as u32
+            )
+        },
     );
     format_add(
         ft,
         b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wp).xoff as u_int).wrapping_sub(ox),
+        |out| write!(out, "{}", (((*wp).xoff as u_int).wrapping_sub(ox)) as u32),
     );
     n = (*wp).xoff as ::core::ffi::c_long + (*wp).sx as ::core::ffi::c_long
         - ox as ::core::ffi::c_long
@@ -431,15 +429,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
         format_add(
             ft,
             b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
+            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
         );
     } else {
         format_add(
             ft,
             b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     xp = args_get(args, 'x' as i32 as u_char);
@@ -614,27 +610,23 @@ unsafe fn cmd_display_menu_get_menu_pos(
         format_add(
             ft,
             b"popup_mouse_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            mouse_x,
+            |out| write!(out, "{}", (mouse_x) as ::core::ffi::c_long),
         );
         format_add(
             ft,
             b"popup_mouse_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            mouse_y,
+            |out| write!(out, "{}", (mouse_y) as ::core::ffi::c_long),
         );
     }
     format_add(
         ft,
         b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*window).menu_last_px,
+        |out| write!(out, "{}", ((*window).menu_last_px) as u32),
     );
     format_add(
         ft,
         b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*window).menu_last_py.wrapping_add(h),
+        |out| write!(out, "{}", ((*window).menu_last_py.wrapping_add(h)) as u32),
     );
     lines = status_line_size(tc);
     position = options_get_number(
@@ -668,22 +660,19 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_window_status_line_x\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*sr).start.wrapping_add(ox),
+                |out| write!(out, "{}", ((*sr).start.wrapping_add(ox)) as u32),
             );
             if position == 0 as u_int {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    h,
+                    |out| write!(out, "{}", (h) as u32),
                 );
             } else {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*window).sy,
+                    |out| write!(out, "{}", ((*window).sy) as u32),
                 );
             }
         }
@@ -691,29 +680,25 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                h,
+                |out| write!(out, "{}", (h) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*window).sy,
+                |out| write!(out, "{}", ((*window).sy) as u32),
             );
         }
     }
     format_add(
         ft,
         b"popup_width\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        |out| write!(out, "{}", (w) as u32),
     );
     format_add(
         ft,
         b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        h,
+        |out| write!(out, "{}", (h) as u32),
     );
     n = ((*window).sx as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
         - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
@@ -721,15 +706,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
         format_add(
             ft,
             b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
+            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
         );
     } else {
         format_add(
             ft,
             b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     n = ((*window).sy as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
@@ -738,15 +721,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
         format_add(
             ft,
             b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            max_y,
+            |out| write!(out, "{}", (max_y) as ::core::ffi::c_long),
         );
     } else {
         format_add(
             ft,
             b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     if (*event).m.valid != 0 {
@@ -755,15 +736,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
+                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
         n = mouse_y - h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
@@ -771,15 +750,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                max_y,
+                |out| write!(out, "{}", (max_y) as ::core::ffi::c_long),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
         n = mouse_y + h as ::core::ffi::c_long;
@@ -787,15 +764,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*window).sy.wrapping_sub(1 as u_int),
+                |out| write!(out, "{}", ((*window).sy.wrapping_sub(1 as u_int)) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
         n = mouse_y - h as ::core::ffi::c_long;
@@ -803,15 +778,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
+                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
             );
         } else {
             format_add(
                 ft,
                 b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
+                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
             );
         }
     }
@@ -820,28 +793,30 @@ unsafe fn cmd_display_menu_get_menu_pos(
         format_add(
             ft,
             b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            max_y,
+            |out| write!(out, "{}", (max_y) as ::core::ffi::c_long),
         );
     } else {
         format_add(
             ft,
             b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     format_add(
         ft,
         b"popup_pane_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wp).yoff as u_int).wrapping_add((*wp).sy),
+        |out| {
+            write!(
+                out,
+                "{}",
+                (((*wp).yoff as u_int).wrapping_add((*wp).sy)) as u32
+            )
+        },
     );
     format_add(
         ft,
         b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).xoff,
+        |out| write!(out, "{}", ((*wp).xoff) as u32),
     );
     n = (*wp).xoff as ::core::ffi::c_long + (*wp).sx as ::core::ffi::c_long
         - w as ::core::ffi::c_long;
@@ -849,15 +824,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
         format_add(
             ft,
             b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
+            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
         );
     } else {
         format_add(
             ft,
             b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            n,
+            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
     xp = args_get(args, 'x' as i32 as u_char);
@@ -1010,11 +983,10 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                     current_block = 1841672684692190573;
                 }
                 Err(error) => {
-                    cmdq_error(
-                        item,
-                        b"starting choice %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        error.message().as_ptr(),
-                    );
+                    cmdq_error(item, |out| {
+                        out.write_all(b"starting choice ")?;
+                        write_cstr(out, error.message().as_ptr())
+                    });
                     current_block = 17658167438033882251;
                 }
             }
@@ -1048,10 +1020,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 if *name as ::core::ffi::c_int == '\0' as i32 {
                     menu_add_item(menu, ::core::ptr::null::<menu_item>(), item, tc, target);
                 } else if count.wrapping_sub(i) < 2 as u_int {
-                    cmdq_error(
-                        item,
-                        b"not enough arguments\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    cmdq_error(item, |out| out.write_all(b"not enough arguments"));
                     current_block = 17658167438033882251;
                     break;
                 } else {
@@ -1071,10 +1040,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 17658167438033882251 => {}
                 _ => {
                     if menu.is_null() {
-                        cmdq_error(
-                            item,
-                            b"invalid menu arguments\0" as *const u8 as *const ::core::ffi::c_char,
-                        );
+                        cmdq_error(item, |out| out.write_all(b"invalid menu arguments"));
                     } else {
                         if (*menu).count == 0 as u_int {
                             current_block = 14896172439631163786;
@@ -1103,12 +1069,10 @@ unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                     &raw mut cause,
                                 ) as box_lines;
                                 if lines as ::core::ffi::c_int == -(1 as ::core::ffi::c_int) {
-                                    cmdq_error(
-                                        item,
-                                        b"menu-border-lines %s\0" as *const u8
-                                            as *const ::core::ffi::c_char,
-                                        cause.as_ref().unwrap().as_ptr(),
-                                    );
+                                    cmdq_error(item, |out| {
+                                        out.write_all(b"menu-border-lines ")?;
+                                        write_cstr(out, cause.as_ref().unwrap().as_ptr())
+                                    });
                                     current_block = 17658167438033882251;
                                 } else {
                                     current_block = 7245201122033322888;
@@ -1222,11 +1186,10 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     current_block = 17833034027772472439;
                 }
                 Err(error) => {
-                    cmdq_error(
-                        item,
-                        b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        error.message().as_ptr(),
-                    );
+                    cmdq_error(item, |out| {
+                        out.write_all(b"height ")?;
+                        write_cstr(out, error.message().as_ptr())
+                    });
                     current_block = 1988999557336856620;
                 }
             }
@@ -1250,11 +1213,10 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             current_block = 11042950489265723346;
                         }
                         Err(error) => {
-                            cmdq_error(
-                                item,
-                                b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
-                                error.message().as_ptr(),
-                            );
+                            cmdq_error(item, |out| {
+                                out.write_all(b"width ")?;
+                                write_cstr(out, error.message().as_ptr())
+                            });
                             current_block = 1988999557336856620;
                         }
                     }
@@ -1355,11 +1317,10 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 lines = options_find_choice(options_table_entry(oe), value, &raw mut cause)
                     as box_lines;
                 if let Some(cause) = cause.as_ref() {
-                    cmdq_error(
-                        item,
-                        b"popup-border-lines %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause.as_ptr(),
-                    );
+                    cmdq_error(item, |out| {
+                        out.write_all(b"popup-border-lines ")?;
+                        write_cstr(out, cause.as_ptr())
+                    });
                     current_block = 1988999557336856620;
                 } else {
                     current_block = 8151474771948790331;

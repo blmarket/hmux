@@ -863,11 +863,7 @@ unsafe fn window_tree_draw_session(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(
-            ctx,
-            &raw mut gc,
-            b"<\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b"<"));
     } else {
         (*data).left = -(1 as ::core::ffi::c_int);
     }
@@ -886,11 +882,7 @@ unsafe fn window_tree_draw_session(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(
-            ctx,
-            &raw mut gc,
-            b">\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b">"));
     } else {
         (*data).right = -(1 as ::core::ffi::c_int);
     }
@@ -1131,11 +1123,7 @@ unsafe fn window_tree_draw_window(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(
-            ctx,
-            &raw mut gc,
-            b"<\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b"<"));
     } else {
         (*data).left = -(1 as ::core::ffi::c_int);
     }
@@ -1154,11 +1142,7 @@ unsafe fn window_tree_draw_window(
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(
-            ctx,
-            &raw mut gc,
-            b">\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        screen_write_puts(ctx, &raw mut gc, |out| out.write_all(b">"));
     } else {
         (*data).right = -(1 as ::core::ffi::c_int);
     }
@@ -1567,8 +1551,7 @@ unsafe fn window_tree_get_key(
     format_add(
         ft,
         b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        line,
+        |out| write!(out, "{}", (line) as u32),
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);

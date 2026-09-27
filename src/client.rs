@@ -383,7 +383,7 @@ pub unsafe fn client_main(
         termname = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        fatal(b"pledge failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"pledge failed"));
     }
     if isatty(STDIN_FILENO) != 0 && *termname as ::core::ffi::c_int != '\0' as i32 {
         match tty_term_read_list(CStr::from_ptr(termname)) {
@@ -619,7 +619,7 @@ unsafe fn client_send_identify(
     }
     fd = dup(STDIN_FILENO);
     if fd == -(1 as ::core::ffi::c_int) {
-        fatal(b"dup failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"dup failed"));
     }
     proc_send(
         client_peer,
@@ -630,7 +630,7 @@ unsafe fn client_send_identify(
     );
     fd = dup(STDOUT_FILENO);
     if fd == -(1 as ::core::ffi::c_int) {
-        fatal(b"dup failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"dup failed"));
     }
     proc_send(
         client_peer,
@@ -699,7 +699,7 @@ unsafe fn client_exec(
         shellcmd,
         NULL as *mut ::core::ffi::c_char,
     );
-    fatal(b"execl failed\0" as *const u8 as *const ::core::ffi::c_char);
+    fatal(|out| out.write_all(b"execl failed"));
 }
 unsafe fn client_signal(sig: ProcessSignal) {
     let mut sigact: sigaction = sigaction {
@@ -789,7 +789,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                     ::core::ptr::null_mut::<sigaction>(),
                 ) != 0 as ::core::ffi::c_int
                 {
-                    fatal(b"sigaction failed\0" as *const u8 as *const ::core::ffi::c_char);
+                    fatal(|out| out.write_all(b"sigaction failed"));
                 }
                 proc_send(
                     client_peer,
@@ -830,7 +830,7 @@ unsafe fn client_dispatch(message: crate::src::shared::process::PeerMessage<'_>)
 unsafe fn client_dispatch_exit_message(mut data: *mut ::core::ffi::c_char, mut datalen: size_t) {
     let mut retval: ::core::ffi::c_int = 0;
     if datalen < ::core::mem::size_of::<::core::ffi::c_int>() as usize && datalen != 0 as size_t {
-        fatalx(b"bad MSG_EXIT size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad MSG_EXIT size"));
     }
     if datalen >= ::core::mem::size_of::<::core::ffi::c_int>() as usize {
         memcpy(
@@ -858,7 +858,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
     static mut pledge_applied: ::core::ffi::c_int = 0;
     if pledge_applied == 0 {
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            fatal(b"pledge failed\0" as *const u8 as *const ::core::ffi::c_char);
+            fatal(|out| out.write_all(b"pledge failed"));
         }
         pledge_applied = 1 as ::core::ffi::c_int;
     }
@@ -872,7 +872,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         207 => {
             if datalen != 0 as ssize_t {
-                fatalx(b"bad MSG_READY size\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_READY size"));
             }
             client_attached = 1 as ::core::ffi::c_int;
             proc_send(
@@ -885,7 +885,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         12 => {
             if datalen != 0 as ssize_t {
-                fatalx(b"bad MSG_VERSION size\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_VERSION size"));
             }
             fprintf(
                 stderr,
@@ -899,7 +899,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         218 => {
             if datalen as usize != ::core::mem::size_of::<uint64_t>() as usize {
-                fatalx(b"bad MSG_FLAGS string\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_FLAGS string"));
             }
             memcpy(
                 &raw mut client_flags as *mut ::core::ffi::c_void,
@@ -916,7 +916,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
                 || *data.offset((datalen - 1 as ssize_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
             {
-                fatalx(b"bad MSG_SHELL string\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_SHELL string"));
             }
             client_exec(data, shell_command);
         }
@@ -989,7 +989,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
     match imsg.hdr.type_0 {
         218 => {
             if datalen as usize != ::core::mem::size_of::<uint64_t>() as usize {
-                fatalx(b"bad MSG_FLAGS string\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_FLAGS string"));
             }
             memcpy(
                 &raw mut client_flags as *mut ::core::ffi::c_void,
@@ -1006,7 +1006,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 || *data.offset((datalen - 1 as ssize_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
             {
-                fatalx(b"bad MSG_DETACH string\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_DETACH string"));
             }
             client_exitsession = Some(std::ffi::CStr::from_ptr(data).to_owned());
             client_exittype = imsg.hdr.type_0 as msgtype;
@@ -1029,7 +1029,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                     != '\0' as i32
                 || strlen(data).wrapping_add(1 as size_t) == datalen as size_t
             {
-                fatalx(b"bad MSG_EXEC string\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_EXEC string"));
             }
             let command = std::ffi::CStr::from_ptr(data).to_owned();
             let shell = std::ffi::CStr::from_ptr(data.add(strlen(data) + 1)).to_owned();
@@ -1060,13 +1060,13 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
         }
         204 => {
             if datalen != 0 as ssize_t {
-                fatalx(b"bad MSG_EXITED size\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_EXITED size"));
             }
             proc_exit(client_proc);
         }
         210 => {
             if datalen != 0 as ssize_t {
-                fatalx(b"bad MSG_SHUTDOWN size\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_SHUTDOWN size"));
             }
             proc_send(
                 client_peer,
@@ -1080,7 +1080,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
         }
         214 => {
             if datalen != 0 as ssize_t {
-                fatalx(b"bad MSG_SUSPEND size\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_SUSPEND size"));
             }
             memset(
                 &raw mut sigact as *mut ::core::ffi::c_void,
@@ -1096,7 +1096,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 ::core::ptr::null_mut::<sigaction>(),
             ) != 0 as ::core::ffi::c_int
             {
-                fatal(b"sigaction failed\0" as *const u8 as *const ::core::ffi::c_char);
+                fatal(|out| out.write_all(b"sigaction failed"));
             }
             client_suspended = 1 as ::core::ffi::c_int;
             kill(getpid(), SIGTSTP);
@@ -1106,7 +1106,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 || *data.offset((datalen - 1 as ssize_t) as isize) as ::core::ffi::c_int
                     != '\0' as i32
             {
-                fatalx(b"bad MSG_LOCK string\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"bad MSG_LOCK string"));
             }
             system(data);
             proc_send(

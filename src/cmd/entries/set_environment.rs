@@ -3,6 +3,7 @@ use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::environ::{environ_clear, environ_set, environ_unset};
 use crate::src::ffi::libc::strchr;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -48,17 +49,11 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let mut expanded: Option<std::ffi::CString> = None;
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     if *name as ::core::ffi::c_int == '\0' as i32 {
-        cmdq_error(
-            item,
-            b"empty variable name\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"empty variable name"));
         return CMD_RETURN_ERROR;
     }
     if !strchr(name, '=' as i32).is_null() {
-        cmdq_error(
-            item,
-            b"variable name contains =\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"variable name contains ="));
         return CMD_RETURN_ERROR;
     }
     if args_count(args) < 2 as u_int {
@@ -76,16 +71,12 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     } else if (*target).s.is_null() {
         tflag = args_get(args, 't' as i32 as u_char);
         if !tflag.is_null() {
-            cmdq_error(
-                item,
-                b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                tflag,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"no such session: ")?;
+                write_cstr(out, tflag)
+            });
         } else {
-            cmdq_error(
-                item,
-                b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"no current session"));
         }
         retval = CMD_RETURN_ERROR;
         current_block = 2189724439242469808;
@@ -97,48 +88,27 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         224731115979188411 => {
             if args_has(args, 'u' as i32 as u_char) != 0 {
                 if !value.is_null() {
-                    cmdq_error(
-                        item,
-                        b"can't specify a value with -u\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                    );
+                    cmdq_error(item, |out| out.write_all(b"can't specify a value with -u"));
                     retval = CMD_RETURN_ERROR;
                 } else {
                     environ_unset(env, name);
                 }
             } else if args_has(args, 'r' as i32 as u_char) != 0 {
                 if !value.is_null() {
-                    cmdq_error(
-                        item,
-                        b"can't specify a value with -r\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                    );
+                    cmdq_error(item, |out| out.write_all(b"can't specify a value with -r"));
                     retval = CMD_RETURN_ERROR;
                 } else {
                     environ_clear(env, name);
                 }
             } else if value.is_null() {
-                cmdq_error(
-                    item,
-                    b"no value specified\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"no value specified"));
                 retval = CMD_RETURN_ERROR;
             } else if args_has(args, 'h' as i32 as u_char) != 0 {
-                environ_set(
-                    env,
-                    name,
-                    ENVIRON_HIDDEN,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    value,
-                );
+                environ_set(env, name, ENVIRON_HIDDEN, |out| write_cstr(out, value));
             } else {
-                environ_set(
-                    env,
-                    name,
-                    0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    value,
-                );
+                environ_set(env, name, 0 as ::core::ffi::c_int, |out| {
+                    write_cstr(out, value)
+                });
             }
         }
         _ => {}

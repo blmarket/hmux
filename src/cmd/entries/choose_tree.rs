@@ -202,10 +202,7 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(
-            item,
-            b"invalid sort order\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     if cmd_get_entry(self_0) == &raw const cmd_choose_buffer_entry {

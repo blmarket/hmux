@@ -1,3 +1,4 @@
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::log::log_cstr;
 // Private tree-storage implementation.  It owns the format-entry tree and
@@ -149,14 +150,14 @@ pub unsafe fn format_merge(mut ft: *mut format_tree, mut from: *mut format_tree)
     fe = format_entry_tree_minmax(&raw mut (*from).tree);
     while !fe.is_null() {
         if !(*fe).value.is_none() {
-            format_add(
-                ft,
-                ((*fe).key).as_ptr().cast_mut(),
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*fe).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            format_add(ft, ((*fe).key).as_ptr().cast_mut(), |out| {
+                write_cstr(
+                    out,
+                    ((*fe).value)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+            });
         }
         fe = format_entry_tree_next(&raw mut (*from).tree, fe);
     }
@@ -269,13 +270,12 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         cb(key.as_c_str(), value.as_c_str());
     }
 }
-pub unsafe extern "C" fn format_add(
+pub unsafe fn format_add(
     mut ft: *mut format_tree,
     mut key: *const ::core::ffi::c_char,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let value = xvasprintf_cstring(fmt, args.clone());
+    let value = format_message_with(write);
     format_add_value(ft, CStr::from_ptr(key), value);
 }
 
@@ -346,7 +346,11 @@ mod tests {
         static CALLS: AtomicUsize = AtomicUsize::new(0);
         fn replace_during_callback(ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
             CALLS.fetch_add(1, Ordering::Relaxed);
-            unsafe { format_add(ft.as_ptr(), c"owned".as_ptr(), c"temporary".as_ptr()) };
+            unsafe {
+                format_add(ft.as_ptr(), c"owned".as_ptr(), |out| {
+                    out.write_all(b"temporary")
+                })
+            };
             Some(CString::new(b"owned\xff".to_vec()).unwrap())
         }
         fn absent(_ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
@@ -390,7 +394,7 @@ mod tests {
             );
 
             format_add_owned_cb(ft, c"owned", replace_during_callback);
-            format_add(ft, c"owned".as_ptr(), c"literal".as_ptr());
+            format_add(ft, c"owned".as_ptr(), |out| out.write_all(b"literal"));
             format_entry_ensure_value(ft, entry);
             assert_eq!(
                 CStr::from_ptr(
@@ -433,9 +437,8 @@ mod tests {
         unsafe {
             let ft = format_create(::core::ptr::null_mut(), ::core::ptr::null_mut(), 0, 0);
             let key = b"custom\xff\0".as_ptr() as *const ::core::ffi::c_char;
-            let format = b"%s\0".as_ptr() as *const ::core::ffi::c_char;
             let first = b"first\xff\0".as_ptr() as *const ::core::ffi::c_char;
-            format_add(ft, key, format, first);
+            format_add(ft, key, |out| write_cstr(out, first));
             let mut probe = format_entry {
                 owned_cb: None,
                 key: ::std::ffi::CStr::from_ptr(key as *mut _).to_owned(),
@@ -454,15 +457,16 @@ mod tests {
                 b"first\xff"
             );
 
-            // The old value remains alive while vasprintf reads its argument.
-            format_add(
-                ft,
-                key,
-                b"%s-next\0".as_ptr() as *const _,
-                ((*entry).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            // The old value remains alive while the formatter reads its bytes.
+            format_add(ft, key, |out| {
+                write_cstr(
+                    out,
+                    ((*entry).value)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )?;
+                out.write_all(b"-next")
+            });
             assert_eq!(
                 format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
                 entry
@@ -506,12 +510,9 @@ mod tests {
             assert!((*entry).value.is_none());
             assert_eq!((*entry).time, 123);
 
-            format_add(
-                ft,
-                key,
-                format,
-                b"final\0".as_ptr() as *const ::core::ffi::c_char,
-            );
+            format_add(ft, key, |out| {
+                write_cstr(out, b"final\0".as_ptr() as *const ::core::ffi::c_char)
+            });
             assert_eq!(
                 format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
                 entry

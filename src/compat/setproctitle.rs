@@ -1,21 +1,17 @@
 use crate::src::compat::getprogname::getprogname;
-use crate::src::ffi::libc::{prctl, snprintf, strrchr, vsnprintf};
+use crate::src::ffi::libc::{prctl, snprintf, strrchr};
 use crate::src::shared::abi::*;
 
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub unsafe extern "C" fn setproctitle(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
+pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
     let mut title: [::core::ffi::c_char; 16] = [0; 16];
     let mut name: [::core::ffi::c_char; 16] = [0; 16];
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ap: ::core::ffi::VaList;
     let mut used: ::core::ffi::c_int = 0;
-    ap = args.clone();
-    vsnprintf(
-        &raw mut title as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-        fmt,
-        ap,
-    );
+    let formatted = crate::src::format::bytes::format_message_with(write);
+    for (dst, &byte) in title[..15].iter_mut().zip(formatted.as_bytes()) {
+        *dst = byte as ::core::ffi::c_char;
+    }
     used = snprintf(
         &raw mut name as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,

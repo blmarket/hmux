@@ -54,10 +54,9 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     sg_src = session_group_contains(src);
     sg_dst = session_group_contains(dst);
     if src != dst && !sg_src.is_null() && !sg_dst.is_null() && sg_src == sg_dst {
-        cmdq_error(
-            item,
-            b"can't move window, sessions are grouped\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"can't move window, sessions are grouped")
+        });
         return CMD_RETURN_ERROR;
     }
     if (*wl_dst).window == (*wl_src).window {

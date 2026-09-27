@@ -9,6 +9,7 @@ use crate::src::control::{
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
 use crate::src::ffi::libc::sscanf;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
@@ -100,10 +101,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             || y < WINDOW_MINIMUM as u_int
             || y > WINDOW_MAXIMUM as u_int
         {
-            cmdq_error(
-                item,
-                b"size too small or too big\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"size too small or too big"));
             return CMD_RETURN_ERROR;
         }
         log_debug(format_args!(
@@ -159,10 +157,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             &raw mut y,
         ) != 2 as ::core::ffi::c_int
     {
-        cmdq_error(
-            item,
-            b"bad size argument\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"bad size argument"));
         return CMD_RETURN_ERROR;
     }
     if x < WINDOW_MINIMUM as u_int
@@ -170,10 +165,7 @@ unsafe fn cmd_refresh_client_control_client_size(
         || y < WINDOW_MINIMUM as u_int
         || y > WINDOW_MAXIMUM as u_int
     {
-        cmdq_error(
-            item,
-            b"size too small or too big\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"size too small or too big"));
         return CMD_RETURN_ERROR;
     }
     tty_set_size(&raw mut (*tc).tty, x, y, 0 as u_int, 0 as u_int);
@@ -267,11 +259,10 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
                 &raw mut errstr,
             ) as u_int;
             if !errstr.is_null() {
-                cmdq_error(
-                    item,
-                    b"adjustment %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    errstr,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"adjustment ")?;
+                    write_cstr(out, errstr)
+                });
                 return CMD_RETURN_ERROR;
             }
         }
@@ -357,10 +348,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         }
         return CMD_RETURN_NORMAL;
     }
-    cmdq_error(
-        item,
-        b"not a control client\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    cmdq_error(item, |out| out.write_all(b"not a control client"));
     return CMD_RETURN_ERROR;
 }
 

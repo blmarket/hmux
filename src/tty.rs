@@ -4,6 +4,7 @@ use crate::src::ffi::libc::{
     strlen, strncmp, tcflush, tcgetattr, tcsetattr, time, usleep, write,
 };
 use crate::src::ffi::resolv::__b64_ntop;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{format_cstring, xformat};
 use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
@@ -136,7 +137,7 @@ pub unsafe fn tty_create_log() {
     if tty_log_fd != -(1 as ::core::ffi::c_int)
         && fcntl(tty_log_fd, F_SETFD, FD_CLOEXEC) == -(1 as ::core::ffi::c_int)
     {
-        fatal(b"fcntl failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"fcntl failed"));
     }
 }
 pub unsafe fn tty_init(mut tty: *mut tty, mut c: *mut client) -> ::core::ffi::c_int {
@@ -423,7 +424,7 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
     );
     (*tty).in_0 = evbuffer_new();
     if (*tty).in_0.is_null() {
-        fatal(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"out of memory"));
     }
     event_set(
         &raw mut (*tty).event_out,
@@ -433,7 +434,7 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
     );
     (*tty).out = evbuffer_new();
     if (*tty).out.is_null() {
-        fatal(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"out of memory"));
     }
     event_set(
         &raw mut (*tty).clipboard_timer,
@@ -1544,12 +1545,13 @@ unsafe fn tty_clamp_line(
         *rx = (*ctx).wsx.wrapping_sub(*x);
     }
     if *rx > nx {
-        fatalx(
-            b"%s: x too big, %u > %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"tty_clamp_line\0" as *const u8 as *const ::core::ffi::c_char,
-            *rx,
-            nx,
-        );
+        fatalx(|out| {
+            write_cstr(
+                out,
+                b"tty_clamp_line\0" as *const u8 as *const ::core::ffi::c_char,
+            )?;
+            write!(out, ": x too big, {} > {}", (*rx) as u32, (nx) as u32)
+        });
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -1702,12 +1704,13 @@ unsafe fn tty_clamp_area(
         *rx = (*ctx).wsx.wrapping_sub(*x);
     }
     if *rx > nx {
-        fatalx(
-            b"%s: x too big, %u > %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"tty_clamp_area\0" as *const u8 as *const ::core::ffi::c_char,
-            *rx,
-            nx,
-        );
+        fatalx(|out| {
+            write_cstr(
+                out,
+                b"tty_clamp_area\0" as *const u8 as *const ::core::ffi::c_char,
+            )?;
+            write!(out, ": x too big, {} > {}", (*rx) as u32, (nx) as u32)
+        });
     }
     if yoff >= (*ctx).woy && yoff.wrapping_add(ny) <= (*ctx).woy.wrapping_add((*ctx).wsy) {
         *j = 0 as u_int;
@@ -1733,12 +1736,13 @@ unsafe fn tty_clamp_area(
         *ry = (*ctx).wsy.wrapping_sub(*y);
     }
     if *ry > ny {
-        fatalx(
-            b"%s: y too big, %u > %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"tty_clamp_area\0" as *const u8 as *const ::core::ffi::c_char,
-            *ry,
-            ny,
-        );
+        fatalx(|out| {
+            write_cstr(
+                out,
+                b"tty_clamp_area\0" as *const u8 as *const ::core::ffi::c_char,
+            )?;
+            write!(out, ": y too big, {} > {}", (*ry) as u32, (ny) as u32)
+        });
     }
     return 1 as ::core::ffi::c_int;
 }

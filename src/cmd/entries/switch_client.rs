@@ -6,6 +6,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::environ::environ_update;
 use crate::src::ffi::libc::{getuid, strcmp, strcspn};
+use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::{key_bindings_get_table, key_bindings_unref_table};
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::server_client::{server_client_set_key_table, server_client_set_session};
@@ -114,10 +115,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
             uid = proc_get_peer_uid((*c).peer);
             if uid != getuid() {
-                cmdq_error(
-                    item,
-                    b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"client is read-only"));
                 return CMD_RETURN_ERROR;
             }
         }
@@ -131,11 +129,11 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     if !tablename.is_null() {
         table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
         if table.is_null() {
-            cmdq_error(
-                item,
-                b"table %s doesn't exist\0" as *const u8 as *const ::core::ffi::c_char,
-                tablename,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"table ")?;
+                write_cstr(out, tablename)?;
+                out.write_all(b" doesn't exist")
+            });
             return CMD_RETURN_ERROR;
         }
         crate::src::shared::rc::retain(table);
@@ -148,29 +146,20 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(
-            item,
-            b"invalid sort order\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
         s = session_next_session((*tc).session, &raw mut sort_crit);
         if s.is_null() {
-            cmdq_error(
-                item,
-                b"can't find next session\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         s = session_previous_session((*tc).session, &raw mut sort_crit);
         if s.is_null() {
-            cmdq_error(
-                item,
-                b"can't find previous session\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"can't find previous session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -180,10 +169,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             s = ::core::ptr::null_mut::<session>();
         }
         if s.is_null() {
-            cmdq_error(
-                item,
-                b"can't find last session\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"can't find last session"));
             return CMD_RETURN_ERROR;
         }
     } else {

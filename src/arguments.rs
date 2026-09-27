@@ -7,6 +7,7 @@ use crate::src::cmd::{
 };
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_cstr, log_debug};
 use crate::src::server_client::server_client_unref;
@@ -321,7 +322,7 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
         0 => Cow::Borrowed(CStr::from_bytes_with_nul_unchecked(b"\0")),
         1 => Cow::Borrowed(CStr::from_ptr(value.string_ptr())),
         2 => Cow::Owned(cmd_list_print_cstring(&*value.cmdlist(), 0)),
-        _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
+        _ => fatalx(|out| out.write_all(b"unexpected argument type")),
     }
 }
 pub unsafe fn args_create() -> *mut args {
@@ -573,9 +574,7 @@ pub unsafe fn args_parse(
             }
             let copied = match type_0 as ::core::ffi::c_uint {
                 0 => {
-                    fatalx(
-                        b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    fatalx(|out| out.write_all(b"unexpected argument type"));
                 }
                 1 => {
                     if (*value).type_0() as ::core::ffi::c_uint
@@ -993,7 +992,7 @@ pub unsafe fn args_string(mut args: *mut args, mut idx: u_int) -> *const ::core:
             (*value).cached = Some(printed);
             pointer
         }
-        _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
+        _ => fatalx(|out| out.write_all(b"unexpected argument type")),
     }
 }
 pub unsafe fn args_make_commands_now(
@@ -1014,13 +1013,14 @@ pub unsafe fn args_make_commands_now(
     );
     match args_make_commands(state, &Vec::new()) {
         Ok(commands) => cmdlist = commands,
-        Err(error) => cmdq_error(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            error
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
-        ),
+        Err(error) => cmdq_error(item, |out| {
+            write_cstr(
+                out,
+                error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            )
+        }),
     }
     args_make_commands_free(state);
     return cmdlist;
@@ -1058,7 +1058,7 @@ pub unsafe fn args_make_commands_prepare(
         cmd = (*value).string_ptr();
     } else {
         if default_command.is_null() {
-            fatalx(b"argument out of range\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"argument out of range"));
         }
         cmd = default_command;
     }
@@ -1144,7 +1144,7 @@ pub unsafe fn args_make_commands(
     match pr.status as ::core::ffi::c_uint {
         0 => Err(pr.error),
         1 => Ok(pr.cmdlist),
-        _ => fatalx(b"invalid parse return state\0" as *const u8 as *const ::core::ffi::c_char),
+        _ => fatalx(|out| out.write_all(b"invalid parse return state")),
     }
 }
 pub unsafe fn args_make_commands_free(mut state: *mut args_command_state) {

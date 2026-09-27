@@ -242,7 +242,7 @@ unsafe fn grid_extended_cell(
     if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
         grid_get_extended_cell(gl, gce, flags);
     } else if (*gce).c2rust_unnamed.offset >= (*gl).extdsize {
-        fatalx(b"offset too big\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"offset too big"));
     }
     (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_EXTENDED) as u_short;
     if (*gc).link != 0 as u_int {

@@ -4,6 +4,7 @@ use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::control::control_write;
 use crate::src::ffi::libc::{memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
+use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::grid::{
     grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_get_cell,
     grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line, grid_string_cells_bytes,
@@ -391,10 +392,7 @@ unsafe fn cmd_capture_pane_history(
         gd = wp.base.saved_grid;
         if gd.is_null() {
             if args_has(args, 'q' as i32 as u_char) == 0 {
-                cmdq_error(
-                    item,
-                    b"no alternate screen\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"no alternate screen"));
                 return None;
             }
             return Some(buf);
@@ -636,22 +634,20 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         // terminator also preserves control_write's first-NUL behavior.
         buf.push(0);
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(
-                c,
-                b"%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-                len as ::core::ffi::c_int,
-                buf.as_ptr().cast::<::core::ffi::c_char>(),
-            );
+            control_write(c, |out| {
+                write_cstr_n(
+                    out,
+                    buf.as_ptr().cast::<::core::ffi::c_char>(),
+                    (len as ::core::ffi::c_int) as i32,
+                )
+            });
         } else {
             if file_can_print(c) == 0 {
-                cmdq_error(
-                    item,
-                    b"can't write to client\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"can't write to client"));
                 return CMD_RETURN_ERROR;
             }
             file_print_buffer(c, buf.as_mut_ptr().cast(), len);
-            file_print(c, b"\n\0" as *const u8 as *const ::core::ffi::c_char);
+            file_print(c, |out| out.write_all(b"\n"));
         }
     } else {
         bufname = ::core::ptr::null::<::core::ffi::c_char>();
@@ -661,11 +657,9 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if paste_set_owned(buf.into_boxed_slice(), bufname, Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ref().unwrap().as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
     }

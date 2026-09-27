@@ -4,6 +4,7 @@ use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_fir
 use crate::src::cmd::queue::{cmdq_free_state, cmdq_new_state};
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::__ctype_toupper_loc;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
@@ -628,10 +629,14 @@ unsafe fn window_switch_run_command(
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                    |out| {
+                        write_cstr(
+                            out,
+                            error
+                                .as_ref()
+                                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                        )
+                    },
                 );
             }
         }

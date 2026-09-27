@@ -5,6 +5,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print_cstring};
 use crate::src::ffi::libc::strcmp;
+use crate::src::format::bytes::write_cstr;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::src::server::clients;
@@ -938,10 +939,10 @@ pub unsafe fn key_bindings_init() {
                         as *const _
                 )
             ));
-            fatalx(
-                b"bad default key: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                defaults[i as usize],
-            );
+            fatalx(|out| {
+                out.write_all(b"bad default key: ")?;
+                write_cstr(out, defaults[i as usize])
+            });
         }
         cmdq_append(
             ::core::ptr::null_mut::<client>(),
@@ -959,10 +960,7 @@ pub unsafe fn key_bindings_init() {
     );
 }
 unsafe fn key_bindings_read_only(mut item: *mut cmdq_item) -> cmd_retval {
-    cmdq_error(
-        item,
-        b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    cmdq_error(item, |out| out.write_all(b"client is read-only"));
     return CMD_RETURN_ERROR;
 }
 pub unsafe fn key_bindings_dispatch(

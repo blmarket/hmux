@@ -20,6 +20,7 @@ use crate::src::ffi::libc::{
     strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
@@ -208,26 +209,28 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
         event_payload_set_string(
             ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cmd.as_ptr(),
+            |out| write_cstr(out, cmd.as_ptr()),
         );
     } else if (*wp).shell.is_some() {
         event_payload_set_string(
             ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp)
-                .shell
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            |out| {
+                write_cstr(
+                    out,
+                    (*wp)
+                        .shell
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                )
+            },
         );
     }
     if !cwd.is_null() {
         event_payload_set_string(
             ep,
             b"pane_current_path\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cwd,
+            |out| write_cstr(out, cwd),
         );
     }
     if (*sc).flags & SPAWN_EMPTY != 0 {
@@ -631,8 +634,7 @@ pub unsafe fn spawn_pane(
         child,
         b"TMUX_PANE\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
-        b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp).id,
+        |out| write!(out, "%{}", ((*new_wp).id) as u32),
     );
     if !c.is_null() && (*c).session.is_null() {
         ee = environ_find(
@@ -644,10 +646,14 @@ pub unsafe fn spawn_pane(
                 child,
                 b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_int,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*ee).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                |out| {
+                    write_cstr(
+                        out,
+                        ((*ee).value)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                },
             );
         }
     }
@@ -661,8 +667,7 @@ pub unsafe fn spawn_pane(
             child,
             b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            _PATH_DEFPATH.as_ptr(),
+            |out| write_cstr(out, _PATH_DEFPATH.as_ptr()),
         );
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
@@ -679,11 +684,15 @@ pub unsafe fn spawn_pane(
         child,
         b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp)
-            .shell
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr()),
+        |out| {
+            write_cstr(
+                out,
+                (*new_wp)
+                    .shell
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            )
+        },
     );
     log_debug(format_args!(
         "{}: shell={}",
@@ -718,11 +727,13 @@ pub unsafe fn spawn_pane(
         )
     ));
     cmd_log_argv(&(*new_wp).argv, c"spawn_pane");
-    environ_log(
-        child,
-        b"%s: environment \0" as *const u8 as *const ::core::ffi::c_char,
-        b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    environ_log(child, |out| {
+        write_cstr(
+            out,
+            b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
+        )?;
+        out.write_all(b": environment ")
+    });
     memset(
         &raw mut ws as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -820,8 +831,7 @@ pub unsafe fn spawn_pane(
                     child,
                     b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
                     0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    actual_cwd,
+                    |out| write_cstr(out, actual_cwd),
                 );
             }
             if tcgetattr(STDIN_FILENO, &raw mut now) != 0 as ::core::ffi::c_int {

@@ -143,42 +143,27 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         activity = args_has(args, 'a' as i32 as u_char);
         if next != 0 {
             if session_next(s, activity) != 0 as ::core::ffi::c_int {
-                cmdq_error(
-                    item,
-                    b"no next window\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"no next window"));
                 return CMD_RETURN_ERROR;
             }
         } else if previous != 0 {
             if session_previous(s, activity) != 0 as ::core::ffi::c_int {
-                cmdq_error(
-                    item,
-                    b"no previous window\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"no previous window"));
                 return CMD_RETURN_ERROR;
             }
         } else if session_last(s) != 0 as ::core::ffi::c_int {
-            cmdq_error(
-                item,
-                b"no last window\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }
         cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
         server_redraw_session(s);
-        cmdq_insert_hook(
-            s,
-            item,
-            current,
-            b"after-select-window\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_insert_hook(s, item, current, |out| {
+            out.write_all(b"after-select-window")
+        });
     } else {
         if args_has(args, 'T' as i32 as u_char) != 0 && wl == (*s).curw {
             if session_last(s) != 0 as ::core::ffi::c_int {
-                cmdq_error(
-                    item,
-                    b"no last window\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
             }
             if (*current).s == s {
@@ -189,12 +174,9 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
             server_redraw_session(s);
         }
-        cmdq_insert_hook(
-            s,
-            item,
-            current,
-            b"after-select-window\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_insert_hook(s, item, current, |out| {
+            out.write_all(b"after-select-window")
+        });
     }
     if !c.is_null() && !(*c).session.is_null() {
         (*(*(*s).curw).window).latest = c as *mut ::core::ffi::c_void;

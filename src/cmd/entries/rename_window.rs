@@ -1,6 +1,7 @@
 use crate::src::arguments::args_string;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::options::options_set_number;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
@@ -43,11 +44,10 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut wl: *mut winlink = (*target).wl;
     let name = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     if check_name(name.as_ptr()) == 0 {
-        cmdq_error(
-            item,
-            b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            name.as_ptr(),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"invalid window name: ")?;
+            write_cstr(out, name.as_ptr())
+        });
         return CMD_RETURN_ERROR;
     }
     window_set_name((*wl).window, name.as_ptr(), 0 as ::core::ffi::c_int);

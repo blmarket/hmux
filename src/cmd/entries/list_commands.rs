@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::cmd::{cmd_find, cmd_get_args, cmd_table};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
@@ -59,28 +60,21 @@ unsafe fn cmd_list_single_command(
     format_add(
         ft,
         b"command_list_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*entry).name.as_ptr(),
+        |out| write_cstr(out, (*entry).name.as_ptr()),
     );
     format_add(
         ft,
         b"command_list_alias\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*entry).alias.unwrap_or(c"").as_ptr(),
+        |out| write_cstr(out, (*entry).alias.unwrap_or(c"").as_ptr()),
     );
     format_add(
         ft,
         b"command_list_usage\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*entry).usage.as_ptr(),
+        |out| write_cstr(out, (*entry).usage.as_ptr()),
     );
     let line = format_expand_cstring(ft, template);
     if !line.is_empty() {
-        cmdq_print(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            line.as_ptr(),
-        );
+        cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
     }
 }
 unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
@@ -120,11 +114,7 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
                 entry = found;
             }
             Err(cause) => {
-                cmdq_error(
-                    item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause.as_ptr(),
-                );
+                cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
                 format_free(ft);
                 return CMD_RETURN_ERROR;
             }

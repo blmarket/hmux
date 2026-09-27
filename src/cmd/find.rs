@@ -3,6 +3,7 @@ use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::environ_find;
 use crate::src::ffi::libc::{fnmatch, memset, strchr, strcmp, strlcat, strlen, strncmp};
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
@@ -1237,17 +1238,14 @@ pub unsafe fn cmd_find_target(
         current_block = 1836292691772056875;
     } else {
         if !flags & CMD_FIND_QUIET != 0 {
-            cmdq_error(
-                item,
-                b"no current target\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"no current target"));
         }
         current_block = 5193823237153215208;
     }
     match current_block {
         1836292691772056875 => {
             if cmd_find_valid_state((*fs).current) == 0 {
-                fatalx(b"invalid current find state\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"invalid current find state"));
             }
             if target.is_null() || *target as ::core::ffi::c_int == '\0' as i32 {
                 current_block = 6284300254771030961;
@@ -1264,10 +1262,7 @@ pub unsafe fn cmd_find_target(
             {
                 c = cmdq_get_client(item);
                 if c.is_null() || (*c).session.is_null() {
-                    cmdq_error(
-                        item,
-                        b"no current client\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    cmdq_error(item, |out| out.write_all(b"no current client"));
                     current_block = 5193823237153215208;
                 } else {
                     (*fs).wl = (*(*c).session).curw;
@@ -1316,10 +1311,7 @@ pub unsafe fn cmd_find_target(
                 }
                 if (*fs).wp.is_null() {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(
-                            item,
-                            b"no mouse target\0" as *const u8 as *const ::core::ffi::c_char,
-                        );
+                        cmdq_error(item, |out| out.write_all(b"no mouse target"));
                     }
                     current_block = 5193823237153215208;
                 } else {
@@ -1334,10 +1326,7 @@ pub unsafe fn cmd_find_target(
             {
                 if server_check_marked() == 0 {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(
-                            item,
-                            b"no marked target\0" as *const u8 as *const ::core::ffi::c_char,
-                        );
+                        cmdq_error(item, |out| out.write_all(b"no marked target"));
                     }
                     current_block = 5193823237153215208;
                 } else {
@@ -1486,22 +1475,17 @@ pub unsafe fn cmd_find_target(
                 }
                 if !pane.is_null() && flags & CMD_FIND_WINDOW_INDEX != 0 {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(
-                            item,
-                            b"can't specify pane here\0" as *const u8 as *const ::core::ffi::c_char,
-                        );
+                        cmdq_error(item, |out| out.write_all(b"can't specify pane here"));
                     }
                     current_block = 5193823237153215208;
                 } else {
                     if !session.is_null() {
                         if cmd_find_get_session(fs, session) != 0 as ::core::ffi::c_int {
                             if !flags & CMD_FIND_QUIET != 0 {
-                                cmdq_error(
-                                    item,
-                                    b"can't find session: %s\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                    session,
-                                );
+                                cmdq_error(item, |out| {
+                                    out.write_all(b"can't find session: ")?;
+                                    write_cstr(out, session)
+                                });
                             }
                             current_block = 5193823237153215208;
                         } else if window.is_null() && pane.is_null() {
@@ -1572,22 +1556,18 @@ pub unsafe fn cmd_find_target(
                             match current_block {
                                 2743676411188200708 => {
                                     if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(
-                                            item,
-                                            b"can't find window: %s\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            window,
-                                        );
+                                        cmdq_error(item, |out| {
+                                            out.write_all(b"can't find window: ")?;
+                                            write_cstr(out, window)
+                                        });
                                     }
                                 }
                                 _ => {
                                     if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(
-                                            item,
-                                            b"can't find pane: %s\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            pane,
-                                        );
+                                        cmdq_error(item, |out| {
+                                            out.write_all(b"can't find pane: ")?;
+                                            write_cstr(out, pane)
+                                        });
                                     }
                                 }
                             }
@@ -1672,10 +1652,7 @@ unsafe fn cmd_find_current_client(
         }
     }
     if found.is_null() && !item.is_null() && quiet == 0 {
-        cmdq_error(
-            item,
-            b"no current client\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"no current client"));
     }
     log_debug(format_args!(
         "{}: no target, return {}",
@@ -1747,11 +1724,10 @@ pub unsafe fn cmd_find_client(
         c = clients.next(c);
     }
     if c.is_null() && quiet == 0 {
-        cmdq_error(
-            item,
-            b"can't find client: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            copy_ptr,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"can't find client: ")?;
+            write_cstr(out, copy_ptr)
+        });
     }
     drop(copy);
     log_debug(format_args!(

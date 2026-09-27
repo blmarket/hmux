@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::src::cmd::{cmd_get_args, cmd_list_print_cstring};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
@@ -138,53 +139,62 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         format_add(
             ft,
             b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-            b"1\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"1"),
         );
     } else {
         format_add(
             ft,
             b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-            b"0\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"0"),
         );
     }
     if bd.note.is_some() {
         format_add(
             ft,
             b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            bd.note
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            |out| {
+                write_cstr(
+                    out,
+                    bd.note
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+            },
         );
     } else {
         format_add(
             ft,
             b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
     let key_string = key_string_format(bd.key, false);
     format_add(
         ft,
         b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        // format_add copies the bytes synchronously; this pointer cannot escape.
-        prefix.as_ptr(),
+        |out| {
+            write_cstr(
+                out, // format_add copies the bytes synchronously; this pointer cannot escape.
+                prefix.as_ptr(),
+            )
+        },
     );
     format_add(
         ft,
         b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        bd.tablename
-            .as_ref()
-            .map_or(::core::ptr::null(), |s| s.as_ptr()),
+        |out| {
+            write_cstr(
+                out,
+                bd.tablename
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
+            )
+        },
     );
     format_add(
         ft,
         b"key_string\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        key_string.as_ptr(),
+        |out| write_cstr(out, key_string.as_ptr()),
     );
     let command = cmd_list_print_cstring(
         &*bd.cmdlist,
@@ -193,8 +203,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     format_add(
         ft,
         b"key_command\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        command.as_ptr(),
+        |out| write_cstr(out, command.as_ptr()),
     );
 }
 unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
@@ -219,11 +228,10 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !keystr.is_null() {
         only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-            cmdq_error(
-                item,
-                b"invalid key: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                keystr,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"invalid key: ")?;
+                write_cstr(out, keystr)
+            });
             return CMD_RETURN_ERROR;
         }
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
@@ -233,10 +241,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(
-            item,
-            b"invalid sort order\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
@@ -244,11 +249,11 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !tablename.is_null() {
         table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
         if table.is_null() {
-            cmdq_error(
-                item,
-                b"table %s doesn't exist\0" as *const u8 as *const ::core::ffi::c_char,
-                tablename,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"table ")?;
+                write_cstr(out, tablename)?;
+                out.write_all(b" doesn't exist")
+            });
             return CMD_RETURN_ERROR;
         }
     }
@@ -273,11 +278,10 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);
     }
     if filter_key != 0 && bindings.is_empty() {
-        cmdq_error(
-            item,
-            b"unknown key: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            keystr,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"unknown key: ")?;
+            write_cstr(out, keystr)
+        });
         return CMD_RETURN_ERROR;
     }
     if single != 0 {
@@ -299,29 +303,31 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     format_add(
         ft,
         b"notes_only\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        notes_only,
+        |out| write!(out, "{}", (notes_only) as i32),
     );
     format_add(
         ft,
         b"key_has_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        key_bindings_has_repeat(
-            bindings.as_mut_ptr(),
-            u_int::try_from(bindings.len()).expect("too many key bindings to list"),
-        ),
+        |out| {
+            write!(
+                out,
+                "{}",
+                (key_bindings_has_repeat(
+                    bindings.as_mut_ptr(),
+                    u_int::try_from(bindings.len()).expect("too many key bindings to list"),
+                )) as i32
+            )
+        },
     );
     format_add(
         ft,
         b"key_string_width\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd_list_keys_get_width(&bindings),
+        |out| write!(out, "{}", (cmd_list_keys_get_width(&bindings)) as u32),
     );
     format_add(
         ft,
         b"key_table_width\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd_list_keys_get_table_width(&bindings),
+        |out| write!(out, "{}", (cmd_list_keys_get_table_width(&bindings)) as u32),
     );
     for &bd in &bindings {
         cmd_list_keys_format_add_key_binding(ft, &*bd, &prefix);
@@ -333,15 +339,10 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                line.as_ptr(),
+                |out| write_cstr(out, line.as_ptr()),
             );
         } else if !line.is_empty() {
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                line.as_ptr(),
-            );
+            cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
         }
         if single != 0 {
             break;

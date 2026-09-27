@@ -1,4 +1,5 @@
 use crate::src::events::events_fire_winlink;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_debug, log_hex};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
@@ -377,8 +378,10 @@ unsafe fn alerts_set_message(
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
-                        b"%s in current window\0" as *const u8 as *const ::core::ffi::c_char,
-                        type_0,
+                        |out| {
+                            write_cstr(out, type_0)?;
+                            out.write_all(b" in current window")
+                        },
                     );
                 } else {
                     status_message_set(
@@ -387,9 +390,10 @@ unsafe fn alerts_set_message(
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
-                        b"%s in window %d\0" as *const u8 as *const ::core::ffi::c_char,
-                        type_0,
-                        (*wl).idx,
+                        |out| {
+                            write_cstr(out, type_0)?;
+                            write!(out, " in window {}", ((*wl).idx) as i32)
+                        },
                     );
                 }
             }

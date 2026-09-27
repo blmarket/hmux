@@ -6,6 +6,7 @@ use crate::src::cmd::queue::{
     cmdq_print,
 };
 use crate::src::events::events_fire_window;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::layout::{
     layout_close_pane, layout_fix_offsets, layout_fix_panes, layout_floating_args_parse,
@@ -88,26 +89,20 @@ unsafe fn cmd_break_pane_float(
     let mut lines: pane_lines = window_get_pane_lines(w);
     let mut fg: *mut layout_geometry = &raw mut (*lc).fg;
     if window_pane_is_floating(wp) != 0 {
-        cmdq_error(
-            item,
-            b"pane is already floating\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"pane is already floating"));
         return CMD_RETURN_ERROR;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 {
-        cmdq_error(
-            item,
-            b"can't float a pane while window is zoomed\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"can't float a pane while window is zoomed")
+        });
         return CMD_RETURN_ERROR;
     }
     if let Err(cause) = layout_floating_args_parse(item, args, lines, w, fg) {
-        cmdq_error(
-            item,
-            b"failed to float pane: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause.as_ptr(),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"failed to float pane: ")?;
+            write_cstr(out, cause.as_ptr())
+        });
         return CMD_RETURN_ERROR;
     }
     layout_remove_tile(w, lc);
@@ -146,21 +141,17 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = args_get(args, 'n' as i32 as u_char);
     if wp == (*w).modal {
-        cmdq_error(
-            item,
-            b"pane is modal\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'W' as i32 as u_char) != 0 {
         return cmd_break_pane_float(item, args, w, wp);
     }
     if !name.is_null() && check_name(name) == 0 {
-        cmdq_error(
-            item,
-            b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"invalid window name: ")?;
+            write_cstr(out, name)
+        });
         return CMD_RETURN_ERROR;
     }
     before = args_has(args, 'b' as i32 as u_char);
@@ -184,11 +175,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             0 as ::core::ffi::c_int,
             (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
         ) {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                link_error.as_ptr(),
-            );
+            cmdq_error(item, |out| write_cstr(out, link_error.as_ptr()));
             return CMD_RETURN_ERROR;
         }
         if !name.is_null() {
@@ -209,11 +196,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if idx != -(1 as ::core::ffi::c_int)
             && !winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_null()
         {
-            cmdq_error(
-                item,
-                b"index in use: %d\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
-            );
+            cmdq_error(item, |out| write!(out, "index in use: {}", (idx) as i32));
             return CMD_RETURN_ERROR;
         }
         server_client_remove_pane(wp);
@@ -254,7 +237,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         wl = match session_attach(dst_s, w, idx) {
             Ok(wl) => wl,
             Err(error) => {
-                cmdq_error(item, c"%s".as_ptr(), error.as_ptr());
+                cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
                 return CMD_RETURN_ERROR;
             }
         };
@@ -289,11 +272,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             template = BREAK_PANE_TEMPLATE.as_ptr();
         }
         let cp = format_single_cstring(item, template, tc, dst_s, wl, wp);
-        cmdq_print(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cp.as_ptr(),
-        );
+        cmdq_print(item, |out| write_cstr(out, cp.as_ptr()));
     }
     return CMD_RETURN_NORMAL;
 }

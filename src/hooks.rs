@@ -19,6 +19,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::memset;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_expand_cstring, format_free,
     format_log_debug, format_merge,
@@ -251,11 +252,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 match pr.status as ::core::ffi::c_uint {
                     0 => {
                         if let Some(error) = pr.error.as_ref() {
-                            cmdq_error(
-                                item,
-                                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                error.as_ptr(),
-                            );
+                            cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
                         }
                     }
                     1 => {
@@ -310,8 +307,7 @@ unsafe fn hooks_insert_event(
     format_add(
         ft,
         b"hook\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
+        |out| write_cstr(out, name),
     );
     format_log_debug(
         ft,
@@ -435,8 +431,7 @@ pub unsafe fn hooks_run(mut item: *mut cmdq_item, mut name: *const ::core::ffi::
     format_add(
         hd.formats,
         b"hook\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
+        |out| write_cstr(out, name),
     );
     format_log_debug(
         hd.formats,
@@ -511,30 +506,26 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         event_payload_set_string(
             ep,
             b"value\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            change.value,
+            |out| write_cstr(out, change.value),
         );
     } else {
         event_payload_set_string(
             ep,
             b"value\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
     if !change.last.is_null() {
         event_payload_set_string(
             ep,
             b"last\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            change.last,
+            |out| write_cstr(out, change.last),
         );
     } else {
         event_payload_set_string(
             ep,
             b"last\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
     if !change.c.is_null() {
@@ -593,13 +584,9 @@ pub unsafe fn hooks_monitor_add(
     hooks_monitor_remove(oo, name);
     o = options_get_only(oo, name);
     if o.is_null() {
-        o = options_set_string(
-            oo,
-            name,
-            0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        o = options_set_string(oo, name, 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
+        });
     }
     hm = Box::into_raw(Box::new(hooks_monitor {
         oo,

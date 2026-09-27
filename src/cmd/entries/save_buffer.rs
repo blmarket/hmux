@@ -3,6 +3,7 @@ use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_pr
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::ffi::libc::strerror;
 use crate::src::file::file_write_with_cmdq_wait;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::fatalx;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
@@ -78,12 +79,11 @@ unsafe fn cmd_save_buffer_done(
         return;
     }
     if error != 0 as ::core::ffi::c_int {
-        cmdq_error(
-            item,
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(error),
-            path.map_or(::core::ptr::null(), CStr::as_ptr),
-        );
+        cmdq_error(item, |out| {
+            write_cstr(out, strerror(error))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
+        });
     }
     cmdq_continue(item);
 }
@@ -99,20 +99,16 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if bufname.is_null() {
         pb = paste_get_top(None);
         if pb.is_null() {
-            cmdq_error(
-                item,
-                b"no buffers\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"no buffers"));
             return CMD_RETURN_ERROR;
         }
     } else {
         pb = paste_get_name(bufname);
         if pb.is_null() {
-            cmdq_error(
-                item,
-                b"no buffer %s\0" as *const u8 as *const ::core::ffi::c_char,
-                bufname,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"no buffer ")?;
+                write_cstr(out, bufname)
+            });
             return CMD_RETURN_ERROR;
         }
     }
@@ -122,7 +118,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if !(*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             evb = evbuffer_new();
             if evb.is_null() {
-                fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"out of memory"));
             }
             evbuffer_add(evb, bufdata as *const ::core::ffi::c_void, bufsize);
             cmdq_print_data(item, evb);

@@ -13,6 +13,8 @@ use crate::src::ffi::libc::{
     strcspn, strftime, strlcat, strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::view::grid_view_get_cell;
@@ -81,7 +83,6 @@ use crate::src::window_copy::{
     window_copy_get_hyperlink_cstring, window_copy_get_line_cstring, window_copy_get_word_cstring,
 };
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::NULL_0;
@@ -307,34 +308,33 @@ unsafe fn format_logging(mut ft: *mut format_tree) -> ::core::ffi::c_int {
     return (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
         as ::core::ffi::c_int;
 }
-unsafe extern "C" fn format_log1(
+unsafe fn format_log1(
     mut es: *mut format_expand_state,
     mut from: *const ::core::ffi::c_char,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut ft: *mut format_tree = (*es).ft;
-    let mut ap: ::core::ffi::VaList;
     static mut spaces: [::core::ffi::c_char; 11] =
         unsafe { ::core::mem::transmute::<[u8; 11], [::core::ffi::c_char; 11]>(*b"          \0") };
     if format_logging(ft) == 0 {
         return;
     }
-    ap = args.clone();
-    let s = xvasprintf_cstring(fmt, ap);
+    let s = format_message_with(write);
     log_debug(format_args!(
         "{}: {}",
         log_cstr((from) as *const _),
         log_cstr((s.as_ptr()) as *const _)
     ));
     if !(*ft).item.is_null() && (*ft).flags & FORMAT_VERBOSE != 0 {
-        cmdq_print(
-            (*ft).item,
-            b"#%.*s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*es).loop_0,
-            &raw const spaces as *const ::core::ffi::c_char,
-            s.as_ptr(),
-        );
+        cmdq_print((*ft).item, |out| {
+            out.write_all(b"#")?;
+            write_cstr_n(
+                out,
+                &raw const spaces as *const ::core::ffi::c_char,
+                ((*es).loop_0) as i32,
+            )?;
+            write_cstr(out, s.as_ptr())
+        });
     }
 }
 unsafe fn format_copy_state(

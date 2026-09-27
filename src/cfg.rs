@@ -8,6 +8,8 @@ use crate::src::cmd::queue::{
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
 use crate::src::ffi::libc::{__errno_location, fopen, strerror};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
@@ -30,7 +32,6 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -133,11 +134,11 @@ pub unsafe fn load_cfg(
         if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        cfg_add_cause(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            path,
-            strerror(*__errno_location()),
-        );
+        cfg_add_cause(|out| {
+            write_cstr(out, path)?;
+            out.write_all(b": ")?;
+            write_cstr(out, strerror(*__errno_location()))
+        });
         return -(1 as ::core::ffi::c_int);
     }
     let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
@@ -151,12 +152,14 @@ pub unsafe fn load_cfg(
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        cfg_add_cause(
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            pr.error
-                .as_ref()
-                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-        );
+        cfg_add_cause(|out| {
+            write_cstr(
+                out,
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+            )
+        });
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
@@ -227,12 +230,14 @@ pub unsafe fn load_cfg_from_buffer(
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        cfg_add_cause(
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            pr.error
-                .as_ref()
-                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-        );
+        cfg_add_cause(|out| {
+            write_cstr(
+                out,
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+            )
+        });
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
@@ -267,10 +272,8 @@ pub unsafe fn load_cfg_from_buffer(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe extern "C" fn cfg_add_cause(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let msg = xvasprintf_cstring(fmt, ap);
+pub unsafe fn cfg_add_cause(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+    let msg = format_message_with(write);
     CFG_CAUSES.lock().unwrap().push_back(msg);
 }
 
@@ -294,17 +297,12 @@ pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
     let mut c: *mut client = cmdq_get_client(item);
     cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_notify_write(
-                c,
-                b"%%config-error %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ptr(),
-            );
+            control_notify_write(c, |out| {
+                out.write_all(b"%config-error ")?;
+                write_cstr(out, cause.as_ptr())
+            });
         } else {
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ptr(),
-            );
+            cmdq_print(item, |out| write_cstr(out, cause.as_ptr()));
         }
     });
 }
@@ -317,11 +315,10 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
     }
     if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         cfg_drain_causes(|cause| {
-            control_notify_write(
-                c,
-                b"%%config-error %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ptr(),
-            );
+            control_notify_write(c, |out| {
+                out.write_all(b"%config-error ")?;
+                write_cstr(out, cause.as_ptr())
+            });
         });
     } else {
         if s.is_null() {
@@ -347,12 +344,9 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
             );
         }
         cfg_drain_causes(|cause| {
-            window_copy_add(
-                wp,
-                0 as ::core::ffi::c_int,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ptr(),
-            );
+            window_copy_add(wp, 0 as ::core::ffi::c_int, |out| {
+                write_cstr(out, cause.as_ptr())
+            });
         });
     }
 }
@@ -360,24 +354,27 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
 #[cfg(test)]
 mod tests {
     use super::{cfg_add_cause, cfg_drain_causes, cfg_test_take_causes, CFG_TEST_LOCK};
+    use crate::src::format::bytes::write_cstr;
 
     #[test]
     fn causes_keep_c_string_bytes_and_drain_reentrant_additions_in_order() {
         let _guard = CFG_TEST_LOCK.lock().unwrap();
         unsafe {
             let _ = cfg_test_take_causes();
-            cfg_add_cause(c"%s:%u".as_ptr(), c"first".as_ptr(), 7u32);
-            cfg_add_cause(
-                c"%s".as_ptr(),
-                b"second\xff\0".as_ptr().cast::<::core::ffi::c_char>(),
-            );
+            cfg_add_cause(|out| {
+                write_cstr(out, c"first".as_ptr())?;
+                write!(out, ":{}", (7u32) as u32)
+            });
+            cfg_add_cause(|out| {
+                write_cstr(out, b"second\xff\0".as_ptr().cast::<::core::ffi::c_char>())
+            });
         }
 
         let mut actual = Vec::new();
         cfg_drain_causes(|cause| {
             actual.push(cause.to_bytes().to_vec());
             if actual.len() == 1 {
-                unsafe { cfg_add_cause(c"%s".as_ptr(), c"third".as_ptr()) };
+                unsafe { cfg_add_cause(|out| write_cstr(out, c"third".as_ptr())) };
             }
         });
         assert_eq!(actual, [b"first:7".as_slice(), b"second\xff", b"third"]);

@@ -19,12 +19,14 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_add, format_add_cstr, format_create, format_free, format_merge};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
-use crate::src::reactor::{evbuffer_add_vprintf, evbuffer_free, evbuffer_new};
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_free, evbuffer_new};
 use crate::src::server::server_add_message;
 use crate::src::server_client::{server_client_print, server_client_unref};
 use crate::src::shared::abi::*;
@@ -53,7 +55,6 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 pub const CMDQ_CALLBACK: cmdq_type = 1;
@@ -187,7 +188,7 @@ pub unsafe fn cmdq_new() -> *mut cmdq_list {
 }
 pub unsafe fn cmdq_free(mut queue: *mut cmdq_list) {
     if !(*queue).list.is_empty() {
-        fatalx(b"queue not empty\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"queue not empty"));
     }
     drop(Box::from_raw(queue));
 }
@@ -306,8 +307,7 @@ pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_t
         format_add(
             ft,
             b"command\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*entry).name.as_ptr(),
+            |out| write_cstr(out, (*entry).name.as_ptr()),
         );
     }
     if !(*(*item).state).formats.is_null() {
@@ -390,19 +390,17 @@ pub unsafe fn cmdq_insert_after(
     }
     return after;
 }
-pub unsafe extern "C" fn cmdq_insert_hook(
+pub unsafe fn cmdq_insert_hook(
     _s: *mut session,
     mut item: *mut cmdq_item,
     mut current: *mut cmd_find_state,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args_0: *mut args = cmd_get_args(cmd);
     let mut ae: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
-    let mut ap: ::core::ffi::VaList;
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut flag: ::core::ffi::c_char = 0;
     let mut i: u_int = 0;
@@ -410,8 +408,7 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     if (*(*item).state).flags & CMDQ_STATE_NOHOOKS != 0 {
         return;
     }
-    ap = args.clone();
-    let name = xvasprintf_cstring(fmt, ap);
+    let name = format_message_with(write);
     ep = event_payload_create();
     if !current.is_null() {
         event_payload_set_target(ep, current);
@@ -425,18 +422,14 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     event_payload_set_string(
         ep,
         b"arguments\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        arguments.as_ptr(),
+        |out| write_cstr(out, arguments.as_ptr()),
     );
     i = 0 as u_int;
     while i < args_count(args_0) {
         xformat(&mut tmp, format_args!("argument_{}", i as u32));
-        event_payload_set_string(
-            ep,
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            args_string(args_0, i),
-        );
+        event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+            write_cstr(out, args_string(args_0, i))
+        });
         i = i.wrapping_add(1);
     }
     flag = args_first(args_0, &raw mut ae) as ::core::ffi::c_char;
@@ -447,18 +440,13 @@ pub unsafe extern "C" fn cmdq_insert_hook(
             out.write_all(&[flag as u8])
         });
         if value.is_null() {
-            event_payload_set_string(
-                ep,
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                b"1\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+                out.write_all(b"1")
+            });
         } else {
-            event_payload_set_string(
-                ep,
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                value,
-            );
+            event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+                write_cstr(out, value)
+            });
         }
         i = 0 as u_int;
         av = args_first_value(args_0, flag as u_char);
@@ -468,12 +456,9 @@ pub unsafe extern "C" fn cmdq_insert_hook(
                 out.write_all(&[flag as u8])?;
                 write!(out, "_{}", i)
             });
-            event_payload_set_string(
-                ep,
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*av).string_ptr(),
-            );
+            event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+                write_cstr(out, (*av).string_ptr())
+            });
             i = i.wrapping_add(1);
             av = args_next_value(av);
         }
@@ -623,30 +608,37 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
             && (*state).event.key != KEYC_NONE as ::core::ffi::c_ulong as key_code
         {
             let key = key_string_format((*state).event.key, false);
-            server_add_message(
-                b"%s%s key %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                user.as_ptr(),
-                key.as_ptr(),
-                tmp.as_ptr(),
-            );
+            server_add_message(|out| {
+                write_cstr(
+                    out,
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )?;
+                write_cstr(out, user.as_ptr())?;
+                out.write_all(b" key ")?;
+                write_cstr(out, key.as_ptr())?;
+                out.write_all(b": ")?;
+                write_cstr(out, tmp.as_ptr())
+            });
         } else {
-            server_add_message(
-                b"%s%s command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                user.as_ptr(),
-                tmp.as_ptr(),
-            );
+            server_add_message(|out| {
+                write_cstr(
+                    out,
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )?;
+                write_cstr(out, user.as_ptr())?;
+                out.write_all(b" command: ")?;
+                write_cstr(out, tmp.as_ptr())
+            });
         }
     } else {
-        server_add_message(
-            b"command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tmp.as_ptr(),
-        );
+        server_add_message(|out| {
+            out.write_all(b"command: ")?;
+            write_cstr(out, tmp.as_ptr())
+        });
     }
 }
 unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
@@ -754,13 +746,10 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                             match current_block {
                                 7379054416801212160 => {}
                                 _ => {
-                                    cmdq_insert_hook(
-                                        (*fsp).s,
-                                        item,
-                                        fsp,
-                                        b"after-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                        (*entry).name.as_ptr(),
-                                    );
+                                    cmdq_insert_hook((*fsp).s, item, fsp, |out| {
+                                        out.write_all(b"after-")?;
+                                        write_cstr(out, (*entry).name.as_ptr())
+                                    });
                                 }
                             }
                         }
@@ -790,7 +779,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
             },
             item,
             fsp,
-            b"command-error\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"command-error"),
         );
         cmdq_guard(
             item,
@@ -847,11 +836,7 @@ pub unsafe fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq
     let item = cmdq_get_callback_owned(
         b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
-            cmdq_error(
-                item.as_ptr(),
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                error.as_ptr(),
-            );
+            cmdq_error(item.as_ptr(), |out| write_cstr(out, error.as_ptr()));
             CMD_RETURN_NORMAL
         })),
     );
@@ -992,34 +977,28 @@ pub unsafe fn cmdq_guard(
 pub unsafe fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: *mut evbuffer) {
     server_client_print((*item).client, 1 as ::core::ffi::c_int, evb);
 }
-pub unsafe extern "C" fn cmdq_print(
+pub unsafe fn cmdq_print(
     mut item: *mut cmdq_item,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ap: ::core::ffi::VaList;
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     evb = evbuffer_new();
     if evb.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
-    ap = args.clone();
-    evbuffer_add_vprintf(evb, fmt, ap);
+    evbuffer_add_formatted(evb, write);
     cmdq_print_data(item, evb);
     evbuffer_free(evb);
 }
-pub unsafe extern "C" fn cmdq_error(
+pub unsafe fn cmdq_error(
     mut item: *mut cmdq_item,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut c: *mut client = (*item).client;
     let mut cmd: *mut cmd = (*item).cmd;
-    let mut ap: ::core::ffi::VaList;
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
-    ap = args.clone();
-    let mut msg = xvasprintf_cstring(fmt, ap);
+    let mut msg = format_message_with(write);
     log_debug(format_args!(
         "{}: {}",
         "cmdq_error",
@@ -1029,54 +1008,48 @@ pub unsafe extern "C" fn cmdq_error(
         cmd_get_source(cmd, &raw mut file, &raw mut line);
         if cfg_finished == 0 {
             if !file.is_null() {
-                cfg_add_cause(
-                    b"%s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    file,
-                    line,
-                    msg.as_ptr(),
-                );
+                cfg_add_cause(|out| {
+                    write_cstr(out, file)?;
+                    write!(out, ":{}: ", (line) as u32)?;
+                    write_cstr(out, msg.as_ptr())
+                });
             } else {
-                cfg_add_cause(
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    msg.as_ptr(),
-                );
+                cfg_add_cause(|out| write_cstr(out, msg.as_ptr()));
             }
         } else if !file.is_null() {
-            server_add_message(
-                b"message: %s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                file,
-                line,
-                msg.as_ptr(),
-            );
+            server_add_message(|out| {
+                out.write_all(b"message: ")?;
+                write_cstr(out, file)?;
+                write!(out, ":{}: ", (line) as u32)?;
+                write_cstr(out, msg.as_ptr())
+            });
         } else {
-            server_add_message(
-                b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                msg.as_ptr(),
-            );
+            server_add_message(|out| {
+                out.write_all(b"message: ")?;
+                write_cstr(out, msg.as_ptr())
+            });
         }
     } else if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        server_add_message(
-            b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            msg.as_ptr(),
-        );
+        server_add_message(|out| {
+            write_cstr(
+                out,
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )?;
+            out.write_all(b" message: ")?;
+            write_cstr(out, msg.as_ptr())
+        });
         if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
             msg = utf8_sanitize_cstring(msg.as_c_str());
         }
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(
-                c,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                msg.as_ptr(),
-            );
+            control_write(c, |out| write_cstr(out, msg.as_ptr()));
         } else {
-            file_error(
-                c,
-                b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                msg.as_ptr(),
-            );
+            file_error(c, |out| {
+                write_cstr(out, msg.as_ptr())?;
+                out.write_all(b"\n")
+            });
         }
         (*c).retval = 1 as ::core::ffi::c_int;
     } else {
@@ -1091,8 +1064,7 @@ pub unsafe extern "C" fn cmdq_error(
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.as_ptr(),
+            |out| write_cstr(out, msg.as_ptr()),
         );
     }
 }

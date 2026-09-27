@@ -6,6 +6,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{close, getpid, gettimeofday, kill, memcpy, strlen};
 use crate::src::ffi::utempter::utempter_remove_record;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
@@ -109,8 +110,7 @@ unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *m
         event_payload_set_string(
             ep,
             b"exit_signal\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            signame,
+            |out| write_cstr(out, signame),
         );
     }
     event_payload_set_int(

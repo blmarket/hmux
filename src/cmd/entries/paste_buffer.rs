@@ -2,6 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::ffi::libc::{memchr, strlen};
+use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use crate::src::reactor::bufferevent_write;
 use crate::src::shared::abi::*;
@@ -60,10 +61,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut len: size_t = 0;
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
     if window_pane_exited(wp) != 0 {
-        cmdq_error(
-            item,
-            b"target pane has exited\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
     bufname = ::core::ptr::null::<::core::ffi::c_char>();
@@ -75,11 +73,10 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     } else {
         pb = paste_get_name(bufname);
         if pb.is_null() {
-            cmdq_error(
-                item,
-                b"no buffer %s\0" as *const u8 as *const ::core::ffi::c_char,
-                bufname,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"no buffer ")?;
+                write_cstr(out, bufname)
+            });
             return CMD_RETURN_ERROR;
         }
     }

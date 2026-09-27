@@ -13,7 +13,7 @@
 //! assert_eq!(value.as_bytes(), b"client 7: \xffx (002a)");
 //! ```
 
-use std::ffi::{c_char, c_int, CString, NulError};
+use std::ffi::{c_char, c_int, CStr, CString, NulError};
 use std::fmt;
 use std::io::{self, Write};
 
@@ -29,6 +29,85 @@ pub fn format_bytes(args: fmt::Arguments<'_>) -> Vec<u8> {
 /// Format into a NUL-terminated string, rejecting embedded NUL bytes.
 pub fn format_cstring(args: fmt::Arguments<'_>) -> Result<CString, NulError> {
     CString::new(format_bytes(args))
+}
+
+/// Assemble raw bytes and typed formatting, preserving embedded NUL bytes.
+pub fn format_bytes_with(
+    write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+) -> io::Result<Vec<u8>> {
+    struct Writer(Vec<u8>);
+    impl Write for Writer {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0
+                .try_reserve(bytes.len())
+                .map_err(|_| io::ErrorKind::OutOfMemory)?;
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+        fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> io::Result<()> {
+            fmt::write(self, args).map_err(|_| io::ErrorKind::Other.into())
+        }
+    }
+    impl fmt::Write for Writer {
+        fn write_str(&mut self, text: &str) -> fmt::Result {
+            self.write_all(text.as_bytes()).map_err(|_| fmt::Error)
+        }
+    }
+    let mut out = Writer(Vec::new());
+    write(&mut out)?;
+    Ok(out.0)
+}
+
+/// Assemble a C-string message; as with C-string consumers, the first NUL ends it.
+pub fn try_format_message_with(
+    write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+) -> Option<CString> {
+    let mut bytes = format_bytes_with(write).ok()?;
+    if let Some(end) = bytes.iter().position(|&byte| byte == 0) {
+        bytes.truncate(end);
+    }
+    Some(CString::new(bytes).expect("message was truncated before its first NUL"))
+}
+
+pub fn format_message_with(write: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> CString {
+    try_format_message_with(write).unwrap_or_else(|| unsafe {
+        crate::src::log::fatalx(|out| out.write_all(b"message formatting failed"))
+    })
+}
+
+/// Write an unescaped C string. A null pointer retains the legacy `(null)` text.
+///
+/// # Safety
+/// A non-null pointer must reference a readable NUL-terminated string.
+pub unsafe fn write_cstr(out: &mut dyn Write, value: *const c_char) -> io::Result<()> {
+    write_cstr_n(out, value, -1)
+}
+
+/// Write at most `precision` bytes, stopping at NUL; negative means unlimited.
+///
+/// # Safety
+/// A non-null pointer must be readable through its NUL or the precision limit.
+pub unsafe fn write_cstr_n(
+    out: &mut dyn Write,
+    value: *const c_char,
+    precision: c_int,
+) -> io::Result<()> {
+    let bytes = if value.is_null() {
+        if precision >= 0 && precision < 6 {
+            b"".as_slice()
+        } else {
+            b"(null)".as_slice()
+        }
+    } else if precision < 0 {
+        CStr::from_ptr(value).to_bytes()
+    } else {
+        let len = libc::strnlen(value, precision as usize);
+        std::slice::from_raw_parts(value.cast(), len)
+    };
+    out.write_all(bytes)
 }
 
 /// Format into an existing C-character buffer without allocating.
@@ -103,12 +182,12 @@ pub fn xformat_with(
     write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
 ) -> c_int {
     if dst.len() > c_int::MAX as usize {
-        unsafe { crate::src::log::fatalx(c"xformat: len > INT_MAX".as_ptr()) };
+        unsafe { crate::src::log::fatalx(|out| out.write_all(b"xformat: len > INT_MAX")) };
     }
     match format_cstr_with(dst, write) {
         Ok(written) => written as c_int,
         Err(_) => unsafe {
-            crate::src::log::fatalx(c"xformat: formatting failed or overflow".as_ptr())
+            crate::src::log::fatalx(|out| out.write_all(b"xformat: formatting failed or overflow"))
         },
     }
 }
@@ -252,5 +331,42 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert_eq!(dst[2], 0);
+    }
+
+    #[test]
+    fn owned_messages_and_byte_buffers_keep_their_distinct_nul_contracts() {
+        let bytes = format_bytes_with(|out| out.write_all(b"\xffbefore\0after")).unwrap();
+        assert_eq!(bytes, b"\xffbefore\0after");
+        let message = format_message_with(|out| out.write_all(&bytes));
+        assert_eq!(message.as_bytes(), b"\xffbefore");
+        assert!(try_format_message_with(|_| Err(io::ErrorKind::InvalidData.into())).is_none());
+    }
+
+    #[test]
+    fn raw_c_strings_match_libc_for_nulls_and_byte_precision() {
+        unsafe {
+            let raw = [0xffu8, b'x', b'y', 0];
+            for value in [raw.as_ptr().cast::<c_char>(), std::ptr::null()] {
+                for precision in [-1, 0, 1, 2, 3, 5, 6, 8] {
+                    let actual =
+                        format_bytes_with(|out| write_cstr_n(out, value, precision)).unwrap();
+                    let mut expected = [0 as c_char; 32];
+                    let count = crate::src::ffi::libc::snprintf(
+                        expected.as_mut_ptr(),
+                        expected.len(),
+                        c"%.*s".as_ptr(),
+                        precision,
+                        value,
+                    );
+                    assert!(count >= 0);
+                    assert_eq!(actual, CStr::from_ptr(expected.as_ptr()).to_bytes());
+                }
+            }
+            // This buffer has no NUL: the precision must bound the read.
+            let raw = [0xffu8, b'x'];
+            let actual =
+                format_bytes_with(|out| write_cstr_n(out, raw.as_ptr().cast(), 2)).unwrap();
+            assert_eq!(actual, raw);
+        }
     }
 }

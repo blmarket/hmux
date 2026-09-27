@@ -1,6 +1,7 @@
 use crate::src::arguments::args_get;
 use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::{prompt_type, prompt_type_string};
 use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
 use crate::src::shared::abi::*;
@@ -86,11 +87,10 @@ unsafe fn cmd_show_prompt_history_exec(
             if type_0 as ::core::ffi::c_uint
                 == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                cmdq_error(
-                    item,
-                    b"invalid type: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    typestr,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"invalid type: ")?;
+                    write_cstr(out, typestr)
+                });
                 return CMD_RETURN_ERROR;
             }
             prompt_history_clear(type_0);
@@ -101,27 +101,23 @@ unsafe fn cmd_show_prompt_history_exec(
         t = 0 as u_int;
         while t < PROMPT_NTYPES as u_int {
             typestr = prompt_type_string(t as prompt_type);
-            cmdq_print(
-                item,
-                b"History for %s:\n\0" as *const u8 as *const ::core::ffi::c_char,
-                typestr,
-            );
+            cmdq_print(item, |out| {
+                out.write_all(b"History for ")?;
+                write_cstr(out, typestr)?;
+                out.write_all(b":\n")
+            });
             h = 0 as u_int;
             while h < prompt_history_size(t as prompt_type) {
                 v = prompt_history_get(t as prompt_type, h);
-                cmdq_print(
-                    item,
-                    b"%d: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    h.wrapping_add(1 as u_int),
-                    v,
-                );
+                cmdq_print(item, |out| {
+                    write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
+                    write_cstr(out, v)
+                });
                 h = h.wrapping_add(1);
             }
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_print(item, |out| {
+                write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
+            });
             t = t.wrapping_add(1);
         }
     } else {
@@ -129,34 +125,29 @@ unsafe fn cmd_show_prompt_history_exec(
         if type_0 as ::core::ffi::c_uint
             == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            cmdq_error(
-                item,
-                b"invalid type: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                typestr,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"invalid type: ")?;
+                write_cstr(out, typestr)
+            });
             return CMD_RETURN_ERROR;
         }
-        cmdq_print(
-            item,
-            b"History for %s:\n\0" as *const u8 as *const ::core::ffi::c_char,
-            prompt_type_string(type_0),
-        );
+        cmdq_print(item, |out| {
+            out.write_all(b"History for ")?;
+            write_cstr(out, prompt_type_string(type_0))?;
+            out.write_all(b":\n")
+        });
         h = 0 as u_int;
         while h < prompt_history_size(type_0) {
             v = prompt_history_get(type_0, h);
-            cmdq_print(
-                item,
-                b"%d: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                h.wrapping_add(1 as u_int),
-                v,
-            );
+            cmdq_print(item, |out| {
+                write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
+                write_cstr(out, v)
+            });
             h = h.wrapping_add(1);
         }
-        cmdq_print(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_print(item, |out| {
+            write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
+        });
     }
     return CMD_RETURN_NORMAL;
 }

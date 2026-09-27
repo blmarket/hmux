@@ -1,5 +1,7 @@
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{memcpy, memset};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
     format_free,
@@ -31,7 +33,6 @@ use crate::src::style::{
     style_apply, style_ranges_clear, style_ranges_free, style_ranges_get_range, style_ranges_init,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -296,7 +297,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     log_debug(format_args!("{} enter", "status_redraw"));
     if (*sl).active.is_some() {
-        fatalx(b"not the active screen\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"not the active screen"));
     }
     lines = status_line_size(c);
     if (*c).tty.sy == 0 as u_int || lines == 0 as u_int {
@@ -443,46 +444,49 @@ mod status_message_escape_tests {
         assert!(status_message_escape(c"").as_bytes().is_empty());
     }
 }
-pub unsafe extern "C" fn status_message_set(
+pub unsafe fn status_message_set(
     mut c: *mut client,
     mut delay: ::core::ffi::c_int,
     mut ignore_styles: ::core::ffi::c_int,
     mut ignore_keys: ::core::ffi::c_int,
     mut no_freeze: ::core::ffi::c_int,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
     };
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let s = xvasprintf_cstring(fmt, ap);
+    let s = format_message_with(write);
     log_debug(format_args!(
         "{}: {}",
         "status_message_set",
         log_cstr((s.as_ptr()) as *const _)
     ));
     if c.is_null() {
-        server_add_message(
-            b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            s.as_ptr(),
-        );
+        server_add_message(|out| {
+            out.write_all(b"message: ")?;
+            write_cstr(out, s.as_ptr())
+        });
         return;
     }
     status_message_clear(c);
     status_push_screen(c);
     server_client_set_message(&mut *c, Some(s));
-    server_add_message(
-        b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ((*c).message_string)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    server_add_message(|out| {
+        write_cstr(
+            out,
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )?;
+        out.write_all(b" message: ")?;
+        write_cstr(
+            out,
+            ((*c).message_string)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )
+    });
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
             (*(*c).session).options,
@@ -636,24 +640,26 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         format_add(
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.as_ptr(),
+            |out| write_cstr(out, msg.as_ptr()),
         );
     } else {
         format_add(
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).message_string)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            |out| {
+                write_cstr(
+                    out,
+                    ((*c).message_string)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+            },
         );
     }
     format_add(
         ft,
         b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
     msgfmt = options_get_string(
         (*s).options,

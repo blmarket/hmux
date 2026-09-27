@@ -8,6 +8,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
 use crate::src::ffi::libc::memcpy;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
 use crate::src::format_draw::format_draw;
@@ -1284,19 +1285,14 @@ unsafe fn window_panes_draw_number(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(
-            ctx,
-            &raw mut fgc,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut buf as *mut ::core::ffi::c_char,
-        );
+        screen_write_puts(ctx, &raw mut fgc, |out| {
+            write_cstr(out, &raw mut buf as *mut ::core::ffi::c_char)
+        });
         if width > len {
-            screen_write_puts(
-                ctx,
-                &raw mut fgc,
-                b" %s\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut lbuf as *mut ::core::ffi::c_char,
-            );
+            screen_write_puts(ctx, &raw mut fgc, |out| {
+                out.write_all(b" ")?;
+                write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
+            });
         }
         if format != 0 && sy > 1 as u_int {
             window_panes_draw_format(data, ctx, wp, x, y, sx, &raw mut fgc);
@@ -1345,12 +1341,9 @@ unsafe fn window_panes_draw_number(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(
-            ctx,
-            &raw mut fgc,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut lbuf as *mut ::core::ffi::c_char,
-        );
+        screen_write_puts(ctx, &raw mut fgc, |out| {
+            write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
+        });
     }
 }
 unsafe fn window_panes_draw_pane(
@@ -1561,11 +1554,10 @@ unsafe fn window_panes_init(
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"delay %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"delay ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return ::core::ptr::null_mut::<screen>();
             }
         };

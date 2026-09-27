@@ -92,10 +92,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         {
             cdata.confirm_key = *confirm_key.offset(0 as ::core::ffi::c_int as isize) as u_char;
         } else {
-            cmdq_error(
-                item,
-                b"invalid confirm key\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"invalid confirm key"));
             cmd_list_free(cdata.cmdlist);
             return CMD_RETURN_ERROR;
         }

@@ -7,6 +7,7 @@ use crate::src::compat::imsg::*;
 use crate::src::environ::environ_update;
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{getuid, strcspn};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::proc::{proc_get_peer_uid, proc_send};
 use crate::src::server::clients;
@@ -87,21 +88,16 @@ pub unsafe fn cmd_attach_session(
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
     if sessions.storage.is_none() {
-        cmdq_error(
-            item,
-            b"no sessions\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"no sessions"));
         return CMD_RETURN_ERROR;
     }
     if c.is_null() {
         return CMD_RETURN_NORMAL;
     }
     if server_client_check_nested(c) != 0 {
-        cmdq_error(
-            item,
-            b"sessions should be nested with care, unset $TMUX to force\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"sessions should be nested with care, unset $TMUX to force")
+        });
         return CMD_RETURN_ERROR;
     }
     if !tflag.is_null()
@@ -146,10 +142,7 @@ pub unsafe fn cmd_attach_session(
         if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
             uid = proc_get_peer_uid((*c).peer);
             if uid != getuid() {
-                cmdq_error(
-                    item,
-                    b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"client is read-only"));
                 return CMD_RETURN_ERROR;
             }
         }
@@ -180,11 +173,10 @@ pub unsafe fn cmd_attach_session(
         }
     } else {
         if let Err(cause) = server_client_open(c) {
-            cmdq_error(
-                item,
-                b"open terminal failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"open terminal failed: ")?;
+                write_cstr(out, cause.as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
         if dflag != 0 || xflag != 0 {

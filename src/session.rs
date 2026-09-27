@@ -8,6 +8,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{gettimeofday, memcpy, strcmp};
+use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::{options_free, options_get_number};
@@ -394,7 +395,7 @@ pub unsafe fn session_create(
         ((*s).id) as u32
     ));
     if gettimeofday(&raw mut (*s).creation_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"gettimeofday failed"));
     }
     session_update_activity(s, &raw mut (*s).creation_time);
     return s;
@@ -549,10 +550,11 @@ pub unsafe fn session_next_session(
         i = i.wrapping_add(1);
     }
     if i == n {
-        fatalx(
-            b"session %s not found in sorted list\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*s).name).as_ptr().cast_mut(),
-        );
+        fatalx(|out| {
+            out.write_all(b"session ")?;
+            write_cstr(out, ((*s).name).as_ptr().cast_mut())?;
+            out.write_all(b" not found in sorted list")
+        });
     }
     i = i.wrapping_add(1);
     if i == n {
@@ -578,10 +580,11 @@ pub unsafe fn session_previous_session(
         i = i.wrapping_add(1);
     }
     if i == n {
-        fatalx(
-            b"session %s not found in sorted list\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*s).name).as_ptr().cast_mut(),
-        );
+        fatalx(|out| {
+            out.write_all(b"session ")?;
+            write_cstr(out, ((*s).name).as_ptr().cast_mut())?;
+            out.write_all(b" not found in sorted list")
+        });
     }
     if i == 0 as u_int {
         i = n;
@@ -880,8 +883,7 @@ unsafe fn session_group_fire(
     event_payload_set_string(
         ep,
         b"group\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*sg).name).as_ptr().cast_mut(),
+        |out| write_cstr(out, ((*sg).name).as_ptr().cast_mut()),
     );
     event_payload_set_uint(
         ep,

@@ -3,6 +3,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_g
 use crate::src::cmd::{cmd_get_args, cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
+use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_remove_history;
 use crate::src::layout::{
     layout_fix_offsets, layout_fix_panes, layout_resize_floating_pane,
@@ -129,21 +130,19 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"width ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
         if window_pane_is_floating(wp) != 0 {
             if let Err(cause) = layout_resize_floating_pane_to(wp, LAYOUT_LEFTRIGHT, x as u_int) {
-                cmdq_error(
-                    item,
-                    b"size %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause.as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"size ")?;
+                    write_cstr(out, cause.as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         } else {
@@ -160,11 +159,10 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                cmdq_error(
-                    item,
-                    b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"height ")?;
+                    write_cstr(out, error.message().as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         };
@@ -187,11 +185,10 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
         if window_pane_is_floating(wp) != 0 {
             if let Err(cause) = layout_resize_floating_pane_to(wp, LAYOUT_TOPBOTTOM, y as u_int) {
-                cmdq_error(
-                    item,
-                    b"size %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause.as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"size ")?;
+                    write_cstr(out, cause.as_ptr())
+                });
                 return CMD_RETURN_ERROR;
             }
         } else {
@@ -220,11 +217,10 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 &raw mut errstr,
             ) as ::core::ffi::c_int;
             if !errstr.is_null() {
-                cmdq_error(
-                    item,
-                    b"adjustment %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    errstr,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"adjustment ")?;
+                    write_cstr(out, errstr)
+                });
                 return CMD_RETURN_ERROR;
             }
             type_0 = LAYOUT_TOPBOTTOM;
@@ -239,11 +235,10 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     opposite = 1 as ::core::ffi::c_int;
                 }
                 if let Err(cause) = layout_resize_floating_pane(wp, type_0, adjust, opposite) {
-                    cmdq_error(
-                        item,
-                        b"adjustment %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause.as_ptr(),
-                    );
+                    cmdq_error(item, |out| {
+                        out.write_all(b"adjustment ")?;
+                        write_cstr(out, cause.as_ptr())
+                    });
                     return CMD_RETURN_ERROR;
                 }
             } else {

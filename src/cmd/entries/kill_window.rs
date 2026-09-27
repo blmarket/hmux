@@ -77,18 +77,14 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut s: *mut session = (*target).s;
     let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
-        cmdq_error(
-            item,
-            b"-f only valid with -a\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
     if cmd_get_entry(self_0) == &raw const cmd_unlink_window_entry {
         if args_has(args, 'k' as i32 as u_char) == 0 && session_is_linked(s, w) == 0 {
-            cmdq_error(
-                item,
-                b"window only linked to one session\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"window only linked to one session")
+            });
             return CMD_RETURN_ERROR;
         }
         server_unlink_window(s, wl);

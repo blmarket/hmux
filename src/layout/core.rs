@@ -221,7 +221,7 @@ pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type
     if type_0 as ::core::ffi::c_uint
         == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        fatalx(b"bad layout type\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad layout type"));
     }
     (*lc).type_0 = type_0;
     layout_cells_require_empty(&*lc);
@@ -513,7 +513,7 @@ pub unsafe fn layout_count_cells(
             return count;
         }
         _ => {
-            fatalx(b"bad layout type\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"bad layout type"));
         }
     };
 }
@@ -1427,7 +1427,7 @@ pub unsafe fn layout_split_check_space(
     let mut sy: u_int = (*lc).g.sy;
     let mut status: ::core::ffi::c_int = 0;
     if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-        fatalx(b"floating cells cannot be split\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"floating cells cannot be split"));
     }
     status = window_get_pane_status((*wp).window as *mut window);
     match type_0 as ::core::ffi::c_uint {
@@ -1457,7 +1457,7 @@ pub unsafe fn layout_split_check_space(
             }
         }
         _ => {
-            fatalx(b"bad layout type\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"bad layout type"));
         }
     }
     return 1 as ::core::ffi::c_int;
@@ -2329,9 +2329,7 @@ pub unsafe fn layout_insert_tile(
     let mut size2: u_int = 0;
     let mut saved_size: u_int = 0;
     if lc.is_null() {
-        fatalx(
-            b"layout cell cannot be null when tiling\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        fatalx(|out| out.write_all(b"layout cell cannot be null when tiling"));
     }
     if layout_cell_is_tiled(lc) != 0 {
         return -(1 as ::core::ffi::c_int);

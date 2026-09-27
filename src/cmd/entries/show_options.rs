@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
     format_single_from_target_cstring,
@@ -143,11 +144,9 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 return CMD_RETURN_NORMAL;
             }
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ref().unwrap().as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
         if cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry
@@ -181,17 +180,15 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             current_block = 9776955515550960483;
         } else {
             if ambiguous != 0 {
-                cmdq_error(
-                    item,
-                    b"ambiguous option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument.as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"ambiguous option: ")?;
+                    write_cstr(out, argument.as_ptr())
+                });
             } else {
-                cmdq_error(
-                    item,
-                    b"invalid option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument.as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"invalid option: ")?;
+                    write_cstr(out, argument.as_ptr())
+                });
             }
             current_block = 18040240512796061664;
         }
@@ -201,11 +198,9 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 current_block = 9776955515550960483;
             } else {
-                cmdq_error(
-                    item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause.as_ref().unwrap().as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    write_cstr(out, cause.as_ref().unwrap().as_ptr())
+                });
                 current_block = 18040240512796061664;
             }
         } else {
@@ -236,11 +231,10 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 if args_has(args, 'q' as i32 as u_char) != 0 {
                     current_block = 9776955515550960483;
                 } else {
-                    cmdq_error(
-                        item,
-                        b"invalid option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        argument.as_ptr(),
-                    );
+                    cmdq_error(item, |out| {
+                        out.write_all(b"invalid option: ")?;
+                        write_cstr(out, argument.as_ptr())
+                    });
                     current_block = 18040240512796061664;
                 }
             } else {
@@ -315,64 +309,54 @@ unsafe fn cmd_show_options_print(
     format_add(
         ft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
+        |out| write_cstr(out, name),
     );
     format_add(
         ft,
         b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value.as_ptr(),
+        |out| write_cstr(out, value.as_ptr()),
     );
     format_add(
         ft,
         b"option_value_only\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        args_has(args, 'v' as i32 as u_char),
+        |out| write!(out, "{}", (args_has(args, 'v' as i32 as u_char)) as i32),
     );
     format_add(
         ft,
         b"option_is_parent\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        parent,
+        |out| write!(out, "{}", (parent) as i32),
     );
     format_add(
         ft,
         b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        options_is_array(o),
+        |out| write!(out, "{}", (options_is_array(o)) as i32),
     );
     format_add(
         ft,
         b"option_is_string\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        options_is_string(o),
+        |out| write!(out, "{}", (options_is_string(o)) as i32),
     );
     format_add(
         ft,
         b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        is_hook,
+        |out| write!(out, "{}", (is_hook) as i32),
     );
     format_add(
         ft,
         b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        is_user,
+        |out| write!(out, "{}", (is_user) as i32),
     );
     format_add(
         ft,
         b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        has_value,
+        |out| write!(out, "{}", (has_value) as i32),
     );
     if cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry {
         fire_count = options_get_fire_count(o);
         format_add(
             ft,
             b"hook_fire_count\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            fire_count,
+            |out| write!(out, "{}", (fire_count) as u32),
         );
         fire_time = options_get_fire_time(o);
         if fire_time != 0 as time_t {
@@ -388,34 +372,28 @@ unsafe fn cmd_show_options_print(
         format_add(
             ft,
             b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            array_key,
+            |out| write_cstr(out, array_key),
         );
         format_add(
             ft,
             b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-            b"1\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"1"),
         );
     } else {
         format_add(
             ft,
             b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
         format_add(
             ft,
             b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-            b"0\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"0"),
         );
     }
     let line = format_expand_cstring(ft, template);
     format_free(ft);
-    cmdq_print(
-        item,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        line.as_ptr(),
-    );
+    cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
     drop(value);
 }
 unsafe fn cmd_show_hooks_print_monitor(
@@ -456,86 +434,78 @@ unsafe fn cmd_show_hooks_print_monitor(
     format_add(
         ft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        options_name(o),
+        |out| write_cstr(out, options_name(o)),
     );
     format_add(
         ft,
         b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value.as_ptr(),
+        |out| write_cstr(out, value.as_ptr()),
     );
     format_add(
         ft,
         b"option_value_only\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_is_parent\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_is_string\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
     );
     format_add(
         ft,
         b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
     );
     format_add(
         ft,
         b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-        b"0\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| out.write_all(b"0"),
     );
     format_add(
         ft,
         b"hook_monitor_target\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        target.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
+        |out| {
+            write_cstr(
+                out,
+                target.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
+            )
+        },
     );
     format_add(
         ft,
         b"hook_monitor_format\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        format,
+        |out| write_cstr(out, format),
     );
     fire_count = hooks_monitor_get_fire_count(o);
     format_add(
         ft,
         b"hook_fire_count\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        fire_count,
+        |out| write!(out, "{}", (fire_count) as u32),
     );
     fire_time = hooks_monitor_get_fire_time(o);
     if fire_time != 0 as time_t {
@@ -548,11 +518,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     }
     let line = format_expand_cstring(ft, template);
     format_free(ft);
-    cmdq_print(
-        item,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        line.as_ptr(),
-    );
+    cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
     drop(target);
 }
 unsafe fn cmd_show_options_all(

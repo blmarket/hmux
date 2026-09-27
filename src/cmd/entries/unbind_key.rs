@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::cmdq_error;
+use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::{
     key_bindings_get_table, key_bindings_remove, key_bindings_remove_table,
 };
@@ -45,10 +46,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     if args_has(args, 'a' as i32 as u_char) != 0 {
         if !keystr.is_null() {
             if quiet == 0 {
-                cmdq_error(
-                    item,
-                    b"key given with -a\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_error(item, |out| out.write_all(b"key given with -a"));
             }
             return CMD_RETURN_ERROR;
         }
@@ -62,11 +60,11 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         }
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_null() {
             if quiet == 0 {
-                cmdq_error(
-                    item,
-                    b"table %s doesn't exist\0" as *const u8 as *const ::core::ffi::c_char,
-                    tablename,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"table ")?;
+                    write_cstr(out, tablename)?;
+                    out.write_all(b" doesn't exist")
+                });
             }
             return CMD_RETURN_ERROR;
         }
@@ -75,10 +73,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     if keystr.is_null() {
         if quiet == 0 {
-            cmdq_error(
-                item,
-                b"missing key\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            cmdq_error(item, |out| out.write_all(b"missing key"));
         }
         return CMD_RETURN_ERROR;
     }
@@ -87,11 +82,10 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         if quiet == 0 {
-            cmdq_error(
-                item,
-                b"unknown key: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                keystr,
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"unknown key: ")?;
+                write_cstr(out, keystr)
+            });
         }
         return CMD_RETURN_ERROR;
     }
@@ -99,11 +93,11 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         tablename = args_get(args, 'T' as i32 as u_char);
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_null() {
             if quiet == 0 {
-                cmdq_error(
-                    item,
-                    b"table %s doesn't exist\0" as *const u8 as *const ::core::ffi::c_char,
-                    tablename,
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"table ")?;
+                    write_cstr(out, tablename)?;
+                    out.write_all(b" doesn't exist")
+                });
             }
             return CMD_RETURN_ERROR;
         }

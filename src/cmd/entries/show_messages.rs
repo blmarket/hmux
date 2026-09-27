@@ -1,6 +1,7 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_get_target_client, cmdq_print};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
 };
@@ -63,31 +64,29 @@ unsafe fn cmd_show_messages_terminals(
     while !term.is_null() {
         if !(args_has(args, 't' as i32 as u_char) != 0 && !tc.is_null() && term != (*tc).tty.term) {
             if blank != 0 {
-                cmdq_print(
-                    item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                cmdq_print(item, |out| {
+                    write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
+                });
                 blank = 0 as ::core::ffi::c_int;
             }
-            cmdq_print(
-                item,
-                b"Terminal %u: %s for %s, flags=0x%x:\0" as *const u8 as *const ::core::ffi::c_char,
-                n,
-                ((*term).name).as_ptr().cast_mut(),
-                ((*(*(*term).tty).client).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                (*term).flags,
-            );
+            cmdq_print(item, |out| {
+                write!(out, "Terminal {}: ", (n) as u32)?;
+                write_cstr(out, ((*term).name).as_ptr().cast_mut())?;
+                out.write_all(b" for ")?;
+                write_cstr(
+                    out,
+                    ((*(*(*term).tty).client).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )?;
+                write!(out, ", flags=0x{:x}:", ((*term).flags) as u32)
+            });
             n = n.wrapping_add(1);
             i = 0 as u_int;
             while i < tty_term_ncodes() {
-                cmdq_print(
-                    item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    tty_term_describe(term, i as tty_code_code),
-                );
+                cmdq_print(item, |out| {
+                    write_cstr(out, tty_term_describe(term, i as tty_code_code))
+                });
                 i = i.wrapping_add(1);
             }
         }
@@ -118,14 +117,12 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         format_add(
             ft,
             b"message_text\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.msg.as_ptr(),
+            |out| write_cstr(out, msg.msg.as_ptr()),
         );
         format_add(
             ft,
             b"message_number\0" as *const u8 as *const ::core::ffi::c_char,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            msg.msg_num,
+            |out| write!(out, "{}", (msg.msg_num) as u32),
         );
         let mut msg_time = msg.msg_time;
         format_add_tv(
@@ -134,11 +131,7 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             &raw mut msg_time,
         );
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
-        cmdq_print(
-            item,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            s.as_ptr(),
-        );
+        cmdq_print(item, |out| write_cstr(out, s.as_ptr()));
     }
     format_free(ft);
     return CMD_RETURN_NORMAL;

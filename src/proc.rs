@@ -12,6 +12,7 @@ use crate::src::ffi::libc::{
     close, daemon, fork, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
 use crate::src::ffi::utf8proc::utf8proc_version;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_open, log_pointer, log_toggle};
 use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
@@ -201,11 +202,12 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
         domainname: [0; 65],
     };
     log_open(name);
-    setproctitle(
-        b"%s (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-        socket_path,
-    );
+    setproctitle(|out| {
+        write_cstr(out, name)?;
+        out.write_all(b" (")?;
+        write_cstr(out, socket_path)?;
+        out.write_all(b")")
+    });
     if uname(&raw mut u) < 0 as ::core::ffi::c_int {
         memset(
             &raw mut u as *mut ::core::ffi::c_void,
@@ -411,10 +413,7 @@ pub unsafe fn proc_add_peer(
     (*peer).parent = tp;
     (*peer).dispatchcb = Some(dispatchcb);
     if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, fd) {
-        fatalx(
-            b"imsgbuf_init failed (errno %d)\0" as *const u8 as *const ::core::ffi::c_char,
-            error,
-        );
+        fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", (error) as i32));
     }
     imsgbuf_allow_fdpass(&mut (*peer).ibuf);
     event_set(
@@ -471,18 +470,18 @@ pub unsafe fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {
         &raw mut pair as *mut ::core::ffi::c_int,
     ) != 0 as ::core::ffi::c_int
     {
-        fatal(b"socketpair failed\0" as *const u8 as *const ::core::ffi::c_char);
+        fatal(|out| out.write_all(b"socketpair failed"));
     }
     pid = fork() as pid_t;
     match pid {
         -1 => {
-            fatal(b"fork failed\0" as *const u8 as *const ::core::ffi::c_char);
+            fatal(|out| out.write_all(b"fork failed"));
         }
         0 => {
             close(pair[0 as ::core::ffi::c_int as usize]);
             *fd = pair[1 as ::core::ffi::c_int as usize];
             if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
-                fatal(b"daemon failed\0" as *const u8 as *const ::core::ffi::c_char);
+                fatal(|out| out.write_all(b"daemon failed"));
             }
             return 0 as pid_t;
         }

@@ -1248,10 +1248,13 @@ pub unsafe fn utf8_from_data(mut ud: *const utf8_data, mut uc: *mut utf8_char) -
     let mut current_block: u64;
     let mut index: u_int = 0;
     if (*ud).width as ::core::ffi::c_int > 2 as ::core::ffi::c_int {
-        fatalx(
-            b"invalid UTF-8 width: %u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*ud).width as ::core::ffi::c_int,
-        );
+        fatalx(|out| {
+            write!(
+                out,
+                "invalid UTF-8 width: {}",
+                ((*ud).width as ::core::ffi::c_int) as u32
+            )
+        });
     }
     if !((*ud).size as ::core::ffi::c_int > UTF8_SIZE) {
         if (*ud).size as ::core::ffi::c_int <= 3 as ::core::ffi::c_int {
@@ -1556,10 +1559,10 @@ pub unsafe fn utf8_open(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
 pub unsafe fn utf8_append(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
     let mut width: ::core::ffi::c_int = 0;
     if (*ud).have as ::core::ffi::c_int >= (*ud).size as ::core::ffi::c_int {
-        fatalx(b"UTF-8 character overflow\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"UTF-8 character overflow"));
     }
     if (*ud).size as usize > ::core::mem::size_of::<[u_char; 32]>() as usize {
-        fatalx(b"UTF-8 character size too large\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"UTF-8 character size too large"));
     }
     if (*ud).have as ::core::ffi::c_int != 0 as ::core::ffi::c_int
         && ch as ::core::ffi::c_int & 0xc0 as ::core::ffi::c_int != 0x80 as ::core::ffi::c_int
@@ -1784,7 +1787,7 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
                 // xreallocarray rejected the old zero-sized request when a
                 // leading zero-width UTF-8 cell had produced no bytes yet.
                 if dst.is_empty() && ud.width == 0 {
-                    unsafe { fatalx(b"xreallocarray: zero size\0".as_ptr().cast()) };
+                    unsafe { fatalx(|out| out.write_all(b"xreallocarray: zero size")) };
                 }
                 dst.resize(dst.len() + ud.width as usize, b'_');
                 continue;

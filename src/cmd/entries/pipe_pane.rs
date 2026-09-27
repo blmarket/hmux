@@ -7,6 +7,7 @@ use crate::src::ffi::libc::{
     __errno_location, _exit, close, closefrom, dup2, execl, fork, memcpy, open, setpgid,
     sigfillset, sigprocmask, socketpair, strerror,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_time_cstring, format_free};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
@@ -80,10 +81,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     if window_pane_exited(wp) != 0 {
-        cmdq_error(
-            item,
-            b"target pane has exited\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
     old_fd = (*wp).pipe_fd;
@@ -118,11 +116,10 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         &raw mut pipe_fd as *mut ::core::ffi::c_int,
     ) != 0 as ::core::ffi::c_int
     {
-        cmdq_error(
-            item,
-            b"socketpair error: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(*__errno_location()),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"socketpair error: ")?;
+            write_cstr(out, strerror(*__errno_location()))
+        });
         return CMD_RETURN_ERROR;
     }
     ft = format_create(
@@ -144,11 +141,10 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 &raw mut oldset,
                 ::core::ptr::null_mut::<sigset_t>(),
             );
-            cmdq_error(
-                item,
-                b"fork error: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                strerror(*__errno_location()),
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"fork error: ")?;
+                write_cstr(out, strerror(*__errno_location()))
+            });
             close(pipe_fd[0 as ::core::ffi::c_int as usize]);
             close(pipe_fd[1 as ::core::ffi::c_int as usize]);
             return CMD_RETURN_ERROR;
@@ -226,7 +222,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 }),
             );
             if (*wp).pipe_event.is_null() {
-                fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+                fatalx(|out| out.write_all(b"out of memory"));
             }
             if out != 0 {
                 bufferevent_enable((*wp).pipe_event, EV_WRITE as ::core::ffi::c_short);

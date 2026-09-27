@@ -3,10 +3,12 @@ use crate::src::cmd::find::{
     cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
     cmd_find_valid_state,
 };
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_add;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_add, evbuffer_add_formatted, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup,
 };
 use crate::src::server_client::server_client_unref;
@@ -28,7 +30,6 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 pub const EVENT_PAYLOAD_POINTER: event_payload_type = 8;
@@ -372,15 +373,12 @@ pub unsafe fn event_payload_get_target(
     cmd_find_clear_state(fs, flags);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe extern "C" fn event_payload_set_string(
+pub unsafe fn event_payload_set_string(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let string = xvasprintf_cstring(fmt, ap);
+    let string = format_message_with(write);
     let epi = event_payload_new_item();
     (*epi).value = EventPayloadValue::String(string);
     event_payload_set_item(ep, name, epi);
@@ -492,65 +490,59 @@ pub unsafe fn event_payload_get_string(mut ep: *mut event_payload) -> *const ::c
 unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut evbuffer) {
     match (*epi).type_0() as ::core::ffi::c_uint {
         0 => {
-            evbuffer_add_printf(
-                evb,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).value.string(),
-            );
+            evbuffer_add_formatted(evb, |out| write_cstr(out, (*epi).value.string()));
         }
         1 => {
-            evbuffer_add_printf(
-                evb,
-                b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).value.time() as ::core::ffi::c_longlong,
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write!(
+                    out,
+                    "{}",
+                    ((*epi).value.time() as ::core::ffi::c_longlong) as i64
+                )
+            });
         }
         2 => {
-            evbuffer_add_printf(
-                evb,
-                b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).value.number(),
-            );
+            evbuffer_add_formatted(evb, |out| write!(out, "{}", ((*epi).value.number()) as i32));
         }
         3 => {
-            evbuffer_add_printf(
-                evb,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).value.unsigned_number(),
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write!(out, "{}", ((*epi).value.unsigned_number()) as u32)
+            });
         }
         4 => {
-            evbuffer_add_printf(
-                evb,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*(*epi).value.client()).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write_cstr(
+                    out,
+                    ((*(*epi).value.client()).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+            });
         }
         5 => {
-            evbuffer_add_printf(
-                evb,
-                b"$%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).value.session()).id,
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write!(out, "${}", ((*(*epi).value.session()).id) as u32)
+            });
         }
         6 => {
-            evbuffer_add_printf(
-                evb,
-                b"@%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).value.window()).id,
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write!(out, "@{}", ((*(*epi).value.window()).id) as u32)
+            });
         }
         7 => {
-            evbuffer_add_printf(
-                evb,
-                b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).value.pane()).id,
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write!(out, "%{}", ((*(*epi).value.pane()).id) as u32)
+            });
         }
         8 => {
-            evbuffer_add_printf(evb, c"%p".as_ptr(), (*epi).value.pointer().ptr());
+            evbuffer_add_formatted(evb, |out| {
+                let pointer = (*epi).value.pointer().ptr();
+                if pointer.is_null() {
+                    out.write_all(b"(nil)")
+                } else {
+                    write!(out, "{:p}", pointer)
+                }
+            });
         }
         _ => {}
     };
@@ -562,7 +554,7 @@ pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item
     let mut size: size_t = 0;
     evb = evbuffer_new();
     if evb.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     event_payload_add_item(epi, evb);
     size = evbuffer_get_length(&*(evb));
@@ -602,12 +594,9 @@ pub unsafe fn event_payload_add_formats(
             name_bytes.extend_from_slice(key_bytes);
             let name = CString::new(name_bytes).expect("C string parts contain no NUL");
             // format_add copies the key into its format entry before returning.
-            format_add(
-                ft,
-                name.as_ptr(),
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                value.as_ptr().cast::<::core::ffi::c_char>(),
-            );
+            format_add(ft, name.as_ptr(), |out| {
+                write_cstr(out, value.as_ptr().cast::<::core::ffi::c_char>())
+            });
             let named = if (*epi).type_0() as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -623,12 +612,7 @@ pub unsafe fn event_payload_add_formats(
                 let mut suffixed = name.as_bytes().to_vec();
                 suffixed.extend_from_slice(b"_name");
                 let suffixed = CString::new(suffixed).expect("C string parts contain no NUL");
-                format_add(
-                    ft,
-                    suffixed.as_ptr(),
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    named,
-                );
+                format_add(ft, suffixed.as_ptr(), |out| write_cstr(out, named));
             }
         }
         epi = event_payload_tree_next(epi);
@@ -647,33 +631,32 @@ pub unsafe fn event_payload_item_name(
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
-pub unsafe extern "C" fn event_payload_log(
+pub unsafe fn event_payload_log(
     mut ep: *mut event_payload,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut ap: ::core::ffi::VaList;
-    ap = args.clone();
-    let prefix = xvasprintf_cstring(fmt, ap);
+    let prefix = format_message_with(write);
     evb = evbuffer_new();
     if evb.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     if !ep.is_null() {
         epi = event_payload_tree_minmax(&raw mut (*ep).items);
         while !epi.is_null() {
             if evbuffer_get_length(&*(evb)) != 0 as size_t {
-                evbuffer_add_printf(evb, b", \0" as *const u8 as *const ::core::ffi::c_char);
+                evbuffer_add_formatted(evb, |out| out.write_all(b", "));
             }
-            evbuffer_add_printf(
-                evb,
-                b"%s=\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*epi).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            evbuffer_add_formatted(evb, |out| {
+                write_cstr(
+                    out,
+                    ((*epi).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )?;
+                out.write_all(b"=")
+            });
             event_payload_add_item(epi, evb);
             epi = event_payload_tree_next(epi);
         }
@@ -767,7 +750,7 @@ mod tests {
         unsafe {
             let ep = event_payload_create();
             let name = CString::new(vec![b'k', 0xff]).unwrap();
-            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"old".as_ptr());
+            event_payload_set_string(ep, name.as_ptr(), |out| write_cstr(out, c"old".as_ptr()));
             let old_name = event_payload_item_name(event_payload_first(ep));
             event_payload_set_int(ep, old_name, 42);
 

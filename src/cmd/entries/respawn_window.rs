@@ -4,6 +4,7 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::format::bytes::write_cstr;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
@@ -91,13 +92,15 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         sc.flags |= SPAWN_KILL;
     }
     if spawn_window(&raw mut sc, &raw mut cause).is_null() {
-        cmdq_error(
-            item,
-            b"respawn window failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"respawn window failed: ")?;
+            write_cstr(
+                out,
+                cause
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            )
+        });
         environ_free(sc.environ);
         return CMD_RETURN_ERROR;
     }

@@ -5,6 +5,7 @@ use crate::src::cmd::{
     cmd_list_new, cmd_list_print_cstring, cmd_parse,
 };
 use crate::src::environ::environ_put;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
@@ -108,20 +109,16 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, mut cmdlist: *m
     }
     let s = cmd_list_print_cstring(&*cmdlist, 0);
     if (*pi).file.is_some() {
-        cmdq_print(
-            (*pi).item,
-            b"%s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*pi).file_ptr(),
-            (*pi).line,
-            s.as_ptr(),
-        );
+        cmdq_print((*pi).item, |out| {
+            write_cstr(out, (*pi).file_ptr())?;
+            write!(out, ":{}: ", ((*pi).line) as u32)?;
+            write_cstr(out, s.as_ptr())
+        });
     } else {
-        cmdq_print(
-            (*pi).item,
-            b"%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*pi).line,
-            s.as_ptr(),
-        );
+        cmdq_print((*pi).item, |out| {
+            write!(out, "{}: ", ((*pi).line) as u32)?;
+            write_cstr(out, s.as_ptr())
+        });
     }
 }
 unsafe fn cmd_parse_new_argument() -> *mut cmd_parse_argument {
@@ -792,7 +789,7 @@ pub unsafe fn cmd_parse_from_arguments(
             crate::src::shared::rc::retain((*arg).cmdlist);
             cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
         } else {
-            fatalx(b"unknown argument type\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"unknown argument type"));
         }
         if end != 0 {
             cmd_parse_commands_push(cmds, cmd);

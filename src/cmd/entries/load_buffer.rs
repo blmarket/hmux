@@ -3,6 +3,7 @@ use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::strerror;
 use crate::src::file::file_read_with_cmdq_wait;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -84,12 +85,11 @@ unsafe fn cmd_load_buffer_done(
     let mut bsize: size_t = evbuffer_get_length(&*(buffer));
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
-        cmdq_error(
-            item,
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(error),
-            path.map_or(::core::ptr::null(), CStr::as_ptr),
-        );
+        cmdq_error(item, |out| {
+            write_cstr(out, strerror(error))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
+        });
     } else if bsize != 0 as size_t {
         let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
         if paste_set_owned(
@@ -101,11 +101,9 @@ unsafe fn cmd_load_buffer_done(
             Some(&mut cause),
         ) != 0 as ::core::ffi::c_int
         {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ref().unwrap().as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
         } else if !tc.is_null()
             && !(*tc).session.is_null()
             && !(*tc).flags & CLIENT_DEAD as uint64_t != 0

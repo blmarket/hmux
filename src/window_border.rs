@@ -92,14 +92,12 @@ unsafe fn window_set_fill_cell(
     format_add(
         ft,
         b"is_inside\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        inside,
+        |out| write!(out, "{}", (inside) as i32),
     );
     format_add(
         ft,
         b"is_outside\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        (inside == 0) as ::core::ffi::c_int,
+        |out| write!(out, "{}", ((inside == 0) as ::core::ffi::c_int) as i32),
     );
     value = options_get_string(
         (*w).options,

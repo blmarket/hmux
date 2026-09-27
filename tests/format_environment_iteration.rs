@@ -1,5 +1,6 @@
 //! Environment iteration supports nested expansion and last-entry detection.
 use hmux2::src::environ::{environ_create, environ_free, environ_set};
+use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::format::{format_create, format_expand_cstring, format_free};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
@@ -22,7 +23,9 @@ fn environment_loops_support_nested_reads_and_last_entry_flags() {
 
         let tree = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
         for (name, value) in [(c"a", c"one"), (c"b", c"two")] {
-            environ_set(environ, name.as_ptr(), 0, c"%s".as_ptr(), value.as_ptr());
+            environ_set(environ, name.as_ptr(), 0, |out| {
+                write_cstr(out, value.as_ptr())
+            });
         }
         for (expression, expected) in [
             (

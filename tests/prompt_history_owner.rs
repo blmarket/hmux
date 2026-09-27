@@ -1,5 +1,6 @@
 //! Prompt history keeps stable borrowed C strings while entries remain live.
 
+use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::options::{
     options_create, options_default, options_free, options_set_number, options_set_string,
 };
@@ -112,13 +113,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         let path =
             std::env::temp_dir().join(format!("hmux2-prompt-history-{}", std::process::id()));
         let path_string = CString::new(path.as_os_str().as_bytes()).unwrap();
-        options_set_string(
-            options,
-            c"history-file".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            path_string.as_ptr(),
-        );
+        options_set_string(options, c"history-file".as_ptr(), 0, |out| {
+            write_cstr(out, path_string.as_ptr())
+        });
         prompt_save_history();
         assert_eq!(
             std::fs::read(&path).unwrap(),

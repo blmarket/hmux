@@ -8,6 +8,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::strcmp;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_get_level;
 use crate::src::session::session_alive;
 use crate::src::shared::abi::*;
@@ -71,16 +72,18 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: *mut eve
     event_payload_set_string(
         ep,
         b"event\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
+        |out| write_cstr(out, name),
     );
     if log_get_level() != 0 as ::core::ffi::c_int {
-        event_payload_log(
-            ep,
-            b"%s: %s: \0" as *const u8 as *const ::core::ffi::c_char,
-            b"events_fire\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-        );
+        event_payload_log(ep, |out| {
+            write_cstr(
+                out,
+                b"events_fire\0" as *const u8 as *const ::core::ffi::c_char,
+            )?;
+            out.write_all(b": ")?;
+            write_cstr(out, name)?;
+            out.write_all(b": ")
+        });
     }
     events_dispatching = events_dispatching.wrapping_add(1);
     let mut index = 0;

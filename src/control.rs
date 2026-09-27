@@ -5,12 +5,14 @@ use crate::src::cmd::queue::{
 };
 use crate::src::ffi::libc::{__errno_location, close, memcpy, memset, poll, strcmp, strlen};
 use crate::src::ffi::libc::{nfds_t, pollfd};
+use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client, monitor_destroy, monitor_remove};
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
-    evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_add_formatted, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_read, evbuffer_readln,
 };
 use crate::src::server_client::server_client_set_exit_message;
@@ -47,7 +49,6 @@ use crate::src::window::{
     window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
     winlink_find_by_window,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
@@ -616,11 +617,7 @@ pub unsafe fn control_continue_pane(mut c: *mut client, mut wp: *mut window_pane
             &raw mut (*wp).offset as *const ::core::ffi::c_void,
             ::core::mem::size_of::<window_pane_offset>() as size_t,
         );
-        control_notify_write(
-            c,
-            b"%%continue %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-        );
+        control_notify_write(c, |out| write!(out, "%continue %{}", ((*wp).id) as u32));
     }
 }
 pub unsafe fn control_pause_pane(mut c: *mut client, mut wp: *mut window_pane) {
@@ -629,11 +626,7 @@ pub unsafe fn control_pause_pane(mut c: *mut client, mut wp: *mut window_pane) {
     if !(*cp).flags & CONTROL_PANE_PAUSED != 0 {
         (*cp).flags |= CONTROL_PANE_PAUSED;
         control_discard_pane(c, cp);
-        control_notify_write(
-            c,
-            b"%%pause %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-        );
+        control_notify_write(c, |out| write!(out, "%pause %{}", ((*wp).id) as u32));
     }
 }
 pub unsafe fn control_reset_pane(mut c: *mut client, mut wp: *mut window_pane) {
@@ -747,18 +740,15 @@ unsafe fn control_flush_deferred(mut c: *mut client) {
         control_write_line(c, line);
     }
 }
-pub unsafe extern "C" fn control_write(
+pub unsafe fn control_write(
     mut c: *mut client,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut ap: ::core::ffi::VaList;
     if cs.is_null() {
         return;
     }
-    ap = args.clone();
-    let line = xvasprintf_cstring(fmt, ap);
+    let line = format_message_with(write);
     control_write_line(c, line);
 }
 pub unsafe fn control_write_guard(
@@ -777,14 +767,17 @@ pub unsafe fn control_write_guard(
     {
         (*cs).guard_depth += 1;
     }
-    control_write(
-        c,
-        b"%%%s %ld %u %d\0" as *const u8 as *const ::core::ffi::c_char,
-        guard,
-        t,
-        number,
-        flags,
-    );
+    control_write(c, |out| {
+        out.write_all(b"%")?;
+        write_cstr(out, guard)?;
+        write!(
+            out,
+            " {} {} {}",
+            (t) as ::core::ffi::c_long,
+            (number) as u32,
+            (flags) as i32
+        )
+    });
     if strcmp(guard, b"begin\0" as *const u8 as *const ::core::ffi::c_char)
         != 0 as ::core::ffi::c_int
         && (*cs).guard_depth > 0 as ::core::ffi::c_int
@@ -796,18 +789,15 @@ pub unsafe fn control_write_guard(
         control_flush_deferred(c);
     }
 }
-pub unsafe extern "C" fn control_notify_write(
+pub unsafe fn control_notify_write(
     mut c: *mut client,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut ap: ::core::ffi::VaList;
     if cs.is_null() {
         return;
     }
-    ap = args.clone();
-    let line = xvasprintf_cstring(fmt, ap);
+    let line = format_message_with(write);
     if (*cs).guard_depth == 0 as ::core::ffi::c_int {
         control_write_line(c, line);
         return;
@@ -860,11 +850,7 @@ unsafe fn control_check_age(
         }
         (*cp).flags |= CONTROL_PANE_PAUSED;
         control_discard_pane(c, cp);
-        control_notify_write(
-            c,
-            b"%%pause %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-        );
+        control_notify_write(c, |out| write!(out, "%pause %{}", ((*wp).id) as u32));
     } else {
         if age < CONTROL_MAXIMUM_AGE as uint64_t {
             return 0 as ::core::ffi::c_int;
@@ -960,13 +946,15 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
         b"begin\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     );
-    control_write(
-        c,
-        b"parse error: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        error
-            .as_ref()
-            .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-    );
+    control_write(c, |out| {
+        out.write_all(b"parse error: ")?;
+        write_cstr(
+            out,
+            error
+                .as_ref()
+                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+        )
+    });
     cmdq_guard(
         item,
         b"error\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1046,7 +1034,7 @@ pub unsafe fn control_wait_exit() {
     let mut n: ::core::ffi::c_int = 0;
     evb = evbuffer_new();
     if evb.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     loop {
         if let Some(line) = evbuffer_readln(evb) {
@@ -1139,42 +1127,47 @@ unsafe fn control_append_data(
     if message.is_null() {
         message = evbuffer_new();
         if message.is_null() {
-            fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"out of memory"));
         }
         if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_PAUSEAFTER != 0 {
-            evbuffer_add_printf(
-                message,
-                b"%%extended-output %%%u %llu : \0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-                age as ::core::ffi::c_ulonglong,
-            );
+            evbuffer_add_formatted(message, |out| {
+                write!(
+                    out,
+                    "%extended-output %{} {} : ",
+                    ((*wp).id) as u32,
+                    (age as ::core::ffi::c_ulonglong) as u64
+                )
+            });
         } else {
-            evbuffer_add_printf(
-                message,
-                b"%%output %%%u \0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            evbuffer_add_formatted(message, |out| {
+                write!(out, "%output %{} ", ((*wp).id) as u32)
+            });
         }
     }
     new_data =
         window_pane_get_new_data(wp, &raw mut (*cp).offset, &raw mut new_size) as *mut u_char;
     if new_size < size {
-        fatalx(
-            b"not enough data: %zu < %zu\0" as *const u8 as *const ::core::ffi::c_char,
-            new_size,
-            size,
-        );
+        fatalx(|out| {
+            write!(
+                out,
+                "not enough data: {} < {}",
+                (new_size) as usize,
+                (size) as usize
+            )
+        });
     }
     i = 0 as u_int;
     while (i as size_t) < size {
         if (*new_data.offset(i as isize) as ::core::ffi::c_int) < ' ' as i32
             || *new_data.offset(i as isize) as ::core::ffi::c_int == '\\' as i32
         {
-            evbuffer_add_printf(
-                message,
-                b"\\%03o\0" as *const u8 as *const ::core::ffi::c_char,
-                *new_data.offset(i as isize) as ::core::ffi::c_int,
-            );
+            evbuffer_add_formatted(message, |out| {
+                write!(
+                    out,
+                    "\\{:03o}",
+                    (*new_data.offset(i as isize) as ::core::ffi::c_int) as u32
+                )
+            });
         } else {
             start = i as size_t;
             while (i.wrapping_add(1 as u_int) as size_t) < size
@@ -1359,38 +1352,40 @@ unsafe fn control_sub_change(change: &monitor_change) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     if !wp.is_null() {
         w = (*wp).window as *mut window;
-        control_notify_write(
-            c,
-            b"%%subscription-changed %s $%u @%u %u %%%u : %s\0" as *const u8
-                as *const ::core::ffi::c_char,
-            change.name,
-            (*s).id,
-            (*w).id,
-            (*wl).idx,
-            (*wp).id,
-            change.value,
-        );
+        control_notify_write(c, |out| {
+            out.write_all(b"%subscription-changed ")?;
+            write_cstr(out, change.name)?;
+            write!(
+                out,
+                " ${} @{} {} %{} : ",
+                ((*s).id) as u32,
+                ((*w).id) as u32,
+                ((*wl).idx) as u32,
+                ((*wp).id) as u32
+            )?;
+            write_cstr(out, change.value)
+        });
     } else if !wl.is_null() {
         w = (*wl).window;
-        control_notify_write(
-            c,
-            b"%%subscription-changed %s $%u @%u %u - : %s\0" as *const u8
-                as *const ::core::ffi::c_char,
-            change.name,
-            (*s).id,
-            (*w).id,
-            (*wl).idx,
-            change.value,
-        );
+        control_notify_write(c, |out| {
+            out.write_all(b"%subscription-changed ")?;
+            write_cstr(out, change.name)?;
+            write!(
+                out,
+                " ${} @{} {} - : ",
+                ((*s).id) as u32,
+                ((*w).id) as u32,
+                ((*wl).idx) as u32
+            )?;
+            write_cstr(out, change.value)
+        });
     } else {
-        control_notify_write(
-            c,
-            b"%%subscription-changed %s $%u - - - : %s\0" as *const u8
-                as *const ::core::ffi::c_char,
-            change.name,
-            (*s).id,
-            change.value,
-        );
+        control_notify_write(c, |out| {
+            out.write_all(b"%subscription-changed ")?;
+            write_cstr(out, change.name)?;
+            write!(out, " ${} - - - : ", ((*s).id) as u32)?;
+            write_cstr(out, change.value)
+        });
     };
 }
 pub unsafe fn control_start(mut c: *mut client) {
@@ -1423,7 +1418,7 @@ pub unsafe fn control_start(mut c: *mut client) {
         }),
     );
     if (*cs).read_event.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"out of memory"));
     }
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         (*cs).write_event = (*cs).read_event;
@@ -1439,7 +1434,7 @@ pub unsafe fn control_start(mut c: *mut client) {
             }),
         );
         if (*cs).write_event.is_null() {
-            fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
+            fatalx(|out| out.write_all(b"out of memory"));
         }
     }
     bufferevent_setwatermark((*cs).write_event);

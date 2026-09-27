@@ -1087,7 +1087,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if o.is_null() {
-        fatalx(b"missing pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"missing pane-scrollbars-style"));
     }
     oe = crate::src::options::options_table_entry(o);
     let style = format_single_cstring(
@@ -1101,7 +1101,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     if style_parse(sb_style, &raw const grid_default_cell, style.as_ptr())
         != 0 as ::core::ffi::c_int
     {
-        fatalx(b"bad pane-scrollbars-style default\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"bad pane-scrollbars-style default"));
     }
     s = options_get_string(
         oo,

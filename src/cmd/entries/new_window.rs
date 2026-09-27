@@ -9,6 +9,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::strcmp;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{
@@ -116,10 +117,9 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         && (count != 1 as ::core::ffi::c_int
             || *args_string(args, 0 as u_int) as ::core::ffi::c_int != '\0' as i32)
     {
-        cmdq_error(
-            item,
-            b"command cannot be given for empty pane\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"command cannot be given for empty pane")
+        });
         return CMD_RETURN_ERROR;
     }
     name = args_get(args, 'n' as i32 as u_char);
@@ -133,11 +133,10 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             ::core::ptr::null_mut::<window_pane>(),
         );
         if check_name(expanded.as_ptr()) == 0 {
-            cmdq_error(
-                item,
-                b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                expanded.as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                out.write_all(b"invalid window name: ")?;
+                write_cstr(out, expanded.as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
@@ -169,12 +168,10 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                     if new_wl.is_null() {
                         new_wl = wl;
                     } else {
-                        cmdq_error(
-                            item,
-                            b"multiple windows named %s\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            wname,
-                        );
+                        cmdq_error(item, |out| {
+                            out.write_all(b"multiple windows named ")?;
+                            write_cstr(out, wname)
+                        });
                         return CMD_RETURN_ERROR;
                     }
                 }
@@ -231,13 +228,15 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     new_wl = spawn_window(&raw mut sc, &raw mut cause);
     if new_wl.is_null() {
-        cmdq_error(
-            item,
-            b"create window failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"create window failed: ")?;
+            write_cstr(
+                out,
+                cause
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            )
+        });
         environ_free(sc.environ);
         return CMD_RETURN_ERROR;
     } else {
@@ -254,19 +253,12 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             }
             let cp =
                 format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window).active);
-            cmdq_print(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cp.as_ptr(),
-            );
+            cmdq_print(item, |out| write_cstr(out, cp.as_ptr()));
         }
         cmd_find_from_winlink(&raw mut fs, new_wl, 0 as ::core::ffi::c_int);
-        cmdq_insert_hook(
-            s,
-            item,
-            &raw mut fs,
-            b"after-new-window\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_insert_hook(s, item, &raw mut fs, |out| {
+            out.write_all(b"after-new-window")
+        });
         environ_free(sc.environ);
         return CMD_RETURN_NORMAL;
     };

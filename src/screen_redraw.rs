@@ -1,4 +1,5 @@
 use crate::src::ffi::libc::{memcpy, memset, strlcat, strlen};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
@@ -1054,18 +1055,24 @@ unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<re
         && (*bctx).sy as ::core::ffi::c_ulong
             > SIZE_MAX.wrapping_div((*bctx).sx as ::core::ffi::c_ulong)
     {
-        fatalx(
-            b"%s: too many cells\0" as *const u8 as *const ::core::ffi::c_char,
-            b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        fatalx(|out| {
+            write_cstr(
+                out,
+                b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
+            )?;
+            out.write_all(b": too many cells")
+        });
     }
     ncells = ((*bctx).sx as size_t).wrapping_mul((*bctx).sy as size_t);
     if ncells > cells.len() {
         if cells.try_reserve_exact(ncells - cells.len()).is_err() {
-            fatalx(
-                b"%s: too many cells\0" as *const u8 as *const ::core::ffi::c_char,
-                b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            fatalx(|out| {
+                write_cstr(
+                    out,
+                    b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
+                )?;
+                out.write_all(b": too many cells")
+            });
         }
         cells.resize_with(ncells, redraw_build_cell::default);
     }
@@ -1141,7 +1148,7 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         oy: bctx.oy,
     }));
     if bctx.sy == 0 {
-        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+        fatalx(|out| out.write_all(b"xcalloc: zero size"));
     }
     // Keep row storage fixed for the lifetime of the scene; boxed spans keep
     // their addresses stable as each collection grows during construction.

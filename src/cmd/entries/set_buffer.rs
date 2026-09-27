@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_free, paste_get_name, paste_get_top, paste_rename,
     paste_set_owned,
@@ -81,11 +82,10 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     if cmd_get_entry(self_0) == &raw const cmd_delete_buffer_entry {
         if pb.is_null() {
             if let Some(bufname) = bufname.as_ref() {
-                cmdq_error(
-                    item,
-                    b"unknown buffer: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    bufname.as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"unknown buffer: ")?;
+                    write_cstr(out, bufname.as_ptr())
+                });
                 current_block = 17843714670734105592;
             } else {
                 pb = paste_get_top(None);
@@ -101,10 +101,7 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             17843714670734105592 => {}
             _ => {
                 if pb.is_null() {
-                    cmdq_error(
-                        item,
-                        b"no buffer\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    cmdq_error(item, |out| out.write_all(b"no buffer"));
                 } else {
                     paste_free(pb);
                     return CMD_RETURN_NORMAL;
@@ -114,11 +111,10 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
         if pb.is_null() {
             if let Some(bufname) = bufname.as_ref() {
-                cmdq_error(
-                    item,
-                    b"unknown buffer: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    bufname.as_ptr(),
-                );
+                cmdq_error(item, |out| {
+                    out.write_all(b"unknown buffer: ")?;
+                    write_cstr(out, bufname.as_ptr())
+                });
                 current_block = 17843714670734105592;
             } else {
                 pb = paste_get_top(None);
@@ -134,31 +130,23 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             17843714670734105592 => {}
             _ => {
                 if pb.is_null() {
-                    cmdq_error(
-                        item,
-                        b"no buffer\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                    cmdq_error(item, |out| out.write_all(b"no buffer"));
                 } else if paste_rename(
                     bufname.as_ref().unwrap().as_ptr(),
                     args_get(args, 'n' as i32 as u_char),
                     &raw mut cause,
                 ) != 0 as ::core::ffi::c_int
                 {
-                    cmdq_error(
-                        item,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause.as_ref().unwrap().as_ptr(),
-                    );
+                    cmdq_error(item, |out| {
+                        write_cstr(out, cause.as_ref().unwrap().as_ptr())
+                    });
                 } else {
                     return CMD_RETURN_NORMAL;
                 }
             }
         }
     } else if args_count(args) != 1 as u_int {
-        cmdq_error(
-            item,
-            b"no data specified\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        cmdq_error(item, |out| out.write_all(b"no data specified"));
     } else {
         let new_data = CStr::from_ptr(args_string(args, 0 as u_int)).to_bytes();
         if new_data.is_empty() {
@@ -184,11 +172,9 @@ unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if paste_set_owned(bufdata.into_boxed_slice(), name, Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ref().unwrap().as_ptr(),
-            );
+            cmdq_error(item, |out| {
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
         } else {
             if let Some(selection_data) = selection_data.as_ref() {
                 tty_set_selection(

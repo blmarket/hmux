@@ -8,6 +8,7 @@ use crate::src::events_payload::{
     event_payload_set_target,
 };
 use crate::src::ffi::libc::strcmp;
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::server_fn::server_status_session;
 use crate::src::session::sessions;
@@ -64,11 +65,10 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     };
     let tmp = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     if check_name(tmp.as_ptr()) == 0 {
-        cmdq_error(
-            item,
-            b"invalid session name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tmp.as_ptr(),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"invalid session name: ")?;
+            write_cstr(out, tmp.as_ptr())
+        });
         return CMD_RETURN_ERROR;
     }
     let newname = clean_name_cstring(CStr::from_ptr(tmp.as_ptr()), 0)
@@ -77,11 +77,10 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         return CMD_RETURN_NORMAL;
     }
     if !session_find(newname.as_ptr()).is_null() {
-        cmdq_error(
-            item,
-            b"duplicate session: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            newname.as_ptr(),
-        );
+        cmdq_error(item, |out| {
+            out.write_all(b"duplicate session: ")?;
+            write_cstr(out, newname.as_ptr())
+        });
         return CMD_RETURN_ERROR;
     }
     ep = event_payload_create();
@@ -95,14 +94,12 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     event_payload_set_string(
         ep,
         b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
+        |out| write_cstr(out, ((*s).name).as_ptr().cast_mut()),
     );
     event_payload_set_string(
         ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        newname.as_ptr(),
+        |out| write_cstr(out, newname.as_ptr()),
     );
     sessions_remove(&raw mut sessions, s);
     drop(session_replace_name(&mut *s, newname));

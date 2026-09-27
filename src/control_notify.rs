@@ -4,6 +4,7 @@ use crate::src::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
     event_payload_get_string, event_payload_get_window, event_payload_print_owned,
 };
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::server::clients;
 use crate::src::shared::events::{event_payload, events_callback};
@@ -39,11 +40,9 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
                 && !(*c).flags & CLIENT_EXIT as uint64_t != 0
                 && !(*c).control_state.is_null()
             {
-                control_notify_write(
-                    c,
-                    b"%%pane-mode-changed %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                control_notify_write(c, |out| {
+                    write!(out, "%pane-mode-changed %{}", ((*wp).id) as u32)
+                });
             }
             c = clients.next(c);
         }
@@ -59,11 +58,10 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%pane-mode-changed %s\0" as *const u8 as *const ::core::ffi::c_char,
-                value.as_ptr().cast::<::core::ffi::c_char>(),
-            );
+            control_notify_write(c, |out| {
+                out.write_all(b"%pane-mode-changed ")?;
+                write_cstr(out, value.as_ptr().cast::<::core::ffi::c_char>())
+            });
         }
         c = clients.next(c);
     }
@@ -104,11 +102,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
                 format_defaults(ft, c, s, wl, ::core::ptr::null_mut::<window_pane>());
                 let cp = format_expand_cstring(ft, template);
                 format_free(ft);
-                control_notify_write(
-                    c,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cp.as_ptr(),
-                );
+                control_notify_write(c, |out| write_cstr(out, cp.as_ptr()));
             }
         }
         c = clients.next(c);
@@ -128,12 +122,14 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%window-pane-changed @%u %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*w).id,
-                (*(*w).active).id,
-            );
+            control_notify_write(c, |out| {
+                write!(
+                    out,
+                    "%window-pane-changed @{} %{}",
+                    ((*w).id) as u32,
+                    ((*(*w).active).id) as u32
+                )
+            });
         }
         c = clients.next(c);
     }
@@ -156,17 +152,11 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
         {
             cs = (*c).session;
             if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                control_notify_write(
-                    c,
-                    b"%%window-close @%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*w).id,
-                );
+                control_notify_write(c, |out| write!(out, "%window-close @{}", ((*w).id) as u32));
             } else {
-                control_notify_write(
-                    c,
-                    b"%%unlinked-window-close @%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*w).id,
-                );
+                control_notify_write(c, |out| {
+                    write!(out, "%unlinked-window-close @{}", ((*w).id) as u32)
+                });
             }
         }
         c = clients.next(c);
@@ -190,17 +180,11 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
         {
             cs = (*c).session;
             if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                control_notify_write(
-                    c,
-                    b"%%window-add @%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*w).id,
-                );
+                control_notify_write(c, |out| write!(out, "%window-add @{}", ((*w).id) as u32));
             } else {
-                control_notify_write(
-                    c,
-                    b"%%unlinked-window-add @%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*w).id,
-                );
+                control_notify_write(c, |out| {
+                    write!(out, "%unlinked-window-add @{}", ((*w).id) as u32)
+                });
             }
         }
         c = clients.next(c);
@@ -224,20 +208,15 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
         {
             cs = (*c).session;
             if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                control_notify_write(
-                    c,
-                    b"%%window-renamed @%u %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*w).id,
-                    (*w).name.as_ptr(),
-                );
+                control_notify_write(c, |out| {
+                    write!(out, "%window-renamed @{} ", ((*w).id) as u32)?;
+                    write_cstr(out, (*w).name.as_ptr())
+                });
             } else {
-                control_notify_write(
-                    c,
-                    b"%%unlinked-window-renamed @%u %s\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    (*w).id,
-                    (*w).name.as_ptr(),
-                );
+                control_notify_write(c, |out| {
+                    write!(out, "%unlinked-window-renamed @{} ", ((*w).id) as u32)?;
+                    write_cstr(out, (*w).name.as_ptr())
+                });
             }
         }
         c = clients.next(c);
@@ -261,23 +240,22 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
             || (*c).session.is_null())
         {
             if cc == c {
-                control_notify_write(
-                    c,
-                    b"%%session-changed $%u %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).id,
-                    ((*s).name).as_ptr().cast_mut(),
-                );
+                control_notify_write(c, |out| {
+                    write!(out, "%session-changed ${} ", ((*s).id) as u32)?;
+                    write_cstr(out, ((*s).name).as_ptr().cast_mut())
+                });
             } else {
-                control_notify_write(
-                    c,
-                    b"%%client-session-changed %s $%u %s\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    ((*cc).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    (*s).id,
-                    ((*s).name).as_ptr().cast_mut(),
-                );
+                control_notify_write(c, |out| {
+                    out.write_all(b"%client-session-changed ")?;
+                    write_cstr(
+                        out,
+                        ((*cc).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )?;
+                    write!(out, " ${} ", ((*s).id) as u32)?;
+                    write_cstr(out, ((*s).name).as_ptr().cast_mut())
+                });
             }
         }
         c = clients.next(c);
@@ -297,13 +275,15 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%client-detached %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*cc).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            control_notify_write(c, |out| {
+                out.write_all(b"%client-detached ")?;
+                write_cstr(
+                    out,
+                    ((*cc).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+            });
         }
         c = clients.next(c);
     }
@@ -322,12 +302,10 @@ unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) 
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%session-renamed $%u %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*s).id,
-                ((*s).name).as_ptr().cast_mut(),
-            );
+            control_notify_write(c, |out| {
+                write!(out, "%session-renamed ${} ", ((*s).id) as u32)?;
+                write_cstr(out, ((*s).name).as_ptr().cast_mut())
+            });
         }
         c = clients.next(c);
     }
@@ -341,10 +319,7 @@ unsafe fn control_session_created_cb(_name: &CStr, _payload: &mut event_payload)
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%sessions-changed\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            control_notify_write(c, |out| out.write_all(b"%sessions-changed"));
         }
         c = clients.next(c);
     }
@@ -358,10 +333,7 @@ unsafe fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) 
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%sessions-changed\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            control_notify_write(c, |out| out.write_all(b"%sessions-changed"));
         }
         c = clients.next(c);
     }
@@ -380,12 +352,14 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%session-window-changed $%u @%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*s).id,
-                (*(*(*s).curw).window).id,
-            );
+            control_notify_write(c, |out| {
+                write!(
+                    out,
+                    "%session-window-changed ${} @{}",
+                    ((*s).id) as u32,
+                    ((*(*(*s).curw).window).id) as u32
+                )
+            });
         }
         c = clients.next(c);
     }
@@ -404,11 +378,10 @@ unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payl
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%paste-buffer-changed %s\0" as *const u8 as *const ::core::ffi::c_char,
-                pbname,
-            );
+            control_notify_write(c, |out| {
+                out.write_all(b"%paste-buffer-changed ")?;
+                write_cstr(out, pbname)
+            });
         }
         c = clients.next(c);
     }
@@ -427,11 +400,10 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && !(*c).control_state.is_null()
         {
-            control_notify_write(
-                c,
-                b"%%paste-buffer-deleted %s\0" as *const u8 as *const ::core::ffi::c_char,
-                pbname,
-            );
+            control_notify_write(c, |out| {
+                out.write_all(b"%paste-buffer-deleted ")?;
+                write_cstr(out, pbname)
+            });
         }
         c = clients.next(c);
     }

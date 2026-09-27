@@ -1,6 +1,7 @@
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
 use crate::src::ffi::libc::time;
+use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
 use crate::src::shared::events::event_payload;
@@ -265,8 +266,7 @@ unsafe fn paste_fire_event(
     event_payload_set_string(
         ep,
         b"paste_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pbname,
+        |out| write_cstr(out, pbname),
     );
     events_fire(name, ep);
 }

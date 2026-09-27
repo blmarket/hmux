@@ -1,5 +1,6 @@
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
+use crate::src::format::bytes::write_cstr;
 use crate::src::proc::{proc_get_peer_gid, proc_get_peer_uid};
 use crate::src::server::clients;
 use crate::src::server_client::server_client_set_exit_message;
@@ -179,19 +180,19 @@ pub unsafe fn server_acl_display(mut item: *mut cmdq_item) {
         match current_block_12 {
             11050875288958768710 => {
                 if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
-                    cmdq_print(
-                        item,
-                        b"%s (%c,R)\0" as *const u8 as *const ::core::ffi::c_char,
-                        name,
-                        type_0 as ::core::ffi::c_int,
-                    );
+                    cmdq_print(item, |out| {
+                        write_cstr(out, name)?;
+                        out.write_all(b" (")?;
+                        out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
+                        out.write_all(b",R)")
+                    });
                 } else {
-                    cmdq_print(
-                        item,
-                        b"%s (%c,W)\0" as *const u8 as *const ::core::ffi::c_char,
-                        name,
-                        type_0 as ::core::ffi::c_int,
-                    );
+                    cmdq_print(item, |out| {
+                        write_cstr(out, name)?;
+                        out.write_all(b" (")?;
+                        out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
+                        out.write_all(b",W)")
+                    });
                 }
             }
             _ => {}

@@ -1,6 +1,7 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strcmp, strlcat, strlen};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
     format_free,
@@ -596,32 +597,29 @@ unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     format_add(
         ft,
         b"prompt_input\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        tmp.as_ptr(),
+        |out| write_cstr(out, tmp.as_ptr()),
     );
     format_add(
         ft,
         b"prompt_flags\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        prompt_flags_to_string((*pr).flags),
+        |out| write_cstr(out, prompt_flags_to_string((*pr).flags)),
     );
     format_add(
         ft,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        prompt_type_string((*pr).type_0),
+        |out| write_cstr(out, prompt_type_string((*pr).type_0)),
     );
     if (*pr).flags & PROMPT_COMMANDMODE != 0 {
         format_add(
             ft,
             b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-            b"1\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"1"),
         );
     } else {
         format_add(
             ft,
             b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-            b"0\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"0"),
         );
     }
     return ft;
@@ -631,8 +629,7 @@ unsafe fn prompt_expand1(mut pr: *mut prompt, mut ft: *mut format_tree) -> CStri
     format_add(
         ft,
         b"message\0" as *const u8 as *const ::core::ffi::c_char,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        prompt.as_ptr(),
+        |out| write_cstr(out, prompt.as_ptr()),
     );
     format_expand_time_cstring(ft, (*pr).message_format.as_ptr())
 }
