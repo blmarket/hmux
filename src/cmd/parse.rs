@@ -363,7 +363,7 @@ unsafe fn cmd_parse_build_command(
         Ok(command) => {
             pr.status = CMD_PARSE_SUCCESS;
             pr.cmdlist = Some(cmd_list_new());
-            cmd_list_append(pr.cmdlist_ptr(), command);
+            cmd_list_append(pr.cmdlist.as_ref().expect("parsed command list").get(), command);
         }
         Err(cause) => {
             pr.status = CMD_PARSE_ERROR;
@@ -405,7 +405,7 @@ unsafe fn cmd_parse_build_commands(
         {
             return;
         }
-        cmd_list_append_all(current, pr.cmdlist_ptr());
+        cmd_list_append_all(current, pr.cmdlist.as_ref().expect("parsed command list").get());
         drop(pr.cmdlist.take());
     }
     if let Some(current) = current {
@@ -782,7 +782,7 @@ mod parser_collection_tests {
                         "built command must retain its nested command list"
                     );
                     assert_eq!(
-                        cmd_list_print_cstring(&*result.cmdlist_ptr(), 0).as_bytes(),
+                        cmd_list_print_cstring(&*result.cmdlist.as_ref().expect("parsed command list").get(), 0).as_bytes(),
                         b"if-shell -F 1 { display-message -p nested }"
                     );
                     drop(result.cmdlist.take());

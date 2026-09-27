@@ -319,11 +319,6 @@ pub struct cmd_parse_result {
 }
 
 impl cmd_parse_result {
-    pub fn cmdlist_ptr(&self) -> *mut cmd_list {
-        self.cmdlist
-            .as_ref()
-            .map_or(std::ptr::null_mut(), super::rc::as_ptr)
-    }
     pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>> {
         self.cmdlist.take()
     }

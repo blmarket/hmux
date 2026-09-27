@@ -4641,7 +4641,7 @@ unsafe fn server_client_dispatch_command(
                 }
                 1 | _ => {
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
-                        && cmd_list_all_have(pr.cmdlist_ptr()) == 0
+                        && cmd_list_all_have(pr.cmdlist.as_ref().expect("parsed command list").get()) == 0
                     {
                         new_item = cmdq_get_callback_owned(
                             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
