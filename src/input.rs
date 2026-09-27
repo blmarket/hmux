@@ -4746,10 +4746,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
     }
     w = (*wp).window as *mut window;
     if (*ictx).input_len == 0 as size_t {
-        o = options_get_only(
-            options_owner_ptr(&mut (*w).options),
-            b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        o = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*w).options)), std::ffi::CStr::from_ptr(b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
         if !o.is_null() {
             options_remove_or_default(
                 o,

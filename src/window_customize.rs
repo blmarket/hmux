@@ -2598,7 +2598,7 @@ write_cstr(out, unit)
                                                                                                         }
                                                                                                     }
                                                                                                     if !wo.is_null() && options_owner(o) != wo {
-                                                                                                        parent = options_get_only(wo, name);
+                                                                                                        parent = crate::src::options::options_get_only_mut(&mut *(wo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
                                                                                                         if !parent.is_null() {
                                                                                                             value_owner = Some(options_to_string(
                                                                                                                 parent,
@@ -2632,7 +2632,7 @@ write_cstr(out, unit)
                                                                                                         4086289836260337793 => {}
                                                                                                         _ => {
                                                                                                             if !go.is_null() && options_owner(o) != go {
-                                                                                                                parent = options_get_only(go, name);
+                                                                                                                parent = crate::src::options::options_get_only_mut(&mut *(go), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
                                                                                                                 if !parent.is_null() {
                                                                                                                     value_owner = Some(options_to_string(
                                                                                                                        parent,
@@ -4135,12 +4135,9 @@ unsafe fn window_customize_reset_option(
     }
     oo = item.oo;
     while !oo.is_null() {
-        o = options_get_only(
-            oo,
-            (item.name)
+        o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((item.name)
                 .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))).map_or(std::ptr::null_mut(), |entry| entry);
         if !o.is_null() {
             options_remove_or_default(
                 o,

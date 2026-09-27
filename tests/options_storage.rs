@@ -22,7 +22,7 @@ fn ordered_names_survive_updates_and_removal() {
         }
         for (name, &entry) in names.iter().zip(&pointers) {
             let name = CString::new(name.as_slice()).unwrap();
-            assert_eq!(options_get_only(oo, name.as_ptr()), entry);
+            assert_eq!(hmux2::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name.as_ptr())).map_or(std::ptr::null_mut(), |entry| entry), entry);
             assert_eq!(options_owner(entry), oo);
             assert_eq!(
                 options_set_string(oo, name.as_ptr(), 0, |out| { out.write_all(b"updated") }),
@@ -41,7 +41,7 @@ fn ordered_names_survive_updates_and_removal() {
         }
         assert!(entry.is_null());
         assert!(options_first(oo).is_null());
-        assert!(options_get_only(oo, c"@key-000".as_ptr()).is_null());
+        assert!(hmux2::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(c"@key-000".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry).is_null());
         // Repopulate so destruction also exercises nonempty storage.
         options_set_string(oo, c"@again".as_ptr(), 0, |out| out.write_all(b"value"));
         options_free(oo);
@@ -56,7 +56,7 @@ fn aliases_parent_fallback_and_shadowing() {
         let inherited = options_set_string(parent, c"@shared".as_ptr(), 0, |out| {
             out.write_all(b"parent")
         });
-        assert!(options_get_only(child, c"@shared".as_ptr()).is_null());
+        assert!(hmux2::src::options::options_get_only_mut(&mut *(child), std::ffi::CStr::from_ptr(c"@shared".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry).is_null());
         assert_eq!(options_get(child, c"@shared".as_ptr()), inherited);
         let local =
             options_set_string(child, c"@shared".as_ptr(), 0, |out| out.write_all(b"child"));
@@ -74,7 +74,7 @@ fn aliases_parent_fallback_and_shadowing() {
             .unwrap();
         let canonical = options_default(parent, definition);
         assert_eq!(
-            options_get_only(parent, c"display-panes-color".as_ptr()),
+            hmux2::src::options::options_get_only_mut(&mut *(parent), std::ffi::CStr::from_ptr(c"display-panes-color".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry),
             canonical
         );
         assert_eq!(
@@ -89,7 +89,7 @@ fn aliases_parent_fallback_and_shadowing() {
             c"red"
         );
         options_free(child);
-        assert_eq!(options_get_only(parent, c"@shared".as_ptr()), inherited);
+        assert_eq!(hmux2::src::options::options_get_only_mut(&mut *(parent), std::ffi::CStr::from_ptr(c"@shared".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry), inherited);
         options_free(parent);
     }
 }
@@ -133,7 +133,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             CStr::from_ptr((*default).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())),
             definition.default_str.unwrap()
         );
-        assert_eq!(options_get_only(oo, definition.name_ptr()), default);
+        assert_eq!(hmux2::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(definition.name_ptr())).map_or(std::ptr::null_mut(), |entry| entry), default);
 
         let empty_definition = (*table)
             .iter()

@@ -1165,10 +1165,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
-    o = options_get_only(
-        global_options,
-        b"terminal-overrides\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"terminal-overrides\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
     a = options_array_first(o);
     while !a.is_null() {
         ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
@@ -1357,10 +1354,7 @@ pub unsafe fn tty_term_create(
         }
         i = i.wrapping_add(1);
     }
-    o = options_get_only(
-        global_options,
-        b"terminal-features\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"terminal-features\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
     a = options_array_first(o);
     while !a.is_null() {
         ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);

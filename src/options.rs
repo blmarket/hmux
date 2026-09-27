@@ -290,31 +290,34 @@ pub unsafe fn options_next(mut o: *mut options_entry) -> *mut options_entry {
         .map(|(_, entry)| &mut **entry as *mut options_entry)
         .unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn options_get_only(
-    mut oo: *mut options,
-    mut name: *const ::core::ffi::c_char,
-) -> *mut options_entry {
-    let entries = &mut (*oo).tree;
-    let key = CStr::from_ptr(name).to_bytes();
-    let key = if entries.contains_key(key) {
-        key
+pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
+    let key = if oo.tree.contains_key(name.to_bytes()) {
+        name.to_bytes()
     } else {
-        CStr::from_ptr(options_map_name(name)).to_bytes()
+        unsafe { CStr::from_ptr(options_map_name(name.as_ptr())).to_bytes() }
     };
-    entries.get_mut(key).map_or(std::ptr::null_mut(), |entry| &mut **entry)
+    oo.tree.get(key).map(Box::as_ref)
+}
+pub fn options_get_only_mut<'a>(oo: &'a mut options, name: &CStr) -> Option<&'a mut options_entry> {
+    let key = if oo.tree.contains_key(name.to_bytes()) {
+        name.to_bytes()
+    } else {
+        unsafe { CStr::from_ptr(options_map_name(name.as_ptr())).to_bytes() }
+    };
+    oo.tree.get_mut(key).map(Box::as_mut)
 }
 pub unsafe fn options_get(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    o = options_get_only(oo, name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     while o.is_null() {
         oo = (*oo).parent;
         if oo.is_null() {
             break;
         }
-        o = options_get_only(oo, name);
+        o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     }
     return o;
 }
@@ -406,7 +409,7 @@ unsafe fn options_add(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let name = CStr::from_ptr(name).to_owned();
     let lookup_name = name.as_ptr();
-    o = options_get_only(oo, lookup_name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(lookup_name)).map_or(std::ptr::null_mut(), |entry| entry);
     if !o.is_null() {
         options_remove(o);
     }
@@ -956,7 +959,7 @@ pub unsafe fn options_set_string(
     let mut separator: *const ::core::ffi::c_char =
         b"\0" as *const u8 as *const ::core::ffi::c_char;
     let formatted = format_message_with(write);
-    o = options_get_only(oo, name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     let value = if !o.is_null()
         && append != 0
         && ((*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null()
@@ -1021,7 +1024,7 @@ pub unsafe fn options_set_number(
             out.write_all(b" must be a string")
         });
     }
-    o = options_get_only(oo, name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     if o.is_null() {
         o = options_default(oo, options_parent_table_entry(oo, name));
         if o.is_null() {
@@ -1062,7 +1065,7 @@ pub unsafe fn options_set_command(
             out.write_all(b" must be a string")
         });
     }
-    o = options_get_only(oo, name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     if o.is_null() {
         o = options_default(oo, options_parent_table_entry(oo, name));
         if o.is_null() {

@@ -1627,10 +1627,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    o = options_get_only(
-        global_options,
-        b"command-alias\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
     if !o.is_null() {
         a = options_array_first(o);
         while !a.is_null() {

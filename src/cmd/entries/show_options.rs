@@ -204,7 +204,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 current_block = 18040240512796061664;
             }
         } else {
-            o = options_get_only(oo, name);
+            o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
             if args_has(args, 'A' as i32 as u_char) != 0 && o.is_null() {
                 o = options_get(oo, name);
                 parent = 1 as ::core::ffi::c_int;
@@ -575,7 +575,7 @@ unsafe fn cmd_show_options_all(
                 || std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                     && !(*oe).flags & OPTIONS_TABLE_IS_HOOK != 0)
             {
-                o = options_get_only(oo, (*oe).name_ptr());
+                o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((*oe).name_ptr())).map_or(std::ptr::null_mut(), |entry| entry);
                 if o.is_null() {
                     if args_has(args, 'A' as i32 as u_char) == 0 {
                         current_block_25 = 2370887241019905314;

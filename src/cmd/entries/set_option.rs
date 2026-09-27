@@ -254,7 +254,7 @@ unsafe fn cmd_set_hook_monitor_exec(
                         expanded = Some(format_single_from_target_cstring(item, value));
                         value = expanded.as_ref().expect("expanded value was set").as_ptr();
                     }
-                    o = options_get_only(oo, name);
+                    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
                     if args_has(args, 'o' as i32 as u_char) == 0 || o.is_null() {
                         let newvalue = if args_has(args, 'a' as i32 as u_char) != 0 && !o.is_null()
                         {
@@ -392,7 +392,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 current_block = 8517774764635037400;
             }
         } else {
-            o = options_get_only(oo, name);
+            o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
             parent = options_get(oo, name);
             if !array_key.is_null()
                 && (*name as ::core::ffi::c_int == '@' as i32 || options_is_array(parent) == 0)
@@ -444,7 +444,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                     current_block = 10095721787123848864;
                                     break;
                                 }
-                                po = options_get_only(options_owner_ptr(&mut (*loop_0).options), name);
+                                po = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*loop_0).options)), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
                                 if !po.is_null() {
                                     if options_remove_or_default(po, array_key, &raw mut cause)
                                         != 0 as ::core::ffi::c_int

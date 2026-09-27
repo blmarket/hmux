@@ -186,7 +186,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     }
     if !(*hd).oo.is_null() {
         oo = (*hd).oo;
-        o = options_get_only(oo, (*hd).name.as_ptr());
+        o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((*hd).name.as_ptr())).map_or(std::ptr::null_mut(), |entry| entry);
     } else {
         if fs.s.is_null() {
             oo = global_s_options;
@@ -401,7 +401,7 @@ impl Drop for hooks_monitor {
 pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core::ffi::c_char) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
-    o = options_get_only(oo, name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     if o.is_null() {
         return;
     }
@@ -535,7 +535,7 @@ pub unsafe fn hooks_monitor_add(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
     hooks_monitor_remove(oo, name);
-    o = options_get_only(oo, name);
+    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     if o.is_null() {
         o = options_set_string(oo, name, 0 as ::core::ffi::c_int, |out| {
             write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
