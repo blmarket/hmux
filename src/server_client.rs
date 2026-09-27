@@ -1471,7 +1471,6 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
 }
 pub unsafe fn server_client_lost(mut c: *mut client) {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut cf1: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if cfg_client == c {
         cfg_client = ::core::ptr::null_mut::<client>();
     }
@@ -1480,14 +1479,12 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     status_prompt_clear(c);
     status_message_clear(c);
     cmdq_abort_file_wait(c);
-    cf = client_files_minmax(&(*c).files);
-    while !cf.is_null() && {
-        cf1 = client_files_next(&*cf);
-        1 as ::core::ffi::c_int != 0
-    } {
+    let mut next_file = client_files_minmax(&(*c).files);
+    while let Some(file) = next_file {
+        cf = crate::src::shared::rc::as_ptr(&file);
+        next_file = client_files_next(&*cf);
         (*cf).error = EINTR;
         file_fire_done(cf);
-        cf = cf1;
     }
     clients.remove(c);
     log_debug(format_args!(
@@ -1581,7 +1578,9 @@ unsafe fn server_client_free(c: *mut client) {
     let had_queue = (*c).queue.is_some();
     drop((*c).queue.take());
     assert!(
-        (*c).files.storage.is_none(),
+        (*c).files.storage.as_ref().is_none_or(|index| {
+            index.try_borrow_mut().expect("client file index already borrowed").is_empty()
+        }),
         "client file index still contains live records at client teardown"
     );
     // Server-created clients have a queue before joining the global registry.
@@ -4041,13 +4040,14 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
         }
     }
     if force == 0 {
-        cf = client_files_minmax(&(*c).files);
-        while !cf.is_null() {
+        let mut next_file = client_files_minmax(&(*c).files);
+        while let Some(file) = next_file {
+            cf = crate::src::shared::rc::as_ptr(&file);
             if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
                 server_client_start_exit_timer(c);
                 return;
             }
-            cf = client_files_next(&*cf);
+            next_file = client_files_next(&*cf);
         }
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;

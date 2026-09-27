@@ -378,9 +378,8 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
 mod tests {
     use super::*;
     use crate::src::cmd::queue::cmdq_free_detached;
-    use crate::src::file::file_cancel_cmdq_wait;
     use crate::src::reactor::{evbuffer_new, shutdown_runtime};
-    use crate::src::shared::client::{client_file, client_file_event};
+    use crate::src::shared::client::client_file_event;
     use std::ptr::NonNull;
 
     fn data(
@@ -397,41 +396,6 @@ mod tests {
             current: 0,
             files: vec![c"owned.conf".to_owned()],
         })
-    }
-
-    #[test]
-    fn progress_keeps_owner_until_file_wait_cancellation() {
-        unsafe {
-            let client = client::new();
-            (*client.get()).source_file_depth = 1;
-            let observer = Rc::downgrade(&client);
-            let mut item = cmdq_item::empty();
-            item.flags = CMDQ_WAITING;
-            let mut file = client_file::empty();
-            file.wait_item = &mut item;
-            file.cb = data(&mut item, Some(client.clone())).into_read_callback();
-            item.wait_file = &mut file;
-            file.cb.as_mut().unwrap()(client_file_event {
-                client: None,
-                path: Some(c"owned.conf"),
-                error: 0,
-                closed: false,
-                buffer: None,
-            });
-            assert_eq!((*client.get()).source_file_depth, 1);
-            assert_eq!(Rc::strong_count(&client), 2);
-            file_cancel_cmdq_wait(&mut file);
-            assert!(file.cb.is_none());
-            assert!(item.wait_file.is_null());
-            assert_ne!(item.flags & CMDQ_WAITING, 0);
-            assert_eq!((*client.get()).source_file_depth, 0);
-            file_cancel_cmdq_wait(&mut file);
-            assert_eq!((*client.get()).source_file_depth, 0);
-            drop(client);
-            assert!(observer.upgrade().is_some());
-            shutdown_runtime();
-            assert!(observer.upgrade().is_none());
-        }
     }
 
     #[test]

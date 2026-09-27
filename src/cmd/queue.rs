@@ -62,7 +62,7 @@ unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     let mut owner = Box::new(cmdq_item {
         name: None,
         cancel_data: None,
-        wait_file: ::core::ptr::null_mut(),
+        wait_file: None,
         ..cmdq_item::empty()
     });
     let item = &raw mut *owner;
@@ -102,18 +102,20 @@ unsafe fn cmdq_cancel_unfired_data(item: &mut cmdq_item) {
 /// The file remains live until its terminal event, including when a local
 /// file operation schedules immediate completion. The queue item only borrows
 /// it while the command is waiting.
-pub(crate) fn cmdq_set_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
+pub(crate) unsafe fn cmdq_set_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
     assert!(!cf.is_null());
     assert!(
-        item.wait_file.is_null(),
+        item.wait_file.is_none(),
         "queue item already owns a file wait"
     );
-    item.wait_file = cf;
+    item.wait_file = Some(crate::src::shared::rc::downgrade(cf));
 }
 
 pub(crate) fn cmdq_clear_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
-    if item.wait_file == cf {
-        item.wait_file = ::core::ptr::null_mut();
+    if item.wait_file.as_ref().is_some_and(|file| {
+        std::ptr::eq(file.as_ptr().cast::<client_file>(), cf)
+    }) {
+        item.wait_file = None;
     }
 }
 
@@ -126,11 +128,10 @@ pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
     if first.is_null() || (*first).flags & CMDQ_WAITING == 0 {
         return;
     }
-    let cf = (*first).wait_file;
-    if cf.is_null() {
+    let Some(file) = (*first).wait_file.as_ref().and_then(std::rc::Weak::upgrade) else {
         return;
-    }
-    file_cancel_cmdq_wait(cf);
+    };
+    file_cancel_cmdq_wait(crate::src::shared::rc::as_ptr(&file));
     (*queue).item = ::core::ptr::null_mut();
     while !(*queue).list.is_empty() {
         cmdq_remove((*queue).first_ptr());
@@ -457,7 +458,7 @@ pub unsafe fn cmdq_continue(mut item: *mut cmdq_item) {
 }
 unsafe fn cmdq_remove(mut item: *mut cmdq_item) {
     assert!(
-        (*item).wait_file.is_null(),
+        (*item).wait_file.is_none(),
         "file wait must finish or cancel before queue item removal"
     );
     cmdq_cancel_unfired_data(&mut *item);

@@ -268,17 +268,19 @@ impl client {
     }
 }
 
+pub type ClientFileIndex =
+    std::collections::BTreeMap<i32, std::rc::Weak<std::cell::UnsafeCell<client_file>>>;
+
 #[derive(Default)]
 #[repr(C)]
 pub struct client_files {
     /// The client owns its stream index; file records remain externally owned.
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<i32, *mut client_file>>>,
+    pub storage: Option<refbox::RefBox<ClientFileIndex>>,
 }
 
 pub struct client_file {
     pub c: Option<ClientOwner>,
     pub peer: *mut tmuxpeer,
-    pub tree: *mut client_files,
     pub stream: ::core::ffi::c_int,
     pub path: Option<std::ffi::CString>,
     pub buffer: Box<evbuffer>,
@@ -289,7 +291,7 @@ pub struct client_file {
     pub cb: client_file_cb,
     pub entry: client_file_entry,
     pub(crate) wait_item: *mut super::command::cmdq_item,
-    pub(crate) wait_client: *mut client,
+    pub(crate) wait_client: Option<std::rc::Weak<std::cell::UnsafeCell<client>>>,
     pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(crate) terminal_scheduled: bool,
 }
@@ -307,7 +309,6 @@ impl client_file {
         Self {
             c: Default::default(),
             peer: Default::default(),
-            tree: Default::default(),
             stream: Default::default(),
             path: Default::default(),
             buffer: Default::default(),
@@ -328,7 +329,7 @@ impl client_file {
 #[repr(C)]
 pub struct client_file_entry {
     /// Weak traversal handle into the client file index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<i32, *mut client_file>>>,
+    pub owner: Option<refbox::Weak<ClientFileIndex>>,
 }
 
 pub type client_file_cb = Option<Box<dyn for<'a> FnMut(client_file_event<'a>)>>;

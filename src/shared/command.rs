@@ -154,7 +154,7 @@ pub struct cmdq_item {
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
     pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
-    pub(crate) wait_file: *mut super::client::client_file,
+    pub(crate) wait_file: Option<std::rc::Weak<std::cell::UnsafeCell<super::client::client_file>>>,
 }
 
 impl cmdq_item {

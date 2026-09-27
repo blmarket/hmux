@@ -4798,10 +4798,10 @@ mod pane_input_owner_tests {
         });
         let file = rc::new(client_file::empty());
         (*file).wait_item = item;
-        (*file).wait_client = rc::as_ptr(client);
+        (*file).wait_client = Some(Rc::downgrade(client));
         data.file = rc::downgrade(file);
         (*file).cb = data.into_callback();
-        item.wait_file = file;
+        item.wait_file = Some(rc::downgrade(file));
         item.flags = CMDQ_WAITING;
         file
     }
@@ -4840,7 +4840,7 @@ mod pane_input_owner_tests {
             assert!((*file).cb.is_some());
             event_loop();
             assert_eq!(item.flags & CMDQ_WAITING, 0);
-            assert!(item.wait_file.is_null());
+            assert!(item.wait_file.is_none());
             assert!(file_observer.upgrade().is_none());
             assert!(client_observer.upgrade().is_none());
             shutdown_runtime();
@@ -4864,7 +4864,8 @@ mod pane_input_owner_tests {
                 pane.flags = PANE_EMPTY;
                 pane.id = u_int::MAX;
                 assert_eq!(window_pane_start_input(&mut pane, &mut item), Ok(0));
-                let file = item.wait_file;
+                let file_owner = item.wait_file.as_ref().unwrap().upgrade().unwrap();
+                let file = rc::as_ptr(&file_owner);
                 assert!(!file.is_null());
                 assert!((*file).cb.is_some());
                 let file_observer = rc::downgrade(file);
@@ -4873,8 +4874,9 @@ mod pane_input_owner_tests {
                     crate::src::file::file_cancel_cmdq_wait(file);
                     assert!((*file).cb.is_none());
                 }
+                drop(file_owner);
                 event_loop();
-                assert!(item.wait_file.is_null());
+                assert!(item.wait_file.is_none());
                 if !cancel {
                     assert_eq!(item.flags & CMDQ_WAITING, 0);
                 }
@@ -4903,7 +4905,7 @@ mod pane_input_owner_tests {
                 file_fire_done(file);
                 event_loop();
                 assert_eq!(item.flags & CMDQ_WAITING != 0, dead);
-                assert!(item.wait_file.is_null());
+                assert!(item.wait_file.is_none());
                 assert!(file_observer.upgrade().is_none());
                 assert!(client_observer.upgrade().is_none());
                 shutdown_runtime();
