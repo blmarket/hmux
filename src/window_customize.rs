@@ -1,8 +1,9 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
+use std::cell::{Cell, UnsafeCell};
 use std::ffi::{CStr, CString};
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use crate::src::arguments::{args_get, args_has};
@@ -115,7 +116,6 @@ pub struct window_customize_modedata {
     pub dead: ::core::ffi::c_int,
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
-    pub edit: *mut window_customize_editdata,
     pub format: CString,
     pub hide_global: ::core::ffi::c_int,
     pub hide_default: ::core::ffi::c_int,
@@ -127,9 +127,8 @@ pub struct window_customize_modedata {
 pub type window_customize_change = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_RESET: window_customize_change = 1;
 pub const WINDOW_CUSTOMIZE_UNSET: window_customize_change = 0;
-#[repr(C)]
+#[derive(Clone)]
 pub struct window_customize_itemdata {
-    pub data: *mut window_customize_modedata,
     pub type_0: window_customize_item_type,
     pub option_type: window_customize_option_type,
     pub scope: window_customize_scope,
@@ -145,7 +144,6 @@ pub struct window_customize_itemdata {
 impl window_customize_itemdata {
     fn new() -> Self {
         window_customize_itemdata {
-            data: ::core::ptr::null_mut(),
             type_0: 0,
             option_type: 0,
             scope: 0,
@@ -160,8 +158,7 @@ impl window_customize_itemdata {
     }
 }
 
-// All callers pass an item created as a window_customize_itemdata. C-facing fields
-// remain borrowed pointers, invalidated only when the owner is dropped.
+// Detached prompt and editor copies own their strings independently of the rows.
 fn window_customize_set_table(item: &mut window_customize_itemdata, value: Option<&CStr>) {
     item.table = value.map(CStr::to_owned);
 }
@@ -174,8 +171,8 @@ fn window_customize_set_item_array_key(item: &mut window_customize_itemdata, val
     item.array_key = value.map(CStr::to_owned);
 }
 
-fn window_customize_new_item() -> *mut window_customize_itemdata {
-    Box::into_raw(Box::new(window_customize_itemdata::new())) as *mut window_customize_itemdata
+fn window_customize_new_item() -> Box<window_customize_itemdata> {
+    Box::new(window_customize_itemdata::new())
 }
 pub type window_customize_scope = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT: window_customize_scope = 9;
@@ -199,8 +196,8 @@ pub const WINDOW_CUSTOMIZE_ITEM_OPTION: window_customize_item_type = 0;
 pub struct window_customize_editdata {
     pub wp_id: u_int,
     pub edit_type: window_customize_edit_type,
-    pub item: *mut window_customize_itemdata,
-    pub editor: *mut spawn_editor_state,
+    pub item: Box<window_customize_itemdata>,
+    pub editor: Cell<Option<NonNull<spawn_editor_state>>>,
 }
 pub type window_customize_edit_type = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_EDIT_ENVIRONMENT: window_customize_edit_type = 3;
@@ -587,32 +584,11 @@ unsafe fn window_customize_write_value(
     });
     return retval;
 }
-unsafe fn window_customize_free_item(mut item: *mut window_customize_itemdata) {
-    drop(Box::from_raw(item as *mut window_customize_itemdata));
+
+fn window_customize_copy_item(item: &window_customize_itemdata) -> Box<window_customize_itemdata> {
+    Box::new(item.clone())
 }
-unsafe fn window_customize_copy_item(
-    item: &window_customize_itemdata,
-) -> *mut window_customize_itemdata {
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
-    new_item = window_customize_new_item();
-    (*new_item).data = item.data;
-    (*new_item).type_0 = item.type_0;
-    (*new_item).option_type = item.option_type;
-    (*new_item).scope = item.scope;
-    (*new_item).key = item.key;
-    (*new_item).oo = item.oo;
-    (*new_item).environ = item.environ;
-    (*new_item).environ_flags = item.environ_flags;
-    window_customize_set_table(&mut *new_item, item.table.as_deref());
-    window_customize_set_name(&mut *new_item, item.name.as_deref());
-    window_customize_set_item_array_key(&mut *new_item, item.array_key.as_deref());
-    return new_item;
-}
-unsafe fn window_customize_finish_edit(mut ed: *mut window_customize_editdata) {
-    window_customize_free_item((*ed).item);
-    drop(Box::from_raw(ed));
-}
+
 unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata) {
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -2907,7 +2883,6 @@ unsafe fn window_customize_init(
         dead: 0,
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
-        edit: ::core::ptr::null_mut(),
         format,
         hide_global: 0,
         hide_default: 0,
@@ -2966,7 +2941,6 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     (*data).dead = 1 as ::core::ffi::c_int;
     if !(*data).editor.is_null() {
         spawn_cancel_editor((*data).editor);
-        window_customize_finish_edit((*data).edit as *mut window_customize_editdata);
     }
     mode_tree_free((*data).data);
     window_customize_destroy(data);
@@ -2979,50 +2953,54 @@ unsafe fn window_customize_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     window_customize_draw_waiting(data);
 }
-unsafe fn window_customize_free_callback(mut data: *mut window_customize_modedata) {
-    window_customize_destroy(data);
+
+// Fields drop in declaration order: the detached item before the retained mode.
+struct CustomizePromptItem {
+    item: Box<window_customize_itemdata>,
+    mode: Rc<UnsafeCell<window_customize_modedata>>,
 }
-unsafe fn window_customize_free_item_callback(mut item: *mut window_customize_itemdata) {
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
-    window_customize_free_item(item);
-    window_customize_destroy(data);
+
+fn window_customize_prompt_callbacks<T: 'static>(
+    owner: Rc<T>,
+    callback: unsafe fn(
+        Option<NonNull<client>>,
+        &T,
+        Option<&CStr>,
+        prompt_key_result,
+    ) -> prompt_result,
+) -> (mode_tree_prompt_input_cb, prompt_free_cb) {
+    let weak = Rc::downgrade(&owner);
+    let inputcb: mode_tree_prompt_input_cb = Some(Box::new(move |client, text, key| {
+        let Some(owner) = weak.upgrade() else {
+            return PROMPT_CLOSE;
+        };
+        // Keep the callback's borrowed input alive if it closes its own prompt.
+        unsafe { callback(client, &owner, text, key) }
+    }));
+    // mode_tree invokes cleanup before releasing its own retained tree. Cached
+    // input callbacks only keep a weak reference and cannot extend this lifetime.
+    let freecb: prompt_free_cb = Some(Box::new(move || drop(owner)));
+    (inputcb, freecb)
 }
-fn window_customize_prompt_input_cb<T: 'static>(
-    callback: unsafe fn(*mut client, *mut T, Option<&CStr>, prompt_key_result) -> prompt_result,
-    data: *mut T,
-) -> mode_tree_prompt_input_cb {
-    Some(Box::new(move |c, s, key| unsafe {
-        callback(
-            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-            data,
-            s,
-            key,
-        )
-    }))
-}
-fn window_customize_prompt_free_cb<T: 'static>(
-    freecb: unsafe fn(*mut T),
-    data: *mut T,
-) -> prompt_free_cb {
-    Some(Box::new(move || unsafe { freecb(data) }))
-}
+
 unsafe fn window_customize_set_option_callback(
-    mut c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut current_block: u64;
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut oo: *mut options = (*item).oo;
-    let mut name: *const ::core::ffi::c_char = ((*item).name)
+    let mut oo: *mut options = item.oo;
+    let mut name: *const ::core::ffi::c_char = (item.name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut array_key: *const ::core::ffi::c_char = ((*item).array_key)
+    let mut array_key: *const ::core::ffi::c_char = (item.array_key)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     let mut cause: Option<CString> = None;
@@ -3031,9 +3009,7 @@ unsafe fn window_customize_set_option_callback(
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if item.is_null()
-        || window_customize_check_item(data, &*item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
-    {
+    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
         return PROMPT_CLOSE;
     }
     o = options_get(oo, name);
@@ -3081,14 +3057,14 @@ unsafe fn window_customize_set_option_callback(
             return PROMPT_CLOSE;
         }
         _ => {
-            if (*item).option_type as ::core::ffi::c_uint
+            if item.option_type as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
                 && *name as ::core::ffi::c_int == '@' as i32
             {
                 hooks_add_event(name);
             }
             options_push_changes(
-                ((*item).name)
+                (item.name)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
@@ -3100,28 +3076,26 @@ unsafe fn window_customize_set_option_callback(
     };
 }
 unsafe fn window_customize_set_environment_callback(
-    _c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    _c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut flags: ::core::ffi::c_int = 0;
     if s.is_null() || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if item.is_null()
-        || window_customize_check_item(data, &*item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
-    {
+    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
         return PROMPT_CLOSE;
     }
-    flags = (*item).environ_flags;
+    flags = item.environ_flags;
     envent = environ_find(
-        (*item).environ,
-        ((*item).name)
+        item.environ,
+        (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
@@ -3129,8 +3103,8 @@ unsafe fn window_customize_set_environment_callback(
         flags = (*envent).flags;
     }
     environ_set(
-        (*item).environ,
-        ((*item).name)
+        item.environ,
+        (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         flags,
@@ -3147,8 +3121,6 @@ unsafe fn window_customize_set_environment(
     item: &window_customize_itemdata,
     mut global: ::core::ffi::c_int,
 ) {
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
@@ -3204,14 +3176,21 @@ unsafe fn window_customize_set_environment(
     prompt_bytes.extend_from_slice(b") ");
     let prompt = CString::new(prompt_bytes).expect("environment prompt contains no NUL");
     drop(scope_text);
-    new_item = window_customize_new_item();
-    (*new_item).data = data as *mut window_customize_modedata;
-    (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
-    (*new_item).scope = scope;
-    (*new_item).environ = env;
-    (*new_item).environ_flags = (*envent).flags;
+    let mut new_item = window_customize_new_item();
+
+    new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
+    new_item.scope = scope;
+    new_item.environ = env;
+    new_item.environ_flags = (*envent).flags;
     window_customize_set_name(&mut *new_item, item.name.as_deref());
-    crate::src::shared::rc::retain(data);
+    let owner = Rc::new(CustomizePromptItem {
+        item: new_item,
+        mode: crate::src::shared::rc::downgrade(data)
+            .upgrade()
+            .expect("live customize mode"),
+    });
+    let (inputcb, freecb) =
+        window_customize_prompt_callbacks(owner, window_customize_set_environment_callback);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3219,28 +3198,27 @@ unsafe fn window_customize_set_environment(
         Some((*envent).value.as_deref().unwrap_or(c"")),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        window_customize_prompt_input_cb(window_customize_set_environment_callback, new_item),
-        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+        inputcb,
+        freecb,
     );
 }
 unsafe fn window_customize_add_option_callback(
-    mut c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut what: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut namelen: size_t = 0;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if item.is_null()
-        || window_customize_check_item(data, &*item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
-    {
+    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
         return PROMPT_CLOSE;
     }
     namelen = strcspn(s, b" \t\0" as *const u8 as *const ::core::ffi::c_char) as size_t;
@@ -3276,7 +3254,7 @@ unsafe fn window_customize_add_option_callback(
     let matched = options_match_owned(copy.as_c_str());
     if !matches!(&matched, Ok(parsed) if parsed.name.as_bytes().first() == Some(&b'@') && parsed.array_key.is_none())
     {
-        what = if (*item).option_type as ::core::ffi::c_uint
+        what = if item.option_type as ::core::ffi::c_uint
             == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             b"hook\0" as *const u8 as *const ::core::ffi::c_char
@@ -3299,10 +3277,10 @@ unsafe fn window_customize_add_option_callback(
     }
     let name_owned = matched.expect("valid user option was checked").name;
     let name = name_owned.as_ptr();
-    options_set_string((*item).oo, name, 0 as ::core::ffi::c_int, |out| {
+    options_set_string(item.oo, name, 0 as ::core::ffi::c_int, |out| {
         write_cstr(out, value)
     });
-    if (*item).option_type as ::core::ffi::c_uint
+    if item.option_type as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         hooks_add_event(name);
@@ -3320,8 +3298,6 @@ unsafe fn window_customize_add_option(
     mut oo: *mut options,
     mut type_0: window_customize_option_type,
 ) {
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
     let prompt = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -3329,13 +3305,20 @@ unsafe fn window_customize_add_option(
     } else {
         c"New user option: "
     };
-    new_item = window_customize_new_item();
-    (*new_item).data = data as *mut window_customize_modedata;
-    (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
-    (*new_item).option_type = type_0;
-    (*new_item).scope = scope;
-    (*new_item).oo = oo;
-    crate::src::shared::rc::retain(data);
+    let mut new_item = window_customize_new_item();
+
+    new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
+    new_item.option_type = type_0;
+    new_item.scope = scope;
+    new_item.oo = oo;
+    let owner = Rc::new(CustomizePromptItem {
+        item: new_item,
+        mode: crate::src::shared::rc::downgrade(data)
+            .upgrade()
+            .expect("live customize mode"),
+    });
+    let (inputcb, freecb) =
+        window_customize_prompt_callbacks(owner, window_customize_add_option_callback);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3343,26 +3326,25 @@ unsafe fn window_customize_add_option(
         Some(c"@"),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        window_customize_prompt_input_cb(window_customize_add_option_callback, new_item),
-        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+        inputcb,
+        freecb,
     );
 }
 unsafe fn window_customize_add_environment_callback(
-    mut c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if item.is_null()
-        || window_customize_check_item(data, &*item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
-    {
+    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
         return PROMPT_CLOSE;
     }
     if *s as ::core::ffi::c_int == '-' as i32 {
@@ -3382,7 +3364,7 @@ unsafe fn window_customize_add_environment_callback(
             );
             return PROMPT_CLOSE;
         }
-        environ_clear((*item).environ, s.offset(1 as ::core::ffi::c_int as isize));
+        environ_clear(item.environ, s.offset(1 as ::core::ffi::c_int as isize));
     } else {
         value = strchr(s, '=' as i32);
         if value.is_null() || value == s {
@@ -3399,7 +3381,7 @@ unsafe fn window_customize_add_environment_callback(
         let name = CString::new(&CStr::from_ptr(s).to_bytes()[..value.offset_from(s) as usize])
             .expect("environment name contains no NUL");
         environ_set(
-            (*item).environ,
+            item.environ,
             name.as_ptr(),
             0 as ::core::ffi::c_int,
             |out| write_cstr(out, value.offset(1 as ::core::ffi::c_int as isize)),
@@ -3416,14 +3398,19 @@ unsafe fn window_customize_add_environment(
     mut scope: window_customize_scope,
     mut env: *mut environ,
 ) {
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
-    new_item = window_customize_new_item();
-    (*new_item).data = data as *mut window_customize_modedata;
-    (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
-    (*new_item).scope = scope;
-    (*new_item).environ = env;
-    crate::src::shared::rc::retain(data);
+    let mut new_item = window_customize_new_item();
+
+    new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
+    new_item.scope = scope;
+    new_item.environ = env;
+    let owner = Rc::new(CustomizePromptItem {
+        item: new_item,
+        mode: crate::src::shared::rc::downgrade(data)
+            .upgrade()
+            .expect("live customize mode"),
+    });
+    let (inputcb, freecb) =
+        window_customize_prompt_callbacks(owner, window_customize_add_environment_callback);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3431,38 +3418,32 @@ unsafe fn window_customize_add_environment(
         Some(c""),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        window_customize_prompt_input_cb(window_customize_add_environment_callback, new_item),
-        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+        inputcb,
+        freecb,
     );
 }
-unsafe fn window_customize_edit_close_cb(
-    buf: Option<Vec<u8>>,
-    mut ed: *mut window_customize_editdata,
-) {
+unsafe fn window_customize_edit_close_cb(buf: Option<Vec<u8>>, ed: Rc<window_customize_editdata>) {
     let mut current_block: u64;
-    let mut item: *mut window_customize_itemdata = (*ed).item;
+    let item = &*ed.item;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
     let mut cause: Option<CString> = None;
-    wp = window_pane_find_by_id((*ed).wp_id);
+    wp = window_pane_find_by_id(ed.wp_id);
     if !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && (*wme).mode == &raw const window_customize_mode {
             data = (*wme).data as *mut window_customize_modedata;
-            if (*data).editor == (*ed).editor {
+            if NonNull::new((*data).editor) == ed.editor.get() {
                 (*data).editor = ::core::ptr::null_mut::<spawn_editor_state>();
-                (*data).edit = ::core::ptr::null_mut::<window_customize_editdata>();
             }
         }
     }
     let Some(mut value) = buf else {
-        window_customize_finish_edit(ed);
         return;
     };
     if value.is_empty() || data.is_null() || (*data).dead != 0 {
-        window_customize_finish_edit(ed);
         return;
     }
     if value.last() == Some(&b'\n') {
@@ -3470,10 +3451,10 @@ unsafe fn window_customize_edit_close_cb(
     }
     value.push(0);
     let value_ptr = value.as_ptr().cast::<::core::ffi::c_char>();
-    match (*ed).edit_type as ::core::ffi::c_uint {
+    match ed.edit_type as ::core::ffi::c_uint {
         0 => {
-            if window_customize_option_editable(data, &*item) != 0
-                && window_customize_set_option_value(&*item, value_ptr, &raw mut cause)
+            if window_customize_option_editable(data, item) != 0
+                && window_customize_set_option_value(item, value_ptr, &raw mut cause)
                     != 0 as ::core::ffi::c_int
             {
                 current_block = 8846462416050848735;
@@ -3482,7 +3463,7 @@ unsafe fn window_customize_edit_close_cb(
             }
         }
         1 => {
-            if window_customize_set_command_value(&*item, value_ptr, &raw mut cause)
+            if window_customize_set_command_value(item, value_ptr, &raw mut cause)
                 != 0 as ::core::ffi::c_int
             {
                 current_block = 8846462416050848735;
@@ -3491,19 +3472,19 @@ unsafe fn window_customize_edit_close_cb(
             }
         }
         2 => {
-            if window_customize_set_note_value(&*item, value_ptr) != 0 as ::core::ffi::c_int {
+            if window_customize_set_note_value(item, value_ptr) != 0 as ::core::ffi::c_int {
                 current_block = 8846462416050848735;
             } else {
                 current_block = 1608152415753874203;
             }
         }
         3 => {
-            if window_customize_check_item(data, &*item, ::core::ptr::null_mut::<cmd_find_state>())
+            if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>())
                 == 0
             {
                 current_block = 8846462416050848735;
             } else {
-                window_customize_set_environment_value(&*item, value_ptr);
+                window_customize_set_environment_value(item, value_ptr);
                 current_block = 1608152415753874203;
             }
         }
@@ -3520,15 +3501,12 @@ unsafe fn window_customize_edit_close_cb(
         _ => {}
     }
     drop(value);
-    window_customize_finish_edit(ed);
 }
 unsafe fn window_customize_start_edit(
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
     mut c: *mut client,
 ) {
-    let mut ed: *mut window_customize_editdata =
-        ::core::ptr::null_mut::<window_customize_editdata>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -3613,28 +3591,28 @@ unsafe fn window_customize_start_edit(
     } else {
         return;
     }
-    // The editor callback and mode teardown borrow this stable record.
-    ed = Box::into_raw(Box::new(window_customize_editdata {
+    // Publish the editor identity after synchronous startup. Only the callback
+    // keeps this record once startup returns; cancellation drops its capture.
+    let ed = Rc::new(window_customize_editdata {
         wp_id: (*(*data).wp).id,
         edit_type,
         item: window_customize_copy_item(item),
-        editor: ::core::ptr::null_mut(),
-    }));
+        editor: Cell::new(None),
+    });
     let bytes = value.to_bytes();
     let bytes = if bytes.is_empty() { b"\n" } else { bytes };
-    (*ed).editor = spawn_editor(
+    let callback_owner = Rc::clone(&ed);
+    let editor = spawn_editor(
         c,
         |stream| spawn_editor_write(stream, bytes),
         Some(Box::new(move |buf| unsafe {
-            window_customize_edit_close_cb(buf, ed)
+            window_customize_edit_close_cb(buf, callback_owner)
         })),
     );
-    if (*ed).editor.is_null() {
-        window_customize_finish_edit(ed);
-    } else {
-        (*data).editor = (*ed).editor;
-        (*data).edit = ed as *mut window_customize_editdata;
-    };
+    if let Some(editor) = NonNull::new(editor) {
+        ed.editor.set(Some(editor));
+        (*data).editor = editor.as_ptr();
+    }
 }
 unsafe fn window_customize_set_option(
     mut c: *mut client,
@@ -3646,8 +3624,6 @@ unsafe fn window_customize_set_option(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut flag: ::core::ffi::c_int = 0;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let mut choice: u_int = 0;
@@ -3781,17 +3757,24 @@ unsafe fn window_customize_set_option(
         let prompt = CString::new(prompt_bytes).expect("option prompt contains no NUL");
         drop(scope_text);
         let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
-        new_item = window_customize_new_item();
-        (*new_item).data = data as *mut window_customize_modedata;
-        (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
-        (*new_item).option_type = item.option_type;
-        (*new_item).scope = scope;
-        (*new_item).oo = oo;
+        let mut new_item = window_customize_new_item();
+
+        new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
+        new_item.option_type = item.option_type;
+        new_item.scope = scope;
+        new_item.oo = oo;
         window_customize_set_name(&mut *new_item, Some(CStr::from_ptr(name)));
         if !array_key.is_null() {
             window_customize_set_item_array_key(&mut *new_item, Some(CStr::from_ptr(array_key)));
         }
-        crate::src::shared::rc::retain(data);
+        let owner = Rc::new(CustomizePromptItem {
+            item: new_item,
+            mode: crate::src::shared::rc::downgrade(data)
+                .upgrade()
+                .expect("live customize mode"),
+        });
+        let (inputcb, freecb) =
+            window_customize_prompt_callbacks(owner, window_customize_set_option_callback);
         mode_tree_set_prompt(
             (*data).data,
             c,
@@ -3799,44 +3782,40 @@ unsafe fn window_customize_set_option(
             Some(&value),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
-            window_customize_prompt_input_cb(window_customize_set_option_callback, new_item),
-            window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+            inputcb,
+            freecb,
         );
     };
 }
 unsafe fn window_customize_set_array_key_callback(
-    mut c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata =
-        ::core::ptr::null_mut::<window_customize_modedata>();
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
-    if item.is_null() {
-        return PROMPT_CLOSE;
-    }
-    data = (*item).data as *mut window_customize_modedata;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    name = ((*item).name)
+    name = (item.name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    array_key = ((*item).array_key)
+    array_key = (item.array_key)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     if array_key.is_null()
-        || window_customize_check_item(data, &*item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
+        || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
     {
         return PROMPT_CLOSE;
     }
-    o = options_get((*item).oo, name);
+    o = options_get(item.oo, name);
     if o.is_null() {
         return PROMPT_CLOSE;
     }
@@ -3873,7 +3852,7 @@ unsafe fn window_customize_set_array_key_callback(
             ::core::ptr::null_mut::<Option<CString>>(),
         );
         options_push_changes(
-            ((*item).name)
+            (item.name)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
@@ -3888,8 +3867,6 @@ unsafe fn window_customize_set_array_key(
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
 ) {
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
     if item.array_key.is_none()
         || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
     {
@@ -3916,15 +3893,22 @@ unsafe fn window_customize_set_array_key(
     );
     prompt_bytes.extend_from_slice(b"]) ");
     let prompt = CString::new(prompt_bytes).expect("array-key prompt contains no NUL");
-    new_item = window_customize_new_item();
-    (*new_item).data = data as *mut window_customize_modedata;
-    (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
-    (*new_item).option_type = item.option_type;
-    (*new_item).scope = item.scope;
-    (*new_item).oo = item.oo;
+    let mut new_item = window_customize_new_item();
+
+    new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
+    new_item.option_type = item.option_type;
+    new_item.scope = item.scope;
+    new_item.oo = item.oo;
     window_customize_set_name(&mut *new_item, item.name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, item.array_key.as_deref());
-    crate::src::shared::rc::retain(data);
+    let owner = Rc::new(CustomizePromptItem {
+        item: new_item,
+        mode: crate::src::shared::rc::downgrade(data)
+            .upgrade()
+            .expect("live customize mode"),
+    });
+    let (inputcb, freecb) =
+        window_customize_prompt_callbacks(owner, window_customize_set_array_key_callback);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3932,8 +3916,8 @@ unsafe fn window_customize_set_array_key(
         item.array_key.as_deref(),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        window_customize_prompt_input_cb(window_customize_set_array_key_callback, new_item),
-        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+        inputcb,
+        freecb,
     );
 }
 unsafe fn window_customize_unset_environment(
@@ -4029,25 +4013,20 @@ unsafe fn window_customize_reset_option(
     }
 }
 unsafe fn window_customize_set_command_callback(
-    mut c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if item.is_null()
-        || window_customize_get_key(
-            &*item,
-            ::core::ptr::null_mut::<*mut key_table>(),
-            &raw mut bd,
-        ) == 0
-    {
+    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return PROMPT_CLOSE;
     }
     let mut pr = cmd_parse_from_string(
@@ -4085,25 +4064,19 @@ unsafe fn window_customize_set_command_callback(
     };
 }
 unsafe fn window_customize_set_note_callback(
-    _c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    _c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if item.is_null()
-        || window_customize_get_key(
-            &*item,
-            ::core::ptr::null_mut::<*mut key_table>(),
-            &raw mut bd,
-        ) == 0
-    {
+    if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return PROMPT_CLOSE;
     }
     key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
@@ -4127,8 +4100,6 @@ unsafe fn window_customize_set_key(
 ) {
     let mut key: key_code = item.key;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
     if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return;
     }
@@ -4139,13 +4110,20 @@ unsafe fn window_customize_set_key(
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
         let value = cmd_list_print_cstring(&*(*bd).cmdlist, 0 as ::core::ffi::c_int);
-        new_item = window_customize_new_item();
-        (*new_item).data = data as *mut window_customize_modedata;
-        (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
-        (*new_item).scope = item.scope;
+        let mut new_item = window_customize_new_item();
+
+        new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
+        new_item.scope = item.scope;
         window_customize_set_table(&mut *new_item, item.table.as_deref());
-        (*new_item).key = key;
-        crate::src::shared::rc::retain(data);
+        new_item.key = key;
+        let owner = Rc::new(CustomizePromptItem {
+            item: new_item,
+            mode: crate::src::shared::rc::downgrade(data)
+                .upgrade()
+                .expect("live customize mode"),
+        });
+        let (inputcb, freecb) =
+            window_customize_prompt_callbacks(owner, window_customize_set_command_callback);
         mode_tree_set_prompt(
             (*data).data,
             c,
@@ -4153,19 +4131,26 @@ unsafe fn window_customize_set_key(
             Some(&value),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
-            window_customize_prompt_input_cb(window_customize_set_command_callback, new_item),
-            window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+            inputcb,
+            freecb,
         );
     } else if s.as_ref() == c"Note" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
-        new_item = window_customize_new_item();
-        (*new_item).data = data as *mut window_customize_modedata;
-        (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
-        (*new_item).scope = item.scope;
+        let mut new_item = window_customize_new_item();
+
+        new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
+        new_item.scope = item.scope;
         window_customize_set_table(&mut *new_item, item.table.as_deref());
-        (*new_item).key = key;
-        crate::src::shared::rc::retain(data);
+        new_item.key = key;
+        let owner = Rc::new(CustomizePromptItem {
+            item: new_item,
+            mode: crate::src::shared::rc::downgrade(data)
+                .upgrade()
+                .expect("live customize mode"),
+        });
+        let (inputcb, freecb) =
+            window_customize_prompt_callbacks(owner, window_customize_set_note_callback);
         mode_tree_set_prompt(
             (*data).data,
             c,
@@ -4173,20 +4158,21 @@ unsafe fn window_customize_set_key(
             Some((*bd).note.as_deref().unwrap_or(c"")),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
-            window_customize_prompt_input_cb(window_customize_set_note_callback, new_item),
-            window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+            inputcb,
+            freecb,
         );
     }
 }
 unsafe fn window_customize_add_key_callback(
-    mut c: *mut client,
-    mut itemdata: *mut window_customize_itemdata,
+    c: Option<NonNull<client>>,
+    owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key0: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
+    let item = &*owner.item;
+    let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut key: key_code = 0;
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keylen: size_t = 0;
@@ -4269,7 +4255,7 @@ unsafe fn window_customize_add_key_callback(
         }
         1 | _ => {
             key_bindings_add(
-                ((*item).table)
+                (item.table)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 key,
@@ -4289,18 +4275,23 @@ unsafe fn window_customize_add_key(
     mut data: *mut window_customize_modedata,
     table: &CStr,
 ) {
-    let mut new_item: *mut window_customize_itemdata =
-        ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut prompt_bytes = b"New key in ".to_vec();
     prompt_bytes.extend_from_slice(table.to_bytes());
     prompt_bytes.extend_from_slice(b": ");
     let prompt = CString::new(prompt_bytes).expect("key table name contains no NUL");
-    new_item = window_customize_new_item();
-    (*new_item).data = data as *mut window_customize_modedata;
-    (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
-    (*new_item).scope = WINDOW_CUSTOMIZE_KEY;
+    let mut new_item = window_customize_new_item();
+
+    new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
+    new_item.scope = WINDOW_CUSTOMIZE_KEY;
     window_customize_set_table(&mut *new_item, Some(table));
-    crate::src::shared::rc::retain(data);
+    let owner = Rc::new(CustomizePromptItem {
+        item: new_item,
+        mode: crate::src::shared::rc::downgrade(data)
+            .upgrade()
+            .expect("live customize mode"),
+    });
+    let (inputcb, freecb) =
+        window_customize_prompt_callbacks(owner, window_customize_add_key_callback);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -4308,8 +4299,8 @@ unsafe fn window_customize_add_key(
         Some(c""),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        window_customize_prompt_input_cb(window_customize_add_key_callback, new_item),
-        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
+        inputcb,
+        freecb,
     );
 }
 unsafe fn window_customize_unset_key(
@@ -4405,11 +4396,12 @@ unsafe fn window_customize_change_each(
     }
 }
 unsafe fn window_customize_change_current_callback(
-    _c: *mut client,
-    mut data: *mut window_customize_modedata,
+    _c: Option<NonNull<client>>,
+    owner: &UnsafeCell<window_customize_modedata>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let data = owner.get();
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut type_0: window_customize_item_type = WINDOW_CUSTOMIZE_ITEM_OPTION;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
@@ -4499,11 +4491,13 @@ unsafe fn window_customize_change_current_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_change_tagged_callback(
-    mut c: *mut client,
-    mut data: *mut window_customize_modedata,
+    c: Option<NonNull<client>>,
+    owner: &UnsafeCell<window_customize_modedata>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let data = owner.get();
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -4780,7 +4774,13 @@ unsafe fn window_customize_key(
                     prompt_bytes.extend_from_slice(b" to default? ");
                     let reset_prompt =
                         CString::new(prompt_bytes).expect("C string parts have no NUL");
-                    crate::src::shared::rc::retain(data);
+                    let owner = crate::src::shared::rc::downgrade(data)
+                        .upgrade()
+                        .expect("live customize mode");
+                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                        owner,
+                        window_customize_change_current_callback,
+                    );
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4789,11 +4789,8 @@ unsafe fn window_customize_key(
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        window_customize_prompt_input_cb(
-                            window_customize_change_current_callback,
-                            data,
-                        ),
-                        window_customize_prompt_free_cb(window_customize_free_callback, data),
+                        inputcb,
+                        freecb,
                     );
                 }
             }
@@ -4802,7 +4799,13 @@ unsafe fn window_customize_key(
                 if !(tagged == 0 as u_int) {
                     let reset_prompt = CString::new(format!("Reset {tagged} tagged to default? "))
                         .expect("formatted number has no NUL");
-                    crate::src::shared::rc::retain(data);
+                    let owner = crate::src::shared::rc::downgrade(data)
+                        .upgrade()
+                        .expect("live customize mode");
+                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                        owner,
+                        window_customize_change_tagged_callback,
+                    );
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4811,11 +4814,8 @@ unsafe fn window_customize_key(
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        window_customize_prompt_input_cb(
-                            window_customize_change_tagged_callback,
-                            data,
-                        ),
-                        window_customize_prompt_free_cb(window_customize_free_callback, data),
+                        inputcb,
+                        freecb,
                     );
                 }
             }
@@ -4847,7 +4847,13 @@ unsafe fn window_customize_key(
                     prompt_bytes.extend_from_slice(b"? ");
                     let prompt =
                         CString::new(prompt_bytes).expect("C strings have no interior NUL");
-                    crate::src::shared::rc::retain(data);
+                    let owner = crate::src::shared::rc::downgrade(data)
+                        .upgrade()
+                        .expect("live customize mode");
+                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                        owner,
+                        window_customize_change_current_callback,
+                    );
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4856,11 +4862,8 @@ unsafe fn window_customize_key(
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        window_customize_prompt_input_cb(
-                            window_customize_change_current_callback,
-                            data,
-                        ),
-                        window_customize_prompt_free_cb(window_customize_free_callback, data),
+                        inputcb,
+                        freecb,
                     );
                 }
             }
@@ -4868,7 +4871,13 @@ unsafe fn window_customize_key(
                 tagged = mode_tree_count_tagged((*data).data);
                 if !(tagged == 0 as u_int) {
                     let prompt = CString::new(format!("Unset {tagged} tagged? ")).unwrap();
-                    crate::src::shared::rc::retain(data);
+                    let owner = crate::src::shared::rc::downgrade(data)
+                        .upgrade()
+                        .expect("live customize mode");
+                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                        owner,
+                        window_customize_change_tagged_callback,
+                    );
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4877,11 +4886,8 @@ unsafe fn window_customize_key(
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        window_customize_prompt_input_cb(
-                            window_customize_change_tagged_callback,
-                            data,
-                        ),
-                        window_customize_prompt_free_cb(window_customize_free_callback, data),
+                        inputcb,
+                        freecb,
                     );
                 }
             }
@@ -4925,61 +4931,44 @@ mod tag_tests {
 #[cfg(test)]
 mod item_owner_tests {
     use super::*;
+    use std::cell::RefCell;
 
     #[test]
     fn detached_copy_owns_byte_preserving_strings() {
-        unsafe {
-            let item = window_customize_new_item();
-            let table = CString::new(b"\xfftable".to_vec()).unwrap();
-            window_customize_set_table(&mut *item, Some(table.as_c_str()));
-            window_customize_set_name(&mut *item, Some(c"first"));
-            window_customize_set_item_array_key(&mut *item, Some(c""));
-            let copy = window_customize_copy_item(&*item);
+        let mut item = window_customize_new_item();
+        let table = CString::new(b"\xfftable".to_vec()).unwrap();
+        window_customize_set_table(&mut item, Some(&table));
+        window_customize_set_name(&mut item, Some(c"first"));
+        window_customize_set_item_array_key(&mut item, Some(c""));
+        let copy = window_customize_copy_item(&item);
 
-            window_customize_set_table(&mut *item, Some(c"changed"));
-            window_customize_set_name(&mut *item, Some(c"second"));
-            window_customize_free_item(item);
+        window_customize_set_table(&mut item, Some(c"changed"));
+        window_customize_set_name(&mut item, Some(c"second"));
+        drop(item);
 
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*copy).table)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"\xfftable"
-            );
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*copy).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"first"
-            );
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*copy).array_key)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b""
-            );
-            window_customize_free_item(copy);
-        }
+        assert_eq!(copy.table.as_ref().unwrap().as_bytes(), b"\xfftable");
+        assert_eq!(copy.name.as_deref(), Some(c"first"));
+        assert_eq!(copy.array_key.as_deref(), Some(c""));
     }
 
     #[test]
     fn mode_list_keeps_items_stable_until_last_callback_reference() {
+        unsafe fn read_item(
+            _client: Option<NonNull<client>>,
+            owner: &CustomizePromptItem,
+            _text: Option<&CStr>,
+            _key: prompt_key_result,
+        ) -> prompt_result {
+            assert_eq!(owner.item.name.as_deref(), Some(c"stable"));
+            assert_eq!(Rc::strong_count(&owner.mode), 1);
+            PROMPT_CONTINUE
+        }
         unsafe {
             let data = crate::src::shared::rc::new(window_customize_modedata {
-                wp: ::core::ptr::null_mut(),
+                wp: std::ptr::null_mut(),
                 dead: 0,
-                data: ::core::ptr::null_mut(),
-                editor: ::core::ptr::null_mut(),
-                edit: ::core::ptr::null_mut(),
+                data: std::ptr::null_mut(),
+                editor: std::ptr::null_mut(),
                 format: CString::new(Vec::new()).unwrap(),
                 hide_global: 0,
                 hide_default: 0,
@@ -4987,11 +4976,11 @@ mod item_owner_tests {
                 item_list: Vec::new(),
                 fs: cmd_find_state {
                     flags: 0,
-                    current: ::core::ptr::null_mut(),
-                    s: ::core::ptr::null_mut(),
-                    wl: ::core::ptr::null_mut(),
-                    w: ::core::ptr::null_mut(),
-                    wp: ::core::ptr::null_mut(),
+                    current: std::ptr::null_mut(),
+                    s: std::ptr::null_mut(),
+                    wl: std::ptr::null_mut(),
+                    w: std::ptr::null_mut(),
+                    wp: std::ptr::null_mut(),
                     idx: 0,
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,
@@ -4999,7 +4988,6 @@ mod item_owner_tests {
             let first_owner = window_customize_add_item(
                 &mut (*data).item_list,
                 window_customize_itemdata {
-                    data,
                     name: Some(c"stable".to_owned()),
                     ..window_customize_itemdata::new()
                 },
@@ -5016,23 +5004,27 @@ mod item_owner_tests {
                 window_customize_add_item(&mut (*data).item_list, window_customize_itemdata::new());
             }
             assert!(Rc::ptr_eq(&(&(*data).item_list)[0], &first_owner));
-            let detached = window_customize_copy_item(&first_owner);
-            crate::src::shared::rc::retain(data);
-
+            let mode_observer = crate::src::shared::rc::downgrade(data);
+            let prompt_owner = Rc::new(CustomizePromptItem {
+                item: window_customize_copy_item(&first_owner),
+                mode: mode_observer.upgrade().unwrap(),
+            });
+            let prompt_observer = Rc::downgrade(&prompt_owner);
+            let (mut inputcb, freecb) = window_customize_prompt_callbacks(prompt_owner, read_item);
             window_customize_destroy(data);
-            assert_eq!(crate::src::shared::rc::strong_count(data), 1);
             assert_eq!(
-                CStr::from_ptr(
-                    ((*detached).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"stable"
+                inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+                PROMPT_CONTINUE
             );
-            window_customize_free_item_callback(detached.cast());
+            freecb.unwrap()();
+            assert!(mode_observer.upgrade().is_none());
+            assert!(prompt_observer.upgrade().is_none());
+            // Caching the input callback must not keep a closed prompt alive.
+            assert_eq!(
+                inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+                PROMPT_CLOSE
+            );
             assert_eq!(first_owner.name.as_deref(), Some(c"stable"));
-            assert!(observer.upgrade().is_some());
             drop(first_owner);
             drop(selected);
             assert_eq!(
@@ -5042,6 +5034,79 @@ mod item_owner_tests {
             assert!(observer.upgrade().is_some());
             drop(detail);
             assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn prompt_input_keeps_owner_alive_while_closing_its_own_prompt() {
+        struct Owner {
+            drops: Rc<Cell<usize>>,
+            cleanup: RefCell<prompt_free_cb>,
+        }
+        impl Drop for Owner {
+            fn drop(&mut self) {
+                self.drops.set(self.drops.get() + 1);
+            }
+        }
+        unsafe fn close(
+            _client: Option<NonNull<client>>,
+            owner: &Owner,
+            _text: Option<&CStr>,
+            _key: prompt_key_result,
+        ) -> prompt_result {
+            let freecb = owner.cleanup.borrow_mut().take().unwrap();
+            freecb();
+            assert_eq!(owner.drops.get(), 0);
+            PROMPT_CONTINUE
+        }
+        let drops = Rc::new(Cell::new(0));
+        let owner = Rc::new(Owner {
+            drops: drops.clone(),
+            cleanup: RefCell::new(None),
+        });
+        let observer = Rc::downgrade(&owner);
+        let (mut inputcb, freecb) = window_customize_prompt_callbacks(owner.clone(), close);
+        *owner.cleanup.borrow_mut() = freecb;
+        drop(owner);
+        assert_eq!(
+            inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+            PROMPT_CONTINUE
+        );
+        assert_eq!(drops.get(), 1);
+        assert!(observer.upgrade().is_none());
+        assert_eq!(
+            inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+            PROMPT_CLOSE
+        );
+        drop(inputcb);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn editor_cancellation_drops_its_owned_record_without_dispatch() {
+        let edit = Rc::new(window_customize_editdata {
+            wp_id: u_int::MAX,
+            edit_type: WINDOW_CUSTOMIZE_EDIT_OPTION,
+            item: window_customize_new_item(),
+            editor: Cell::new(None),
+        });
+        let observer = Rc::downgrade(&edit);
+        let mut state = spawn_editor_state {
+            path: c"unused".to_owned(),
+            pid: 0,
+            cb: Some(Box::new(move |_| {
+                drop(edit);
+                panic!("cancelled editor callback ran");
+            })),
+        };
+        assert!(observer.upgrade().is_some());
+        unsafe {
+            spawn_cancel_editor(&mut state);
+        }
+        assert!(observer.upgrade().is_none());
+        assert!(state.cb.is_none());
+        unsafe {
+            spawn_cancel_editor(&mut state);
         }
     }
 }
