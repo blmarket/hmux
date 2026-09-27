@@ -449,10 +449,8 @@ pub fn options_name(o: &options_entry) -> &CStr {
 pub unsafe fn options_owner(mut o: *mut options_entry) -> *mut options {
     return (*o).owner;
 }
-pub unsafe fn options_get_monitor_data(mut o: *mut options_entry) -> *mut ::core::ffi::c_void {
-    (*o).monitor_data.as_deref_mut().map_or(std::ptr::null_mut(), |monitor| {
-        (monitor as *mut crate::src::hooks::hooks_monitor).cast()
-    })
+pub fn options_get_monitor_data(o: &mut options_entry) -> Option<&mut crate::src::hooks::hooks_monitor> {
+    o.monitor_data.as_deref_mut()
 }
 pub unsafe fn options_set_monitor_data(
     mut o: *mut options_entry,

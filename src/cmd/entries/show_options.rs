@@ -539,7 +539,7 @@ unsafe fn cmd_show_options_all(
             name = options_name(&*(o)).as_ptr();
             is_user_hook = 0 as ::core::ffi::c_int;
             if *name as ::core::ffi::c_int == '@' as i32 {
-                if hooks_is_event(name) != 0 || !options_get_monitor_data(o).is_null() {
+                if hooks_is_event(name) != 0 || options_get_monitor_data(&mut *o).is_some() {
                     is_user_hook = 1 as ::core::ffi::c_int;
                 }
             }

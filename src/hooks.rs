@@ -405,8 +405,7 @@ pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core
     if o.is_null() {
         return;
     }
-    hm = options_get_monitor_data(o) as *mut hooks_monitor;
-    if !hm.is_null() {
+    if options_get_monitor_data(&mut *o).is_some() {
         options_set_monitor_data(o, None);
     }
 }
@@ -573,12 +572,9 @@ pub unsafe fn hooks_monitor_add(
     monitor_add((*hm).set.as_mut().expect("hook monitor").as_ptr(), name, type_0, id, format, flags);
 }
 pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
-    let hm = options_get_monitor_data(o) as *mut hooks_monitor;
-    if hm.is_null() {
-        return None;
-    }
-    let mut bytes = CStr::from_ptr(options_name(&*(o)).as_ptr()).to_bytes().to_vec();
-    let target = match (*hm).type_0 {
+    let mut bytes = options_name(&*o).to_bytes().to_vec();
+    let hm = options_get_monitor_data(&mut *o)?;
+    let target = match hm.type_0 {
         0 => b"::".as_slice(),
         1 => b":%".as_slice(),
         2 => b":%*:".as_slice(),
@@ -587,11 +583,11 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<C
         _ => return None,
     };
     bytes.extend_from_slice(target);
-    if matches!((*hm).type_0, 1 | 3) {
-        bytes.extend_from_slice((*hm).id.to_string().as_bytes());
+    if matches!(hm.type_0, 1 | 3) {
+        bytes.extend_from_slice(hm.id.to_string().as_bytes());
         bytes.push(b':');
     }
-    bytes.extend_from_slice((*hm).format.as_bytes());
+    bytes.extend_from_slice(hm.format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
 pub unsafe fn hooks_monitor_get(
@@ -600,28 +596,28 @@ pub unsafe fn hooks_monitor_get(
     mut id: *mut ::core::ffi::c_int,
     mut format: *mut *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
-    if hm.is_null() {
+    let name = (*o).name.as_ptr();
+    let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as ::core::ffi::c_int;
-    }
-    *type_0 = (*hm).type_0;
-    *id = (*hm).id;
-    *format = (*hm).format.as_ptr();
+    };
+    *type_0 = hm.type_0;
+    *id = hm.id;
+    *format = hm.format.as_ptr();
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
-    let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
-    if hm.is_null() {
+    let name = (*o).name.as_ptr();
+    let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as u_int;
-    }
-    return monitor_get_fire_count((*hm).set.as_mut().expect("hook monitor").as_ptr(), options_name(&*(o)).as_ptr());
+    };
+    return monitor_get_fire_count(hm.set.as_mut().expect("hook monitor").as_ptr(), name);
 }
 pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
-    let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
-    if hm.is_null() {
+    let name = (*o).name.as_ptr();
+    let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as time_t;
-    }
-    return monitor_get_fire_time((*hm).set.as_mut().expect("hook monitor").as_ptr(), options_name(&*(o)).as_ptr());
+    };
+    return monitor_get_fire_time(hm.set.as_mut().expect("hook monitor").as_ptr(), name);
 }
 
 #[cfg(test)]

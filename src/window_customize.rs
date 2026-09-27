@@ -527,7 +527,7 @@ unsafe fn window_customize_write_hook_fire(
 ) -> ::core::ffi::c_int {
     let mut fire_count: u_int = 0;
     let mut fire_time: time_t = 0;
-    if !options_get_monitor_data(o).is_null() {
+    if options_get_monitor_data(&mut *o).is_some() {
         fire_count = hooks_monitor_get_fire_count(o);
         fire_time = hooks_monitor_get_fire_time(o);
     } else {
@@ -933,7 +933,7 @@ unsafe fn window_customize_option_is_changed(
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut default_ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut changed: ::core::ffi::c_int = 0;
-    if oe.is_null() || !options_get_monitor_data(o).is_null() {
+    if oe.is_null() || options_get_monitor_data(&mut *o).is_some() {
         return 1 as ::core::ffi::c_int;
     }
     if *options_name(&*(o)).as_ptr() as ::core::ffi::c_int == '@' as i32 && hooks_is_event(options_name(&*(o)).as_ptr()) != 0
@@ -1077,7 +1077,7 @@ unsafe fn window_customize_build_option(
     if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
         is_hook = 1 as ::core::ffi::c_int;
     }
-    if !options_get_monitor_data(o).is_null() {
+    if options_get_monitor_data(&mut *o).is_some() {
         is_monitor = 1 as ::core::ffi::c_int;
     }
     if *name as ::core::ffi::c_int == '@' as i32 && hooks_is_event(name) != 0 {
@@ -2006,7 +2006,7 @@ unsafe fn window_customize_draw_option(
     }
     oe = options_table_entry(o);
     is_hook = (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
-    is_monitor = (options_get_monitor_data(o) != NULL) as ::core::ffi::c_int;
+    is_monitor = options_get_monitor_data(&mut *o).is_some() as ::core::ffi::c_int;
     is_user_hook = (*name as ::core::ffi::c_int == '@' as i32 && hooks_is_event(name) != 0)
         as ::core::ffi::c_int;
     is_any_hook = (is_hook != 0 || is_monitor != 0 || is_user_hook != 0) as ::core::ffi::c_int;
