@@ -1394,16 +1394,12 @@ fn tty_large_region(ctx: &tty_ctx) -> ::core::ffi::c_int {
     return (ctx.orlower.wrapping_sub(ctx.orupper) >= ctx.sy.wrapping_div(2 as u_int))
         as ::core::ffi::c_int;
 }
-pub unsafe fn tty_fake_bce(
-    mut tty: *const tty,
-    mut gc: *const grid_cell,
-    mut bg: u_int,
-) -> ::core::ffi::c_int {
-    if tty_term_flag((*tty).term, TTYC_BCE) != 0 {
+pub unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::ffi::c_int {
+    if tty_term_flag(tty.term, TTYC_BCE) != 0 {
         return 0 as ::core::ffi::c_int;
     }
     if !(bg == 8 as u_int || bg == 9 as u_int)
-        || !((*gc).bg == 8 as ::core::ffi::c_int || (*gc).bg == 9 as ::core::ffi::c_int)
+        || !(gc.bg == 8 as ::core::ffi::c_int || gc.bg == 9 as ::core::ffi::c_int)
     {
         return 1 as ::core::ffi::c_int;
     }
@@ -1507,7 +1503,7 @@ fn tty_clamp_line(ctx: &tty_ctx, px: u_int, py: u_int, nx: u_int) -> Option<tty_
 }
 unsafe fn tty_clear_line(
     mut tty: *mut tty,
-    mut defaults: *const grid_cell,
+    defaults: &grid_cell,
     mut py: u_int,
     mut px: u_int,
     mut nx: u_int,
@@ -1533,7 +1529,7 @@ unsafe fn tty_clear_line(
     if nx == 0 as u_int {
         return;
     }
-    if (*c).overlay_check.is_none() && tty_fake_bce(tty, defaults, bg) == 0 {
+    if (*c).overlay_check.is_none() && tty_fake_bce(&*tty, defaults, bg) == 0 {
         if px.wrapping_add(nx) >= (*tty).sx && tty_term_has((*tty).term, TTYC_EL) != 0 {
             tty_cursor(tty, px, py);
             tty_putcode(tty, TTYC_EL);
@@ -1598,14 +1594,7 @@ unsafe fn tty_clear_pane_line(
         while i < (*r).used {
             ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
-                tty_clear_line(
-                    tty,
-                    &raw const ctx.style_ctx.defaults,
-                    ry,
-                    (*ri).px,
-                    (*ri).nx,
-                    bg,
-                );
+                tty_clear_line(tty, &ctx.style_ctx.defaults, ry, (*ri).px, (*ri).nx, bg);
             }
             i = i.wrapping_add(1);
         }
@@ -1686,7 +1675,7 @@ unsafe fn tty_clear_area(
     mut bg: u_int,
 ) {
     let mut c: *mut client = (*tty).client;
-    let mut defaults: *const grid_cell = &raw const ctx.style_ctx.defaults;
+    let defaults = &ctx.style_ctx.defaults;
     let mut yy: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
     log_debug(format_args!(
@@ -1706,7 +1695,7 @@ unsafe fn tty_clear_area(
     if nx == 0 as u_int || ny == 0 as u_int {
         return;
     }
-    if (*c).overlay_check.is_none() && tty_fake_bce(tty, defaults, bg) == 0 {
+    if (*c).overlay_check.is_none() && tty_fake_bce(&*tty, defaults, bg) == 0 {
         if px == 0 as u_int
             && px.wrapping_add(nx) >= (*tty).sx
             && py.wrapping_add(ny) >= (*tty).sy
@@ -2020,7 +2009,7 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &scre
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, ctx.bg) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
         || tty_term_has((*tty).term, TTYC_ICH) == 0 && tty_term_has((*tty).term, TTYC_ICH1) == 0
         || (*c).overlay_check.is_some()
     {
@@ -2035,7 +2024,7 @@ pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &scre
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, ctx.bg) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
         || tty_term_has((*tty).term, TTYC_DCH) == 0 && tty_term_has((*tty).term, TTYC_DCH1) == 0
         || (*c).overlay_check.is_some()
     {
@@ -2054,7 +2043,7 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, ctx.bg) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_IL1) == 0
         || ctx.sx == 1 as u_int
@@ -2076,7 +2065,7 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     let mut c: *mut client = (*tty).client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, ctx.bg) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_DL1) == 0
         || ctx.sx == 1 as u_int
@@ -2102,7 +2091,7 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen)
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
             && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, 8 as u_int) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, 8 as u_int) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_RI) == 0 && tty_term_has((*tty).term, TTYC_RIN) == 0
         || ctx.sx == 1 as u_int
@@ -2128,7 +2117,7 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
             && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, 8 as u_int) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, 8 as u_int) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || ctx.sx == 1 as u_int
         || ctx.sy == 1 as u_int
@@ -2166,7 +2155,7 @@ pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
             && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const ctx.style_ctx.defaults, 8 as u_int) != 0
+        || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, 8 as u_int) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_RI) == 0 && tty_term_has((*tty).term, TTYC_RIN) == 0
         || ctx.sx == 1 as u_int
@@ -2761,18 +2750,18 @@ pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
     (*tty).cx = cx;
     (*tty).cy = cy;
 }
-unsafe fn tty_hyperlink(tty: *mut tty, gc: *const grid_cell, hl: *mut hyperlinks) {
-    if (*gc).link == (*tty).cell.link {
+unsafe fn tty_hyperlink(tty: *mut tty, gc: &grid_cell, hl: Option<&hyperlinks>) {
+    if gc.link == (*tty).cell.link {
         return;
     }
-    (*tty).cell.link = (*gc).link;
-    if hl.is_null() {
+    (*tty).cell.link = gc.link;
+    let Some(hl) = hl else {
         return;
-    }
-    let link = if (*gc).link == 0 {
+    };
+    let link = if gc.link == 0 {
         None
     } else {
-        hyperlinks_get(&*hl, (*gc).link)
+        hyperlinks_get(hl, gc.link)
     };
     if let Some(link) = link {
         tty_putcode_ss(tty, TTYC_HLS, link.external_id.as_ptr(), link.uri.as_ptr());
@@ -2814,10 +2803,9 @@ unsafe fn tty_dim_default_colour(
 }
 pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
     let mut gc2 = *gc;
-    let mut palette: *mut colour_palette = ::core::ptr::null_mut::<colour_palette>();
     let mut changed: ::core::ffi::c_int = 0;
     let style_ctx = style_ctx.unwrap_or(&*std::ptr::addr_of!(tty_default_style_ctx));
-    palette = style_ctx.palette;
+    let palette = style_ctx.palette.as_ref();
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
         if gc2.fg == 8 as ::core::ffi::c_int {
             gc2.fg = style_ctx.defaults.fg;
@@ -2825,12 +2813,12 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
         if gc2.bg == 8 as ::core::ffi::c_int {
             gc2.bg = style_ctx.defaults.bg;
         }
-        if !palette.is_null() {
-            changed = colour_palette_get(palette.as_ref(), gc2.fg);
+        if palette.is_some() {
+            changed = colour_palette_get(palette, gc2.fg);
             if changed != -(1 as ::core::ffi::c_int) {
                 gc2.fg = changed;
             }
-            changed = colour_palette_get(palette.as_ref(), gc2.bg);
+            changed = colour_palette_get(palette, gc2.bg);
             if changed != -(1 as ::core::ffi::c_int) {
                 gc2.bg = changed;
             }
@@ -2872,15 +2860,15 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
             gc2.attr = (gc2.attr as ::core::ffi::c_int | GRID_ATTR_REVERSE) as u_short;
         }
     }
-    tty_check_fg(tty, palette, &raw mut gc2);
-    tty_check_bg(tty, palette, &raw mut gc2);
-    tty_check_us(tty, palette, &raw mut gc2);
+    tty_check_fg(tty, palette, &mut gc2);
+    tty_check_bg(tty, palette, &mut gc2);
+    tty_check_us(tty, palette, &mut gc2);
     if (*tty).cell.attr as ::core::ffi::c_int & !(gc2.attr as ::core::ffi::c_int) != 0
         || (*tty).cell.us != gc2.us && gc2.us == 0 as ::core::ffi::c_int
     {
         tty_reset(tty);
     }
-    tty_colours(tty, &raw mut gc2);
+    tty_colours(tty, &gc2);
     changed = gc2.attr as ::core::ffi::c_int & !((*tty).cell.attr as ::core::ffi::c_int);
     (*tty).cell.attr = gc2.attr;
     if changed & GRID_ATTR_BRIGHT != 0 {
@@ -2927,46 +2915,47 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
     if changed & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty.as_ref()) != 0 {
         tty_putcode(tty, TTYC_SMACS);
     }
-    tty_hyperlink(tty, gc, style_ctx.hyperlinks);
+    tty_hyperlink(tty, gc, style_ctx.hyperlinks.as_ref());
     (*tty).last_cell = gc2;
 }
-unsafe fn tty_colours(mut tty: *mut tty, mut gc: *const grid_cell) {
-    let mut tc: *mut grid_cell = &raw mut (*tty).cell;
-    if (*gc).fg == (*tc).fg && (*gc).bg == (*tc).bg && (*gc).us == (*tc).us {
+unsafe fn tty_colours(mut tty: *mut tty, gc: &grid_cell) {
+    if gc.fg == (*tty).cell.fg && gc.bg == (*tty).cell.bg && gc.us == (*tty).cell.us {
         return;
     }
-    if (*gc).fg == 8 as ::core::ffi::c_int
-        || (*gc).fg == 9 as ::core::ffi::c_int
-        || ((*gc).bg == 8 as ::core::ffi::c_int || (*gc).bg == 9 as ::core::ffi::c_int)
+    if gc.fg == 8 as ::core::ffi::c_int
+        || gc.fg == 9 as ::core::ffi::c_int
+        || (gc.bg == 8 as ::core::ffi::c_int || gc.bg == 9 as ::core::ffi::c_int)
     {
         if tty_term_flag((*tty).term, TTYC_AX) == 0 {
             tty_reset(tty);
         } else {
-            if ((*gc).fg == 8 as ::core::ffi::c_int || (*gc).fg == 9 as ::core::ffi::c_int)
-                && !((*tc).fg == 8 as ::core::ffi::c_int || (*tc).fg == 9 as ::core::ffi::c_int)
+            if (gc.fg == 8 as ::core::ffi::c_int || gc.fg == 9 as ::core::ffi::c_int)
+                && !((*tty).cell.fg == 8 as ::core::ffi::c_int
+                    || (*tty).cell.fg == 9 as ::core::ffi::c_int)
             {
                 tty_puts(tty, c"\x1B[39m");
-                (*tc).fg = (*gc).fg;
+                (*tty).cell.fg = gc.fg;
             }
-            if ((*gc).bg == 8 as ::core::ffi::c_int || (*gc).bg == 9 as ::core::ffi::c_int)
-                && !((*tc).bg == 8 as ::core::ffi::c_int || (*tc).bg == 9 as ::core::ffi::c_int)
+            if (gc.bg == 8 as ::core::ffi::c_int || gc.bg == 9 as ::core::ffi::c_int)
+                && !((*tty).cell.bg == 8 as ::core::ffi::c_int
+                    || (*tty).cell.bg == 9 as ::core::ffi::c_int)
             {
                 tty_puts(tty, c"\x1B[49m");
-                (*tc).bg = (*gc).bg;
+                (*tty).cell.bg = gc.bg;
             }
         }
     }
-    if !((*gc).fg == 8 as ::core::ffi::c_int || (*gc).fg == 9 as ::core::ffi::c_int)
-        && (*gc).fg != (*tc).fg
+    if !(gc.fg == 8 as ::core::ffi::c_int || gc.fg == 9 as ::core::ffi::c_int)
+        && gc.fg != (*tty).cell.fg
     {
         tty_colours_fg(tty, gc);
     }
-    if !((*gc).bg == 8 as ::core::ffi::c_int || (*gc).bg == 9 as ::core::ffi::c_int)
-        && (*gc).bg != (*tc).bg
+    if !(gc.bg == 8 as ::core::ffi::c_int || gc.bg == 9 as ::core::ffi::c_int)
+        && gc.bg != (*tty).cell.bg
     {
         tty_colours_bg(tty, gc);
     }
-    if (*gc).us != (*tc).us {
+    if gc.us != (*tty).cell.us {
         tty_colours_us(tty, gc);
     }
 }
@@ -2996,216 +2985,191 @@ unsafe fn tty_map_theme_colour(
     }
     return m;
 }
-unsafe fn tty_check_fg(
-    mut tty: *mut tty,
-    mut palette: *mut colour_palette,
-    mut gc: *mut grid_cell,
-) {
+unsafe fn tty_check_fg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: &mut grid_cell) {
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
     let mut colours: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
-    if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = (*gc).fg;
+    if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
+        c = gc.fg;
         if c < 8 as ::core::ffi::c_int
-            && (*gc).attr as ::core::ffi::c_int & GRID_ATTR_BRIGHT != 0
+            && gc.attr as ::core::ffi::c_int & GRID_ATTR_BRIGHT != 0
             && tty_term_has((*tty).term, TTYC_NOBR) == 0
         {
             c += 90 as ::core::ffi::c_int;
         }
-        c = colour_palette_get(palette.as_ref(), c);
+        c = colour_palette_get(palette, c);
         if c != -(1 as ::core::ffi::c_int) {
-            (*gc).fg = c;
+            gc.fg = c;
         }
     }
-    (*gc).fg = tty_map_theme_colour(tty, (*gc).fg);
-    if (*gc).fg & COLOUR_FLAG_RGB != 0 {
+    gc.fg = tty_map_theme_colour(tty, gc.fg);
+    if gc.fg & COLOUR_FLAG_RGB != 0 {
         if (*(*tty).term).flags & TERM_RGBCOLOURS != 0 {
             return;
         }
-        (r, g, b) = colour_split_rgb((*gc).fg);
-        (*gc).fg = colour_find_rgb(r, g, b);
+        (r, g, b) = colour_split_rgb(gc.fg);
+        gc.fg = colour_find_rgb(r, g, b);
     }
     if (*(*tty).term).flags & TERM_256COLOURS != 0 {
         colours = 256 as u_int;
     } else {
         colours = tty_term_number((*tty).term, TTYC_COLORS) as u_int;
     }
-    if (*gc).fg & COLOUR_FLAG_256 != 0 {
+    if gc.fg & COLOUR_FLAG_256 != 0 {
         if colours >= 256 as u_int {
             return;
         }
-        (*gc).fg = colour_256to16((*gc).fg);
-        if !(*gc).fg & 8 as ::core::ffi::c_int != 0 {
+        gc.fg = colour_256to16(gc.fg);
+        if !gc.fg & 8 as ::core::ffi::c_int != 0 {
             return;
         }
-        (*gc).fg &= 7 as ::core::ffi::c_int;
+        gc.fg &= 7 as ::core::ffi::c_int;
         if colours >= 16 as u_int {
-            (*gc).fg += 90 as ::core::ffi::c_int;
-        } else if (*gc).fg == 0 as ::core::ffi::c_int && (*gc).bg == 0 as ::core::ffi::c_int {
-            (*gc).fg = 7 as ::core::ffi::c_int;
-        } else if (*gc).fg == 7 as ::core::ffi::c_int && (*gc).bg == 7 as ::core::ffi::c_int {
-            (*gc).fg = 0 as ::core::ffi::c_int;
+            gc.fg += 90 as ::core::ffi::c_int;
+        } else if gc.fg == 0 as ::core::ffi::c_int && gc.bg == 0 as ::core::ffi::c_int {
+            gc.fg = 7 as ::core::ffi::c_int;
+        } else if gc.fg == 7 as ::core::ffi::c_int && gc.bg == 7 as ::core::ffi::c_int {
+            gc.fg = 0 as ::core::ffi::c_int;
         }
         return;
     }
-    if (*gc).fg >= 90 as ::core::ffi::c_int
-        && (*gc).fg <= 97 as ::core::ffi::c_int
+    if gc.fg >= 90 as ::core::ffi::c_int
+        && gc.fg <= 97 as ::core::ffi::c_int
         && colours < 16 as u_int
     {
-        (*gc).fg -= 90 as ::core::ffi::c_int;
-        (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_BRIGHT) as u_short;
+        gc.fg -= 90 as ::core::ffi::c_int;
+        gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_BRIGHT) as u_short;
     }
 }
-unsafe fn tty_check_bg(
-    mut tty: *mut tty,
-    mut palette: *mut colour_palette,
-    mut gc: *mut grid_cell,
-) {
+unsafe fn tty_check_bg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: &mut grid_cell) {
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
     let mut colours: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
-    if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = colour_palette_get(palette.as_ref(), (*gc).bg);
+    if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
+        c = colour_palette_get(palette, gc.bg);
         if c != -(1 as ::core::ffi::c_int) {
-            (*gc).bg = c;
+            gc.bg = c;
         }
     }
-    (*gc).bg = tty_map_theme_colour(tty, (*gc).bg);
-    if (*gc).bg & COLOUR_FLAG_RGB != 0 {
+    gc.bg = tty_map_theme_colour(tty, gc.bg);
+    if gc.bg & COLOUR_FLAG_RGB != 0 {
         if (*(*tty).term).flags & TERM_RGBCOLOURS != 0 {
             return;
         }
-        (r, g, b) = colour_split_rgb((*gc).bg);
-        (*gc).bg = colour_find_rgb(r, g, b);
+        (r, g, b) = colour_split_rgb(gc.bg);
+        gc.bg = colour_find_rgb(r, g, b);
     }
     if (*(*tty).term).flags & TERM_256COLOURS != 0 {
         colours = 256 as u_int;
     } else {
         colours = tty_term_number((*tty).term, TTYC_COLORS) as u_int;
     }
-    if (*gc).bg & COLOUR_FLAG_256 != 0 {
+    if gc.bg & COLOUR_FLAG_256 != 0 {
         if colours >= 256 as u_int {
             return;
         }
-        (*gc).bg = colour_256to16((*gc).bg);
-        if !(*gc).bg & 8 as ::core::ffi::c_int != 0 {
+        gc.bg = colour_256to16(gc.bg);
+        if !gc.bg & 8 as ::core::ffi::c_int != 0 {
             return;
         }
-        (*gc).bg &= 7 as ::core::ffi::c_int;
+        gc.bg &= 7 as ::core::ffi::c_int;
         if colours >= 16 as u_int {
-            (*gc).bg += 90 as ::core::ffi::c_int;
+            gc.bg += 90 as ::core::ffi::c_int;
         }
         return;
     }
-    if (*gc).bg >= 90 as ::core::ffi::c_int
-        && (*gc).bg <= 97 as ::core::ffi::c_int
+    if gc.bg >= 90 as ::core::ffi::c_int
+        && gc.bg <= 97 as ::core::ffi::c_int
         && colours < 16 as u_int
     {
-        (*gc).bg -= 90 as ::core::ffi::c_int;
+        gc.bg -= 90 as ::core::ffi::c_int;
     }
 }
-unsafe fn tty_check_us(
-    mut tty: *mut tty,
-    mut palette: *mut colour_palette,
-    mut gc: *mut grid_cell,
-) {
+unsafe fn tty_check_us(mut tty: *mut tty, palette: Option<&colour_palette>, gc: &mut grid_cell) {
     let mut c: ::core::ffi::c_int = 0;
-    if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = colour_palette_get(palette.as_ref(), (*gc).us);
+    if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
+        c = colour_palette_get(palette, gc.us);
         if c != -(1 as ::core::ffi::c_int) {
-            (*gc).us = c;
+            gc.us = c;
         }
     }
-    (*gc).us = tty_map_theme_colour(tty, (*gc).us);
+    gc.us = tty_map_theme_colour(tty, gc.us);
     if tty_term_has((*tty).term, TTYC_SETULC1) == 0 {
-        c = colour_force_rgb((*gc).us);
+        c = colour_force_rgb(gc.us);
         if c == -(1 as ::core::ffi::c_int) {
-            (*gc).us = 8 as ::core::ffi::c_int;
+            gc.us = 8 as ::core::ffi::c_int;
         } else {
-            (*gc).us = c;
+            gc.us = c;
         }
     }
 }
-unsafe fn tty_colours_fg(mut tty: *mut tty, mut gc: *const grid_cell) {
-    let mut tc: *mut grid_cell = &raw mut (*tty).cell;
+unsafe fn tty_colours_fg(mut tty: *mut tty, gc: &grid_cell) {
     let mut s: [::core::ffi::c_char; 32] = [0; 32];
     if (*tty).cell.fg >= 90 as ::core::ffi::c_int
         && (*tty).cell.bg <= 97 as ::core::ffi::c_int
-        && ((*gc).fg < 90 as ::core::ffi::c_int || (*gc).fg > 97 as ::core::ffi::c_int)
+        && (gc.fg < 90 as ::core::ffi::c_int || gc.fg > 97 as ::core::ffi::c_int)
     {
         tty_reset(tty);
     }
-    if (*gc).fg & COLOUR_FLAG_RGB != 0 || (*gc).fg & COLOUR_FLAG_256 != 0 {
-        if !(tty_try_colour(
-            tty,
-            (*gc).fg,
-            b"38\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int)
-        {
+    if gc.fg & COLOUR_FLAG_RGB != 0 || gc.fg & COLOUR_FLAG_256 != 0 {
+        if !(tty_try_colour(tty, gc.fg, true) == 0 as ::core::ffi::c_int) {
             return;
         }
-    } else if (*gc).fg >= 90 as ::core::ffi::c_int && (*gc).fg <= 97 as ::core::ffi::c_int {
+    } else if gc.fg >= 90 as ::core::ffi::c_int && gc.fg <= 97 as ::core::ffi::c_int {
         if (*(*tty).term).flags & TERM_256COLOURS != 0 {
-            xformat(&mut s, format_args!("\x1B[{}m", ((*gc).fg) as i32));
+            xformat(&mut s, format_args!("\x1B[{}m", (gc.fg) as i32));
             tty_puts(tty, std::ffi::CStr::from_ptr(s.as_ptr()));
         } else {
             tty_putcode_i(
                 tty,
                 TTYC_SETAF,
-                (*gc).fg - 90 as ::core::ffi::c_int + 8 as ::core::ffi::c_int,
+                gc.fg - 90 as ::core::ffi::c_int + 8 as ::core::ffi::c_int,
             );
         }
     } else {
-        tty_putcode_i(tty, TTYC_SETAF, (*gc).fg);
+        tty_putcode_i(tty, TTYC_SETAF, gc.fg);
     }
-    (*tc).fg = (*gc).fg;
+    (*tty).cell.fg = gc.fg;
 }
-unsafe fn tty_colours_bg(mut tty: *mut tty, mut gc: *const grid_cell) {
-    let mut tc: *mut grid_cell = &raw mut (*tty).cell;
+unsafe fn tty_colours_bg(mut tty: *mut tty, gc: &grid_cell) {
     let mut s: [::core::ffi::c_char; 32] = [0; 32];
-    if (*gc).bg & COLOUR_FLAG_RGB != 0 || (*gc).bg & COLOUR_FLAG_256 != 0 {
-        if !(tty_try_colour(
-            tty,
-            (*gc).bg,
-            b"48\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int)
-        {
+    if gc.bg & COLOUR_FLAG_RGB != 0 || gc.bg & COLOUR_FLAG_256 != 0 {
+        if !(tty_try_colour(tty, gc.bg, false) == 0 as ::core::ffi::c_int) {
             return;
         }
-    } else if (*gc).bg >= 90 as ::core::ffi::c_int && (*gc).bg <= 97 as ::core::ffi::c_int {
+    } else if gc.bg >= 90 as ::core::ffi::c_int && gc.bg <= 97 as ::core::ffi::c_int {
         if (*(*tty).term).flags & TERM_256COLOURS != 0 {
             xformat(
                 &mut s,
-                format_args!("\x1B[{}m", ((*gc).bg + 10 as ::core::ffi::c_int) as i32),
+                format_args!("\x1B[{}m", (gc.bg + 10 as ::core::ffi::c_int) as i32),
             );
             tty_puts(tty, std::ffi::CStr::from_ptr(s.as_ptr()));
         } else {
             tty_putcode_i(
                 tty,
                 TTYC_SETAB,
-                (*gc).bg - 90 as ::core::ffi::c_int + 8 as ::core::ffi::c_int,
+                gc.bg - 90 as ::core::ffi::c_int + 8 as ::core::ffi::c_int,
             );
         }
     } else {
-        tty_putcode_i(tty, TTYC_SETAB, (*gc).bg);
+        tty_putcode_i(tty, TTYC_SETAB, gc.bg);
     }
-    (*tc).bg = (*gc).bg;
+    (*tty).cell.bg = gc.bg;
 }
-unsafe fn tty_colours_us(mut tty: *mut tty, mut gc: *const grid_cell) {
-    let mut tc: *mut grid_cell = &raw mut (*tty).cell;
+unsafe fn tty_colours_us(mut tty: *mut tty, gc: &grid_cell) {
     let mut c: u_int = 0;
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
-    if (*gc).us == 8 as ::core::ffi::c_int || (*gc).us == 9 as ::core::ffi::c_int {
+    if gc.us == 8 as ::core::ffi::c_int || gc.us == 9 as ::core::ffi::c_int {
         tty_putcode(tty, TTYC_OL);
     } else {
-        if !(*gc).us & COLOUR_FLAG_RGB != 0 {
-            c = (*gc).us as u_int;
+        if !gc.us & COLOUR_FLAG_RGB != 0 {
+            c = gc.us as u_int;
             if !c & COLOUR_FLAG_256 as u_int != 0 && (c >= 90 as u_int && c <= 97 as u_int) {
                 c = c.wrapping_sub(82 as u_int);
             }
@@ -3216,7 +3180,7 @@ unsafe fn tty_colours_us(mut tty: *mut tty, mut gc: *const grid_cell) {
             );
             return;
         }
-        (r, g, b) = colour_split_rgb((*gc).us);
+        (r, g, b) = colour_split_rgb(gc.us);
         c = (65536 as ::core::ffi::c_int * r as ::core::ffi::c_int
             + 256 as ::core::ffi::c_int * g as ::core::ffi::c_int
             + b as ::core::ffi::c_int) as u_int;
@@ -3228,19 +3192,18 @@ unsafe fn tty_colours_us(mut tty: *mut tty, mut gc: *const grid_cell) {
             tty_putcode_i(tty, TTYC_SETAL, c as ::core::ffi::c_int);
         }
     }
-    (*tc).us = (*gc).us;
+    (*tty).cell.us = gc.us;
 }
 unsafe fn tty_try_colour(
     mut tty: *mut tty,
     mut colour: ::core::ffi::c_int,
-    mut type_0: *const ::core::ffi::c_char,
+    foreground: bool,
 ) -> ::core::ffi::c_int {
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
     if colour & COLOUR_FLAG_256 != 0 {
-        if *type_0 as ::core::ffi::c_int == '3' as i32 && tty_term_has((*tty).term, TTYC_SETAF) != 0
-        {
+        if foreground && tty_term_has((*tty).term, TTYC_SETAF) != 0 {
             tty_putcode_i(tty, TTYC_SETAF, colour & 0xff as ::core::ffi::c_int);
         } else if tty_term_has((*tty).term, TTYC_SETAB) != 0 {
             tty_putcode_i(tty, TTYC_SETAB, colour & 0xff as ::core::ffi::c_int);
@@ -3249,9 +3212,7 @@ unsafe fn tty_try_colour(
     }
     if colour & COLOUR_FLAG_RGB != 0 {
         (r, g, b) = colour_split_rgb(colour & 0xffffff as ::core::ffi::c_int);
-        if *type_0 as ::core::ffi::c_int == '3' as i32
-            && tty_term_has((*tty).term, TTYC_SETRGBF) != 0
-        {
+        if foreground && tty_term_has((*tty).term, TTYC_SETRGBF) != 0 {
             tty_putcode_iii(
                 tty,
                 TTYC_SETRGBF,

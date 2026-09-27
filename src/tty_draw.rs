@@ -40,7 +40,7 @@ unsafe fn tty_draw_line_clear(
     if (*(*tty).client).overlay_check.is_none()
         && wrapped == 0
         && nx >= 10 as u_int
-        && tty_fake_bce(tty, defaults, bg) == 0
+        && tty_fake_bce(&*tty, defaults, bg) == 0
     {
         if px.wrapping_add(nx) >= (*tty).sx && tty_term_has((*tty).term, TTYC_EL) != 0 {
             tty_cursor(tty, px, py);

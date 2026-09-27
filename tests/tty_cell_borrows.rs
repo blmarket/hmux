@@ -242,3 +242,74 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         );
     }
 }
+
+#[test]
+fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
+    use hmux2::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
+    use hmux2::src::shared::tty::TTYC_SETULC1;
+    use hmux2::src::style::colour::{colour_palette_init, colour_palette_set};
+
+    unsafe {
+        let mut client = client::empty();
+        client.flags = CLIENT_UTF8 as u64;
+        let mut term = tty_term::empty();
+        term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
+        term.codes[TTYC_COLORS as usize] = tty_code::Number(8);
+        term.codes[TTYC_SETAF as usize] = tty_code::String(c"F%p1%d".to_owned());
+        term.codes[TTYC_SETAB as usize] = tty_code::String(c"B%p1%d".to_owned());
+        term.codes[TTYC_SETULC1 as usize] = tty_code::String(c"U%p1%d".to_owned());
+        let mut terminal = tty {
+            client: &raw mut client,
+            term: &raw mut term,
+            out: Some(evbuffer_new()),
+            cell: grid_default_cell,
+            last_cell: grid_default_cell,
+            sx: 20,
+            sy: 2,
+            ..Default::default()
+        };
+        let mut palette = colour_palette::default();
+        colour_palette_init(&mut palette);
+        colour_palette_set(Some(&mut palette), 1, 2);
+        colour_palette_set(Some(&mut palette), 4, 6);
+        let style = tty_style_ctx {
+            defaults: grid_cell {
+                fg: 1,
+                bg: 4,
+                ..grid_default_cell
+            },
+            palette: &raw mut palette,
+            ..Default::default()
+        };
+        let source = grid_cell {
+            us: COLOUR_FLAG_256 | 1,
+            ..character(b"A", 1)
+        };
+        let before = source;
+        tty_cell(&raw mut terminal, &source, Some(&style));
+        assert_eq!(
+            (
+                terminal.last_cell.fg,
+                terminal.last_cell.bg,
+                terminal.last_cell.us
+            ),
+            (2, 6, 2)
+        );
+        colour_palette_set(Some(&mut palette), 1, 5);
+        tty_cell(&raw mut terminal, &source, Some(&style));
+        assert_eq!(
+            (
+                terminal.last_cell.fg,
+                terminal.last_cell.bg,
+                terminal.last_cell.us
+            ),
+            (5, 6, 5)
+        );
+        assert_eq!(
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            b"F2B6U2AF5U5A"
+        );
+        assert!(grid_cells_equal(&source, &before));
+        assert_eq!((style.defaults.fg, style.defaults.bg), (1, 4));
+    }
+}
