@@ -5455,9 +5455,9 @@ unsafe fn window_copy_search_rl(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_copy_search_lr_regex(
-    mut gd: *mut grid,
-    mut ppx: *mut u_int,
-    mut psx: *mut u_int,
+    gd: &grid,
+    ppx: &mut u_int,
+    psx: &mut u_int,
     mut py: u_int,
     mut first: u_int,
     mut last: u_int,
@@ -5470,7 +5470,6 @@ unsafe fn window_copy_search_lr_regex(
     let mut len: u_int = 0;
     let mut pywrap: u_int = 0;
     let mut regmatch: RegexMatch = RegexMatch { rm_so: 0, rm_eo: 0 };
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     if first >= last {
         return 0 as ::core::ffi::c_int;
     }
@@ -5478,18 +5477,18 @@ unsafe fn window_copy_search_lr_regex(
         eflags |= REG_NOTBOL;
     }
     let mut buf = vec![0u8];
-    window_copy_stringify(gd, py, first, (*gd).sx, &mut buf);
-    len = (*gd).sx.wrapping_sub(first);
-    endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+    window_copy_stringify(gd, py, first, gd.sx, &mut buf);
+    len = gd.sx.wrapping_sub(first);
+    endline = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
     pywrap = py;
     while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
-        gl = grid_get_line(gd, pywrap);
-        if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+        let gl = &gd.linedata[pywrap as usize];
+        if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
             break;
         }
         pywrap = pywrap.wrapping_add(1);
-        window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, &mut buf);
-        len = len.wrapping_add((*gd).sx);
+        window_copy_stringify(gd, pywrap, 0 as u_int, gd.sx, &mut buf);
+        len = len.wrapping_add(gd.sx);
     }
     if reg.execute_at(
         CStr::from_bytes_until_nul(&buf).expect("search line is terminated"),
@@ -5503,11 +5502,9 @@ unsafe fn window_copy_search_lr_regex(
         window_copy_cstrtocellpos(
             gd,
             len,
-            &raw mut foundx,
-            &raw mut foundy,
-            buf.as_ptr()
-                .cast::<::core::ffi::c_char>()
-                .offset(regmatch.rm_so as isize),
+            &mut foundx,
+            &mut foundy,
+            &buf[regmatch.rm_so as usize..],
         );
         if foundy == py && foundx < last {
             *ppx = foundx;
@@ -5515,15 +5512,13 @@ unsafe fn window_copy_search_lr_regex(
             window_copy_cstrtocellpos(
                 gd,
                 len,
-                &raw mut foundx,
-                &raw mut foundy,
-                buf.as_ptr()
-                    .cast::<::core::ffi::c_char>()
-                    .offset(regmatch.rm_eo as isize),
+                &mut foundx,
+                &mut foundy,
+                &buf[regmatch.rm_eo as usize..],
             );
             *psx = foundx;
             while foundy > py {
-                *psx = (*psx).wrapping_add((*gd).sx);
+                *psx = (*psx).wrapping_add(gd.sx);
                 foundy = foundy.wrapping_sub(1);
             }
             *psx = (*psx).wrapping_sub(*ppx);
@@ -5535,9 +5530,9 @@ unsafe fn window_copy_search_lr_regex(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_copy_search_rl_regex(
-    mut gd: *mut grid,
-    mut ppx: *mut u_int,
-    mut psx: *mut u_int,
+    gd: &grid,
+    ppx: &mut u_int,
+    psx: &mut u_int,
     mut py: u_int,
     mut last: u_int,
     reg: &CompiledRegex<'_>,
@@ -5548,20 +5543,19 @@ unsafe fn window_copy_search_rl_regex(
     let mut len: u_int = 0;
     let mut pywrap: u_int = 0;
     let mut buf = vec![0u8];
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
 
-    window_copy_stringify(gd, py, first, (*gd).sx, &mut buf);
-    len = (*gd).sx.wrapping_sub(first);
-    endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+    window_copy_stringify(gd, py, first, gd.sx, &mut buf);
+    len = gd.sx.wrapping_sub(first);
+    endline = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
     pywrap = py;
     while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
-        gl = grid_get_line(gd, pywrap);
-        if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+        let gl = &gd.linedata[pywrap as usize];
+        if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
             break;
         }
         pywrap = pywrap.wrapping_add(1);
-        window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, &mut buf);
-        len = len.wrapping_add((*gd).sx);
+        window_copy_stringify(gd, pywrap, 0 as u_int, gd.sx, &mut buf);
+        len = len.wrapping_add(gd.sx);
     }
     if window_copy_last_regex(
         gd,
@@ -5592,22 +5586,19 @@ unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
     if px >= gl.cellsize as u_int {
         return Cow::Borrowed(b" ");
     }
-    let gce = &*gl.celldata.as_ptr().add(px as usize);
+    let gce = &gl.celldata[px as usize];
     if gce.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return Cow::Borrowed(b"");
     }
     if !(gce.flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-        return Cow::Borrowed(::core::slice::from_raw_parts(
-            &raw const gce.c2rust_unnamed.data.data,
-            1,
-        ));
+        return Cow::Borrowed(std::slice::from_ref(&gce.c2rust_unnamed.data.data));
     }
     if gce.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
         return Cow::Borrowed(b"\t");
     }
     utf8_to_data(
-        (*gl.extddata.as_ptr().add(gce.c2rust_unnamed.offset as usize)).data,
-        &raw mut ud,
+        gl.extddata[gce.c2rust_unnamed.offset as usize].data,
+        &mut ud,
     );
     if ud.size == 0 {
         return Cow::Borrowed(b"");
@@ -5615,13 +5606,13 @@ unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
     Cow::Owned(ud.data[..ud.size as usize].to_vec())
 }
 unsafe fn window_copy_last_regex(
-    mut gd: *mut grid,
+    gd: &grid,
     mut py: u_int,
     mut first: u_int,
     mut last: u_int,
     mut len: u_int,
-    mut ppx: *mut u_int,
-    mut psx: *mut u_int,
+    ppx: &mut u_int,
+    psx: &mut u_int,
     buf: &CStr,
     preg: &CompiledRegex<'_>,
     mut eflags: ::core::ffi::c_int,
@@ -5648,11 +5639,9 @@ unsafe fn window_copy_last_regex(
         window_copy_cstrtocellpos(
             gd,
             len,
-            &raw mut foundx,
-            &raw mut foundy,
-            buf.as_ptr()
-                .offset(px as isize)
-                .offset(regmatch.rm_so as isize),
+            &mut foundx,
+            &mut foundy,
+            &buf.to_bytes()[px as usize + regmatch.rm_so as usize..],
         );
         if foundy > py || foundx >= last {
             break;
@@ -5662,17 +5651,15 @@ unsafe fn window_copy_last_regex(
         window_copy_cstrtocellpos(
             gd,
             len,
-            &raw mut foundx,
-            &raw mut foundy,
-            buf.as_ptr()
-                .offset(px as isize)
-                .offset(regmatch.rm_eo as isize),
+            &mut foundx,
+            &mut foundy,
+            &buf.to_bytes()[px as usize + regmatch.rm_eo as usize..],
         );
         if foundy > py || foundx >= last {
             *ppx = savepx;
             *psx = foundx;
             while foundy > py {
-                *psx = (*psx).wrapping_add((*gd).sx);
+                *psx = (*psx).wrapping_add(gd.sx);
                 foundy = foundy.wrapping_sub(1);
             }
             *psx = (*psx).wrapping_sub(*ppx);
@@ -5694,117 +5681,93 @@ unsafe fn window_copy_last_regex(
         return 0 as ::core::ffi::c_int;
     };
 }
+unsafe fn window_copy_search_line(gd: &grid, py: u_int) -> Option<&grid_line> {
+    if py >= gd.hsize.wrapping_add(gd.sy) {
+        log_debug(format_args!("grid_peek_line: y out of range: {}", py));
+        return None;
+    }
+    gd.linedata.get(py as usize)
+}
+
 unsafe fn window_copy_stringify(
-    gd: *mut grid,
+    gd: &grid,
     py: u_int,
     first: u_int,
     last: u_int,
     buf: &mut Vec<u8>,
 ) {
-    let gl = grid_peek_line(gd, py);
-    if gl.is_null() {
+    let Some(gl) = window_copy_search_line(gd, py) else {
         return;
-    }
+    };
     buf.pop(); // Remove the previous terminator before appending another line.
     for ax in first..last {
         // Keep interior NUL bytes in the buffer; only the final byte terminates it.
-        buf.extend_from_slice(&window_copy_cellstring(&*gl, ax));
+        buf.extend_from_slice(&window_copy_cellstring(gl, ax));
     }
     buf.push(0);
 }
 unsafe fn window_copy_cstrtocellpos(
-    mut gd: *mut grid,
-    mut ncells: u_int,
-    mut ppx: *mut u_int,
-    mut ppy: *mut u_int,
-    mut str: *const ::core::ffi::c_char,
+    gd: &grid,
+    ncells: u_int,
+    ppx: &mut u_int,
+    ppy: &mut u_int,
+    text: &[u8],
 ) {
-    let mut cell: u_int = 0;
-    let mut ccell: u_int = 0;
-    let mut px: u_int = 0;
-    let mut pywrap: u_int = 0;
-    let mut pos: u_int = 0;
-    let mut len: u_int = 0;
-    let mut match_0: ::core::ffi::c_int = 0;
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
-    let mut dlen: size_t = 0;
     let mut cells: Vec<Cow<'_, [u8]>> = Vec::with_capacity(ncells as usize);
-    cell = 0 as u_int;
-    px = *ppx;
-    pywrap = *ppy;
-    gl = grid_peek_line(gd, pywrap);
-    if gl.is_null() {
+    let mut px = *ppx;
+    let mut py = *ppy;
+    let Some(mut line) = window_copy_search_line(gd, py) else {
         return;
-    }
-    while cell < ncells {
-        cells.push(window_copy_cellstring(&*gl, px));
-        cell = cell.wrapping_add(1);
+    };
+    for _ in 0..ncells {
+        cells.push(window_copy_cellstring(line, px));
         px = px.wrapping_add(1);
-        if !(px == (*gd).sx) {
-            continue;
-        }
-        px = 0 as u_int;
-        pywrap = pywrap.wrapping_add(1);
-        gl = grid_peek_line(gd, pywrap);
-        if gl.is_null() {
-            break;
-        }
-    }
-    ncells = cell;
-    cell = 0 as u_int;
-    len = strlen(str) as u_int;
-    while cell < ncells {
-        ccell = cell;
-        pos = 0 as u_int;
-        match_0 = 1 as ::core::ffi::c_int;
-        while ccell < ncells {
-            if *str.offset(pos as isize) as ::core::ffi::c_int == '\0' as i32 {
-                match_0 = 0 as ::core::ffi::c_int;
+        if px == gd.sx {
+            px = 0;
+            py = py.wrapping_add(1);
+            let Some(next) = window_copy_search_line(gd, py) else {
                 break;
-            } else {
-                let d = &cells[ccell as usize];
-                dlen = d.len() as size_t;
-                if dlen == 1 as size_t {
-                    if *str.offset(pos as isize) as ::core::ffi::c_int
-                        != d[0] as ::core::ffi::c_char as ::core::ffi::c_int
-                    {
-                        match_0 = 0 as ::core::ffi::c_int;
-                        break;
-                    } else {
-                        pos = pos.wrapping_add(1);
-                    }
-                } else {
-                    if dlen > len.wrapping_sub(pos) as size_t {
-                        dlen = len.wrapping_sub(pos) as size_t;
-                    }
-                    if memcmp(
-                        str.offset(pos as isize) as *const ::core::ffi::c_void,
-                        d.as_ptr() as *const ::core::ffi::c_void,
-                        dlen,
-                    ) != 0 as ::core::ffi::c_int
-                    {
-                        match_0 = 0 as ::core::ffi::c_int;
-                        break;
-                    } else {
-                        pos = (pos as size_t).wrapping_add(dlen) as u_int as u_int;
-                    }
-                }
-                ccell = ccell.wrapping_add(1);
-            }
+            };
+            line = next;
         }
-        if match_0 != 0 {
-            break;
-        }
-        cell = cell.wrapping_add(1);
     }
-    px = (*ppx).wrapping_add(cell);
-    pywrap = *ppy;
-    while px >= (*gd).sx {
-        px = px.wrapping_sub((*gd).sx);
-        pywrap = pywrap.wrapping_add(1);
+
+    let text = &text[..text
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(text.len())];
+    let cell = window_copy_find_cell_suffix(&cells, text);
+    px = ppx.wrapping_add(cell as u_int);
+    py = *ppy;
+    while px >= gd.sx {
+        px = px.wrapping_sub(gd.sx);
+        py = py.wrapping_add(1);
     }
     *ppx = px;
-    *ppy = pywrap;
+    *ppy = py;
+}
+
+fn window_copy_find_cell_suffix(cells: &[Cow<'_, [u8]>], text: &[u8]) -> usize {
+    for first in 0..cells.len() {
+        let mut remaining = text;
+        let matches = cells[first..].iter().all(|cell| {
+            // tmux rejects an exhausted string even if the next cell is padding.
+            if remaining.is_empty() {
+                return false;
+            }
+            let len = cell.len().min(remaining.len());
+            if remaining[..len] != cell[..len] {
+                return false;
+            }
+            remaining = &remaining[len..];
+            true
+        });
+        if matches {
+            return first;
+        }
+    }
+    // A missing suffix maps to one cell past the scanned range.
+    cells.len()
 }
 unsafe fn window_copy_move_left(
     mut s: *mut screen,
@@ -5887,11 +5850,11 @@ unsafe fn window_copy_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::cor
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_copy_search_back_overlap(
-    mut gd: *mut grid,
+    gd: &grid,
     preg: &CompiledRegex<'_>,
-    mut ppx: *mut u_int,
-    mut psx: *mut u_int,
-    mut ppy: *mut u_int,
+    ppx: &mut u_int,
+    psx: &mut u_int,
+    ppy: &mut u_int,
     mut endline: u_int,
 ) {
     let mut endx: u_int = 0;
@@ -5904,8 +5867,8 @@ unsafe fn window_copy_search_back_overlap(
     let mut found: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     oldendx = (*ppx).wrapping_add(*psx);
     oldendy = (*ppy).wrapping_sub(1 as u_int);
-    while oldendx > (*gd).sx.wrapping_sub(1 as u_int) {
-        oldendx = oldendx.wrapping_sub((*gd).sx);
+    while oldendx > gd.sx.wrapping_sub(1 as u_int) {
+        oldendx = oldendx.wrapping_sub(gd.sx);
         oldendy = oldendy.wrapping_add(1);
     }
     endx = oldendx;
@@ -5915,8 +5878,7 @@ unsafe fn window_copy_search_back_overlap(
     while found != 0
         && px == 0 as u_int
         && py.wrapping_sub(1 as u_int) > endline
-        && (*grid_get_line(gd, py.wrapping_sub(2 as u_int))).flags as ::core::ffi::c_int
-            & GRID_LINE_WRAPPED
+        && gd.linedata[py.wrapping_sub(2) as usize].flags as ::core::ffi::c_int & GRID_LINE_WRAPPED
             != 0
         && endx == oldendx
         && endy == oldendy
@@ -5924,17 +5886,17 @@ unsafe fn window_copy_search_back_overlap(
         py = py.wrapping_sub(1);
         found = window_copy_search_rl_regex(
             gd,
-            &raw mut px,
-            &raw mut sx,
+            &mut px,
+            &mut sx,
             py.wrapping_sub(1 as u_int),
-            (*gd).sx,
+            gd.sx,
             preg,
         );
         if found != 0 {
             endx = px.wrapping_add(sx);
             endy = py.wrapping_sub(1 as u_int);
-            while endx > (*gd).sx.wrapping_sub(1 as u_int) {
-                endx = endx.wrapping_sub((*gd).sx);
+            while endx > gd.sx.wrapping_sub(1 as u_int) {
+                endx = endx.wrapping_sub(gd.sx);
                 endy = endy.wrapping_add(1);
             }
             if endx == oldendx && endy == oldendy {
@@ -5964,7 +5926,7 @@ unsafe fn window_copy_search_jump(
     let mut regex_storage = RegexStorage::default();
     let regex_owner = if regex != 0 {
         let mut sbuf = vec![0u8];
-        window_copy_stringify(sgd, 0 as u_int, 0 as u_int, (*sgd).sx, &mut sbuf);
+        window_copy_stringify(&*sgd, 0 as u_int, 0 as u_int, (*sgd).sx, &mut sbuf);
         if cis != 0 {
             cflags |= REG_ICASE;
         }
@@ -5983,9 +5945,9 @@ unsafe fn window_copy_search_jump(
         while i <= endline {
             if regex != 0 {
                 found = window_copy_search_lr_regex(
-                    gd,
-                    &raw mut px,
-                    &raw mut sx,
+                    &*gd,
+                    &mut px,
+                    &mut sx,
                     i,
                     fx,
                     (*gd).sx,
@@ -6007,9 +5969,9 @@ unsafe fn window_copy_search_jump(
         while endline < i {
             if regex != 0 {
                 found = window_copy_search_rl_regex(
-                    gd,
-                    &raw mut px,
-                    &raw mut sx,
+                    &*gd,
+                    &mut px,
+                    &mut sx,
                     i.wrapping_sub(1 as u_int),
                     fx.wrapping_add(1 as u_int),
                     regex_owner
@@ -6018,13 +5980,13 @@ unsafe fn window_copy_search_jump(
                 );
                 if found != 0 {
                     window_copy_search_back_overlap(
-                        gd,
+                        &*gd,
                         regex_owner
                             .as_ref()
                             .expect("regex search has a compiled pattern"),
-                        &raw mut px,
-                        &raw mut sx,
-                        &raw mut i,
+                        &mut px,
+                        &mut sx,
+                        &mut i,
                         endline,
                     );
                 }
@@ -6471,7 +6433,7 @@ unsafe fn window_copy_search_marks(
     let regex_owner = if regex != 0 {
         let mut sbuf = vec![0u8];
         window_copy_stringify(
-            (*ssp).grid,
+            &*(*ssp).grid,
             0 as u_int,
             0 as u_int,
             (*(*ssp).grid).sx,
@@ -6507,12 +6469,13 @@ unsafe fn window_copy_search_marks(
             px = 0 as u_int;
             loop {
                 if regex != 0 {
+                    let first = px;
                     found = window_copy_search_lr_regex(
-                        gd,
-                        &raw mut px,
-                        &raw mut width,
+                        &*gd,
+                        &mut px,
+                        &mut width,
                         py,
-                        px,
+                        first,
                         sx,
                         regex_owner
                             .as_ref()
@@ -9645,5 +9608,67 @@ unsafe fn window_copy_acquire_cursor_down(
     }
     if window_copy_update_selection(wme, 1 as ::core::ffi::c_int, no_reset) != 0 {
         window_copy_redraw_lines(wme, oldy, nd);
+    }
+}
+
+#[cfg(test)]
+mod regex_cell_tests {
+    use super::*;
+
+    #[test]
+    fn suffix_mapping_preserves_padding_and_partial_cells() {
+        let cells = [
+            Cow::Borrowed(&b"a"[..]),
+            Cow::Borrowed(&b""[..]),
+            Cow::Borrowed(&b"bc"[..]),
+        ];
+        for (text, expected) in [
+            (&b"abc"[..], 0),
+            (&b"bc"[..], 1),
+            (&b"b"[..], 1),
+            (&b"c"[..], 3),
+            (&b""[..], 3),
+            (&b"abcd"[..], 0),
+        ] {
+            assert_eq!(window_copy_find_cell_suffix(&cells, text), expected);
+        }
+        let wide = [Cow::Borrowed("漢".as_bytes()), Cow::Borrowed(&b""[..])];
+        // An exhausted suffix rejects trailing padding, as in tmux.
+        assert_eq!(window_copy_find_cell_suffix(&wide, "漢".as_bytes()), 1);
+        assert_eq!(window_copy_find_cell_suffix(&wide[..1], &[0xe6]), 0);
+        assert_eq!(window_copy_find_cell_suffix(&wide[..1], &[0xff]), 1);
+    }
+
+    #[test]
+    fn cell_mapping_bounds_lines_and_stops_at_nul() {
+        let mut gd = grid {
+            sx: 3,
+            sy: 2,
+            ..grid::default()
+        };
+        gd.linedata.resize_with(2, grid_line::default);
+        for (line, bytes) in gd.linedata.iter_mut().zip([b"abc", b"def"]) {
+            line.cellsize = 3;
+            line.celldata.resize_with(3, grid_cell_entry::default);
+            for (cell, &byte) in line.celldata.iter_mut().zip(bytes) {
+                cell.c2rust_unnamed = crate::src::shared::grid::grid_cell_entry_storage {
+                    data: crate::src::shared::grid::grid_cell_entry_data {
+                        attr: 0,
+                        fg: 0,
+                        bg: 0,
+                        data: byte,
+                    },
+                };
+            }
+        }
+        unsafe {
+            let (mut x, mut y) = (1, 0);
+            window_copy_cstrtocellpos(&gd, 5, &mut x, &mut y, b"def\0ignored");
+            assert_eq!((x, y), (0, 1));
+            window_copy_cstrtocellpos(&gd, 3, &mut x, &mut y, b"");
+            assert_eq!((x, y), (0, 2));
+            window_copy_cstrtocellpos(&gd, 3, &mut x, &mut y, b"a");
+            assert_eq!((x, y), (0, 2));
+        }
     }
 }
