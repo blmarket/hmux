@@ -1617,30 +1617,18 @@ unsafe fn grid_string_cells_code(
         }
     }
 }
+/// The caller initializes `lastgc` to `grid_default_cell` once per capture
+/// and retains it across lines so unchanged attributes are not emitted again.
 pub unsafe fn grid_string_cells_bytes(
     gd: *mut grid,
     px: u_int,
     py: u_int,
     nx: u_int,
-    lastgc: *mut *mut grid_cell,
+    mut lastgc: Option<&mut grid_cell>,
     flags: ::core::ffi::c_int,
     s: *mut screen,
 ) -> Vec<u8> {
     let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    static mut lastgc1: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
             have: 0,
@@ -1663,14 +1651,6 @@ pub unsafe fn grid_string_cells_bytes(
     let mut end: u_int = 0;
     let mut has_link: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
-    if !lastgc.is_null() && (*lastgc).is_null() {
-        memcpy(
-            &raw mut lastgc1 as *mut ::core::ffi::c_void,
-            &raw const grid_default_cell as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
-        *lastgc = &raw mut lastgc1;
-    }
     gl = grid_peek_line(gd, py);
     if gl.is_null() {
         return buf;
@@ -1687,9 +1667,12 @@ pub unsafe fn grid_string_cells_bytes(
         }
         grid_get_cell(gd, xx, py, &raw mut gc);
         if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-            if !lastgc.is_null() && flags & GRID_STRING_WITH_SEQUENCES != 0 {
+            if let Some(lastgc) = lastgc
+                .as_deref_mut()
+                .filter(|_| flags & GRID_STRING_WITH_SEQUENCES != 0)
+            {
                 grid_string_cells_code(
-                    *lastgc,
+                    lastgc,
                     &raw mut gc,
                     &raw mut code as *mut ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
@@ -1698,11 +1681,7 @@ pub unsafe fn grid_string_cells_bytes(
                     &raw mut has_link,
                 );
                 codelen = strlen(&raw mut code as *mut ::core::ffi::c_char);
-                memcpy(
-                    *lastgc as *mut ::core::ffi::c_void,
-                    &raw mut gc as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
+                *lastgc = gc;
             } else {
                 codelen = 0 as size_t;
             }

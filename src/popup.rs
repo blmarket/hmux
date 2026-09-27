@@ -592,8 +592,6 @@ unsafe fn popup_handle_drag(mut c: *mut client, mut pd: *mut popup_data, mut m: 
 unsafe fn popup_key(c: *mut client, pd: *mut popup_data, event: *mut key_event) -> i32 {
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut border: C2RustUnnamed_40 = NONE;
@@ -712,14 +710,11 @@ unsafe fn popup_key(c: *mut client, pd: *mut popup_data, event: *mut key_event) 
                 px = (*m).x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
                 py = (*m).y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
             }
-            if input_key_get_mouse(&raw mut (*pd).s, m, px, py, &raw mut buf, &raw mut len) == 0 {
+            let mut buf = [0; 40];
+            let Some(len) = input_key_get_mouse(&raw mut (*pd).s, m, px, py, &mut buf) else {
                 return 0 as ::core::ffi::c_int;
-            }
-            bufferevent_write(
-                job_get_event((*pd).job),
-                buf as *const ::core::ffi::c_void,
-                len,
-            );
+            };
+            bufferevent_write(job_get_event((*pd).job), buf.as_ptr().cast(), len);
             return 0 as ::core::ffi::c_int;
         }
         input_key(&raw mut (*pd).s, job_get_event((*pd).job), (*event).key);

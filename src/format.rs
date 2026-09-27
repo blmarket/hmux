@@ -314,8 +314,6 @@ unsafe fn format_log1(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut ft: *mut format_tree = (*es).ft;
-    static mut spaces: [::core::ffi::c_char; 11] =
-        unsafe { ::core::mem::transmute::<[u8; 11], [::core::ffi::c_char; 11]>(*b"          \0") };
     if format_logging(ft) == 0 {
         return;
     }
@@ -328,11 +326,7 @@ unsafe fn format_log1(
     if !(*ft).item.is_null() && (*ft).flags & FORMAT_VERBOSE != 0 {
         cmdq_print((*ft).item, |out| {
             out.write_all(b"#")?;
-            write_cstr_n(
-                out,
-                &raw const spaces as *const ::core::ffi::c_char,
-                ((*es).loop_0) as i32,
-            )?;
+            write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
             write_cstr(out, s.as_ptr())
         });
     }

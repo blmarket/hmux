@@ -1364,53 +1364,16 @@ pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
             << 29 as ::core::ffi::c_int
         | ch as utf8_char;
 }
-pub unsafe fn utf8_set(mut ud: *mut utf8_data, mut ch: u_char) {
-    static mut empty: utf8_data = utf8_data {
-        data: [
-            0 as ::core::ffi::c_int as u_char,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ],
-        have: 1 as u_char,
-        size: 1 as u_char,
-        width: 1 as u_char,
+pub unsafe fn utf8_set(ud: *mut utf8_data, ch: u_char) {
+    *ud = utf8_data {
+        data: [0; 32],
+        have: 1,
+        size: 1,
+        width: 1,
     };
-    memcpy(
-        ud as *mut ::core::ffi::c_void,
-        &raw const empty as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    );
-    *(&raw mut (*ud).data as *mut u_char) = ch;
+    (*ud).data[0] = ch;
 }
+
 pub unsafe fn utf8_copy(mut to: *mut utf8_data, mut from: *const utf8_data) {
     let mut i: u_int = 0;
     memcpy(

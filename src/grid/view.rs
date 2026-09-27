@@ -270,7 +270,7 @@ pub unsafe fn grid_view_string_cells_bytes(gd: *mut grid, py: u_int, nx: u_int) 
         px,
         (*gd).hsize.wrapping_add(py),
         nx,
-        ::core::ptr::null_mut(),
+        None,
         0,
         ::core::ptr::null_mut(),
     )

@@ -1259,18 +1259,11 @@ unsafe fn tty_emulate_repeat(
     };
 }
 pub unsafe fn tty_repeat_space(mut tty: *mut tty, mut n: u_int) {
-    static mut s: [::core::ffi::c_char; 500] = [0; 500];
-    if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int != ' ' as i32 {
-        memset(
-            &raw mut s as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
-            ' ' as i32,
-            ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as size_t,
-        );
-    }
+    const SPACES: [u8; 500] = [b' '; 500];
     while n as usize > ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as usize {
         tty_putn(
             tty,
-            &raw mut s as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
+            SPACES.as_ptr().cast(),
             ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as size_t,
             ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as u_int,
         );
@@ -1279,12 +1272,7 @@ pub unsafe fn tty_repeat_space(mut tty: *mut tty, mut n: u_int) {
         >() as usize as ::core::ffi::c_ulong) as u_int as u_int;
     }
     if n != 0 as u_int {
-        tty_putn(
-            tty,
-            &raw mut s as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
-            n as size_t,
-            n,
-        );
+        tty_putn(tty, SPACES.as_ptr().cast(), n as size_t, n);
     }
 }
 pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
@@ -1982,39 +1970,21 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         }
     }
 }
-pub unsafe fn tty_check_codeset(mut tty: *mut tty, mut gc: *const grid_cell) -> *const grid_cell {
-    static mut new: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
+pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const grid_cell) -> grid_cell {
     let mut c: ::core::ffi::c_int = 0;
     if (*gc).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
         && (*(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int)
             < 0x7f as ::core::ffi::c_int
     {
-        return gc;
+        return *gc;
     }
     if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-        return gc;
+        return *gc;
     }
     if (*(*tty).client).flags & CLIENT_UTF8 as uint64_t != 0 {
-        return gc;
+        return *gc;
     }
-    memcpy(
-        &raw mut new as *mut ::core::ffi::c_void,
-        gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    let mut new = *gc;
     c = tty_acs_reverse_get(
         &raw const (*gc).data.data as *const u_char as *const ::core::ffi::c_char,
         (*gc).data.size as size_t,
@@ -2022,7 +1992,7 @@ pub unsafe fn tty_check_codeset(mut tty: *mut tty, mut gc: *const grid_cell) -> 
     if c != -(1 as ::core::ffi::c_int) {
         utf8_set(&raw mut new.data, c as u_char);
         new.attr = (new.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-        return &raw mut new;
+        return new;
     }
     new.data.size = (*gc).data.width;
     if new.data.size as ::core::ffi::c_int > UTF8_SIZE {
@@ -2033,7 +2003,7 @@ pub unsafe fn tty_check_codeset(mut tty: *mut tty, mut gc: *const grid_cell) -> 
         '_' as i32,
         new.data.size as size_t,
     );
-    return &raw mut new;
+    return new;
 }
 unsafe fn tty_check_overlay(mut tty: *mut tty, mut px: u_int, mut py: u_int) -> ::core::ffi::c_int {
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
@@ -2605,7 +2575,8 @@ pub unsafe fn tty_cell(
     if tty_check_overlay(tty, (*tty).cx, (*tty).cy) == 0 {
         return;
     }
-    gcp = tty_check_codeset(tty, gc);
+    let converted = tty_check_codeset(tty, gc);
+    gcp = &converted;
     tty_attributes(tty, gcp, style_ctx);
     if (*gcp).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
         if (*(&raw const (*gcp).data.data as *const u_char) as ::core::ffi::c_int)

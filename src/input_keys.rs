@@ -957,42 +957,39 @@ pub unsafe fn input_key(
         _ => return input_key_vt10x(bev, key),
     };
 }
+/// Encode into caller-owned storage. Only the returned byte count is sent.
 pub unsafe fn input_key_get_mouse(
     mut s: *mut screen,
     mut m: *mut mouse_event,
     mut x: u_int,
     mut y: u_int,
-    mut rbuf: *mut *const ::core::ffi::c_char,
-    mut rlen: *mut size_t,
-) -> ::core::ffi::c_int {
-    static mut buf: [::core::ffi::c_char; 40] = [0; 40];
+    buf: &mut [::core::ffi::c_char; 40],
+) -> Option<size_t> {
     let mut len: size_t = 0;
-    *rbuf = ::core::ptr::null::<::core::ffi::c_char>();
-    *rlen = 0 as size_t;
     if (*m).b & MOUSE_MASK_DRAG as u_int != 0
         && (*s).mode & MOTION_MOUSE_MODES == 0 as ::core::ffi::c_int
     {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     if (*s).mode & ALL_MOUSE_MODES == 0 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     if (*m).sgr_type != ' ' as i32 as u_int {
         if (*m).sgr_b & MOUSE_MASK_DRAG as u_int != 0
             && (*m).sgr_b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
             && !(*s).mode & MODE_MOUSE_ALL != 0
         {
-            return 0 as ::core::ffi::c_int;
+            return None;
         }
     } else if (*m).b & MOUSE_MASK_DRAG as u_int != 0
         && (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
         && (*m).lb & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
         && !(*s).mode & MODE_MOUSE_ALL != 0
     {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     if (*m).sgr_type != ' ' as i32 as u_int && (*s).mode & MODE_MOUSE_SGR != 0 {
-        len = xformat_with(&mut *(&raw mut buf), |out| {
+        len = xformat_with(buf, |out| {
             write!(
                 out,
                 "\x1B[<{};{};{}",
@@ -1007,29 +1004,26 @@ pub unsafe fn input_key_get_mouse(
             || x > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
             || y > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
         {
-            return 0 as ::core::ffi::c_int;
+            return None;
         }
-        len = xformat(&mut *(&raw mut buf), format_args!("\x1B[M")) as size_t;
+        len = xformat(buf, format_args!("\x1B[M")) as size_t;
         len = len.wrapping_add(input_key_split2(
             (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int),
-            (&raw mut buf as *mut ::core::ffi::c_char).offset(len as isize)
-                as *mut ::core::ffi::c_char as *mut u_char,
+            buf.as_mut_ptr().offset(len as isize) as *mut ::core::ffi::c_char as *mut u_char,
         ));
         len = len.wrapping_add(input_key_split2(
             x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int),
-            (&raw mut buf as *mut ::core::ffi::c_char).offset(len as isize)
-                as *mut ::core::ffi::c_char as *mut u_char,
+            buf.as_mut_ptr().offset(len as isize) as *mut ::core::ffi::c_char as *mut u_char,
         ));
         len = len.wrapping_add(input_key_split2(
             y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int),
-            (&raw mut buf as *mut ::core::ffi::c_char).offset(len as isize)
-                as *mut ::core::ffi::c_char as *mut u_char,
+            buf.as_mut_ptr().offset(len as isize) as *mut ::core::ffi::c_char as *mut u_char,
         ));
     } else {
         if (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
-            return 0 as ::core::ffi::c_int;
+            return None;
         }
-        len = xformat(&mut *(&raw mut buf), format_args!("\x1B[M")) as size_t;
+        len = xformat(buf, format_args!("\x1B[M")) as size_t;
         let fresh0 = len;
         len = len.wrapping_add(1);
         buf[fresh0 as usize] =
@@ -1055,16 +1049,13 @@ pub unsafe fn input_key_get_mouse(
                 y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as ::core::ffi::c_char;
         }
     }
-    *rbuf = &raw mut buf as *mut ::core::ffi::c_char;
-    *rlen = len;
-    return 1 as ::core::ffi::c_int;
+    Some(len)
 }
 unsafe fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse_event) {
     let mut s: *mut screen = (*wp).screen;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
+    let mut buf = [0; 40];
     if (*m).ignore != 0 || (*s).mode & ALL_MOUSE_MODES == 0 as ::core::ffi::c_int {
         return;
     }
@@ -1076,18 +1067,18 @@ unsafe fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse_event) {
     if window_pane_is_visible(wp) == 0 {
         return;
     }
-    if input_key_get_mouse(s, m, x, y, &raw mut buf, &raw mut len) == 0 {
+    let Some(len) = input_key_get_mouse(s, m, x, y, &mut buf) else {
         return;
-    }
+    };
     log_debug(format_args!(
         "writing mouse {} to %{}",
-        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int),
+        log_cstr_n(buf.as_ptr(), len as ::core::ffi::c_int),
         ((*wp).id) as u32
     ));
     input_key_write(
         b"input_key_mouse\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).event,
-        buf,
+        buf.as_ptr(),
         len,
     );
 }

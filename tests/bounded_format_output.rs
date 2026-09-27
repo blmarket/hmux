@@ -42,17 +42,16 @@ fn sgr_mouse_output_counts_the_final_character_as_one_byte() {
         let mut mouse = mouse_event::default();
         mouse.sgr_type = byte as u32;
         mouse.sgr_b = 4;
-        let mut ptr = std::ptr::null();
-        let mut len = 0;
+        let mut buf = [0; 40];
         unsafe {
-            assert_eq!(
-                input_key_get_mouse(&mut screen, &mut mouse, 9, 19, &mut ptr, &mut len),
-                1,
-            );
+            let len = input_key_get_mouse(&mut screen, &mut mouse, 9, 19, &mut buf).unwrap();
             let mut expected = b"\x1b[<4;10;20".to_vec();
             expected.push(byte);
-            assert_eq!(std::slice::from_raw_parts(ptr.cast::<u8>(), len), expected);
-            assert_eq!(*ptr.add(len), 0);
+            assert_eq!(
+                std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), len),
+                expected
+            );
+            assert_eq!(buf[len], 0);
         }
     }
 }

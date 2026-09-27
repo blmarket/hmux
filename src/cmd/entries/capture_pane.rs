@@ -6,8 +6,9 @@ use crate::src::ffi::libc::{memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::grid::{
-    grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_get_cell,
-    grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line, grid_string_cells_bytes,
+    grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_default_cell,
+    grid_get_cell, grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line,
+    grid_string_cells_bytes,
 };
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::input::input_pending;
@@ -367,7 +368,7 @@ unsafe fn cmd_capture_pane_history(
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    let mut gc: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
+    let mut gc = grid_default_cell;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut n: ::core::ffi::c_int = 0;
     let mut join_lines: ::core::ffi::c_int = 0;
@@ -503,7 +504,7 @@ unsafe fn cmd_capture_pane_history(
         let line = if hyperlinks != 0 {
             cmd_capture_pane_hyperlinks(gd, s, i, &mut links)
         } else {
-            let mut line = grid_string_cells_bytes(gd, 0 as u_int, i, sx, &raw mut gc, flags, s);
+            let mut line = grid_string_cells_bytes(gd, 0 as u_int, i, sx, Some(&mut gc), flags, s);
             if let Some(nul) = line.iter().position(|&byte| byte == 0) {
                 line.truncate(nul);
             }

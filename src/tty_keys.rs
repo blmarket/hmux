@@ -2849,8 +2849,7 @@ unsafe fn tty_keys_sync(
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
     let mut c: *mut client = (*tty).client;
-    static mut prefix: [::core::ffi::c_char; 9] =
-        unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"\x1B[?2026;\0") };
+    let prefix = b"\x1B[?2026;\0";
     let mut i: size_t = 0;
     let mut status: ::core::ffi::c_int = 0;
     *size = 0 as size_t;

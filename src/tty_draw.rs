@@ -127,6 +127,7 @@ pub unsafe fn tty_draw_line(
     let mut current_block: u64;
     let mut gd: *mut grid = (*s).grid;
     let mut gcp: *const grid_cell = ::core::ptr::null::<grid_cell>();
+    let mut converted = grid_cell::default();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -333,7 +334,8 @@ pub unsafe fn tty_draw_line(
                         if empty != 0 as ::core::ffi::c_int {
                             gcp = &raw mut gc;
                         } else {
-                            gcp = tty_check_codeset(tty, &raw mut gc);
+                            converted = tty_check_codeset(tty, &raw mut gc);
+                            gcp = &converted;
                             if (*gcp).flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
                                 memcpy(
                                     &raw mut ngc as *mut ::core::ffi::c_void,
