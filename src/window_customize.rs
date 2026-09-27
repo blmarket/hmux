@@ -3204,15 +3204,8 @@ unsafe fn window_customize_set_environment(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt.as_ptr(),
-        if (*envent).value.is_none() {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            ((*envent).value)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                as *const ::core::ffi::c_char
-        },
+        &prompt,
+        Some((*envent).value.as_deref().unwrap_or(c"")),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         window_customize_prompt_input_cb(window_customize_set_environment_callback, new_item),
@@ -3335,8 +3328,8 @@ unsafe fn window_customize_add_option(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt.as_ptr(),
-        b"@\0" as *const u8 as *const ::core::ffi::c_char,
+        prompt,
+        Some(c"@"),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         window_customize_prompt_input_cb(window_customize_add_option_callback, new_item),
@@ -3423,8 +3416,8 @@ unsafe fn window_customize_add_environment(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        b"New environment: \0" as *const u8 as *const ::core::ffi::c_char,
-        b"\0" as *const u8 as *const ::core::ffi::c_char,
+        c"New environment: ",
+        Some(c""),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         window_customize_prompt_input_cb(window_customize_add_environment_callback, new_item),
@@ -3798,8 +3791,8 @@ unsafe fn window_customize_set_option(
         mode_tree_set_prompt(
             (*data).data,
             c,
-            prompt.as_ptr(),
-            value.as_ptr(),
+            &prompt,
+            Some(&value),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
             window_customize_prompt_input_cb(window_customize_set_option_callback, new_item),
@@ -3932,10 +3925,8 @@ unsafe fn window_customize_set_array_key(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt.as_ptr(),
-        ((*item).array_key)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        &prompt,
+        (*item).array_key.as_deref(),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         window_customize_prompt_input_cb(window_customize_set_array_key_callback, new_item),
@@ -4157,8 +4148,8 @@ unsafe fn window_customize_set_key(
         mode_tree_set_prompt(
             (*data).data,
             c,
-            prompt.as_ptr(),
-            value.as_ptr(),
+            &prompt,
+            Some(&value),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
             window_customize_prompt_input_cb(window_customize_set_command_callback, new_item),
@@ -4179,14 +4170,8 @@ unsafe fn window_customize_set_key(
         mode_tree_set_prompt(
             (*data).data,
             c,
-            prompt.as_ptr(),
-            if (*bd).note.is_none() {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                ((*bd).note)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-            },
+            &prompt,
+            Some((*bd).note.as_deref().unwrap_or(c"")),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
             window_customize_prompt_input_cb(window_customize_set_note_callback, new_item),
@@ -4320,8 +4305,8 @@ unsafe fn window_customize_add_key(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt.as_ptr(),
-        b"\0" as *const u8 as *const ::core::ffi::c_char,
+        &prompt,
+        Some(c""),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         window_customize_prompt_input_cb(window_customize_add_key_callback, new_item),
@@ -4847,8 +4832,8 @@ unsafe fn window_customize_key(
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        reset_prompt.as_ptr(),
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
+                        &reset_prompt,
+                        Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                         window_customize_prompt_input_cb(
@@ -4869,8 +4854,8 @@ unsafe fn window_customize_key(
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        reset_prompt.as_ptr(),
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
+                        &reset_prompt,
+                        Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                         window_customize_prompt_input_cb(
@@ -4914,8 +4899,8 @@ unsafe fn window_customize_key(
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        prompt.as_ptr(),
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
+                        &prompt,
+                        Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                         window_customize_prompt_input_cb(
@@ -4935,8 +4920,8 @@ unsafe fn window_customize_key(
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        prompt.as_ptr(),
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
+                        &prompt,
+                        Some(c""),
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                         window_customize_prompt_input_cb(

@@ -1404,8 +1404,8 @@ unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptRef) {
 pub unsafe fn mode_tree_set_prompt(
     mut mtd: *mut mode_tree_data,
     mut c: *mut client,
-    mut prompt: *const ::core::ffi::c_char,
-    mut input: *const ::core::ffi::c_char,
+    prompt: &CStr,
+    input: Option<&CStr>,
     mut type_0: prompt_type,
     mut flags: ::core::ffi::c_int,
     mut inputcb: mode_tree_prompt_input_cb,
@@ -1438,12 +1438,8 @@ pub unsafe fn mode_tree_set_prompt(
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong) as ::core::ffi::c_int;
     prompt_set_options(&mut pd, s.as_ref());
-    pd.prompt = CStr::from_ptr(prompt);
-    pd.input = if input.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(input))
-    };
+    pd.prompt = prompt;
+    pd.input = input;
     pd.type_0 = type_0;
     pd.flags = flags | PROMPT_ISMODE;
     let input_data = mtp.clone();
@@ -2264,8 +2260,8 @@ pub unsafe fn mode_tree_key(
             mode_tree_set_prompt(
                 mtd,
                 c,
-                b"(search) \0" as *const u8 as *const ::core::ffi::c_char,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
+                c"(search) ",
+                Some(c""),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |_, s, key| unsafe {
@@ -2286,13 +2282,8 @@ pub unsafe fn mode_tree_key(
             mode_tree_set_prompt(
                 mtd,
                 c,
-                b"(filter) \0" as *const u8 as *const ::core::ffi::c_char,
-                (*mtd)
-                    .filter
-                    .as_ref()
-                    .map_or(b"\0" as *const u8 as *const ::core::ffi::c_char, |filter| {
-                        filter.as_ptr()
-                    }),
+                c"(filter) ",
+                Some((*mtd).filter.as_deref().unwrap_or(c"")),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |_, s, key| unsafe {

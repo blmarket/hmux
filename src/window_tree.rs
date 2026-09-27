@@ -2247,8 +2247,8 @@ unsafe fn window_tree_key(
                 mode_tree_set_prompt(
                     (*data).data,
                     c,
-                    prompt.as_ptr(),
-                    b"\0" as *const u8 as *const ::core::ffi::c_char,
+                    &prompt,
+                    Some(c""),
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                     Some(Box::new(move |c, s, key| unsafe {
@@ -2271,8 +2271,8 @@ unsafe fn window_tree_key(
                 mode_tree_set_prompt(
                     (*data).data,
                     c,
-                    prompt.as_ptr(),
-                    b"\0" as *const u8 as *const ::core::ffi::c_char,
+                    &prompt,
+                    Some(c""),
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                     Some(Box::new(move |c, s, key| unsafe {
@@ -2298,8 +2298,8 @@ unsafe fn window_tree_key(
             mode_tree_set_prompt(
                 (*data).data,
                 c,
-                prompt.as_ptr(),
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
+                &prompt,
+                Some(c""),
                 PROMPT_TYPE_COMMAND,
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |c, s, key| unsafe {
