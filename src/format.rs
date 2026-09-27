@@ -64,7 +64,7 @@ use crate::src::status::status_get_range;
 use crate::src::style::colour::{
     colour_force_rgb, colour_format, colour_format_escape_for_client, colour_parse_cstr,
 };
-use crate::src::text::utf8::{utf8_cstrhas_impl, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
+use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
     get_timer, getversion, global_environ, global_options, global_s_options, global_w_options,
     sig2name, socket_path, start_time,
@@ -506,7 +506,7 @@ pub unsafe fn format_defaults_paste_buffer(mut ft: *mut format_tree, mut pb: *mu
     (*ft).pb = pb;
 }
 fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
-    if utf8_cstrhas_impl(ws, &gc.data) {
+    if utf8_cstrhas(ws, &gc.data) {
         return true;
     }
     if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {

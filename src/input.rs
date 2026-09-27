@@ -4705,7 +4705,9 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         "input_exit_rename",
         log_cstr(((*ictx).input_buf.as_ptr()) as *const _)
     ));
-    if utf8_isvalid((*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char) == 0 {
+    if !utf8_isvalid(
+        CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer is terminated"),
+    ) {
         return;
     }
     w = (*wp).window as *mut window;

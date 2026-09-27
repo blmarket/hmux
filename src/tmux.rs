@@ -682,8 +682,8 @@ pub unsafe fn get_timer() -> uint64_t {
         ) as uint64_t;
 }
 /// Escape a validated name once before moving it into its Rust owner.
-pub unsafe fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
-    if utf8_isvalid(name.as_ptr()) == 0 {
+pub fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
+    if !utf8_isvalid(name) {
         return None;
     }
     let mut copy = name.to_bytes_with_nul().to_vec();
@@ -699,11 +699,8 @@ pub unsafe fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> 
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     ))
 }
-pub unsafe fn check_name(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    if utf8_isvalid(name) == 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+pub fn check_name(name: &CStr) -> bool {
+    utf8_isvalid(name)
 }
 pub unsafe fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 11] = [0; 11];

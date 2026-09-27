@@ -132,7 +132,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if check_name(expanded.as_ptr()) == 0 {
+        if !check_name(&expanded) {
             cmdq_error(item, |out| {
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(expanded.as_bytes())

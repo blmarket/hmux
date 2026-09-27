@@ -720,14 +720,9 @@ unsafe fn prompt_layout(
         (*pl).cursor_x = (*pl).label_width.wrapping_add(pcursor).wrapping_sub(offset);
     }
     (*pl).content_width = (*pl).label_width.wrapping_add((*pl).input_width);
-    let display = (*pr)
-        .completion
-        .display
-        .as_ref()
-        .map_or(::core::ptr::null(), |s| s.as_ptr());
-    if !display.is_null()
-        && (*pr).index == utf8_strlen(&(*pr).buffer)
-        && (*pl).cursor_x < aw
+    if let Some(display) = (*pr).completion.display.as_deref().filter(|_| {
+        (*pr).index == utf8_strlen(&(*pr).buffer) && (*pl).cursor_x < aw
+    })
     {
         avail = aw.wrapping_sub((*pl).cursor_x);
         width = utf8_cstrwidth(display);
@@ -778,12 +773,10 @@ unsafe fn prompt_mouse_complete(
     let mut i: u_int = 0;
     let mut start: u_int = 0;
     let mut width: u_int = 0;
-    let display = (*pr)
-        .completion
-        .display
-        .as_ref()
-        .map_or(::core::ptr::null(), |s| s.as_ptr());
-    if display.is_null() || (*pr).completion.names.is_empty() {
+    let Some(display) = (*pr).completion.display.as_deref() else {
+        return PROMPT_KEY_NOT_HANDLED;
+    };
+    if (*pr).completion.names.is_empty() {
         return PROMPT_KEY_NOT_HANDLED;
     }
     if (*pr).index != utf8_strlen(&(*pr).buffer) {
@@ -806,7 +799,7 @@ unsafe fn prompt_mouse_complete(
     while (i as usize) < (*pr).completion.names.len() {
         start = end.wrapping_add(1 as u_int);
         end = start.wrapping_add(utf8_cstrwidth(
-            (&(*pr).completion.names)[i as usize].as_ptr(),
+            &(&(*pr).completion.names)[i as usize],
         ));
         if clicked < start || clicked >= end {
             i = i.wrapping_add(1);

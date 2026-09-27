@@ -64,7 +64,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         idx: 0,
     };
     let tmp = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
-    if check_name(tmp.as_ptr()) == 0 {
+    if !check_name(&tmp) {
         cmdq_error(item, |out| {
             out.write_all(b"invalid session name: ")?;
             out.write_all(tmp.as_bytes())

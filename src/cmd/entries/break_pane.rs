@@ -50,6 +50,8 @@ pub const BREAK_PANE_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
+use std::ffi::CStr;
+
 pub static mut cmd_break_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"break-pane",
@@ -147,7 +149,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     if args_has(args, 'W' as i32 as u_char) != 0 {
         return cmd_break_pane_float(item, args, w, wp);
     }
-    if !name.is_null() && check_name(name) == 0 {
+    if !name.is_null() && !check_name(CStr::from_ptr(name)) {
         cmdq_error(item, |out| {
             out.write_all(b"invalid window name: ")?;
             write_cstr(out, name)

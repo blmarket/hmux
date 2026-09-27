@@ -87,7 +87,7 @@ unsafe fn cmd_list_keys_get_width(bindings: &[*mut key_binding]) -> u_int {
         .iter()
         .map(|&bd| {
             let key_string = key_string_format((*bd).key, false);
-            utf8_cstrwidth(key_string.as_ptr())
+            utf8_cstrwidth(&key_string)
         })
         .max()
         .unwrap_or(0)
@@ -99,7 +99,7 @@ unsafe fn cmd_list_keys_get_table_width(bindings: &[*mut key_binding]) -> u_int 
             (*bd)
                 .tablename
                 .as_ref()
-                .map_or(0, |s| utf8_cstrwidth(s.as_ptr()))
+                .map_or(0, |s| utf8_cstrwidth(s))
         })
         .max()
         .unwrap_or(0)

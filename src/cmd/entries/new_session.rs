@@ -203,7 +203,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if check_name(ename.as_ptr()) == 0 {
+        if !check_name(&ename) {
             cmdq_error(item, |out| {
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(ename.as_bytes())
@@ -229,7 +229,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if check_name(ename.as_ptr()) == 0 {
+        if !check_name(&ename) {
             cmdq_error(item, |out| {
                 out.write_all(b"invalid session name: ")?;
                 out.write_all(ename.as_bytes())
@@ -291,7 +291,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     } else if !groupwith.is_null() {
                         prefix = Some((*groupwith).name.clone());
                         current_block = 6717214610478484138;
-                    } else if check_name(group) == 0 {
+                    } else if !check_name(CStr::from_ptr(group)) {
                         cmdq_error(item, |out| {
                             out.write_all(b"invalid session group name: ")?;
                             write_cstr(out, group)

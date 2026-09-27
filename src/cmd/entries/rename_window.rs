@@ -43,7 +43,7 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wl: *mut winlink = (*target).wl;
     let name = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
-    if check_name(name.as_ptr()) == 0 {
+    if !check_name(&name) {
         cmdq_error(item, |out| {
             out.write_all(b"invalid window name: ")?;
             write_cstr(out, name.as_ptr())

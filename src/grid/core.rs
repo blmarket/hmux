@@ -2260,7 +2260,7 @@ pub unsafe fn grid_in_set(
             gc.data.width as ::core::ffi::c_int
         };
     }
-    return utf8_cstrhas(set, &raw mut gc.data);
+    return utf8_cstrhas(CStr::from_ptr(set), &gc.data) as ::core::ffi::c_int;
 }
 pub unsafe fn grid_line_flags_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 128] = [0; 128];

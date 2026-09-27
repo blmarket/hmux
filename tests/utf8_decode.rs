@@ -2,6 +2,7 @@ use hmux2::src::shared::grid::utf8_data;
 use hmux2::src::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE};
 use hmux2::src::text::utf8::{utf8_append, utf8_cstrhas, utf8_open, utf8_towc};
 use hmux2::src::text::utf8_decode::{decode_utf8, DecodeResult};
+use std::ffi::CStr;
 
 fn empty_data() -> utf8_data {
     utf8_data {
@@ -38,28 +39,18 @@ fn cstrhas_respects_utf8_cells_and_the_first_nul() {
         cell.data[..bytes.len()].copy_from_slice(bytes);
         cell
     };
-    unsafe {
-        assert_eq!(utf8_cstrhas(b"a\0b\0".as_ptr().cast(), &query(b"b")), 0);
+    for (source, cell, expected) in [
+        (&b"a\0b\0"[..], query(b"b"), false),
+        (&b"a\xc3\xa9z\0"[..], query(&[0xa9]), false),
+        (&b"\xe2(\xa1\0"[..], query(&[0xe2, b'(', 0xa1]), false),
+        (&b"\xe2(\xa1\0"[..], query(b"("), true),
+        (&b"\xf0\x9f\x92\0"[..], query(&[0x9f]), true),
+        (&b"\xff\0"[..], query(&[0xff]), true),
+        (&b"a\xe2(\xa1\0"[..], query(b"a"), true),
+    ] {
         assert_eq!(
-            utf8_cstrhas(b"a\xc3\xa9z\0".as_ptr().cast(), &query(&[0xa9])),
-            0
-        );
-        assert_eq!(
-            utf8_cstrhas(b"\xe2(\xa1\0".as_ptr().cast(), &query(&[0xe2, b'(', 0xa1])),
-            0
-        );
-        assert_eq!(
-            utf8_cstrhas(b"\xe2(\xa1\0".as_ptr().cast(), &query(b"(")),
-            1
-        );
-        assert_eq!(
-            utf8_cstrhas(b"\xf0\x9f\x92\0".as_ptr().cast(), &query(&[0x9f])),
-            1
-        );
-        assert_eq!(utf8_cstrhas(b"\xff\0".as_ptr().cast(), &query(&[0xff])), 1);
-        assert_eq!(
-            utf8_cstrhas(b"a\xe2(\xa1\0".as_ptr().cast(), &query(b"a")),
-            1
+            utf8_cstrhas(CStr::from_bytes_until_nul(source).unwrap(), &cell),
+            expected
         );
     }
 }

@@ -1,5 +1,4 @@
 use crate::src::compat::utf8proc::utf8proc_wcwidth;
-use crate::src::ffi::libc::strlen;
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::options::{
@@ -13,7 +12,7 @@ use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
-use crate::src::text::utf8_decode::{DecodeResult, decode_utf8};
+use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::text::utf8_width::parse_width_override;
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
@@ -373,44 +372,29 @@ pub(crate) fn utf8_stravisx_bytes(src: &[u8], flag: ::core::ffi::c_int) -> Vec<u
     buffer.truncate(escaped_len);
     buffer
 }
-pub unsafe fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    let mut ud: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut more: utf8_state = UTF8_MORE;
-    end = s.offset(strlen(s) as isize);
-    while s < end {
-        more = utf8_open(&mut ud, *s as u_char);
-        if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            loop {
-                s = s.offset(1);
-                if !(s < end
-                    && more as ::core::ffi::c_uint
-                        == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    break;
-                }
-                more = utf8_append(&mut ud, *s as u_char);
+pub fn utf8_isvalid(s: &CStr) -> bool {
+    let bytes = s.to_bytes();
+    let mut cell = utf8_data::default();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let mut more = unsafe { utf8_open(&mut cell, bytes[offset]) };
+        if more == UTF8_MORE {
+            offset += 1;
+            while offset < bytes.len() && more == UTF8_MORE {
+                more = unsafe { utf8_append(&mut cell, bytes[offset]) };
+                offset += 1;
             }
-            if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                continue;
+            if more != UTF8_DONE {
+                return false;
             }
-            return 0 as ::core::ffi::c_int;
         } else {
-            if (*s as ::core::ffi::c_int) < 0x20 as ::core::ffi::c_int
-                || *s as ::core::ffi::c_int > 0x7e as ::core::ffi::c_int
-            {
-                return 0 as ::core::ffi::c_int;
+            if !(0x20..=0x7e).contains(&bytes[offset]) {
+                return false;
             }
-            s = s.offset(1);
+            offset += 1;
         }
     }
-    return 1 as ::core::ffi::c_int;
+    true
 }
 /// The input is a NUL-terminated C string. The result is ASCII and retains
 /// the old sanitizer's first-NUL view and underscore width for UTF-8 cells.
@@ -531,49 +515,38 @@ pub(crate) fn utf8_tocstr_cstring(cells: &[utf8_data]) -> CString {
     }
     CString::new(bytes).expect("the first NUL ends the copied string")
 }
-pub unsafe fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_int {
-    let mut tmp: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
+pub fn utf8_cstrwidth(s: &CStr) -> u_int {
+    let bytes = s.to_bytes();
+    let mut cell = utf8_data::default();
     let mut width: u_int = 0;
-    let mut more: utf8_state = UTF8_MORE;
-    width = 0 as u_int;
-    while *s as ::core::ffi::c_int != '\0' as i32 {
-        more = utf8_open(&mut tmp, *s as u_char);
-        if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            loop {
-                s = s.offset(1);
-                if !(*s as ::core::ffi::c_int != '\0' as i32
-                    && more as ::core::ffi::c_uint
-                        == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    break;
-                }
-                more = utf8_append(&mut tmp, *s as u_char);
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let start = offset;
+        let mut more = unsafe { utf8_open(&mut cell, bytes[offset]) };
+        if more == UTF8_MORE {
+            offset += 1;
+            while offset < bytes.len() && more == UTF8_MORE {
+                more = unsafe { utf8_append(&mut cell, bytes[offset]) };
+                offset += 1;
             }
-            if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                width = width.wrapping_add(tmp.width as u_int);
+            if more == UTF8_DONE {
+                width = width.wrapping_add(cell.width as u_int);
                 continue;
-            } else {
-                s = s.offset(-(tmp.have as ::core::ffi::c_int as isize));
             }
+            offset = start;
         }
-        if *s as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-            && *s as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
-        {
+        // Preserve tmux's native char comparison for invalid byte sequences.
+        let byte = bytes[offset] as std::ffi::c_char;
+        if byte > 0x1f && byte != 0x7f {
             width = width.wrapping_add(1);
         }
-        s = s.offset(1);
+        offset += 1;
     }
-    return width;
+    width
 }
 pub(crate) fn utf8_pad_cstring(s: &CStr, width: u_int, left: bool) -> CString {
     let bytes = s.to_bytes();
-    let padding = width.saturating_sub(unsafe { utf8_cstrwidth(s.as_ptr()) }) as usize;
+    let padding = width.saturating_sub(utf8_cstrwidth(s)) as usize;
     let mut output = Vec::with_capacity(bytes.len() + padding);
     if left {
         output.resize(padding, b' ');
@@ -584,13 +557,7 @@ pub(crate) fn utf8_pad_cstring(s: &CStr, width: u_int, left: bool) -> CString {
     }
     CString::new(output).expect("padded C string contains no NUL")
 }
-pub unsafe fn utf8_cstrhas(
-    s: *const ::core::ffi::c_char,
-    ud: *const utf8_data,
-) -> ::core::ffi::c_int {
-    utf8_cstrhas_impl(CStr::from_ptr(s), &*ud) as ::core::ffi::c_int
-}
-pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
+pub fn utf8_cstrhas(s: &CStr, ud: &utf8_data) -> bool {
     let bytes = s.to_bytes();
     let mut offset = 0;
     let mut found = 0;
@@ -632,6 +599,26 @@ pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn string_validation_and_width_keep_first_nul_and_invalid_byte_rules() {
+        for (source, valid, width) in [
+            (&b"\0"[..], true, 0),
+            (&b"a\0\xff\0"[..], true, 1),
+            (&b"\xc3\xa9\xe7\x95\x8c\0"[..], true, 3),
+            (&b"\xcc\x81\0"[..], true, 0),
+            (&b"\tA\x7fB\0"[..], false, 2),
+            (&b"\xff\0"[..], false, 0),
+            (&b"\xe2(\xa1\0"[..], false, 1),
+            (&b"\xf0\x9f\x92\0"[..], false, 0),
+            (&b"\xe0\x80\x80\0"[..], false, 0),
+            (&b"\xed\xa0\x80\0"[..], false, 0),
+        ] {
+            let input = CStr::from_bytes_until_nul(source).unwrap();
+            assert_eq!(utf8_isvalid(input), valid, "{source:?}");
+            assert_eq!(utf8_cstrwidth(input), width, "{source:?}");
+        }
+    }
 
     #[test]
     fn cell_slices_stop_at_the_sentinel_or_the_slice_boundary() {
