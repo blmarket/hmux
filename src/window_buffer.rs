@@ -22,8 +22,8 @@ use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
     screen_write_start, screen_write_stop,
 };
-use crate::src::shared::abi::*;
 use crate::src::shared::abi::ssize_t;
+use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
@@ -33,6 +33,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
+use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::mode_tree::{
     mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemData,
 };
@@ -67,9 +68,10 @@ pub struct window_buffer_modedata {
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
-    item_list: Vec<Rc<window_buffer_itemdata>>,
+    item_list: Vec<refbox::RefBox<window_buffer_itemdata>>,
 }
 #[repr(C)]
+#[derive(Clone)]
 pub struct window_buffer_itemdata {
     pub name: std::ffi::CString,
     pub order: u_int,
@@ -189,21 +191,22 @@ pub static mut window_buffer_mode: window_mode = {
 };
 static window_buffer_order_seq: [sort_order; 3] = [SORT_CREATION, SORT_NAME, SORT_SIZE];
 fn window_buffer_add_item(
-    items: &mut Vec<Rc<window_buffer_itemdata>>,
+    items: &mut Vec<refbox::RefBox<window_buffer_itemdata>>,
     name: &CStr,
     order: u_int,
     size: size_t,
-) -> Rc<window_buffer_itemdata> {
-    let item = Rc::new(window_buffer_itemdata {
+) -> refbox::Weak<window_buffer_itemdata> {
+    let item = refbox::RefBox::new(window_buffer_itemdata {
         name: name.to_owned(),
         order,
         size,
     });
-    items.push(Rc::clone(&item));
-    item
+    let handle = item.downgrade();
+    items.push(item);
+    handle
 }
 
-fn window_buffer_clear_items(items: &mut Vec<Rc<window_buffer_itemdata>>) {
+fn window_buffer_clear_items(items: &mut Vec<refbox::RefBox<window_buffer_itemdata>>) {
     items.clear();
 }
 unsafe fn window_buffer_build(
@@ -237,7 +240,8 @@ unsafe fn window_buffer_build(
     let mut current_block_32: u64;
     i = 0 as u_int;
     while (i as usize) < (*data).item_list.len() {
-        let item = Rc::clone(&(&(*data).item_list)[i as usize]);
+        let item_handle = (&(*data).item_list)[i as usize].downgrade();
+        let item = ModeTreeItemData::Buffer(item_handle.clone()).as_buffer().unwrap();
         if let Some(pb) = paste_get_name(&item.name) {
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
@@ -265,7 +269,7 @@ unsafe fn window_buffer_build(
                     mode_tree_add(
                         (*data).data,
                         None,
-                        ModeTreeItemData::Buffer(Rc::clone(&item)),
+                        ModeTreeItemData::Buffer(item_handle.clone()),
                         item.order as uint64_t,
                         &item.name,
                         Some(&text),
@@ -491,11 +495,11 @@ unsafe fn window_buffer_init(
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
             let item = itemdata.as_buffer().expect("buffer row payload");
-            window_buffer_draw(item, ctx, sx, sy)
+            window_buffer_draw(&item, ctx, sx, sy)
         })),
         Some(Box::new(move |itemdata, search, icase| {
             let item = itemdata.as_buffer().expect("buffer row payload");
-            window_buffer_search(item, search, icase)
+            window_buffer_search(&item, search, icase)
         })),
         Some(Box::new(move |client, key| {
             window_buffer_menu(data_handle.as_ptr().cast(), client, key)
@@ -503,7 +507,7 @@ unsafe fn window_buffer_init(
         None,
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_buffer().expect("buffer row payload");
-            window_buffer_get_key(data_handle.as_ptr().cast(), item, line)
+            window_buffer_get_key(data_handle.as_ptr().cast(), &item, line)
         })),
         None,
         Some(window_buffer_sort),
@@ -541,11 +545,10 @@ unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
-    item: &Rc<window_buffer_itemdata>,
+    item: &ModeTreeItemSnapshot<window_buffer_itemdata>,
 ) {
     if mode_tree_get_current(&*(*data).data)
-        .as_buffer()
-        .is_some_and(|current| Rc::ptr_eq(item, current))
+        .is_buffer(item)
         && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
@@ -792,13 +795,13 @@ unsafe fn window_buffer_key(
             101 => {
                 let item_owner = mode_tree_get_current(&*mtd);
                 if let Some(item) = item_owner.as_buffer() {
-                    window_buffer_start_edit(data, item, c);
+                    window_buffer_start_edit(data, &item, c);
                 }
             }
             100 => {
                 let item_owner = mode_tree_get_current(&*mtd);
                 if let Some(item) = item_owner.as_buffer() {
-                    window_buffer_do_delete(data, item);
+                    window_buffer_do_delete(data, &item);
                 }
                 mode_tree_build(mtd);
             }
@@ -809,7 +812,7 @@ unsafe fn window_buffer_key(
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_delete(
                             data,
-                            itemdata.as_buffer().expect("buffer row payload"),
+                            &itemdata.as_buffer().expect("buffer row payload"),
                         )
                     },
                     c,
@@ -825,7 +828,7 @@ unsafe fn window_buffer_key(
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_paste(
                             data,
-                            itemdata.as_buffer().expect("buffer row payload"),
+                            &itemdata.as_buffer().expect("buffer row payload"),
                             c,
                         )
                     },
@@ -838,7 +841,7 @@ unsafe fn window_buffer_key(
             112 | 13 => {
                 let item_owner = mode_tree_get_current(&*mtd);
                 if let Some(item) = item_owner.as_buffer() {
-                    window_buffer_do_paste(data, item, c);
+                    window_buffer_do_paste(data, &item, c);
                 }
                 finished = 1 as ::core::ffi::c_int;
             }
@@ -957,8 +960,7 @@ mod tests {
         let mut items = Vec::new();
         let source = CString::new(b"\xffbuffer".to_vec()).unwrap();
         let first = window_buffer_add_item(&mut items, &source, 7, 42);
-        let first_name = first.name.as_ptr();
-        let observer = Rc::downgrade(&first);
+        let first_name = first.try_borrow_mut().unwrap().name.as_ptr();
         drop(source);
 
         let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
@@ -967,20 +969,21 @@ mod tests {
             window_buffer_add_item(&mut items, empty, 0, 0);
         }
 
-        assert!(Rc::ptr_eq(&first, &items[0]));
+        assert!(first.is(&items[0]));
         assert_eq!(
             unsafe { CStr::from_ptr(first_name).to_bytes() },
             b"\xffbuffer"
         );
-        assert_eq!(first.name.as_ptr(), first_name);
-        assert_eq!(empty_item.name.as_bytes(), b"");
+        assert_eq!(first.try_borrow_mut().unwrap().name.as_ptr(), first_name);
+        assert_eq!(empty_item.try_borrow_mut().unwrap().name.as_bytes(), b"");
 
+        let selected = ModeTreeItemData::Buffer(first.clone());
+        let snapshot = selected.as_buffer().unwrap();
         window_buffer_clear_items(&mut items);
         assert!(items.is_empty());
-        assert_eq!(first.name.as_bytes(), b"\xffbuffer");
-        assert_eq!((first.order, first.size), (7, 42));
-        assert!(observer.upgrade().is_some());
-        drop(first);
-        assert!(observer.upgrade().is_none());
+        assert!(!first.is_alive());
+        assert!(selected.as_buffer().is_none());
+        assert_eq!(snapshot.name.as_bytes(), b"\xffbuffer");
+        assert_eq!((snapshot.order, snapshot.size), (7, 42));
     }
 }

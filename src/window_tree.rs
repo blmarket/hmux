@@ -91,7 +91,7 @@ pub struct window_tree_modedata {
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
-    pub item_list: Vec<Rc<window_tree_itemdata>>,
+    pub item_list: Vec<refbox::RefBox<window_tree_itemdata>>,
     pub entered: Option<::std::ffi::CString>,
     pub fs: cmd_find_state,
     pub type_0: window_tree_type,
@@ -332,22 +332,23 @@ unsafe fn window_tree_pull_item(
     }
 }
 fn window_tree_add_item(
-    items: &mut Vec<Rc<window_tree_itemdata>>,
+    items: &mut Vec<refbox::RefBox<window_tree_itemdata>>,
     value: window_tree_itemdata,
-) -> Rc<window_tree_itemdata> {
-    let item = Rc::new(value);
-    items.push(Rc::clone(&item));
-    item
+) -> refbox::Weak<window_tree_itemdata> {
+    let item = refbox::RefBox::new(value);
+    let handle = item.downgrade();
+    items.push(item);
+    handle
 }
 unsafe fn window_tree_remove_last_item(
     data: *mut window_tree_modedata,
-    item: &Rc<window_tree_itemdata>,
+    item: &refbox::Weak<window_tree_itemdata>,
     mti: &ModeTreeItemRef,
 ) {
     debug_assert!((*data)
         .item_list
         .last()
-        .is_some_and(|last| Rc::ptr_eq(last, item)));
+        .is_some_and(|last| item.is(last)));
     mode_tree_remove((*data).data, mti);
     (*data).item_list.pop();
 }
@@ -384,7 +385,7 @@ unsafe fn window_tree_build_pane(
     let mti = mode_tree_add(
         (*data).data,
         Some(parent),
-        ModeTreeItemData::Tree(Rc::clone(&item_owner)),
+        ModeTreeItemData::Tree(item_owner.clone()),
         wp as uint64_t,
         &name,
         Some(&text),
@@ -467,7 +468,7 @@ unsafe fn window_tree_build_window(
     let mti = mode_tree_add(
         (*data).data,
         Some(parent),
-        ModeTreeItemData::Tree(Rc::clone(&item_owner)),
+        ModeTreeItemData::Tree(item_owner.clone()),
         wl as uint64_t,
         &name,
         Some(&text),
@@ -543,7 +544,7 @@ unsafe fn window_tree_build_session(
     let mti = mode_tree_add(
         (*data).data,
         None,
-        ModeTreeItemData::Tree(Rc::clone(&item_owner)),
+        ModeTreeItemData::Tree(item_owner.clone()),
         s as uint64_t,
         &(*s).name,
         Some(&text),
@@ -1733,11 +1734,11 @@ unsafe fn window_tree_init(
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
             let item = itemdata.as_tree().expect("tree row payload");
-            window_tree_draw(data_handle.as_ptr().cast(), item, ctx, sx, sy)
+            window_tree_draw(data_handle.as_ptr().cast(), &item, ctx, sx, sy)
         })),
         Some(Box::new(move |itemdata, search, icase| {
             let item = itemdata.as_tree().expect("tree row payload");
-            window_tree_search(item, search, icase as ::core::ffi::c_int) != 0
+            window_tree_search(&item, search, icase as ::core::ffi::c_int) != 0
         })),
         Some(Box::new(move |client, key| {
             window_tree_menu(data_handle.as_ptr().cast(), client, key)
@@ -1745,12 +1746,12 @@ unsafe fn window_tree_init(
         None,
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_tree().expect("tree row payload");
-            window_tree_get_key(data_handle.as_ptr().cast(), item, line)
+            window_tree_get_key(data_handle.as_ptr().cast(), &item, line)
         })),
         Some(Box::new(move |current, other, sort| {
             window_tree_swap(
-                current.as_tree().expect("tree row payload"),
-                other.as_tree().expect("tree row payload"),
+                &current.as_tree().expect("tree row payload"),
+                &other.as_tree().expect("tree row payload"),
                 sort,
             ) != 0
         })),
@@ -1889,7 +1890,7 @@ unsafe fn window_tree_command_callback(
         (*data).data,
         |row, c, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
-            window_tree_command_each(data, itemdata.as_tree().expect("tree row payload"), c)
+            window_tree_command_each(data, &itemdata.as_tree().expect("tree row payload"), c)
         },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
@@ -1974,7 +1975,7 @@ unsafe fn window_tree_kill_current_callback(
     }
     let item_owner = mode_tree_get_current(&*mtd);
     if let Some(item) = item_owner.as_tree() {
-        window_tree_kill_each(item);
+        window_tree_kill_each(&item);
     }
     server_renumber_all();
     window_tree_enqueue_command_done(c, data);
@@ -2025,7 +2026,7 @@ unsafe fn window_tree_kill_tagged_callback(
         mtd,
         |row, _, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
-            window_tree_kill_each(itemdata.as_tree().expect("tree row payload"))
+            window_tree_kill_each(&itemdata.as_tree().expect("tree row payload"))
         },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
@@ -2141,7 +2142,7 @@ unsafe fn window_tree_key(
     let mut nwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mode = crate::src::shared::rc::downgrade(data);
-    let mut item = mode_tree_get_current(&*(*data).data).as_tree().cloned();
+    let mut selection = mode_tree_get_current(&*(*data).data);
     finished = mode_tree_key((*data).data, c, &raw mut key, m, &raw mut x, &raw mut y);
     let Some(_mode_owner) = mode.upgrade() else {
         return;
@@ -2150,13 +2151,10 @@ unsafe fn window_tree_key(
         return;
     }
     loop {
-        let new_item = mode_tree_get_current(&*(*data).data).as_tree().cloned();
-        let same_item = match (&item, &new_item) {
-            (Some(item), Some(new_item)) => Rc::ptr_eq(item, new_item),
-            (None, None) => true,
-            _ => false,
-        };
-        item = new_item;
+        let next_selection = mode_tree_get_current(&*(*data).data);
+        let same_item = selection.same_identity(&next_selection);
+        selection = next_selection;
+        let item = selection.as_tree();
         if !same_item {
             (*data).offset = 0;
         }
@@ -2176,6 +2174,7 @@ unsafe fn window_tree_key(
             .as_deref()
             .map_or(KEYC_NONE, |item| window_tree_mouse(data, key, x, item));
     }
+    let item = selection.as_tree();
     match key {
         60 => {
             (*data).offset -= 1;
@@ -2355,7 +2354,7 @@ mod queued_refresh_tests {
                     hide_preview_this_pane: 0,
                     preview_is_info: 0,
                     prompt_flags: 0,
-                    item_list: vec![Rc::new(window_tree_itemdata {
+                    item_list: vec![refbox::RefBox::new(window_tree_itemdata {
                         type_0: WINDOW_TREE_NONE,
                         session: -1,
                         winlink: -1,
@@ -2372,8 +2371,8 @@ mod queued_refresh_tests {
                     each: 0,
                 }));
                 let observed = Rc::downgrade(&mode);
-                let selected = Rc::clone(&(&(*mode.get()).item_list)[0]);
-                let selected_observer = Rc::downgrade(&selected);
+                let selected_observer = (&(*mode.get()).item_list)[0].downgrade();
+                let selected = ModeTreeItemData::Tree(selected_observer.clone()).as_tree().unwrap();
                 let item = cmdq_get_callback_owned(
                     c"test-tree-refresh".as_ptr(),
                     window_tree_command_done(mode),
@@ -2393,9 +2392,9 @@ mod queued_refresh_tests {
                     (selected.session, selected.winlink, selected.pane),
                     (-1, -1, -1)
                 );
-                assert_eq!(Rc::strong_count(&selected), 1);
+                assert!(!selected_observer.is_alive());
                 drop(selected);
-                assert!(selected_observer.upgrade().is_none());
+                assert!(!selected_observer.is_alive());
             }
         }
     }

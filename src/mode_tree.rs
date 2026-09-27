@@ -2848,77 +2848,65 @@ mod payload_owner_tests {
     use crate::src::shared::rc;
     use crate::src::window_buffer::window_buffer_itemdata;
 
-    fn payload(name: &CStr) -> ModeTreeItemData {
-        ModeTreeItemData::Buffer(Rc::new(window_buffer_itemdata {
+    fn payload(name: &CStr) -> refbox::RefBox<window_buffer_itemdata> {
+        refbox::RefBox::new(window_buffer_itemdata {
             name: name.to_owned(),
             order: 0,
             size: 0,
-        }))
+        })
     }
 
     #[test]
-    fn selected_payload_survives_replacement_and_mode_cleanup() {
+    fn row_payloads_expire_on_list_replacement_but_action_snapshots_survive() {
         unsafe {
             let tree = mode_tree_alloc_data();
             let mut pane = window_pane::empty();
             (*tree).wp = &mut pane;
             (*tree).zoomed = 1;
-            assert!(matches!(
-                mode_tree_get_current(&*tree),
-                ModeTreeItemData::None
-            ));
-            let original = payload(c"original");
-            let observer = Rc::downgrade(original.as_buffer().unwrap());
+            let owner = payload(c"original");
+            let original = ModeTreeItemData::Buffer(owner.downgrade());
             let row = mode_tree_add(tree, None, original.clone(), 1, c"row", None, 1);
-            // Detail rows may share the same record with their parent.
-            mode_tree_add(tree, Some(&row), original, 2, c"detail", None, 1);
-            drop(row);
+            mode_tree_add(tree, Some(&row), original.clone(), 2, c"detail", None, 1);
             mode_tree_build_lines(tree, &(*tree).children.items.clone(), 0);
             let selected = mode_tree_get_current(&*tree);
             (*tree).current = 1;
             let detail = mode_tree_get_current(&*tree);
-            assert!(Rc::ptr_eq(
-                selected.as_buffer().unwrap(),
-                detail.as_buffer().unwrap()
-            ));
-
+            assert!(selected.same_identity(&detail));
+            let snapshot = selected.as_buffer().unwrap();
+            // Taking a snapshot ends the record borrow immediately, permitting
+            // nested drawing/action access before the owner is removed.
+            assert_eq!(detail.as_buffer().unwrap().name.as_c_str(), c"original");
+            drop(owner);
+            assert!(selected.as_buffer().is_none());
+            assert!(detail.as_buffer().is_none());
             mode_tree_clear_lines(tree);
             mode_tree_free_items(&mut (*tree).children);
-            mode_tree_add(tree, None, payload(c"replacement"), 1, c"row", None, 1);
-            mode_tree_build_lines(tree, &(*tree).children.items.clone(), 0);
-            (*tree).current = 0;
-            let replacement = mode_tree_get_current(&*tree);
-            let replacement_observer = Rc::downgrade(replacement.as_buffer().unwrap());
-            assert!(!Rc::ptr_eq(
-                selected.as_buffer().unwrap(),
-                replacement.as_buffer().unwrap()
-            ));
-            drop(replacement);
+            let owner = payload(c"replacement");
+            let replacement = ModeTreeItemData::Buffer(owner.downgrade());
+            assert!(!selected.same_identity(&replacement));
+            assert!(!replacement.is_buffer(&snapshot));
+            assert!(selected.is_buffer(&snapshot));
             mode_tree_free(tree);
-            assert!(replacement_observer.upgrade().is_none());
-            assert_eq!(selected.as_buffer().unwrap().name.as_c_str(), c"original");
-            drop(selected);
-            assert!(observer.upgrade().is_some());
-            drop(detail);
-            assert!(observer.upgrade().is_none());
+            assert_eq!(snapshot.name.as_c_str(), c"original");
         }
     }
 
     #[test]
-    fn key_dispatch_retains_payload_without_holding_a_row_borrow() {
+    fn key_dispatch_snapshot_survives_removing_its_row_and_payload_owner() {
         unsafe {
-            let owner = rc::take(mode_tree_alloc_data());
-            let tree = rc::as_ptr(&owner);
-            let original = payload(c"callback snapshot");
-            let observer = Rc::downgrade(original.as_buffer().unwrap());
+            let tree_owner = rc::take(mode_tree_alloc_data());
+            let tree = rc::as_ptr(&tree_owner);
+            let mut owner = Some(payload(c"callback snapshot"));
+            let observer = owner.as_ref().unwrap().downgrade();
+            let original = ModeTreeItemData::Buffer(observer.clone());
             let row = mode_tree_add(tree, None, original, 1, c"row", None, 1);
-            let callback_row = Rc::clone(&row);
+            let callback_row = row.clone();
             (*tree).keycb = Some(Box::new(move |item, _| {
+                let snapshot = item.as_buffer().unwrap();
                 callback_row.borrow_mut().itemdata = ModeTreeItemData::None;
-                assert_eq!(
-                    item.as_buffer().unwrap().name.as_c_str(),
-                    c"callback snapshot"
-                );
+                drop(owner.take());
+                assert!(item.as_buffer().is_none());
+                assert_eq!(snapshot.name.as_c_str(), c"callback snapshot");
                 b'x' as key_code
             }));
             mode_tree_build_lines(tree, &(*tree).children.items.clone(), 0);
@@ -2927,7 +2915,7 @@ mod payload_owner_tests {
                 mode_tree_get_current(&*tree),
                 ModeTreeItemData::None
             ));
-            assert!(observer.upgrade().is_none());
+            assert!(!observer.is_alive());
         }
     }
 }

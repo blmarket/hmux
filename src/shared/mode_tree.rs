@@ -133,41 +133,95 @@ pub type mode_tree_prompt_input_cb = Option<
     >,
 >;
 
-/// Each row keeps its mode-specific record alive across rebuilds and callbacks.
-/// Category rows have no payload. Rows and mode lists share immutable records
-/// in their original heap allocations.
+/// Mode lists own payloads. Rows carry weak identities; actions copy a snapshot
+/// before dispatch so rebuilding or drawing the list cannot conflict with a borrow.
 #[derive(Clone, Default)]
-pub enum ModeTreeItemData {
-    #[default]
+pub enum ModeTreeItemData {    #[default]
     None,
-    Buffer(Rc<window_buffer_itemdata>),
-    Client(Rc<window_client_itemdata>),
-    Customize(Rc<window_customize_itemdata>),
-    Tree(Rc<window_tree_itemdata>),
+    Buffer(refbox::Weak<window_buffer_itemdata>),
+    Client(refbox::Weak<window_client_itemdata>),
+    Customize(refbox::Weak<window_customize_itemdata>),
+    Tree(refbox::Weak<window_tree_itemdata>),
+}
+
+/// An action's independent copy, paired with the original nonowning identity.
+/// The copy permits reentrant drawing and rebuilds without retaining a registry
+/// record or holding a RefBox borrow across callbacks.
+pub struct ModeTreeItemSnapshot<T> {
+    identity: refbox::Weak<T>,
+    value: T,
+}
+
+impl<T> std::ops::Deref for ModeTreeItemSnapshot<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T: Clone> ModeTreeItemSnapshot<T> {
+    fn read(identity: &refbox::Weak<T>) -> Option<Self> {
+        let value = match identity.try_borrow_mut() {
+            Ok(value) => value.clone(),
+            Err(refbox::BorrowError::Dropped) => return None,
+            Err(refbox::BorrowError::Borrowed) => panic!("mode payload already borrowed"),
+        };
+        Some(Self {
+            identity: identity.clone(),
+            value,
+        })
+    }
 }
 
 impl ModeTreeItemData {
-    pub fn as_buffer(&self) -> Option<&Rc<window_buffer_itemdata>> {
+    pub fn same_identity(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::None, Self::None) => true,
+            (Self::Buffer(a), Self::Buffer(b)) => a == b,
+            (Self::Client(a), Self::Client(b)) => a == b,
+            (Self::Customize(a), Self::Customize(b)) => a == b,
+            (Self::Tree(a), Self::Tree(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    pub fn is_buffer(&self, item: &ModeTreeItemSnapshot<window_buffer_itemdata>) -> bool {
+        matches!(self, Self::Buffer(handle) if *handle == item.identity)
+    }
+
+    pub fn as_buffer(&self) -> Option<ModeTreeItemSnapshot<window_buffer_itemdata>> {
         match self {
-            Self::Buffer(item) => Some(item),
+            Self::Buffer(item) => ModeTreeItemSnapshot::read(item),
             _ => None,
         }
     }
-    pub fn as_client(&self) -> Option<&Rc<window_client_itemdata>> {
+    pub fn is_client(&self, item: &ModeTreeItemSnapshot<window_client_itemdata>) -> bool {
+        matches!(self, Self::Client(handle) if *handle == item.identity)
+    }
+
+    pub fn as_client(&self) -> Option<ModeTreeItemSnapshot<window_client_itemdata>> {
         match self {
-            Self::Client(item) => Some(item),
+            Self::Client(item) => ModeTreeItemSnapshot::read(item),
             _ => None,
         }
     }
-    pub fn as_customize(&self) -> Option<&Rc<window_customize_itemdata>> {
+    pub fn is_customize(&self, item: &ModeTreeItemSnapshot<window_customize_itemdata>) -> bool {
+        matches!(self, Self::Customize(handle) if *handle == item.identity)
+    }
+
+    pub fn as_customize(&self) -> Option<ModeTreeItemSnapshot<window_customize_itemdata>> {
         match self {
-            Self::Customize(item) => Some(item),
+            Self::Customize(item) => ModeTreeItemSnapshot::read(item),
             _ => None,
         }
     }
-    pub fn as_tree(&self) -> Option<&Rc<window_tree_itemdata>> {
+    pub fn is_tree(&self, item: &ModeTreeItemSnapshot<window_tree_itemdata>) -> bool {
+        matches!(self, Self::Tree(handle) if *handle == item.identity)
+    }
+
+    pub fn as_tree(&self) -> Option<ModeTreeItemSnapshot<window_tree_itemdata>> {
         match self {
-            Self::Tree(item) => Some(item),
+            Self::Tree(item) => ModeTreeItemSnapshot::read(item),
             _ => None,
         }
     }

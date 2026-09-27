@@ -1,5 +1,6 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
+use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use refbox::RefBox;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
@@ -121,7 +122,7 @@ pub struct window_customize_modedata {
     pub hide_global: ::core::ffi::c_int,
     pub hide_default: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
-    item_list: Vec<Rc<window_customize_itemdata>>,
+    item_list: Vec<refbox::RefBox<window_customize_itemdata>>,
     pub fs: cmd_find_state,
     pub change: window_customize_change,
 }
@@ -568,12 +569,13 @@ unsafe fn window_customize_write_hook_fire(
     );
 }
 fn window_customize_add_item(
-    items: &mut Vec<Rc<window_customize_itemdata>>,
+    items: &mut Vec<refbox::RefBox<window_customize_itemdata>>,
     item: window_customize_itemdata,
-) -> Rc<window_customize_itemdata> {
-    let item = Rc::new(item);
-    items.push(Rc::clone(&item));
-    item
+) -> refbox::Weak<window_customize_itemdata> {
+    let item = refbox::RefBox::new(item);
+    let handle = item.downgrade();
+    items.push(item);
+    handle
 }
 unsafe fn window_customize_write_value(
     mut ctx: *mut screen_write_ctx,
@@ -1030,7 +1032,7 @@ unsafe fn window_customize_build_array(
             mode_tree_add(
                 (*data).data,
                 Some(top),
-                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+                ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_get_tag(o, ai, oe),
                 &name,
                 Some(&text),
@@ -1204,7 +1206,7 @@ unsafe fn window_customize_build_option(
     let top = mode_tree_add(
         (*data).data,
         Some(top),
-        ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+        ModeTreeItemData::Customize(item_owner.clone()),
         window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
         CStr::from_ptr(name),
         text.as_deref(),
@@ -1410,7 +1412,7 @@ unsafe fn window_customize_build_keys(
             let child = mode_tree_add(
                 (*data).data,
                 Some(&top),
-                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+                ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 0),
                 &expanded,
                 None,
@@ -1421,7 +1423,7 @@ unsafe fn window_customize_build_keys(
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
-                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+                ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 1),
                 c"Command",
                 Some(&text),
@@ -1445,7 +1447,7 @@ unsafe fn window_customize_build_keys(
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
-                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+                ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 2),
                 c"Note",
                 Some(&text),
@@ -1463,7 +1465,7 @@ unsafe fn window_customize_build_keys(
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
-                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+                ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 3),
                 c"Repeat",
                 Some(&text),
@@ -1624,7 +1626,7 @@ unsafe fn window_customize_build_environment(
         mode_tree_add(
             (*data).data,
             Some(&top),
-            ModeTreeItemData::Customize(Rc::clone(&item_owner)),
+            ModeTreeItemData::Customize(item_owner.clone()),
             (2_u64 << 62) | std::ptr::from_ref(envent) as uint64_t,
             &name,
             text.as_deref(),
@@ -2843,7 +2845,7 @@ unsafe fn window_customize_draw_environment(
 }
 unsafe fn window_customize_draw(
     mut modedata: *mut ::core::ffi::c_void,
-    item: &Rc<window_customize_itemdata>,
+    item: &window_customize_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
@@ -2954,7 +2956,7 @@ unsafe fn window_customize_init(
             let Some(item_owner) = itemdata.as_customize() else {
                 return;
             };
-            window_customize_draw(data_handle.as_ptr().cast(), item_owner, ctx, sx, sy)
+            window_customize_draw(data_handle.as_ptr().cast(), &item_owner, ctx, sx, sy)
         })),
         None,
         Some(Box::new(move |client, key| {
@@ -4015,7 +4017,7 @@ unsafe fn window_customize_set_array_key(
 }
 unsafe fn window_customize_unset_environment(
     mut data: *mut window_customize_modedata,
-    item: &Rc<window_customize_itemdata>,
+    item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
     let Some(mut environment) = item
         .environ
@@ -4042,8 +4044,7 @@ unsafe fn window_customize_unset_environment(
         return;
     }
     if mode_tree_get_current(&*(*data).data)
-        .as_customize()
-        .is_some_and(|current| Rc::ptr_eq(item, current))
+        .is_customize(item)
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
@@ -4056,7 +4057,7 @@ unsafe fn window_customize_unset_environment(
 }
 unsafe fn window_customize_unset_option(
     mut data: *mut window_customize_modedata,
-    item: &Rc<window_customize_itemdata>,
+    item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
@@ -4073,8 +4074,7 @@ unsafe fn window_customize_unset_option(
     }
     if !item.array_key.is_none()
         && mode_tree_get_current(&*(*data).data)
-            .as_customize()
-            .is_some_and(|current| Rc::ptr_eq(item, current))
+            .is_customize(item)
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
@@ -4415,15 +4415,14 @@ unsafe fn window_customize_add_key(
 }
 unsafe fn window_customize_unset_key(
     data: *mut window_customize_modedata,
-    item: &Rc<window_customize_itemdata>,
+    item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
     let Some(table) = window_customize_get_key_table(item) else {
         return;
     };
     let name = (&*crate::src::shared::rc::as_ptr(&table)).name.clone();
     if mode_tree_get_current(&*(*data).data)
-        .as_customize()
-        .is_some_and(|current| Rc::ptr_eq(item, current))
+        .is_customize(item)
     {
         mode_tree_up((*data).data, 0);
     }
@@ -4431,7 +4430,7 @@ unsafe fn window_customize_unset_key(
 }
 unsafe fn window_customize_reset_key(
     data: *mut window_customize_modedata,
-    item: &Rc<window_customize_itemdata>,
+    item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
     let Some(table) = window_customize_get_key_table(item) else {
         return;
@@ -4446,8 +4445,7 @@ unsafe fn window_customize_reset_key(
     let name = table_ref.name.clone();
     if !has_default
         && mode_tree_get_current(&*(*data).data)
-            .as_customize()
-            .is_some_and(|current| Rc::ptr_eq(item, current))
+            .is_customize(item)
     {
         mode_tree_up((*data).data, 0);
     }
@@ -4455,7 +4453,7 @@ unsafe fn window_customize_reset_key(
 }
 unsafe fn window_customize_change_each(
     mut data: *mut window_customize_modedata,
-    item: &Rc<window_customize_itemdata>,
+    item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
     let mut type_0: window_customize_item_type = item.type_0;
     let name = if type_0 as ::core::ffi::c_uint
@@ -4568,24 +4566,24 @@ unsafe fn window_customize_change_current_callback(
             if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_unset_key(data, item);
+                window_customize_unset_key(data, &item);
             } else if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_unset_environment(data, item);
+                window_customize_unset_environment(data, &item);
             } else {
-                window_customize_unset_option(data, item);
+                window_customize_unset_option(data, &item);
             }
         }
         1 => {
             if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_reset_key(data, item);
+                window_customize_reset_key(data, &item);
             } else if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_reset_option(data, item);
+                window_customize_reset_option(data, &item);
             }
         }
         _ => {}
@@ -4645,7 +4643,7 @@ unsafe fn window_customize_change_tagged_callback(
             let itemdata = row.borrow().itemdata.clone();
             window_customize_change_each(
                 data,
-                itemdata.as_customize().expect("tagged customize row"),
+                &itemdata.as_customize().expect("tagged customize row"),
             )
         },
         c,
@@ -4786,13 +4784,13 @@ unsafe fn window_customize_key(
         match key {
             101 => {
                 if let Some(item) = item {
-                    window_customize_start_edit(data, item, c);
+                    window_customize_start_edit(data, &item, c);
                 }
             }
             97 => {
                 if let Some(item) = item.filter(|item| item.type_0 == WINDOW_CUSTOMIZE_ITEM_OPTION)
                 {
-                    window_customize_set_array_key(c, data, item);
+                    window_customize_set_array_key(c, data, &item);
                 }
             }
             13 | 115 => {
@@ -4800,17 +4798,17 @@ unsafe fn window_customize_key(
                     if item.type_0 as ::core::ffi::c_uint
                         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        window_customize_set_key(c, data, item);
+                        window_customize_set_key(c, data, &item);
                     } else if item.type_0 as ::core::ffi::c_uint
                         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int
                             as ::core::ffi::c_uint
                     {
-                        window_customize_set_environment(c, data, item, 0 as ::core::ffi::c_int);
+                        window_customize_set_environment(c, data, &item, 0 as ::core::ffi::c_int);
                     } else {
                         window_customize_set_option(
                             c,
                             data,
-                            item,
+                            &item,
                             0 as ::core::ffi::c_int,
                             1 as ::core::ffi::c_int,
                         );
@@ -4831,7 +4829,7 @@ unsafe fn window_customize_key(
                     window_customize_set_option(
                         c,
                         data,
-                        item,
+                        &item,
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
@@ -4849,12 +4847,12 @@ unsafe fn window_customize_key(
                         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int
                             as ::core::ffi::c_uint
                     {
-                        window_customize_set_environment(c, data, item, 1 as ::core::ffi::c_int);
+                        window_customize_set_environment(c, data, &item, 1 as ::core::ffi::c_int);
                     } else {
                         window_customize_set_option(
                             c,
                             data,
-                            item,
+                            &item,
                             1 as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
@@ -5103,21 +5101,19 @@ mod item_owner_tests {
                     ..window_customize_itemdata::new()
                 },
             );
-            let observer = Rc::downgrade(&first_owner);
+            let observer = first_owner.clone();
             // A key's parent and detail rows share a single immutable record.
-            let selected = ModeTreeItemData::Customize(Rc::clone(&first_owner));
+            let selected = ModeTreeItemData::Customize(first_owner.clone());
             let detail = selected.clone();
-            assert!(Rc::ptr_eq(
-                selected.as_customize().unwrap(),
-                detail.as_customize().unwrap()
-            ));
+            assert!(selected.same_identity(&detail));
+            let snapshot = selected.as_customize().unwrap();
             for _ in 0..128 {
                 window_customize_add_item(&mut (*data).item_list, window_customize_itemdata::new());
             }
-            assert!(Rc::ptr_eq(&(&(*data).item_list)[0], &first_owner));
+            assert!(first_owner.is(&(&(*data).item_list)[0]));
             let mode_observer = crate::src::shared::rc::downgrade(data);
             let prompt_owner = RefBox::new(CustomizePromptItem {
-                item: window_customize_copy_item(&first_owner),
+                item: window_customize_copy_item(&snapshot),
                 mode: mode_observer.upgrade().unwrap(),
             });
             let prompt_observer = RefBox::downgrade(&prompt_owner);
@@ -5138,16 +5134,10 @@ mod item_owner_tests {
                 inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
                 PROMPT_CLOSE
             );
-            assert_eq!(first_owner.name.as_deref(), Some(c"stable"));
-            drop(first_owner);
-            drop(selected);
-            assert_eq!(
-                detail.as_customize().unwrap().name.as_deref(),
-                Some(c"stable")
-            );
-            assert!(observer.upgrade().is_some());
-            drop(detail);
-            assert!(observer.upgrade().is_none());
+            assert!(!observer.is_alive());
+            assert!(selected.as_customize().is_none());
+            assert!(detail.as_customize().is_none());
+            assert_eq!(snapshot.name.as_deref(), Some(c"stable"));
         }
     }
 

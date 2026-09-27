@@ -113,6 +113,36 @@ fn tokens(source: &str) -> Vec<String> {
 
 fn declarations(source: &str) -> Vec<String> {
     let tokens = tokens(source);
+    // Associated types/constants belong to their impl or trait, not the module's
+    // declaration namespace. Keep scanning nested method bodies for local items.
+    let mut scopes = Vec::new();
+    let mut associated_scope = false;
+    let mut associated_items = std::collections::BTreeSet::new();
+    for (i, token) in tokens.iter().enumerate() {
+        match token.as_str() {
+            "impl" | "trait"
+                if i == 0
+                    || matches!(
+                        tokens[i - 1].as_str(),
+                        "{" | "}" | ";" | "]" | "pub" | "unsafe"
+                    ) =>
+            {
+                associated_scope = true;
+            }
+            "{" => {
+                scopes.push(associated_scope);
+                associated_scope = false;
+            }
+            "}" => {
+                scopes.pop();
+            }
+            ";" => associated_scope = false,
+            "type" | "const" if scopes.last() == Some(&true) => {
+                associated_items.insert(i);
+            }
+            _ => {}
+        }
+    }
     tokens
         .windows(2)
         .enumerate()
@@ -120,6 +150,7 @@ fn declarations(source: &str) -> Vec<String> {
             let kind = pair[0].as_str();
             let name = &pair[1];
             (matches!(kind, "struct" | "union" | "enum" | "type" | "const")
+                && !associated_items.contains(&i)
                 && !(kind == "const" && i > 0 && matches!(tokens[i - 1].as_str(), "*" | "raw"))
                 && name != "fn"
                 && name != "_"
@@ -191,6 +222,27 @@ fn guard_recognizes_visibility_wrapping_and_opaque_copies() {
     "##
         ),
         ["TEXT", "Example", "Alias", "Opaque", "VALUE"]
+    );
+}
+
+#[test]
+fn associated_declarations_have_their_own_namespace() {
+    assert_eq!(
+        declarations(
+            r#"
+        struct First;
+        struct Second;
+        impl<T> Deref for First {
+            type Target = T;
+            const VALUE: usize = 1;
+            fn method() { type Local = usize; }
+        }
+        impl Deref for Second { type Target = (); }
+        pub trait Observer { type Target; const VALUE: usize; }
+        mod nested { type Visible = First; }
+    "#
+        ),
+        ["First", "Second", "Local", "Visible"]
     );
 }
 
