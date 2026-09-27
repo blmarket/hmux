@@ -627,8 +627,11 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if args_has(args, 'b' as i32 as u_char) != 0 {
             bufname = args_get(args, 'b' as i32 as u_char);
         }
-        if paste_set_owned(buf.into_boxed_slice(), bufname, Some(&mut cause))
-            != 0 as ::core::ffi::c_int
+        if paste_set_owned(
+            buf.into_boxed_slice(),
+            (!bufname.is_null()).then(|| CStr::from_ptr(bufname)),
+            Some(&mut cause),
+        ) != 0 as ::core::ffi::c_int
         {
             cmdq_error(item, |out| {
                 write_cstr(out, cause.as_ref().unwrap().as_ptr())

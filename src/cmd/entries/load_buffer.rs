@@ -95,10 +95,7 @@ unsafe fn cmd_load_buffer_done(
         let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
         if paste_set_owned(
             owned,
-            cdata
-                .name
-                .as_ref()
-                .map_or(::core::ptr::null(), |name| name.as_ptr()),
+            cdata.name.as_deref(),
             Some(&mut cause),
         ) != 0 as ::core::ffi::c_int
         {

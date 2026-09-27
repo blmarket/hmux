@@ -1,28 +1,18 @@
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
 use crate::src::ffi::libc::time;
-use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
-use crate::src::shared::events::event_payload;
-use crate::src::shared::paste::paste_buffer;
+use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::tmux::{clean_name_cstring, global_options};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
-macro_rules! set_paste_cause {
-    ($cause:expr, $value:expr) => {{
-        let cause = $cause;
-        if !cause.is_null() {
-            *cause = Some($value);
-        }
-    }};
-}
-
-unsafe fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], name: &CStr) {
+fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], name: &CStr) {
     let Some(cause) = cause else {
         return;
     };
@@ -33,33 +23,26 @@ unsafe fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], n
 
 #[derive(Default)]
 pub struct paste_time_tree {
-    entries: std::collections::BTreeMap<std::cmp::Reverse<u_int>, *mut paste_buffer>,
+    entries: std::collections::BTreeMap<std::cmp::Reverse<u_int>, PasteBufferRef>,
 }
 #[derive(Default)]
 pub struct paste_name_tree {
-    entries: std::collections::BTreeMap<Vec<u8>, *mut paste_buffer>,
+    entries: std::collections::BTreeMap<Vec<u8>, PasteBufferRef>,
 }
 
 thread_local! {
     static paste_next_index: RefCell<u_int> = RefCell::new(0);
     static paste_next_order: RefCell<u_int> = RefCell::new(0);
     static paste_num_automatic: RefCell<u_int> = RefCell::new(0);
-    static paste_by_name: RefCell<paste_name_tree> = RefCell::new(paste_name_tree {
-        entries: std::collections::BTreeMap::new(),
-    });
-    static paste_by_time: RefCell<paste_time_tree> = RefCell::new(paste_time_tree {
-        entries: std::collections::BTreeMap::new(),
-    });
+    static paste_by_name: RefCell<paste_name_tree> = RefCell::new(paste_name_tree::default());
+    static paste_by_time: RefCell<paste_time_tree> = RefCell::new(paste_time_tree::default());
 }
 
-unsafe fn paste_new_owned(name: CString) -> *mut paste_buffer {
-    let mut owner = Box::new(paste_buffer {
-        name: name,
-        data: None,
+fn paste_new_owned(name: CString) -> PasteBufferRef {
+    Rc::new(RefCell::new(paste_buffer {
+        name,
         ..paste_buffer::empty()
-    });
-
-    Box::into_raw(owner).cast::<paste_buffer>()
+    }))
 }
 
 fn paste_store_data(pb: &mut paste_buffer, data: Option<Box<[u8]>>) {
@@ -77,146 +60,110 @@ fn paste_name_key(name: &CStr) -> Vec<u8> {
     name.to_bytes().to_vec()
 }
 
-fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> *mut paste_buffer {
-    head.entries
-        .get(&paste_name_key(name))
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> Option<PasteBufferRef> {
+    head.entries.get(&paste_name_key(name)).cloned()
 }
 
-unsafe fn paste_name_tree_insert(
+fn paste_name_tree_insert(
     head: &mut paste_name_tree,
-    elm: *mut paste_buffer,
-) -> *mut paste_buffer {
-    match head.entries.entry(paste_name_key((*elm).name.as_c_str())) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+    elm: &PasteBufferRef,
+) -> Option<PasteBufferRef> {
+    let key = paste_name_key(&elm.borrow().name);
+    match head.entries.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            ::core::ptr::null_mut::<paste_buffer>()
+            entry.insert(elm.clone());
+            None
         }
     }
 }
 
-fn paste_name_tree_remove(head: &mut paste_name_tree, elm: &paste_buffer) -> *mut paste_buffer {
-    head.entries
-        .remove(&paste_name_key(elm.name.as_c_str()))
-        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+fn paste_name_tree_remove(
+    head: &mut paste_name_tree,
+    elm: &paste_buffer,
+) -> Option<PasteBufferRef> {
+    head.entries.remove(&paste_name_key(&elm.name))
 }
-// The original comparator puts larger order values first and treats equal
-// orders as duplicates. Reverse gives BTreeMap the same ordering and Entry
-// preserves RB_INSERT's existing-item result for duplicate keys.
+
+// Larger orders come first; equal orders remain duplicates as in tmux's tree.
 fn paste_time_key(pb: &paste_buffer) -> std::cmp::Reverse<u_int> {
     std::cmp::Reverse(pb.order)
 }
 
-unsafe fn paste_time_tree_insert(
+fn paste_time_tree_insert(
     head: &mut paste_time_tree,
-    elm: *mut paste_buffer,
-) -> *mut paste_buffer {
-    match head.entries.entry(paste_time_key(&*elm)) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+    elm: &PasteBufferRef,
+) -> Option<PasteBufferRef> {
+    let key = paste_time_key(&elm.borrow());
+    match head.entries.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            ::core::ptr::null_mut::<paste_buffer>()
+            entry.insert(elm.clone());
+            None
         }
     }
 }
 
-fn paste_time_tree_minmax(head: &paste_time_tree, val: ::core::ffi::c_int) -> *mut paste_buffer {
-    let entry = if val < 0 {
+fn paste_time_tree_minmax(head: &paste_time_tree, val: i32) -> Option<PasteBufferRef> {
+    if val < 0 {
         head.entries.values().next()
     } else {
         head.entries.values().next_back()
-    };
-    entry
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+    }
+    .cloned()
 }
 
-fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
+fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> Option<PasteBufferRef> {
     head.entries
         .range((
             std::ops::Bound::Excluded(paste_time_key(elm)),
             std::ops::Bound::Unbounded,
         ))
         .next()
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+        .map(|(_, entry)| entry.clone())
 }
 
-fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
+fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> Option<PasteBufferRef> {
     head.entries
         .range((
             std::ops::Bound::Unbounded,
             std::ops::Bound::Excluded(paste_time_key(elm)),
         ))
         .next_back()
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+        .map(|(_, entry)| entry.clone())
 }
 
-fn paste_time_tree_remove(head: &mut paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
-    head.entries
-        .remove(&paste_time_key(elm))
-        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+fn paste_time_tree_remove(
+    head: &mut paste_time_tree,
+    elm: &paste_buffer,
+) -> Option<PasteBufferRef> {
+    head.entries.remove(&paste_time_key(elm))
 }
 
-unsafe fn paste_name_tree_find_local(name: &CStr) -> *mut paste_buffer {
-    paste_by_name.with(|head| {
-        let head = head.borrow();
-        paste_name_tree_find(&head, name)
-    })
+fn paste_name_tree_find_local(name: &CStr) -> Option<PasteBufferRef> {
+    paste_by_name.with(|head| paste_name_tree_find(&head.borrow(), name))
 }
-
-unsafe fn paste_name_tree_insert_local(elm: *mut paste_buffer) -> *mut paste_buffer {
-    paste_by_name.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_name_tree_insert(&mut *head, elm)
-    })
+fn paste_name_tree_insert_local(elm: &PasteBufferRef) -> Option<PasteBufferRef> {
+    paste_by_name.with(|head| paste_name_tree_insert(&mut head.borrow_mut(), elm))
 }
-
-fn paste_name_tree_remove_local(elm: &paste_buffer) -> *mut paste_buffer {
-    paste_by_name.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_name_tree_remove(&mut head, elm)
-    })
+fn paste_name_tree_remove_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+    paste_by_name.with(|head| paste_name_tree_remove(&mut head.borrow_mut(), elm))
 }
-
-unsafe fn paste_time_tree_insert_local(elm: *mut paste_buffer) -> *mut paste_buffer {
-    paste_by_time.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_time_tree_insert(&mut *head, elm)
-    })
+fn paste_time_tree_insert_local(elm: &PasteBufferRef) -> Option<PasteBufferRef> {
+    paste_by_time.with(|head| paste_time_tree_insert(&mut head.borrow_mut(), elm))
 }
-
-unsafe fn paste_time_tree_minmax_local(val: ::core::ffi::c_int) -> *mut paste_buffer {
-    paste_by_time.with(|head| {
-        let head = head.borrow();
-        paste_time_tree_minmax(&head, val)
-    })
+fn paste_time_tree_minmax_local(val: i32) -> Option<PasteBufferRef> {
+    paste_by_time.with(|head| paste_time_tree_minmax(&head.borrow(), val))
 }
-
-fn paste_time_tree_next_local(elm: &paste_buffer) -> *mut paste_buffer {
-    paste_by_time.with(|head| {
-        let head = head.borrow();
-        paste_time_tree_next(&head, elm)
-    })
+fn paste_time_tree_next_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+    paste_by_time.with(|head| paste_time_tree_next(&head.borrow(), elm))
 }
-
-fn paste_time_tree_prev_local(elm: &paste_buffer) -> *mut paste_buffer {
-    paste_by_time.with(|head| {
-        let head = head.borrow();
-        paste_time_tree_prev(&head, elm)
-    })
+fn paste_time_tree_prev_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+    paste_by_time.with(|head| paste_time_tree_prev(&head.borrow(), elm))
 }
-
-fn paste_time_tree_remove_local(elm: &paste_buffer) -> *mut paste_buffer {
-    paste_by_time.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_time_tree_remove(&mut head, elm)
-    })
+fn paste_time_tree_remove_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+    paste_by_time.with(|head| paste_time_tree_remove(&mut head.borrow_mut(), elm))
 }
-
 fn paste_time_tree_is_empty_local() -> bool {
     paste_by_time.with(|head| head.borrow().entries.is_empty())
 }
@@ -258,245 +205,217 @@ fn paste_next_order_take() -> u_int {
 }
 
 unsafe fn paste_fire_event(
-    mut name: *const ::core::ffi::c_char,
-    mut pbname: *const ::core::ffi::c_char,
+    name: &CStr,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
-    ep = event_payload_create();
-    event_payload_set_string(
-        ep,
-        b"paste_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, pbname),
-    );
-    events_fire(name, ep);
+    let ep = event_payload_create();
+    // Finish reading the buffer before dispatch: listeners may look up,
+    // replace, or rename buffers synchronously.
+    event_payload_set_string(ep, c"paste_buffer".as_ptr(), write);
+    events_fire(name.as_ptr(), ep);
 }
-pub unsafe fn paste_buffer_name(mut pb: *mut paste_buffer) -> *const ::core::ffi::c_char {
-    return ((*pb).name).as_ptr().cast_mut();
+
+pub fn paste_buffer_name(pb: &paste_buffer) -> &CStr {
+    &pb.name
 }
-pub unsafe fn paste_buffer_order(mut pb: *mut paste_buffer) -> u_int {
-    return (*pb).order;
+pub fn paste_buffer_order(pb: &paste_buffer) -> u_int {
+    pb.order
 }
-pub unsafe fn paste_buffer_created(mut pb: *mut paste_buffer) -> time_t {
-    return (*pb).created;
+pub fn paste_buffer_created(pb: &paste_buffer) -> time_t {
+    pb.created
 }
 pub fn paste_buffer_data(pb: &paste_buffer) -> Option<&[u8]> {
     pb.data.as_deref().map(|data| &data[..pb.size])
 }
-pub unsafe fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
-    if pb.is_null() {
-        return paste_time_tree_minmax_local(RB_NEGINF);
+pub fn paste_walk(pb: Option<&PasteBufferRef>) -> Option<PasteBufferRef> {
+    match pb {
+        Some(pb) => paste_time_tree_next_local(&pb.borrow()),
+        None => paste_time_tree_minmax_local(RB_NEGINF),
     }
-    return paste_time_tree_next_local(&*pb);
 }
-pub unsafe fn paste_is_empty() -> ::core::ffi::c_int {
-    return paste_time_tree_is_empty_local() as ::core::ffi::c_int;
+pub fn paste_is_empty() -> i32 {
+    paste_time_tree_is_empty_local() as i32
 }
-pub(crate) unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut paste_buffer {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    pb = paste_time_tree_minmax_local(RB_NEGINF);
-    while !pb.is_null() && (*pb).automatic == 0 {
-        pb = paste_time_tree_next_local(&*pb);
+pub(crate) fn paste_get_top(name: Option<&mut Option<CString>>) -> Option<PasteBufferRef> {
+    let mut next = paste_time_tree_minmax_local(RB_NEGINF);
+    while let Some(pb) = next {
+        if pb.borrow().automatic != 0 {
+            if let Some(name) = name {
+                *name = Some(pb.borrow().name.clone());
+            }
+            return Some(pb);
+        }
+        next = paste_time_tree_next_local(&pb.borrow());
     }
-    if pb.is_null() {
-        return ::core::ptr::null_mut::<paste_buffer>();
-    }
-    if let Some(name) = name {
-        *name = Some((*pb).name.clone());
-    }
-    return pb;
+    None
 }
-pub unsafe fn paste_get_name(mut name: *const ::core::ffi::c_char) -> *mut paste_buffer {
-    if name.is_null() || *name as ::core::ffi::c_int == '\0' as i32 {
-        return ::core::ptr::null_mut::<paste_buffer>();
+pub fn paste_get_name(name: &CStr) -> Option<PasteBufferRef> {
+    if name.is_empty() {
+        None
+    } else {
+        paste_name_tree_find_local(name)
     }
-    return paste_name_tree_find_local(CStr::from_ptr(name));
 }
-pub unsafe fn paste_free(mut pb: *mut paste_buffer) {
-    paste_fire_event(
-        b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*pb).name).as_ptr().cast_mut(),
-    );
-    paste_name_tree_remove_local(&*pb);
-    paste_time_tree_remove_local(&*pb);
-    if (*pb).automatic != 0 {
+fn paste_is_registered(pb: &PasteBufferRef) -> bool {
+    paste_get_name(&pb.borrow().name).is_some_and(|current| Rc::ptr_eq(&current, pb))
+}
+pub unsafe fn paste_free(pb: &PasteBufferRef) {
+    // A retained reader must never delete a replacement with the same name.
+    if !paste_is_registered(pb) {
+        return;
+    }
+    paste_fire_event(c"paste-buffer-deleted", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
+    if !paste_is_registered(pb) {
+        return;
+    }
+    let buffer = pb.borrow();
+    paste_name_tree_remove_local(&buffer);
+    paste_time_tree_remove_local(&buffer);
+    if buffer.automatic != 0 {
         paste_automatic_count_decrement();
     }
-    drop(Box::from_raw(pb));
 }
 pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut pb1: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut limit: u_int = 0;
     if data.is_empty() {
         return;
     }
     let prefix_bytes = prefix
         .as_ref()
         .map_or(b"buffer".as_slice(), CString::as_bytes);
-    limit = options_get_number(
-        global_options,
-        b"buffer-limit\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
-    pb = paste_time_tree_minmax_local(RB_INF);
-    while !pb.is_null() && {
-        pb1 = paste_time_tree_prev_local(&*pb);
-        1 as ::core::ffi::c_int != 0
-    } {
+    let limit = options_get_number(global_options, c"buffer-limit".as_ptr()) as u_int;
+    let mut next = paste_time_tree_minmax_local(RB_INF);
+    while let Some(pb) = next {
+        next = paste_time_tree_prev_local(&pb.borrow());
         if paste_automatic_count() < limit {
             break;
         }
-        if (*pb).automatic != 0 {
-            paste_free(pb);
+        if pb.borrow().automatic != 0 {
+            paste_free(&pb);
         }
-        pb = pb1;
     }
-    loop {
+    let pb = loop {
         let mut bytes = Vec::with_capacity(prefix_bytes.len() + 10);
-        bytes.extend_from_slice(&prefix_bytes);
-        let index = paste_next_index_take();
-        bytes.extend_from_slice(index.to_string().as_bytes());
+        bytes.extend_from_slice(prefix_bytes);
+        bytes.extend_from_slice(paste_next_index_take().to_string().as_bytes());
         let name = CString::new(bytes).expect("generated buffer name has no NUL");
-        if paste_get_name(name.as_ptr()).is_null() {
-            pb = paste_new_owned(name);
-            break;
+        if paste_get_name(&name).is_none() {
+            break paste_new_owned(name);
         }
+    };
+    {
+        let mut buffer = pb.borrow_mut();
+        paste_store_data(&mut buffer, Some(data));
+        buffer.automatic = 1;
+        paste_automatic_count_increment();
+        buffer.created = time(std::ptr::null_mut());
+        buffer.order = paste_next_order_take();
     }
-    paste_store_data(&mut *pb, Some(data));
-    (*pb).automatic = 1 as ::core::ffi::c_int;
-    paste_automatic_count_increment();
-    (*pb).created = time(::core::ptr::null_mut::<time_t>());
-    let fresh0 = paste_next_order_take();
-    (*pb).order = fresh0;
-    paste_name_tree_insert_local(pb);
-    paste_time_tree_insert_local(pb);
-    paste_fire_event(
-        b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*pb).name).as_ptr().cast_mut(),
-    );
+    paste_name_tree_insert_local(&pb);
+    paste_time_tree_insert_local(&pb);
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
 }
 pub unsafe fn paste_rename(
-    mut oldname: *const ::core::ffi::c_char,
-    mut newname: *const ::core::ffi::c_char,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut pb_new: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    if !cause.is_null() {
+    oldname: Option<&CStr>,
+    newname: Option<&CStr>,
+    mut cause: Option<&mut Option<CString>>,
+) -> i32 {
+    if let Some(cause) = cause.as_deref_mut() {
         *cause = None;
     }
-    if oldname.is_null() || *oldname as ::core::ffi::c_int == '\0' as i32 {
-        if !cause.is_null() {
-            set_paste_cause!(cause, CString::new(b"no buffer".to_vec()).unwrap());
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if newname.is_null() || *newname as ::core::ffi::c_int == '\0' as i32 {
-        if !cause.is_null() {
-            set_paste_cause!(cause, CString::new(b"new name is empty".to_vec()).unwrap());
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    let Some(name) = clean_name_cstring(CStr::from_ptr(newname), 0) else {
-        if !cause.is_null() {
-            paste_name_cause(
-                cause.as_mut(),
-                b"invalid buffer name: ",
-                CStr::from_ptr(newname),
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
+    let Some(oldname) = oldname.filter(|name| !name.is_empty()) else {
+        paste_name_cause(cause, b"no buffer", c"");
+        return -1;
     };
-    pb = paste_get_name(oldname);
-    if pb.is_null() {
-        if !cause.is_null() {
-            paste_name_cause(cause.as_mut(), b"no buffer ", CStr::from_ptr(oldname));
+    let Some(newname) = newname.filter(|name| !name.is_empty()) else {
+        paste_name_cause(cause, b"new name is empty", c"");
+        return -1;
+    };
+    let Some(name) = clean_name_cstring(newname, 0) else {
+        paste_name_cause(cause, b"invalid buffer name: ", newname);
+        return -1;
+    };
+    let Some(pb) = paste_get_name(oldname) else {
+        paste_name_cause(cause, b"no buffer ", oldname);
+        return -1;
+    };
+    if let Some(replaced) = paste_get_name(&name) {
+        if Rc::ptr_eq(&pb, &replaced) {
+            return 0;
         }
-        return -(1 as ::core::ffi::c_int);
+        paste_free(&replaced);
     }
-    pb_new = paste_get_name(name.as_ptr());
-    if pb_new == pb {
-        return 0 as ::core::ffi::c_int;
-    }
-    if !pb_new.is_null() {
-        paste_free(pb_new);
-    }
-    paste_name_tree_remove_local(&*pb);
-    let previous = paste_replace_name(&mut *pb, name);
-    if (*pb).automatic != 0 {
-        paste_automatic_count_decrement();
-    }
-    (*pb).automatic = 0 as ::core::ffi::c_int;
-    paste_name_tree_insert_local(pb);
-    paste_fire_event(
-        b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
-        previous.as_ptr(),
-    );
-    paste_fire_event(
-        b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*pb).name).as_ptr().cast_mut(),
-    );
-    return 0 as ::core::ffi::c_int;
+    paste_name_tree_remove_local(&pb.borrow());
+    let previous = {
+        let mut buffer = pb.borrow_mut();
+        let previous = paste_replace_name(&mut buffer, name);
+        if buffer.automatic != 0 {
+            paste_automatic_count_decrement();
+        }
+        buffer.automatic = 0;
+        previous
+    };
+    paste_name_tree_insert_local(&pb);
+    paste_fire_event(c"paste-buffer-deleted", |out| {
+        out.write_all(previous.as_bytes())
+    });
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
+    0
 }
 pub(crate) unsafe fn paste_set_owned(
     data: Box<[u8]>,
-    name: *const ::core::ffi::c_char,
-    cause: Option<&mut Option<CString>>,
-) -> ::core::ffi::c_int {
-    let cause = cause.map_or_else(::core::ptr::null_mut, |cause| &raw mut *cause);
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut old: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    if !cause.is_null() {
+    name: Option<&CStr>,
+    mut cause: Option<&mut Option<CString>>,
+) -> i32 {
+    if let Some(cause) = cause.as_deref_mut() {
         *cause = None;
     }
     if data.is_empty() {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
-    if name.is_null() {
+    let Some(name) = name else {
         paste_add_owned(None, data);
-        return 0 as ::core::ffi::c_int;
-    }
-    if *name as ::core::ffi::c_int == '\0' as i32 {
-        if !cause.is_null() {
-            set_paste_cause!(cause, CString::new(b"empty buffer name".to_vec()).unwrap());
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    let Some(newname) = clean_name_cstring(CStr::from_ptr(name), 0) else {
-        if !cause.is_null() {
-            paste_name_cause(
-                cause.as_mut(),
-                b"invalid buffer name: ",
-                CStr::from_ptr(name),
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
+        return 0;
     };
-    pb = paste_new_owned(newname);
-    paste_store_data(&mut *pb, Some(data));
-    (*pb).automatic = 0 as ::core::ffi::c_int;
-    let fresh1 = paste_next_order_take();
-    (*pb).order = fresh1;
-    (*pb).created = time(::core::ptr::null_mut::<time_t>());
-    old = paste_get_name(((*pb).name).as_ptr().cast_mut());
-    if !old.is_null() {
-        paste_free(old);
+    if name.is_empty() {
+        paste_name_cause(cause, b"empty buffer name", c"");
+        return -1;
     }
-    paste_name_tree_insert_local(pb);
-    paste_time_tree_insert_local(pb);
-    paste_fire_event(
-        b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*pb).name).as_ptr().cast_mut(),
-    );
-    return 0 as ::core::ffi::c_int;
+    let Some(newname) = clean_name_cstring(name, 0) else {
+        paste_name_cause(cause, b"invalid buffer name: ", name);
+        return -1;
+    };
+    let pb = paste_new_owned(newname);
+    {
+        let mut buffer = pb.borrow_mut();
+        paste_store_data(&mut buffer, Some(data));
+        buffer.order = paste_next_order_take();
+        buffer.created = time(std::ptr::null_mut());
+    }
+    let old = paste_get_name(&pb.borrow().name);
+    if let Some(old) = old {
+        paste_free(&old);
+    }
+    paste_name_tree_insert_local(&pb);
+    paste_time_tree_insert_local(&pb);
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
+    0
 }
-/// Replace a paste buffer with Rust-owned bytes from an internal caller.
-pub(crate) unsafe fn paste_replace_owned(pb: &mut paste_buffer, data: Box<[u8]>) {
-    paste_store_data(pb, Some(data));
-    paste_fire_event(
-        b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        pb.name.as_ptr().cast_mut(),
-    );
+/// Replace the bytes while preserving the buffer identity and creation order.
+pub(crate) unsafe fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
+    paste_store_data(&mut pb.borrow_mut(), Some(data));
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
 }
+
 pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
     let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
     let width = 200;
@@ -530,82 +449,62 @@ mod tests {
             assert_eq!(
                 paste_set_owned(
                     b"payload".to_vec().into_boxed_slice(),
-                    c"".as_ptr(),
+                    Some(c""),
                     Some(&mut cause),
                 ),
                 -1
             );
-            assert_eq!(
-                cause.as_ref().unwrap().as_c_str(),
-                c"empty buffer name"
-            );
+            assert_eq!(cause.as_ref().unwrap().as_c_str(), c"empty buffer name");
 
             cause = Some(c"stale".to_owned());
             let name = c"owned-cause-success";
             assert_eq!(
                 paste_set_owned(
                     b"payload".to_vec().into_boxed_slice(),
-                    name.as_ptr(),
+                    Some(name),
                     Some(&mut cause),
                 ),
                 0
             );
             assert!(cause.is_none());
-            paste_free(paste_get_name(name.as_ptr()));
+            paste_free(&paste_get_name(name).unwrap());
 
             cause = Some(c"stale".to_owned());
             assert_eq!(
-                paste_set_owned(
-                    Box::<[u8]>::default(),
-                    ::core::ptr::null(),
-                    Some(&mut cause),
-                ),
+                paste_set_owned(Box::<[u8]>::default(), None, Some(&mut cause),),
                 0
             );
             assert!(cause.is_none(), "empty-data success clears the cause");
 
             assert_eq!(
-                paste_set_owned(b"payload".to_vec().into_boxed_slice(), c"".as_ptr(), None,),
+                paste_set_owned(b"payload".to_vec().into_boxed_slice(), Some(c""), None,),
                 -1,
                 "failure can discard its diagnostic"
             );
             assert_eq!(
                 paste_set_owned(
                     b"payload".to_vec().into_boxed_slice(),
-                    c"owned-cause-none".as_ptr(),
+                    Some(c"owned-cause-none"),
                     None,
                 ),
                 0,
                 "success can discard its diagnostic"
             );
-            paste_free(paste_get_name(c"owned-cause-none".as_ptr()));
+            paste_free(&paste_get_name(c"owned-cause-none").unwrap());
 
             cause = Some(c"stale".to_owned());
-            assert_eq!(
-                paste_rename(::core::ptr::null(), c"renamed".as_ptr(), &raw mut cause,),
-                -1
-            );
-            assert_eq!(
-                cause.as_ref().unwrap().as_c_str(),
-                c"no buffer"
-            );
+            assert_eq!(paste_rename(None, Some(c"renamed"), Some(&mut cause)), -1);
+            assert_eq!(cause.as_ref().unwrap().as_c_str(), c"no buffer");
         }
     }
 
-    fn named_buffer(name: &CString) -> Box<paste_buffer> {
-        Box::new(paste_buffer {
-            data: Default::default(),
-            size: 0,
-            name: name.clone(),
-            created: 0,
-            automatic: 0,
-            order: 0,
-        })
+    fn named_buffer(name: &CString) -> PasteBufferRef {
+        paste_new_owned(name.clone())
     }
 
-    fn ordered_buffer(name: &CString, order: u_int) -> Box<paste_buffer> {
-        let mut buffer = named_buffer(name);
-        buffer.order = order;
+    fn ordered_buffer(name: &CString, order: u_int) -> PasteBufferRef {
+        let buffer = named_buffer(name);
+        buffer.borrow_mut().order = order;
         buffer
     }
 
@@ -617,83 +516,221 @@ mod tests {
             CString::new(vec![b'a', 0xff]).unwrap(),
             CString::new("a0").unwrap(),
         ];
-        let mut items = names.iter().map(named_buffer).collect::<Vec<_>>();
-        let duplicate_name = CString::new("a").unwrap();
-        let mut duplicate = named_buffer(&duplicate_name);
+        let items = names.iter().map(named_buffer).collect::<Vec<_>>();
+        let [z, a, a_high, a0] = [&items[0], &items[1], &items[2], &items[3]];
+        let duplicate = named_buffer(&CString::new("a").unwrap());
         let mut tree = paste_name_tree::default();
-
-        unsafe {
-            let z = items[0].as_mut() as *mut paste_buffer;
-            let a = items[1].as_mut() as *mut paste_buffer;
-            let a_high = items[2].as_mut() as *mut paste_buffer;
-            let a0 = items[3].as_mut() as *mut paste_buffer;
-            let duplicate = duplicate.as_mut() as *mut paste_buffer;
-
-            assert!(paste_name_tree_insert(&mut tree, z).is_null());
-            assert!(paste_name_tree_insert(&mut tree, a_high).is_null());
-            assert!(paste_name_tree_insert(&mut tree, a).is_null());
-            assert!(paste_name_tree_insert(&mut tree, a0).is_null());
-            assert_eq!(
-                paste_name_tree_insert(&mut tree, duplicate),
-                a,
-                "duplicate names keep the original item"
-            );
-
-            let ordered = tree.entries.keys().map(Vec::as_slice).collect::<Vec<_>>();
-            assert_eq!(
-                ordered,
-                vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
-            );
-            assert_eq!(paste_name_tree_find(&tree, names[2].as_c_str()), a_high);
-            assert!(
-                paste_name_tree_find(&tree, CStr::from_bytes_with_nul(b"missing\0").unwrap())
-                    .is_null()
-            );
-
-            assert_eq!(paste_name_tree_remove(&mut tree, &*a_high), a_high);
-            assert!(paste_name_tree_find(&tree, names[2].as_c_str()).is_null());
+        for item in [z, a_high, a, a0] {
+            assert!(paste_name_tree_insert(&mut tree, item).is_none());
         }
+        assert!(Rc::ptr_eq(
+            &paste_name_tree_insert(&mut tree, &duplicate).unwrap(),
+            a
+        ));
+        assert_eq!(
+            tree.entries.keys().map(Vec::as_slice).collect::<Vec<_>>(),
+            vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
+        );
+        assert!(Rc::ptr_eq(
+            &paste_name_tree_find(&tree, &names[2]).unwrap(),
+            a_high
+        ));
+        assert!(paste_name_tree_find(&tree, c"missing").is_none());
+        assert!(Rc::ptr_eq(
+            &paste_name_tree_remove(&mut tree, &a_high.borrow()).unwrap(),
+            a_high
+        ));
+        assert!(paste_name_tree_find(&tree, &names[2]).is_none());
     }
 
     #[test]
     fn paste_time_tree_matches_reverse_order_and_duplicate_semantics() {
-        let names = [
-            CString::new("oldest").unwrap(),
-            CString::new("middle").unwrap(),
-            CString::new("newest").unwrap(),
-        ];
-        let mut items = [
-            ordered_buffer(&names[0], 4),
-            ordered_buffer(&names[1], 7),
-            ordered_buffer(&names[2], 12),
-        ];
-        let duplicate_name = CString::new("duplicate").unwrap();
-        let mut duplicate = ordered_buffer(&duplicate_name, 7);
+        let oldest = ordered_buffer(&CString::new("oldest").unwrap(), 4);
+        let middle = ordered_buffer(&CString::new("middle").unwrap(), 7);
+        let newest = ordered_buffer(&CString::new("newest").unwrap(), 12);
+        let duplicate = ordered_buffer(&CString::new("duplicate").unwrap(), 7);
         let mut tree = paste_time_tree::default();
-
-        unsafe {
-            let oldest = items[0].as_mut() as *mut paste_buffer;
-            let middle = items[1].as_mut() as *mut paste_buffer;
-            let newest = items[2].as_mut() as *mut paste_buffer;
-            let duplicate = duplicate.as_mut() as *mut paste_buffer;
-
-            assert!(paste_time_tree_insert(&mut tree, oldest).is_null());
-            assert!(paste_time_tree_insert(&mut tree, newest).is_null());
-            assert!(paste_time_tree_insert(&mut tree, middle).is_null());
-            assert_eq!(paste_time_tree_insert(&mut tree, duplicate), middle);
-
-            assert_eq!((*paste_time_tree_minmax(&tree, RB_NEGINF)).order, 12);
-            assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 7);
-            assert_eq!((*paste_time_tree_next(&tree, &*middle)).order, 4);
-            assert!(paste_time_tree_next(&tree, &*oldest).is_null());
-
-            assert_eq!((*paste_time_tree_minmax(&tree, RB_INF)).order, 4);
-            assert_eq!((*paste_time_tree_prev(&tree, &*oldest)).order, 7);
-            assert_eq!((*paste_time_tree_prev(&tree, &*middle)).order, 12);
-            assert!(paste_time_tree_prev(&tree, &*newest).is_null());
-
-            assert_eq!(paste_time_tree_remove(&mut tree, &*middle), middle);
-            assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 4);
+        for item in [&oldest, &newest, &middle] {
+            assert!(paste_time_tree_insert(&mut tree, item).is_none());
         }
+        assert!(Rc::ptr_eq(
+            &paste_time_tree_insert(&mut tree, &duplicate).unwrap(),
+            &middle
+        ));
+        assert_eq!(
+            paste_time_tree_minmax(&tree, RB_NEGINF)
+                .unwrap()
+                .borrow()
+                .order,
+            12
+        );
+        assert_eq!(
+            paste_time_tree_next(&tree, &newest.borrow())
+                .unwrap()
+                .borrow()
+                .order,
+            7
+        );
+        assert_eq!(
+            paste_time_tree_next(&tree, &middle.borrow())
+                .unwrap()
+                .borrow()
+                .order,
+            4
+        );
+        assert!(paste_time_tree_next(&tree, &oldest.borrow()).is_none());
+        assert_eq!(
+            paste_time_tree_minmax(&tree, RB_INF)
+                .unwrap()
+                .borrow()
+                .order,
+            4
+        );
+        assert_eq!(
+            paste_time_tree_prev(&tree, &oldest.borrow())
+                .unwrap()
+                .borrow()
+                .order,
+            7
+        );
+        assert_eq!(
+            paste_time_tree_prev(&tree, &middle.borrow())
+                .unwrap()
+                .borrow()
+                .order,
+            12
+        );
+        assert!(paste_time_tree_prev(&tree, &newest.borrow()).is_none());
+        assert!(Rc::ptr_eq(
+            &paste_time_tree_remove(&mut tree, &middle.borrow()).unwrap(),
+            &middle
+        ));
+        assert_eq!(
+            paste_time_tree_next(&tree, &newest.borrow())
+                .unwrap()
+                .borrow()
+                .order,
+            4
+        );
+    }
+
+    #[test]
+    fn retained_buffers_preserve_identity_and_cannot_delete_replacements() {
+        unsafe {
+            let data = b"original\0bytes".to_vec().into_boxed_slice();
+            let bytes_address = data.as_ptr();
+            assert_eq!(paste_set_owned(data, Some(c"original"), None), 0);
+            let original = paste_get_name(c"original").unwrap();
+            let weak = Rc::downgrade(&original);
+            assert_eq!(
+                paste_buffer_data(&original.borrow()).unwrap().as_ptr(),
+                bytes_address
+            );
+            let order = original.borrow().order;
+            assert_eq!(paste_rename(Some(c"original"), Some(c"renamed"), None), 0);
+            assert!(paste_get_name(c"original").is_none());
+            assert!(Rc::ptr_eq(&original, &paste_get_name(c"renamed").unwrap()));
+            assert_eq!(original.borrow().order, order);
+            assert_eq!(
+                paste_set_owned(
+                    b"replacement".to_vec().into_boxed_slice(),
+                    Some(c"renamed"),
+                    None
+                ),
+                0
+            );
+            let replacement = paste_get_name(c"renamed").unwrap();
+            assert!(!Rc::ptr_eq(&original, &replacement));
+            assert_eq!(
+                paste_buffer_data(&original.borrow()).unwrap(),
+                b"original\0bytes"
+            );
+            paste_free(&original);
+            assert!(Rc::ptr_eq(
+                &replacement,
+                &paste_get_name(c"renamed").unwrap()
+            ));
+            drop(original);
+            assert!(weak.upgrade().is_none());
+            let replacement_weak = Rc::downgrade(&replacement);
+            paste_free(&replacement);
+            assert!(paste_get_name(c"renamed").is_none());
+            drop(replacement);
+            assert!(replacement_weak.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn paste_events_release_borrows_and_preserve_registry_visibility() {
+        use crate::src::events::{events_add_sink, events_remove_sink};
+        use crate::src::events_payload::event_payload_get_string;
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        unsafe {
+            let mut sinks = Vec::new();
+            for event in [c"paste-buffer-changed", c"paste-buffer-deleted"] {
+                let seen = seen.clone();
+                sinks.push(events_add_sink(
+                    event,
+                    Rc::new(move |event, payload| {
+                        let name = CStr::from_ptr(event_payload_get_string(payload));
+                        let buffer = paste_get_name(name);
+                        seen.borrow_mut().push((
+                            event.to_owned(),
+                            name.to_owned(),
+                            buffer.is_some(),
+                        ));
+                        if let Some(buffer) = buffer {
+                            // No owner or index borrow may span dispatch.
+                            buffer.borrow_mut().created = 17;
+                        }
+                        if event == c"paste-buffer-changed" && name == c"root" {
+                            assert_eq!(
+                                paste_set_owned(
+                                    b"nested".to_vec().into_boxed_slice(),
+                                    Some(c"side"),
+                                    None
+                                ),
+                                0
+                            );
+                        }
+                    }),
+                ));
+            }
+            assert_eq!(
+                paste_set_owned(b"first".to_vec().into_boxed_slice(), Some(c"root"), None),
+                0
+            );
+            assert_eq!(paste_rename(Some(c"root"), Some(c"renamed"), None), 0);
+            assert_eq!(
+                paste_set_owned(
+                    b"second".to_vec().into_boxed_slice(),
+                    Some(c"renamed"),
+                    None
+                ),
+                0
+            );
+            paste_free(&paste_get_name(c"renamed").unwrap());
+            paste_free(&paste_get_name(c"side").unwrap());
+            for sink in sinks {
+                events_remove_sink(sink);
+            }
+        }
+        let expected = [
+            (c"paste-buffer-changed", c"root", true),
+            (c"paste-buffer-changed", c"side", true),
+            (c"paste-buffer-deleted", c"root", false),
+            (c"paste-buffer-changed", c"renamed", true),
+            (c"paste-buffer-deleted", c"renamed", true),
+            (c"paste-buffer-changed", c"renamed", true),
+            (c"paste-buffer-deleted", c"renamed", true),
+            (c"paste-buffer-deleted", c"side", true),
+        ];
+        assert_eq!(
+            seen.borrow()
+                .iter()
+                .map(|(event, name, visible)| (event.as_c_str(), name.as_c_str(), *visible))
+                .collect::<Vec<_>>(),
+            expected
+        );
     }
 }

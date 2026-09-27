@@ -88,7 +88,9 @@ use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
-use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
+use crate::src::spawn::{
+    spawn_cancel_editor, spawn_editor, spawn_editor_write, spawn_get_editor_pid,
+};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
@@ -3626,16 +3628,11 @@ unsafe fn window_customize_start_edit(
         item: window_customize_copy_item(item),
         editor: ::core::ptr::null_mut(),
     }));
-    let mut buf = value.as_ref().as_ptr();
-    let mut len = value.as_ref().to_bytes().len();
-    if len == 0 as size_t {
-        buf = b"\n\0" as *const u8 as *const ::core::ffi::c_char;
-        len = 1 as size_t;
-    }
+    let bytes = value.to_bytes();
+    let bytes = if bytes.is_empty() { b"\n" } else { bytes };
     (*ed).editor = spawn_editor(
         c,
-        buf,
-        len,
+        |stream| spawn_editor_write(stream, bytes),
         Some(Box::new(move |buf| unsafe {
             window_customize_edit_close_cb(buf, ed)
         })),

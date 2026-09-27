@@ -92,7 +92,6 @@ use crate::src::shared::pane::{
     PANE_ACTIVITY, PANE_CHANGED, PANE_CMDRUNNING, PANE_STYLECHANGED, PANE_THEMECHANGED,
     PANE_UNSEENCHANGES,
 };
-use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::screen::{
     screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
@@ -5441,7 +5440,6 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
 }
 unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_char) {
     let mut ev: *mut bufferevent = (*ictx).event;
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut state: ::core::ffi::c_int = 0;
     state = options_get_number(
         global_options,
@@ -5451,11 +5449,11 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
         return;
     }
     if state == 1 as ::core::ffi::c_int {
-        pb = paste_get_top(None);
-        if pb.is_null() {
+        let Some(pb) = paste_get_top(None) else {
             return;
-        }
-        let buf = paste_buffer_data(&*pb).unwrap_or_default();
+        };
+        let buffer = pb.borrow();
+        let buf = paste_buffer_data(&buffer).unwrap_or_default();
         if (*ictx).input_end as ::core::ffi::c_uint
             == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
         {

@@ -985,21 +985,15 @@ unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CStri
     }
     return None;
 }
-unsafe fn format_cb_buffer_name(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).pb.is_null() {
-        return Some(CStr::from_ptr(paste_buffer_name((*ft).pb)).to_owned());
-    }
-    return None;
+unsafe fn format_cb_buffer_name(ft: *mut format_tree) -> Option<CString> {
+    Some(paste_buffer_name(&(*ft).pb.as_ref()?.borrow()).to_owned())
 }
-unsafe fn format_cb_buffer_sample(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).pb.is_null() {
-        return Some(paste_make_sample_cstring(&*(*ft).pb));
-    }
-    return None;
+unsafe fn format_cb_buffer_sample(ft: *mut format_tree) -> Option<CString> {
+    Some(paste_make_sample_cstring(&(*ft).pb.as_ref()?.borrow()))
 }
 unsafe fn format_cb_buffer_full(ft: *mut format_tree) -> Option<CString> {
-    let buffer = (*ft).pb.as_ref()?;
-    let bytes = paste_buffer_data(buffer)?;
+    let buffer = (*ft).pb.as_ref()?.borrow();
+    let bytes = paste_buffer_data(&buffer)?;
     let end = bytes
         .iter()
         .position(|&byte| byte == 0)
@@ -1007,7 +1001,7 @@ unsafe fn format_cb_buffer_full(ft: *mut format_tree) -> Option<CString> {
     Some(CString::new(&bytes[..end]).expect("bounded buffer contains no NUL"))
 }
 unsafe fn format_cb_buffer_size(ft: *mut format_tree) -> Option<CString> {
-    let buffer = (*ft).pb.as_ref()?;
+    let buffer = (*ft).pb.as_ref()?.borrow();
     Some(CString::new(buffer.size.to_string()).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_client_cell_height(mut ft: *mut format_tree) -> Option<CString> {
@@ -2821,11 +2815,8 @@ unsafe fn format_cb_wrap_flag(mut ft: *mut format_tree) -> Option<CString> {
     }
     return None;
 }
-unsafe fn format_cb_buffer_created(mut ft: *mut format_tree) -> Option<time_t> {
-    if !(*ft).pb.is_null() {
-        return Some(paste_buffer_created((*ft).pb) as __time_t as time_t);
-    }
-    return None;
+unsafe fn format_cb_buffer_created(ft: *mut format_tree) -> Option<time_t> {
+    Some(paste_buffer_created(&(*ft).pb.as_ref()?.borrow()) as __time_t as time_t)
 }
 unsafe fn format_cb_client_activity(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).c.is_null() {
@@ -3790,30 +3781,35 @@ mod owned_callback_tests {
 
     #[test]
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {
-        let mut buffer = Box::new(crate::src::shared::paste::paste_buffer::empty());
+        let buffer = std::rc::Rc::new(std::cell::RefCell::new(
+            crate::src::shared::paste::paste_buffer::empty(),
+        ));
         unsafe {
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
-            (*ft).pb = &mut *buffer;
-            assert!(paste_buffer_data(&buffer).is_none());
+            (*ft).pb = Some(buffer.clone());
+            assert!(paste_buffer_data(&buffer.borrow()).is_none());
             assert!(format_cb_buffer_full(ft).is_none());
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"0");
 
-            buffer.data = Some(Box::default());
-            assert_eq!(paste_buffer_data(&buffer), Some(&b""[..]));
+            buffer.borrow_mut().data = Some(Box::default());
+            assert_eq!(paste_buffer_data(&buffer.borrow()), Some(&b""[..]));
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"");
 
-            buffer.data = Some(b"A\xff\0Btrailing".to_vec().into_boxed_slice());
-            buffer.size = 4;
-            let bytes = paste_buffer_data(&buffer).unwrap();
-            assert_eq!(bytes, b"A\xff\0B");
-            assert_eq!(bytes.as_ptr(), buffer.data.as_ref().unwrap().as_ptr());
+            buffer.borrow_mut().data = Some(b"A\xff\0Btrailing".to_vec().into_boxed_slice());
+            buffer.borrow_mut().size = 4;
+            {
+                let value = buffer.borrow();
+                let bytes = paste_buffer_data(&value).unwrap();
+                assert_eq!(bytes, b"A\xff\0B");
+                assert_eq!(bytes.as_ptr(), value.data.as_ref().unwrap().as_ptr());
+            }
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_bytes(), b"A\xff");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"4");
 
-            buffer.size = 1;
+            buffer.borrow_mut().size = 1;
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
-            (*ft).pb = std::ptr::null_mut();
+            (*ft).pb = None;
             format_free(ft);
         }
     }
@@ -3850,23 +3846,27 @@ mod owned_callback_tests {
             assert_eq!(
                 paste_set_owned(
                     b"A\xff\0B".to_vec().into_boxed_slice(),
-                    name.as_ptr(),
+                    Some(name),
                     Some(&mut cause)
                 ),
                 0
             );
-            let pb = paste_get_name(name.as_ptr());
+            let pb = paste_get_name(name).unwrap();
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
-            (*ft).pb = pb;
+            (*ft).pb = Some(pb.clone());
             let full = format_cb_buffer_full(ft).unwrap();
             let sample = format_cb_buffer_sample(ft).unwrap();
             let created = format_cb_buffer_created(ft).unwrap();
-            let old_created = (*pb).created;
-            (*pb).created = 0;
+            let old_created = pb.borrow().created;
+            pb.borrow_mut().created = 0;
             assert_eq!(format_cb_buffer_created(ft), Some(0));
-            (*ft).pb = std::ptr::null_mut();
-            paste_free(pb);
+            let weak = std::rc::Rc::downgrade(&pb);
+            paste_free(&pb);
+            drop(pb);
+            assert!(weak.upgrade().is_some(), "format tree retains the buffer");
+            assert_eq!(format_cb_buffer_full(ft).unwrap().as_bytes(), b"A\xff");
             format_free(ft);
+            assert!(weak.upgrade().is_none());
             assert_eq!(full.as_bytes(), b"A\xff");
             assert!(!sample.as_bytes().is_empty());
             assert_eq!(created, old_created);

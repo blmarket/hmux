@@ -1,6 +1,13 @@
 //! Authoritative paste model declarations.
 
 use super::abi::{size_t, time_t, u_int};
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
+
+/// Shared owners keep the existing heap allocation alive across lookups and formatting.
+pub type PasteBufferRef = Rc<RefCell<paste_buffer>>;
+/// Editors remember identity without retaining deleted buffer contents.
+pub type PasteBufferWeak = Weak<RefCell<paste_buffer>>;
 
 #[repr(C)]
 pub struct paste_buffer {

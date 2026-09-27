@@ -1074,10 +1074,15 @@ unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> *mut FILE {
     file
 }
 
-pub unsafe fn spawn_editor(
+/// Write the existing bytes before editor pane creation can dispatch events.
+/// Keep the fwrite item-count behavior for empty input and short writes.
+pub(crate) fn spawn_editor_write(stream: &CFile, bytes: &[u8]) -> bool {
+    unsafe { fwrite(bytes.as_ptr().cast(), bytes.len(), 1, stream.as_ptr()) == 1 }
+}
+
+pub(crate) unsafe fn spawn_editor(
     mut c: *mut client,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
+    write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> *mut spawn_editor_state {
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
@@ -1131,13 +1136,7 @@ pub unsafe fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     let stream = CFile::from_raw(f).expect("fdopen returned a non-null stream");
-    if fwrite(
-        buf as *const ::core::ffi::c_void,
-        len,
-        1 as size_t,
-        stream.as_ptr(),
-    ) != 1 as ::core::ffi::c_ulong
-    {
+    if !write(&stream) {
         drop(stream);
         unlink(&raw mut path as *mut ::core::ffi::c_char);
         return ::core::ptr::null_mut::<spawn_editor_state>();

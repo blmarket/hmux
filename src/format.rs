@@ -132,7 +132,7 @@ use crate::src::shared::pane::{
     PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
     PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
-use crate::src::shared::paste::paste_buffer;
+use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{
@@ -390,7 +390,6 @@ pub unsafe fn format_defaults(
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
 ) {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if !c.is_null() && !(*c).name.is_none() {
         log_debug(format_args!(
             "{}: c={}",
@@ -468,9 +467,8 @@ pub unsafe fn format_defaults(
     if !wp.is_null() {
         format_defaults_pane(ft, wp);
     }
-    pb = paste_get_top(None);
-    if !pb.is_null() {
-        format_defaults_paste_buffer(ft, pb);
+    if let Some(pb) = paste_get_top(None) {
+        format_defaults_paste_buffer(&mut *ft, &pb);
     }
 }
 unsafe fn format_defaults_session(mut ft: *mut format_tree, mut s: *mut session) {
@@ -502,8 +500,8 @@ pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, mut wp: *mut window
         (*(*wme).mode).formats.expect("non-null function pointer")(wme, ft);
     }
 }
-pub unsafe fn format_defaults_paste_buffer(mut ft: *mut format_tree, mut pb: *mut paste_buffer) {
-    (*ft).pb = pb;
+pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {
+    ft.pb = Some(pb.clone());
 }
 fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
     if utf8_cstrhas(ws, &gc.data) {

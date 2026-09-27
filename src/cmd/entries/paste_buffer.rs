@@ -11,7 +11,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_INPUTOFF;
-use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::screen::MODE_BRACKETPASTE;
 use crate::src::shared::vis::{VIS_NOSLASH, VIS_SAFE};
 use crate::src::text::utf8::utf8_stravisx_bytes;
@@ -50,7 +49,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
+    let pb;
     let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
@@ -65,8 +64,8 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if bufname.is_null() {
         pb = paste_get_top(None);
     } else {
-        pb = paste_get_name(bufname);
-        if pb.is_null() {
+        pb = paste_get_name(CStr::from_ptr(bufname));
+        if pb.is_none() {
             cmdq_error(item, |out| {
                 out.write_all(b"no buffer ")?;
                 write_cstr(out, bufname)
@@ -74,7 +73,10 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             return CMD_RETURN_ERROR;
         }
     }
-    if !pb.is_null() && !(*wp).flags & PANE_INPUTOFF != 0 {
+    let Some(pb) = pb else {
+        return CMD_RETURN_NORMAL;
+    };
+    if !(*wp).flags & PANE_INPUTOFF != 0 {
         sepstr = args_get(args, 's' as i32 as u_char);
         if sepstr.is_null() {
             if args_has(args, 'r' as i32 as u_char) != 0 {
@@ -92,7 +94,8 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 6 as size_t,
             );
         }
-        let bufdata = paste_buffer_data(&*pb).unwrap_or_default();
+        let buffer = pb.borrow();
+        let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
         for chunk in bufdata.split_inclusive(|&byte| byte == b'\n') {
             let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
             if args_has(args, 'S' as i32 as u_char) != 0 {
@@ -113,8 +116,8 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             );
         }
     }
-    if !pb.is_null() && args_has(args, 'd' as i32 as u_char) != 0 {
-        paste_free(pb);
+    if args_has(args, 'd' as i32 as u_char) != 0 {
+        paste_free(&pb);
     }
     return CMD_RETURN_NORMAL;
 }

@@ -1,22 +1,19 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
-use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{
-    paste_buffer_data, paste_buffer_name, paste_free, paste_get_name, paste_get_top, paste_rename,
+    paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename,
     paste_set_owned,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::args_parse;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_BUFFER_USAGE, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG,
 };
-use crate::src::shared::paste::paste_buffer;
 use crate::src::tty::tty_set_selection;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 pub static mut cmd_set_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"set-buffer",
@@ -67,120 +64,75 @@ pub static mut cmd_delete_buffer_entry: cmd_entry = {
         exec: Some(cmd_set_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_set_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
-    let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut bufname: Option<CString> = None;
-    let mut bufdata = Vec::new();
-    let mut cause: Option<CString> = None;
-    if !args_get(args, 'b' as i32 as u_char).is_null() {
-        bufname = Some(CStr::from_ptr(args_get(args, 'b' as i32 as u_char)).to_owned());
-        pb = paste_get_name(bufname.as_ref().unwrap().as_ptr());
-    }
-    if cmd_get_entry(self_0) == &raw const cmd_delete_buffer_entry {
-        if pb.is_null() {
-            if let Some(bufname) = bufname.as_ref() {
+unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+    let args = cmd_get_args(self_0);
+    let tc = cmdq_get_target_client(item);
+    let name = args_get(args, b'b');
+    let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
+    let mut pb = bufname.as_deref().and_then(paste_get_name);
+    let mut cause = None;
+    let deleting = cmd_get_entry(self_0) == &raw const cmd_delete_buffer_entry;
+    if deleting || args_has(args, b'n') != 0 {
+        if pb.is_none() {
+            if let Some(name) = bufname.as_ref() {
                 cmdq_error(item, |out| {
                     out.write_all(b"unknown buffer: ")?;
-                    write_cstr(out, bufname.as_ptr())
+                    out.write_all(name.as_bytes())
                 });
-                current_block = 17843714670734105592;
-            } else {
-                pb = paste_get_top(None);
-                if !pb.is_null() {
-                    bufname = Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned());
-                }
-                current_block = 3640593987805443782;
+                return CMD_RETURN_ERROR;
             }
-        } else {
-            current_block = 3640593987805443782;
+            pb = paste_get_top(Some(&mut bufname));
         }
-        match current_block {
-            17843714670734105592 => {}
-            _ => {
-                if pb.is_null() {
-                    cmdq_error(item, |out| out.write_all(b"no buffer"));
-                } else {
-                    paste_free(pb);
-                    return CMD_RETURN_NORMAL;
-                }
-            }
-        }
-    } else if args_has(args, 'n' as i32 as u_char) != 0 {
-        if pb.is_null() {
-            if let Some(bufname) = bufname.as_ref() {
-                cmdq_error(item, |out| {
-                    out.write_all(b"unknown buffer: ")?;
-                    write_cstr(out, bufname.as_ptr())
-                });
-                current_block = 17843714670734105592;
-            } else {
-                pb = paste_get_top(None);
-                if !pb.is_null() {
-                    bufname = Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned());
-                }
-                current_block = 15904375183555213903;
-            }
-        } else {
-            current_block = 15904375183555213903;
-        }
-        match current_block {
-            17843714670734105592 => {}
-            _ => {
-                if pb.is_null() {
-                    cmdq_error(item, |out| out.write_all(b"no buffer"));
-                } else if paste_rename(
-                    bufname.as_ref().unwrap().as_ptr(),
-                    args_get(args, 'n' as i32 as u_char),
-                    &raw mut cause,
-                ) != 0 as ::core::ffi::c_int
-                {
-                    cmdq_error(item, |out| {
-                        write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                    });
-                } else {
-                    return CMD_RETURN_NORMAL;
-                }
-            }
-        }
-    } else if args_count(args) != 1 as u_int {
-        cmdq_error(item, |out| out.write_all(b"no data specified"));
-    } else {
-        let new_data = CStr::from_ptr(args_string(args, 0 as u_int)).to_bytes();
-        if new_data.is_empty() {
+        let Some(pb) = pb else {
+            cmdq_error(item, |out| out.write_all(b"no buffer"));
+            return CMD_RETURN_ERROR;
+        };
+        if deleting {
+            paste_free(&pb);
             return CMD_RETURN_NORMAL;
         }
-        if args_has(args, 'a' as i32 as u_char) != 0 && !pb.is_null() {
-            let olddata = paste_buffer_data(&*pb).unwrap_or_default();
-            bufdata.extend_from_slice(olddata);
-        }
-        bufdata.extend_from_slice(new_data);
-        let selection_data = if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-            Some(bufdata.clone())
-        } else {
-            None
-        };
-        let name = bufname
-            .as_ref()
-            .map_or(::core::ptr::null(), |name| name.as_ptr());
-        if paste_set_owned(bufdata.into_boxed_slice(), name, Some(&mut cause))
-            != 0 as ::core::ffi::c_int
+        if paste_rename(
+            bufname.as_deref(),
+            Some(CStr::from_ptr(args_get(args, b'n'))),
+            Some(&mut cause),
+        ) != 0
         {
             cmdq_error(item, |out| {
-                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+                out.write_all(cause.as_ref().unwrap().as_bytes())
             });
-        } else {
-            if let Some(selection_data) = selection_data.as_ref() {
-                tty_set_selection(
-                    &raw mut (*tc).tty,
-                    c"",
-                    selection_data,
-                );
-            }
-            return CMD_RETURN_NORMAL;
+            return CMD_RETURN_ERROR;
+        }
+        return CMD_RETURN_NORMAL;
+    }
+    if args_count(args) != 1 {
+        cmdq_error(item, |out| out.write_all(b"no data specified"));
+        return CMD_RETURN_ERROR;
+    }
+    let new_data = CStr::from_ptr(args_string(args, 0)).to_bytes();
+    if new_data.is_empty() {
+        return CMD_RETURN_NORMAL;
+    }
+    let mut bufdata = Vec::new();
+    if args_has(args, b'a') != 0 {
+        if let Some(pb) = pb {
+            bufdata.extend_from_slice(paste_buffer_data(&pb.borrow()).unwrap_or_default());
         }
     }
-    return CMD_RETURN_ERROR;
+    bufdata.extend_from_slice(new_data);
+    let selection_data = (args_has(args, b'w') != 0 && !tc.is_null()).then(|| bufdata.clone());
+    if paste_set_owned(
+        bufdata.into_boxed_slice(),
+        bufname.as_deref(),
+        Some(&mut cause),
+    ) != 0
+    {
+        cmdq_error(item, |out| {
+            out.write_all(cause.as_ref().unwrap().as_bytes())
+        });
+        return CMD_RETURN_ERROR;
+    }
+    if let Some(selection_data) = selection_data.as_ref() {
+        tty_set_selection(&raw mut (*tc).tty, c"", selection_data);
+    }
+    CMD_RETURN_NORMAL
 }

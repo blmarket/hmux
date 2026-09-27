@@ -6,7 +6,7 @@ use super::command::cmdq_item;
 use super::job::job;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
-use super::paste::paste_buffer;
+use super::paste::PasteBufferRef;
 use super::session::session;
 use super::window::{window, winlink};
 use std::collections::BTreeMap;
@@ -122,7 +122,7 @@ pub struct format_tree {
     pub wl: *mut winlink,
     pub w: *mut window,
     pub wp: *mut window_pane,
-    pub pb: *mut paste_buffer,
+    pub pb: Option<PasteBufferRef>,
     pub item: *mut cmdq_item,
     pub client: *mut client,
     pub flags: ::core::ffi::c_int,

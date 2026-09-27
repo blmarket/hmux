@@ -15,7 +15,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
 use crate::src::shared::event::*;
-use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
 pub static mut cmd_save_buffer_entry: cmd_entry = {
@@ -89,18 +88,18 @@ unsafe fn cmd_save_buffer_done(
 unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut c: *mut client = cmdq_get_client(item);
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
+    let pb;
     let mut flags: ::core::ffi::c_int = 0;
     let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
     if bufname.is_null() {
         pb = paste_get_top(None);
-        if pb.is_null() {
+        if pb.is_none() {
             cmdq_error(item, |out| out.write_all(b"no buffers"));
             return CMD_RETURN_ERROR;
         }
     } else {
-        pb = paste_get_name(bufname);
-        if pb.is_null() {
+        pb = paste_get_name(CStr::from_ptr(bufname));
+        if pb.is_none() {
             cmdq_error(item, |out| {
                 out.write_all(b"no buffer ")?;
                 write_cstr(out, bufname)
@@ -108,12 +107,16 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             return CMD_RETURN_ERROR;
         }
     }
-    let bufdata = paste_buffer_data(&*pb).unwrap_or_default();
+    let pb = pb.expect("buffer lookup checked above");
     let show_buffer = cmd_get_entry(self_0) == &raw const cmd_show_buffer_entry;
     if show_buffer {
         if !(*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             let mut evb = evbuffer_new();
-            evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
+            {
+                let buffer = pb.borrow();
+                let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
+                evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
+            }
             cmdq_print_data(item, &mut *evb);
             return CMD_RETURN_NORMAL;
         }
@@ -129,6 +132,8 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     } else {
         flags = O_TRUNC;
     }
+    let buffer = pb.borrow();
+    let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
     file_write_with_cmdq_wait(
         cmdq_get_client(item),
         path,

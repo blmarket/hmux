@@ -12,7 +12,7 @@ use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_table};
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::paste::paste_buffer;
+use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
@@ -52,40 +52,19 @@ fn sort_by_criteria<T>(
     values.sort_by(|a, b| compare(a, b, sort_crit));
 }
 
-unsafe fn sort_buffer_cmp(
-    pa: *mut paste_buffer,
-    pb: *mut paste_buffer,
-    sort_crit: &sort_criteria,
-) -> Ordering {
-    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match sort_crit.order as ::core::ffi::c_uint {
-        4 => {
-            result = strcmp(
-                ((*pa).name).as_ptr().cast_mut(),
-                ((*pb).name).as_ptr().cast_mut(),
-            );
-        }
-        1 => {
-            if (*pa).order > (*pb).order {
-                result = -(1 as ::core::ffi::c_int);
-            } else if (*pa).order < (*pb).order {
-                result = 1 as ::core::ffi::c_int;
-            } else {
-                result = 0 as ::core::ffi::c_int;
-            }
-        }
-        6 => {
-            result = (*pa).size.wrapping_sub((*pb).size) as ::core::ffi::c_int;
-        }
-        0 | 2 | 3 | 5 | 7 | 8 | _ => {}
+fn sort_buffer_cmp(pa: &paste_buffer, pb: &paste_buffer, sort_crit: &sort_criteria) -> Ordering {
+    let order = match sort_crit.order {
+        SORT_NAME => pa.name.cmp(&pb.name),
+        SORT_CREATION => pb.order.cmp(&pa.order),
+        SORT_SIZE => (pa.size.wrapping_sub(pb.size) as i32).cmp(&0),
+        _ => Ordering::Equal,
     }
-    if result == 0 as ::core::ffi::c_int {
-        result = strcmp(
-            ((*pa).name).as_ptr().cast_mut(),
-            ((*pb).name).as_ptr().cast_mut(),
-        );
+    .then_with(|| pa.name.cmp(&pb.name));
+    if sort_crit.reversed != 0 {
+        order.reverse()
+    } else {
+        order
     }
-    return sort_ordering(result, sort_crit.reversed);
 }
 unsafe fn sort_client_cmp(ca: *mut client, cb: *mut client, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -464,18 +443,15 @@ pub unsafe fn sort_would_window_tree_swap(
     }
     return (sort_winlink_cmp(wla, wlb, &*sort_crit) != Ordering::Equal) as ::core::ffi::c_int;
 }
-pub unsafe fn sort_get_buffers(sort_crit: *mut sort_criteria) -> Vec<*mut paste_buffer> {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
+pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     let mut buffers = Vec::new();
-    loop {
-        pb = paste_walk(pb);
-        if pb.is_null() {
-            break;
-        }
+    let mut next = paste_walk(None);
+    while let Some(pb) = next {
+        next = paste_walk(Some(&pb));
         buffers.push(pb);
     }
-    sort_by_criteria(&mut buffers, &*sort_crit, |a, b, criteria| unsafe {
-        sort_buffer_cmp(*a, *b, criteria)
+    sort_by_criteria(&mut buffers, sort_crit, |a, b, criteria| {
+        sort_buffer_cmp(&a.borrow(), &b.borrow(), criteria)
     });
     buffers
 }

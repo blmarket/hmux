@@ -71,7 +71,7 @@ unsafe fn cmd_list_buffers_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let buffers = sort_get_buffers(&raw mut sort_crit);
+    let buffers = sort_get_buffers(&sort_crit);
     for pb in buffers {
         ft = format_create(
             cmdq_get_client(item),
@@ -79,7 +79,7 @@ unsafe fn cmd_list_buffers_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
-        format_defaults_paste_buffer(ft, pb);
+        format_defaults_paste_buffer(&mut *ft, &pb);
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

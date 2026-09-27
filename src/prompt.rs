@@ -1081,10 +1081,11 @@ unsafe fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
     let pasted = if let Some(copied) = pr.copied.as_deref() {
         &copied[..utf8_strlen(copied)]
     } else {
-        let Some(buffer) = paste_get_top(None).as_ref() else {
+        let Some(buffer) = paste_get_top(None) else {
             return 0;
         };
-        let bytes = paste_buffer_data(buffer).unwrap_or_default();
+        let buffer = buffer.borrow();
+        let bytes = paste_buffer_data(&buffer).unwrap_or_default();
         decoded = prompt_decode_paste(bytes);
         &decoded[..decoded.len() - 1]
     };

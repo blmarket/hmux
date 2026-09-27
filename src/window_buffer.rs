@@ -37,7 +37,7 @@ use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tr
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
-use crate::src::shared::paste::paste_buffer;
+use crate::src::shared::paste::PasteBufferWeak;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -47,10 +47,13 @@ use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::sort_get_buffers;
-use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
+use crate::src::spawn::{
+    spawn_cancel_editor, spawn_editor, spawn_editor_write, spawn_get_editor_pid,
+};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 #[repr(C)]
 pub struct window_buffer_modedata {
@@ -78,7 +81,7 @@ pub struct window_buffer_itemdata {
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
     pub name: Option<::std::ffi::CString>,
-    pub pb: *mut paste_buffer,
+    pub pb: PasteBufferWeak,
     pub editor: *mut spawn_editor_state,
 }
 
@@ -221,18 +224,18 @@ unsafe fn window_buffer_build(
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
     let mut item: *mut window_buffer_itemdata = ::core::ptr::null_mut::<window_buffer_itemdata>();
     let mut i: u_int = 0;
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     window_buffer_clear_items(&mut (*data).item_list);
-    let buffers = sort_get_buffers(sort_crit);
+    let buffers = sort_get_buffers(&*sort_crit);
     for pb in buffers {
-        let name = CStr::from_ptr(paste_buffer_name(pb));
+        let buffer = pb.borrow();
+        let name = paste_buffer_name(&buffer);
         item = window_buffer_add_item(&mut (*data).item_list, name);
-        (*item).size = (*pb).size;
-        (*item).order = paste_buffer_order(pb);
+        (*item).size = buffer.size;
+        (*item).order = paste_buffer_order(&buffer);
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.s;
@@ -246,8 +249,7 @@ unsafe fn window_buffer_build(
             let items = &mut (*data).item_list;
             &mut *items[i as usize] as *mut window_buffer_itemdata
         };
-        pb = paste_get_name(((*item).name).as_ptr().cast_mut());
-        if !pb.is_null() {
+        if let Some(pb) = paste_get_name(&(*item).name) {
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
                 ::core::ptr::null_mut::<cmdq_item>(),
@@ -255,7 +257,7 @@ unsafe fn window_buffer_build(
                 0 as ::core::ffi::c_int,
             );
             format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
-            format_defaults_paste_buffer(ft, pb);
+            format_defaults_paste_buffer(&mut *ft, &pb);
             if !filter.is_null() {
                 let cp = format_expand_cstring(ft, filter);
                 if format_true(cp.as_ptr()) == 0 {
@@ -296,17 +298,27 @@ unsafe fn window_buffer_draw(
     let item = &*(itemdata as *const window_buffer_itemdata);
     let cx = (*(*ctx).s).cx;
     let cy = (*(*ctx).s).cy;
-    let Some(pb) = paste_get_name(item.name.as_ptr()).as_ref() else {
+    let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
-    let data = paste_buffer_data(pb).unwrap_or_default();
+    let buffer = pb.borrow();
+    let data = paste_buffer_data(&buffer).unwrap_or_default();
     let mut buf = Vec::<u8>::new();
-    for (row, line) in data.split(|&byte| byte == b'\n').take(sy as usize).enumerate() {
+    for (row, line) in data
+        .split(|&byte| byte == b'\n')
+        .take(sy as usize)
+        .enumerate()
+    {
         buf.resize(4 * (line.len() + 1), 0);
         utf8_strvis(&mut buf, line, VIS_OCTAL | VIS_CSTYLE | VIS_TAB);
         let escaped = CStr::from_bytes_until_nul(&buf).expect("escaped line is terminated");
         if !escaped.is_empty() {
-            screen_write_cursormove(&mut *ctx, cx as i32, cy.wrapping_add(row as u_int) as i32, 0);
+            screen_write_cursormove(
+                &mut *ctx,
+                cx as i32,
+                cy.wrapping_add(row as u_int) as i32,
+                0,
+            );
             screen_write_nputs(&mut *ctx, sx as ssize_t, &grid_default_cell, |out| {
                 out.write_all(escaped.to_bytes())
             });
@@ -330,7 +342,7 @@ fn window_buffer_find(data: &[u8], find: &[u8], icase: bool) -> bool {
     })
 }
 unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: bool) -> bool {
-    let Some(buffer) = paste_get_name(item.name.as_ptr()).as_ref() else {
+    let Some(buffer) = paste_get_name(&item.name) else {
         return false;
     };
     let name_match = if icase {
@@ -341,8 +353,9 @@ unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, ica
     if !name_match.is_null() {
         return true;
     }
+    let buffer = buffer.borrow();
     window_buffer_find(
-        paste_buffer_data(buffer).unwrap_or_default(),
+        paste_buffer_data(&buffer).unwrap_or_default(),
         search.to_bytes(),
         icase,
     )
@@ -379,17 +392,15 @@ unsafe fn window_buffer_get_key(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut key: key_code = 0;
     if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.s;
         wl = (*data).fs.wl;
         wp = (*data).fs.wp;
     }
-    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
-    if pb.is_null() {
-        return KEYC_NONE as ::core::ffi::c_ulong as key_code;
-    }
+    let Some(pb) = paste_get_name(&(*item).name) else {
+        return KEYC_NONE;
+    };
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -404,7 +415,7 @@ unsafe fn window_buffer_get_key(
         ::core::ptr::null_mut::<window_pane>(),
     );
     format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
-    format_defaults_paste_buffer(ft, pb);
+    format_defaults_paste_buffer(&mut *ft, &pb);
     format_add(
         ft,
         b"line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -548,15 +559,13 @@ unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     mut item: *mut window_buffer_itemdata,
 ) {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if item == mode_tree_get_current((*data).data) as *mut window_buffer_itemdata
         && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
-    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
-    if !pb.is_null() {
-        paste_free(pb);
+    if let Some(pb) = paste_get_name(&(*item).name) {
+        paste_free(&pb);
     }
 }
 unsafe fn window_buffer_do_paste(
@@ -564,7 +573,7 @@ unsafe fn window_buffer_do_paste(
     mut item: *mut window_buffer_itemdata,
     mut c: *mut client,
 ) {
-    if !paste_get_name(((*item).name).as_ptr().cast_mut()).is_null() {
+    if paste_get_name(&(*item).name).is_some() {
         mode_tree_run_command(
             c,
             ::core::ptr::null_mut::<cmd_find_state>(),
@@ -683,7 +692,6 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     screen_write_stop(&mut ctx);
 }
 unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_buffer_editdata) {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -707,23 +715,31 @@ unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_
         window_buffer_finish_edit(ed);
         return;
     }
-    pb = paste_get_name(
-        (*ed)
-            .name
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |name| name.as_ptr().cast_mut()),
-    );
-    if pb.is_null() || pb != (*ed).pb {
+    let Some(pb) = (*ed).name.as_deref().and_then(paste_get_name) else {
+        window_buffer_finish_edit(ed);
+        return;
+    };
+    if !(*ed)
+        .pb
+        .upgrade()
+        .is_some_and(|original| Rc::ptr_eq(&original, &pb))
+    {
         window_buffer_finish_edit(ed);
         return;
     }
-    let oldbuf = paste_buffer_data(&*pb).unwrap_or_default();
-    if oldbuf.last().is_some_and(|&byte| byte != b'\n') && buf[len - 1] == b'\n' {
+    let strip_newline = {
+        let buffer = pb.borrow();
+        paste_buffer_data(&buffer)
+            .unwrap_or_default()
+            .last()
+            .is_some_and(|&byte| byte != b'\n')
+    };
+    if strip_newline && buf[len - 1] == b'\n' {
         len = len.wrapping_sub(1);
     }
     if len != 0 as size_t {
         buf.truncate(len);
-        paste_replace_owned(&mut *pb, buf.into_boxed_slice());
+        paste_replace_owned(&pb, buf.into_boxed_slice());
     }
     wp = window_pane_find_by_id((*ed).wp_id);
     if !wp.is_null() {
@@ -743,27 +759,23 @@ unsafe fn window_buffer_start_edit(
     mut item: *mut window_buffer_itemdata,
     mut c: *mut client,
 ) {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut ed: *mut window_buffer_editdata = ::core::ptr::null_mut::<window_buffer_editdata>();
     if !(*data).editor.is_null() {
         return;
     }
-    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
-    if pb.is_null() {
+    let Some(pb) = paste_get_name(&(*item).name) else {
         return;
-    }
-    let buf = paste_buffer_data(&*pb).unwrap_or_default();
-    let name = CStr::from_ptr(paste_buffer_name(pb)).to_owned();
+    };
+    let name = paste_buffer_name(&pb.borrow()).to_owned();
     ed = Box::into_raw(Box::new(window_buffer_editdata {
         wp_id: (*(*data).wp).id,
         name: Some(name),
-        pb,
+        pb: Rc::downgrade(&pb),
         editor: ::core::ptr::null_mut(),
     }));
     (*ed).editor = spawn_editor(
         c,
-        buf.as_ptr().cast(),
-        buf.len(),
+        |stream| spawn_editor_write(stream, paste_buffer_data(&pb.borrow()).unwrap_or_default()),
         Some(Box::new(move |buf| unsafe {
             window_buffer_edit_close_cb(buf, ed)
         })),

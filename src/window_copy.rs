@@ -68,7 +68,6 @@ use crate::src::shared::mouse::{
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES};
-use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -8095,7 +8094,6 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut buf: Vec<u8>;
     let mut bufname: Option<CString> = None;
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -8126,20 +8124,14 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
             wp,
         );
     }
-    pb = paste_get_top(Some(&mut bufname));
-    if !pb.is_null() {
-        let bufdata = paste_buffer_data(&*pb).unwrap_or_default();
+    if let Some(pb) = paste_get_top(Some(&mut bufname)) {
+        let buffer = pb.borrow();
+        let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
         let mut appended = bufdata.to_vec();
         appended.extend_from_slice(&buf);
         buf = appended;
     }
-    let _ = paste_set_owned(
-        buf.into_boxed_slice(),
-        bufname
-            .as_ref()
-            .map_or(::core::ptr::null(), |name| name.as_ptr()),
-        None,
-    );
+    let _ = paste_set_owned(buf.into_boxed_slice(), bufname.as_deref(), None);
 }
 unsafe fn window_copy_copy_line(
     mut wme: *mut window_mode_entry,
