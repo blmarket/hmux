@@ -1004,9 +1004,10 @@ pub unsafe fn args_make_commands_prepare(
     if wait != 0 {
         state.pi.item = item;
     }
-    cmd_get_source(self_0, &raw mut file, &raw mut state.pi.line);
-    if !file.is_null() {
-        state.file = Some(CStr::from_ptr(file).to_owned());
+    let (source, line) = cmd_get_source(&*self_0);
+    state.pi.line = line;
+    if let Some(file) = source {
+        state.file = Some(file.to_owned());
         state.pi.file = state.file.clone();
     }
     state.pi.c = tc;

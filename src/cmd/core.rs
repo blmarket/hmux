@@ -276,19 +276,8 @@ pub fn cmd_get_args_mut(cmd: &mut cmd) -> Option<&mut args> {
 pub unsafe fn cmd_get_group(mut cmd: *mut cmd) -> u_int {
     return (*cmd).group;
 }
-pub unsafe fn cmd_get_source(
-    mut cmd: *mut cmd,
-    mut file: *mut *const ::core::ffi::c_char,
-    mut line: *mut u_int,
-) {
-    if !file.is_null() {
-        *file = ((*cmd).file)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    }
-    if !line.is_null() {
-        *line = (*cmd).line;
-    }
+pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
+    (cmd.file.as_deref(), cmd.line)
 }
 pub unsafe fn cmd_get_parse_flags(mut cmd: *mut cmd) -> ::core::ffi::c_int {
     return (*cmd).parse_flags;

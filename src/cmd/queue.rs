@@ -968,7 +968,9 @@ pub unsafe fn cmdq_error(
         log_cstr((msg.as_ptr()) as *const _)
     ));
     if c.is_null() {
-        cmd_get_source(cmd, &raw mut file, &raw mut line);
+        let (source, source_line) = cmd_get_source(&*cmd);
+        file = source.map_or(std::ptr::null(), |file| file.as_ptr());
+        line = source_line;
         if cfg_finished == 0 {
             if !file.is_null() {
                 cfg_add_cause(|out| {
