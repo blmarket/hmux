@@ -916,7 +916,8 @@ pub unsafe fn tty_putcode_ss(
         tty_puts(tty, tty_term_string_ss((*tty).term, code, a, b));
     }
 }
-unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut len: size_t) {
+unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
+    let len = buf.len();
     let mut c: *mut client = (*tty).client;
     if (*tty).flags & TTY_BLOCK != 0 {
         (*tty).discarded = (*tty).discarded.wrapping_add(len);
@@ -924,7 +925,7 @@ unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut le
     }
     evbuffer_add(
         (*tty).out.as_deref_mut().expect("open TTY buffer"),
-        buf as *const ::core::ffi::c_void,
+        buf.as_ptr().cast(),
         len,
     );
     log_debug(format_args!(
@@ -935,11 +936,11 @@ unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut le
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+        log_cstr_n(buf.as_ptr().cast(), len as ::core::ffi::c_int)
     ));
     (*c).written = (*c).written.wrapping_add(len);
     if tty_log_fd != -(1 as ::core::ffi::c_int) {
-        write(tty_log_fd, buf as *const ::core::ffi::c_void, len);
+        write(tty_log_fd, buf.as_ptr().cast(), len);
     }
     if (*tty).flags & TTY_STARTED != 0
         && event_pending(
@@ -953,7 +954,7 @@ unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut le
 }
 pub unsafe fn tty_puts(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
     if *s as ::core::ffi::c_int != '\0' as i32 {
-        tty_add(tty, s, strlen(s));
+        tty_add(tty, CStr::from_ptr(s).to_bytes());
     }
 }
 pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
@@ -967,12 +968,12 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
     }
     if (*tty).cell.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
         if let Some(acs) = tty_acs_get(Some(&*tty), ch) {
-            tty_add(tty, acs.as_ptr(), acs.to_bytes().len());
+            tty_add(tty, acs.to_bytes());
         } else {
-            tty_add(tty, &raw mut ch as *const ::core::ffi::c_char, 1 as size_t);
+            tty_add(tty, &[ch]);
         }
     } else {
-        tty_add(tty, &raw mut ch as *const ::core::ffi::c_char, 1 as size_t);
+        tty_add(tty, &[ch]);
     }
     if ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
         && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
@@ -995,19 +996,15 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
         }
     }
 }
-pub unsafe fn tty_putn(
-    mut tty: *mut tty,
-    mut buf: *const ::core::ffi::c_void,
-    mut len: size_t,
-    mut width: u_int,
-) {
+pub unsafe fn tty_putn(mut tty: *mut tty, buf: &[u8], mut width: u_int) {
+    let mut len = buf.len();
     if (*(*tty).term).flags & TERM_NOAM != 0
         && (*tty).cy == (*tty).sy.wrapping_sub(1 as u_int)
         && ((*tty).cx as size_t).wrapping_add(len) >= (*tty).sx as size_t
     {
-        len = (*tty).sx.wrapping_sub((*tty).cx).wrapping_sub(1 as u_int) as size_t;
+        len = (*tty).sx.saturating_sub((*tty).cx).saturating_sub(1) as usize;
     }
-    tty_add(tty, buf as *const ::core::ffi::c_char, len);
+    tty_add(tty, &buf[..len]);
     if (*tty).cx.wrapping_add(width) > (*tty).sx {
         (*tty).cx = (*tty).cx.wrapping_add(width).wrapping_sub((*tty).sx);
         if (*tty).cx <= (*tty).sx {
@@ -1262,21 +1259,14 @@ unsafe fn tty_emulate_repeat(
         }
     };
 }
-pub unsafe fn tty_repeat_space(mut tty: *mut tty, mut n: u_int) {
+pub unsafe fn tty_repeat_space(tty: *mut tty, mut n: u_int) {
     const SPACES: [u8; 500] = [b' '; 500];
-    while n as usize > ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as usize {
-        tty_putn(
-            tty,
-            SPACES.as_ptr().cast(),
-            ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as size_t,
-            ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as u_int,
-        );
-        n = (n as ::core::ffi::c_ulong).wrapping_sub(::core::mem::size_of::<
-            [::core::ffi::c_char; 500],
-        >() as usize as ::core::ffi::c_ulong) as u_int as u_int;
+    while n as usize > SPACES.len() {
+        tty_putn(tty, &SPACES, SPACES.len() as u_int);
+        n -= SPACES.len() as u_int;
     }
-    if n != 0 as u_int {
-        tty_putn(tty, SPACES.as_ptr().cast(), n as size_t, n);
+    if n != 0 {
+        tty_putn(tty, &SPACES[..n as usize], n);
     }
 }
 pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
@@ -2453,8 +2443,11 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut cx: u_int = 0;
-    let mut cp: *const ::core::ffi::c_char = (*ctx).c2rust_unnamed.data.data;
-    let mut n: size_t = (*ctx).c2rust_unnamed.data.size;
+    let data = std::slice::from_raw_parts(
+        (*ctx).c2rust_unnamed.data.data.cast::<u8>(),
+        (*ctx).c2rust_unnamed.data.size,
+    );
+    let n = data.len();
     if tty_is_visible(ctx, (*ctx).ocx, (*ctx).ocy, n as u_int, 1 as u_int) == 0 {
         return;
     }
@@ -2498,8 +2491,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ctx) {
             tty_cursor_pane_unless_wrap(tty, ctx, cx, (*ctx).ocy);
             tty_putn(
                 tty,
-                cp.offset((*ri).px as isize).offset(-(px as isize)) as *const ::core::ffi::c_void,
-                (*ri).nx as size_t,
+                &data[((*ri).px - px) as usize..((*ri).px - px + (*ri).nx) as usize],
                 (*ri).nx,
             );
         }
@@ -2540,8 +2532,10 @@ pub unsafe fn tty_cmd_rawstring(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     (*tty).flags |= TTY_NOBLOCK;
     tty_add(
         tty,
-        (*ctx).c2rust_unnamed.data.data,
-        (*ctx).c2rust_unnamed.data.size,
+        std::slice::from_raw_parts(
+            (*ctx).c2rust_unnamed.data.data.cast(),
+            (*ctx).c2rust_unnamed.data.size,
+        ),
     );
     tty_invalidate(tty);
 }
@@ -2589,8 +2583,7 @@ pub unsafe fn tty_cell(
     }
     tty_putn(
         tty,
-        &raw const (*gcp).data.data as *const u_char as *const ::core::ffi::c_void,
-        (*gcp).data.size as size_t,
+        &converted.data.data[..converted.data.size as usize],
         (*gcp).data.width as u_int,
     );
 }
