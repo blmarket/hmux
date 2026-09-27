@@ -4185,9 +4185,7 @@ unsafe fn server_client_set_title(mut c: *mut client) {
         server_client_replace_title(&mut *c, Some(title));
         tty_set_title(
             &raw mut (*c).tty,
-            ((*c).title)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            (*c).title.as_deref().expect("updated client title"),
         );
     }
     format_free(ft);
@@ -4205,7 +4203,7 @@ unsafe fn server_client_set_path(mut c: *mut client) {
         .map_or(c"", |path| path.as_c_str());
     if (*c).path.as_deref() != Some(path) {
         server_client_replace_path(&mut *c, Some(path.to_owned()));
-        tty_set_path(&raw mut (*c).tty, path.as_ptr());
+        tty_set_path(&raw mut (*c).tty, path);
     }
 }
 unsafe fn server_client_set_progress_bar(mut c: *mut client) {

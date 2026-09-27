@@ -5805,7 +5805,7 @@ unsafe fn input_add_request(
     match type_0 as ::core::ffi::c_uint {
         0 => {
             xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", idx as i32));
-            tty_puts(&raw mut (*c).tty, &raw mut s as *mut ::core::ffi::c_char);
+            tty_puts(&raw mut (*c).tty, std::ffi::CStr::from_ptr(s.as_ptr()));
         }
         1 => {
             tty_putcode_ss(

@@ -127,10 +127,8 @@ pub const REDRAW_STATUS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const REDRAW_MENU: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
 pub const REDRAW_OVERLAY: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 pub const REDRAW_ALL: ::core::ffi::c_int = 0x7fffffff as ::core::ffi::c_int;
-pub const REDRAW_START_ISOLATE: [::core::ffi::c_char; 4] =
-    unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA6\0") };
-pub const REDRAW_END_ISOLATE: [::core::ffi::c_char; 4] =
-    unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA9\0") };
+pub const REDRAW_START_ISOLATE: &std::ffi::CStr = c"\u{2066}";
+pub const REDRAW_END_ISOLATE: &std::ffi::CStr = c"\u{2069}";
 thread_local! {
     static REDRAW_CELLS: RefCell<Vec<redraw_build_cell>> = RefCell::new(Vec::new());
 }
@@ -1481,7 +1479,7 @@ unsafe fn redraw_draw_border_span(
     }
     tty_cursor(tty, x, y);
     if isolates != 0 {
-        tty_puts(tty, REDRAW_END_ISOLATE.as_ptr());
+        tty_puts(tty, REDRAW_END_ISOLATE);
     }
     i = 0 as u_int;
     while i < n {
@@ -1489,7 +1487,7 @@ unsafe fn redraw_draw_border_span(
         i = i.wrapping_add(1);
     }
     if isolates != 0 {
-        tty_puts(tty, REDRAW_START_ISOLATE.as_ptr());
+        tty_puts(tty, REDRAW_START_ISOLATE);
     }
 }
 unsafe fn redraw_draw_status_span(

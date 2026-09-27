@@ -210,10 +210,7 @@ pub unsafe fn tty_resize(mut tty: *mut tty) {
             && (*tty).flags & TTY_WINSIZEQUERY == 0
             && (*(*tty).term).flags & TERM_VT100LIKE != 0
         {
-            tty_puts(
-                tty,
-                b"\x1B[18t\x1B[14t\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_puts(tty, c"\x1B[18t\x1B[14t");
             (*tty).flags |= TTY_WINSIZEQUERY;
         }
     } else {
@@ -587,23 +584,14 @@ pub unsafe fn tty_start_tty(mut tty: *mut tty) {
     }
     tty_putcode(tty, TTYC_CNORM);
     if tty_term_has((*tty).term, TTYC_KMOUS) != 0 {
-        tty_puts(
-            tty,
-            b"\x1B[?1000l\x1B[?1002l\x1B[?1003l\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        tty_puts(
-            tty,
-            b"\x1B[?1006l\x1B[?1005l\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_puts(tty, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l");
+        tty_puts(tty, c"\x1B[?1006l\x1B[?1005l");
     }
     if tty_term_has((*tty).term, TTYC_ENBP) != 0 {
         tty_putcode(tty, TTYC_ENBP);
     }
     if (*(*tty).term).flags & TERM_VT100LIKE != 0 {
-        tty_puts(
-            tty,
-            b"\x1B[?2031h\x1B[?996n\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_puts(tty, c"\x1B[?2031h\x1B[?996n");
     }
     tty_start_start_timer(tty);
     (*tty).flags |= TTY_STARTED;
@@ -621,24 +609,18 @@ pub unsafe fn tty_send_requests(mut tty: *mut tty) {
     }
     if (*(*tty).term).flags & TERM_VT100LIKE != 0 {
         if !(*tty).flags & TTY_HAVEDA != 0 {
-            tty_puts(tty, b"\x1B[c\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_puts(tty, c"\x1B[c");
         }
         if !(*tty).flags & TTY_HAVEDA2 != 0 {
-            tty_puts(tty, b"\x1B[>c\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_puts(tty, c"\x1B[>c");
         }
         if !(*tty).flags & TTY_HAVEXDA != 0 {
-            tty_puts(tty, b"\x1B[>q\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_puts(tty, c"\x1B[>q");
         }
         if !(*tty).flags & TTY_HAVESYNC != 0 {
-            tty_puts(
-                tty,
-                b"\x1B[?2026$p\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_puts(tty, c"\x1B[?2026$p");
         }
-        tty_puts(
-            tty,
-            b"\x1B]10;?\x1B\\\x1B]11;?\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_puts(tty, c"\x1B]10;?\x1B\\\x1B]11;?\x1B\\");
         (*tty).flags |= TTY_WAITBG | TTY_WAITFG;
     } else {
         (*tty).flags |= TTY_ALL_REQUEST_FLAGS;
@@ -684,10 +666,7 @@ pub unsafe fn tty_repeat_requests(mut tty: *mut tty, mut force: ::core::ffi::c_i
     ));
     (*tty).last_requests = t;
     if (*(*tty).term).flags & TERM_VT100LIKE != 0 {
-        tty_puts(
-            tty,
-            b"\x1B]10;?\x1B\\\x1B]11;?\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_puts(tty, c"\x1B]10;?\x1B\\\x1B]11;?\x1B\\");
         (*tty).flags |= TTY_WAITBG | TTY_WAITFG;
     }
     tty_start_start_timer(tty);
@@ -828,20 +807,23 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
         b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        tty_puts(tty, tty_term_string((*tty).term, TTYC_ENEKS));
+        tty_puts(
+            tty,
+            std::ffi::CStr::from_ptr(tty_term_string((*tty).term, TTYC_ENEKS)),
+        );
     }
     if options_get_number(
         global_options,
         b"focus-events\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        tty_puts(tty, tty_term_string((*tty).term, TTYC_ENFCS));
-    }
-    if (*(*tty).term).flags & TERM_VT100LIKE != 0 {
         tty_puts(
             tty,
-            b"\x1B[?7727h\0" as *const u8 as *const ::core::ffi::c_char,
+            std::ffi::CStr::from_ptr(tty_term_string((*tty).term, TTYC_ENFCS)),
         );
+    }
+    if (*(*tty).term).flags & TERM_VT100LIKE != 0 {
+        tty_puts(tty, c"\x1B[?7727h");
     }
     server_redraw_client(c);
     tty_invalidate(tty);
@@ -869,13 +851,19 @@ pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
     }
 }
 pub unsafe fn tty_putcode(mut tty: *mut tty, mut code: tty_code_code) {
-    tty_puts(tty, tty_term_string((*tty).term, code));
+    tty_puts(
+        tty,
+        std::ffi::CStr::from_ptr(tty_term_string((*tty).term, code)),
+    );
 }
 pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: ::core::ffi::c_int) {
     if a < 0 as ::core::ffi::c_int {
         return;
     }
-    tty_puts(tty, tty_term_string_i((*tty).term, code, a));
+    tty_puts(
+        tty,
+        std::ffi::CStr::from_ptr(tty_term_string_i((*tty).term, code, a)),
+    );
 }
 pub unsafe fn tty_putcode_ii(
     mut tty: *mut tty,
@@ -886,7 +874,10 @@ pub unsafe fn tty_putcode_ii(
     if a < 0 as ::core::ffi::c_int || b < 0 as ::core::ffi::c_int {
         return;
     }
-    tty_puts(tty, tty_term_string_ii((*tty).term, code, a, b));
+    tty_puts(
+        tty,
+        std::ffi::CStr::from_ptr(tty_term_string_ii((*tty).term, code, a, b)),
+    );
 }
 pub unsafe fn tty_putcode_iii(
     mut tty: *mut tty,
@@ -898,12 +889,18 @@ pub unsafe fn tty_putcode_iii(
     if a < 0 as ::core::ffi::c_int || b < 0 as ::core::ffi::c_int || c < 0 as ::core::ffi::c_int {
         return;
     }
-    tty_puts(tty, tty_term_string_iii((*tty).term, code, a, b, c));
+    tty_puts(
+        tty,
+        std::ffi::CStr::from_ptr(tty_term_string_iii((*tty).term, code, a, b, c)),
+    );
 }
 pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char) {
     let mut code: tty_code_code = TTYC_CS;
     if !a.is_null() {
-        tty_puts(tty, tty_term_string_s((*tty).term, code, a));
+        tty_puts(
+            tty,
+            std::ffi::CStr::from_ptr(tty_term_string_s((*tty).term, code, a)),
+        );
     }
 }
 pub unsafe fn tty_putcode_ss(
@@ -913,7 +910,10 @@ pub unsafe fn tty_putcode_ss(
     mut b: *const ::core::ffi::c_char,
 ) {
     if !a.is_null() && !b.is_null() {
-        tty_puts(tty, tty_term_string_ss((*tty).term, code, a, b));
+        tty_puts(
+            tty,
+            std::ffi::CStr::from_ptr(tty_term_string_ss((*tty).term, code, a, b)),
+        );
     }
 }
 unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
@@ -952,9 +952,9 @@ unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
-pub unsafe fn tty_puts(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
-    if *s as ::core::ffi::c_int != '\0' as i32 {
-        tty_add(tty, CStr::from_ptr(s).to_bytes());
+pub unsafe fn tty_puts(tty: *mut tty, text: &CStr) {
+    if !text.is_empty() {
+        tty_add(tty, text.to_bytes());
     }
 }
 pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
@@ -1038,7 +1038,7 @@ unsafe fn tty_set_italics(mut tty: *mut tty) {
     }
     tty_putcode(tty, TTYC_SMSO);
 }
-pub unsafe fn tty_set_title(mut tty: *mut tty, mut title: *const ::core::ffi::c_char) {
+pub unsafe fn tty_set_title(mut tty: *mut tty, title: &CStr) {
     if tty_term_has((*tty).term, TTYC_TSL) == 0 || tty_term_has((*tty).term, TTYC_FSL) == 0 {
         return;
     }
@@ -1046,7 +1046,7 @@ pub unsafe fn tty_set_title(mut tty: *mut tty, mut title: *const ::core::ffi::c_
     tty_puts(tty, title);
     tty_putcode(tty, TTYC_FSL);
 }
-pub unsafe fn tty_set_path(mut tty: *mut tty, mut title: *const ::core::ffi::c_char) {
+pub unsafe fn tty_set_path(mut tty: *mut tty, title: &CStr) {
     if tty_term_has((*tty).term, TTYC_SWD) == 0 || tty_term_has((*tty).term, TTYC_FSL) == 0 {
         return;
     }
@@ -1210,32 +1210,16 @@ pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, m
         ));
     }
     if changed & ALL_MOUSE_MODES != 0 && tty_term_has(term, TTYC_KMOUS) != 0 {
-        tty_puts(
-            tty,
-            b"\x1B[?1006l\x1B[?1000l\x1B[?1002l\x1B[?1003l\0" as *const u8
-                as *const ::core::ffi::c_char,
-        );
+        tty_puts(tty, c"\x1B[?1006l\x1B[?1000l\x1B[?1002l\x1B[?1003l");
         if mode & ALL_MOUSE_MODES != 0 {
-            tty_puts(
-                tty,
-                b"\x1B[?1006h\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_puts(tty, c"\x1B[?1006h");
         }
         if mode & MODE_MOUSE_ALL != 0 {
-            tty_puts(
-                tty,
-                b"\x1B[?1000h\x1B[?1002h\x1B[?1003h\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_puts(tty, c"\x1B[?1000h\x1B[?1002h\x1B[?1003h");
         } else if mode & MODE_MOUSE_BUTTON != 0 {
-            tty_puts(
-                tty,
-                b"\x1B[?1000h\x1B[?1002h\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_puts(tty, c"\x1B[?1000h\x1B[?1002h");
         } else if mode & MODE_MOUSE_STANDARD != 0 {
-            tty_puts(
-                tty,
-                b"\x1B[?1000h\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_puts(tty, c"\x1B[?1000h");
         }
     }
     (*tty).mode = mode;
@@ -1779,7 +1763,7 @@ unsafe fn tty_clear_area(
                     (px.wrapping_add(nx)) as u32
                 ),
             );
-            tty_puts(tty, &raw mut tmp as *mut ::core::ffi::c_char);
+            tty_puts(tty, std::ffi::CStr::from_ptr(tmp.as_ptr()));
             return;
         }
         if px == 0 as u_int
@@ -3126,19 +3110,13 @@ unsafe fn tty_colours(mut tty: *mut tty, mut gc: *const grid_cell) {
             if ((*gc).fg == 8 as ::core::ffi::c_int || (*gc).fg == 9 as ::core::ffi::c_int)
                 && !((*tc).fg == 8 as ::core::ffi::c_int || (*tc).fg == 9 as ::core::ffi::c_int)
             {
-                tty_puts(
-                    tty,
-                    b"\x1B[39m\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                tty_puts(tty, c"\x1B[39m");
                 (*tc).fg = (*gc).fg;
             }
             if ((*gc).bg == 8 as ::core::ffi::c_int || (*gc).bg == 9 as ::core::ffi::c_int)
                 && !((*tc).bg == 8 as ::core::ffi::c_int || (*tc).bg == 9 as ::core::ffi::c_int)
             {
-                tty_puts(
-                    tty,
-                    b"\x1B[49m\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                tty_puts(tty, c"\x1B[49m");
                 (*tc).bg = (*gc).bg;
             }
         }
@@ -3338,7 +3316,7 @@ unsafe fn tty_colours_fg(mut tty: *mut tty, mut gc: *const grid_cell) {
     } else if (*gc).fg >= 90 as ::core::ffi::c_int && (*gc).fg <= 97 as ::core::ffi::c_int {
         if (*(*tty).term).flags & TERM_256COLOURS != 0 {
             xformat(&mut s, format_args!("\x1B[{}m", ((*gc).fg) as i32));
-            tty_puts(tty, &raw mut s as *mut ::core::ffi::c_char);
+            tty_puts(tty, std::ffi::CStr::from_ptr(s.as_ptr()));
         } else {
             tty_putcode_i(
                 tty,
@@ -3369,7 +3347,7 @@ unsafe fn tty_colours_bg(mut tty: *mut tty, mut gc: *const grid_cell) {
                 &mut s,
                 format_args!("\x1B[{}m", ((*gc).bg + 10 as ::core::ffi::c_int) as i32),
             );
-            tty_puts(tty, &raw mut s as *mut ::core::ffi::c_char);
+            tty_puts(tty, std::ffi::CStr::from_ptr(s.as_ptr()));
         } else {
             tty_putcode_i(
                 tty,
