@@ -807,7 +807,7 @@ unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     gd = (*wp).base.grid;
-    return format_grid_word_cstring(gd, x, (*gd).hsize.wrapping_add(y));
+    return format_grid_word_cstring(&*gd, x, (*gd).hsize.wrapping_add(y));
 }
 unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -842,7 +842,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
         return None;
     }
     gd = (*wp).base.grid;
-    return format_grid_hyperlink_cstring(gd, x, (*gd).hsize.wrapping_add(y), (*wp).screen);
+    return format_grid_hyperlink_cstring(&*gd, x, (*gd).hsize.wrapping_add(y), &*(*wp).screen);
 }
 unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -877,7 +877,7 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     gd = (*wp).base.grid;
-    return format_grid_line_cstring(gd, (*gd).hsize.wrapping_add(y));
+    return format_grid_line_cstring(&*gd, (*gd).hsize.wrapping_add(y));
 }
 unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CString> {
     let mut value = None;

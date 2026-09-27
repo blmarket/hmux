@@ -514,11 +514,11 @@ fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
     }
     gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int && gc.data.data[0] == b' '
 }
-pub unsafe fn format_grid_word(gd: *mut grid, x: u_int, y: u_int) -> Option<CString> {
+pub unsafe fn format_grid_word(gd: &grid, x: u_int, y: u_int) -> Option<CString> {
     format_grid_word_cstring(gd, x, y)
 }
 pub(crate) unsafe fn format_grid_word_cstring(
-    mut gd: *mut grid,
+    gd: &grid,
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
@@ -546,7 +546,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     ));
     loop {
-        grid_get_cell(&*gd, x, y, &mut gc);
+        grid_get_cell(gd, x, y, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
             && format_is_word_separator(ws, &gc)
         {
@@ -557,12 +557,12 @@ pub(crate) unsafe fn format_grid_word_cstring(
                 if y == 0 as u_int {
                     break;
                 }
-                let gl = grid_peek_line(&*gd, y.wrapping_sub(1 as u_int))?;
+                let gl = grid_peek_line(gd, y.wrapping_sub(1 as u_int))?;
                 if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
                 y = y.wrapping_sub(1);
-                x = grid_line_length(&*gd, y);
+                x = grid_line_length(gd, y);
                 if x == 0 as u_int {
                     break;
                 }
@@ -572,12 +572,12 @@ pub(crate) unsafe fn format_grid_word_cstring(
     }
     loop {
         if found != 0 {
-            end = grid_line_length(&*gd, y);
+            end = grid_line_length(gd, y);
             if end == 0 as u_int || x == end.wrapping_sub(1 as u_int) {
-                if y == (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
+                if y == gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
                     break;
                 }
-                let gl = grid_peek_line(&*gd, y)?;
+                let gl = grid_peek_line(gd, y)?;
                 if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
@@ -588,7 +588,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
             }
         }
         found = 1 as ::core::ffi::c_int;
-        grid_get_cell(&*gd, x, y, &mut gc);
+        grid_get_cell(gd, x, y, &mut gc);
         if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
             continue;
         }
@@ -608,10 +608,10 @@ pub(crate) unsafe fn format_grid_word_cstring(
     }
     return s;
 }
-pub unsafe fn format_grid_line(gd: *mut grid, y: u_int) -> Option<CString> {
+pub unsafe fn format_grid_line(gd: &grid, y: u_int) -> Option<CString> {
     format_grid_line_cstring(gd, y)
 }
-pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -> Option<CString> {
+pub(crate) unsafe fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option<CString> {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -630,8 +630,8 @@ pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -
     let mut x: u_int = 0;
     let mut s = None;
     x = 0 as u_int;
-    while x < grid_line_length(&*gd, y) {
-        grid_get_cell(&*gd, x, y, &mut gc);
+    while x < grid_line_length(gd, y) {
+        grid_get_cell(gd, x, y, &mut gc);
         if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 let mut tab = gc.data;
@@ -656,10 +656,10 @@ pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -
     return s;
 }
 pub(crate) unsafe fn format_grid_hyperlink_cstring(
-    mut gd: *mut grid,
+    gd: &grid,
     mut x: u_int,
     mut y: u_int,
-    mut s: *mut screen,
+    s: &screen,
 ) -> Option<CString> {
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut gc: grid_cell = grid_cell {
@@ -677,7 +677,7 @@ pub(crate) unsafe fn format_grid_hyperlink_cstring(
         link: 0,
     };
     loop {
-        grid_get_cell(&*gd, x, y, &mut gc);
+        grid_get_cell(gd, x, y, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
@@ -686,11 +686,11 @@ pub(crate) unsafe fn format_grid_hyperlink_cstring(
         }
         x = x.wrapping_sub(1);
     }
-    if (*s).hyperlinks.is_null() || gc.link == 0 as u_int {
+    if s.hyperlinks.is_null() || gc.link == 0 as u_int {
         return None;
     }
     if hyperlinks_get(
-        (*s).hyperlinks,
+        s.hyperlinks,
         gc.link,
         &raw mut uri,
         ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),

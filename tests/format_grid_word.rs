@@ -45,11 +45,11 @@ fn grid_word_collects_wide_cells_and_returns_owned_strings() {
         cell.data.data[0] = b' ';
         grid_set_cell(gd, 6, 0, &cell);
 
-        let first = format_grid_word(gd, 1, 0).unwrap();
-        let second = format_grid_word(gd, 3, 0).unwrap();
+        let first = format_grid_word(&*gd, 1, 0).unwrap();
+        let second = format_grid_word(&*gd, 3, 0).unwrap();
         assert_eq!(first.as_bytes(), b"Hi");
         assert_eq!(second.as_bytes(), "漢Z".as_bytes());
-        assert!(format_grid_word(gd, 6, 0).is_none());
+        assert!(format_grid_word(&*gd, 6, 0).is_none());
 
         grid_destroy(gd);
         global_s_options = saved_s_options;

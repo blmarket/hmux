@@ -12,7 +12,7 @@ fn grid_line_converts_cells_and_returns_an_owned_string() {
     unsafe {
         let gd = grid_create(8, 2, 0);
         assert!(!gd.is_null());
-        assert!(format_grid_line(gd, 0).is_none());
+        assert!(format_grid_line(&*gd, 0).is_none());
 
         let mut cell = grid_default_cell;
         cell.data.data[0] = b'A';
@@ -36,7 +36,7 @@ fn grid_line_converts_cells_and_returns_an_owned_string() {
         cell.data.width = 1;
         grid_set_cell(gd, 4, 0, &cell);
 
-        let result = format_grid_line(gd, 0).unwrap();
+        let result = format_grid_line(&*gd, 0).unwrap();
         assert_eq!(result.as_bytes(), "A\t漢Z".as_bytes());
         grid_destroy(gd);
         // The returned allocation must remain valid after the grid is gone.

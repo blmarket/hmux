@@ -1085,7 +1085,7 @@ pub(crate) unsafe fn window_copy_get_word_cstring(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*(*data).backing).grid;
     return crate::src::format::format_grid_word_cstring(
-        gd,
+        &*gd,
         x,
         (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
     );
@@ -1098,7 +1098,7 @@ pub(crate) unsafe fn window_copy_get_line_cstring(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*(*data).backing).grid;
     return crate::src::format::format_grid_line_cstring(
-        gd,
+        &*gd,
         (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
     );
 }
@@ -1111,10 +1111,10 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid;
     return crate::src::format::format_grid_hyperlink_cstring(
-        gd,
+        &*gd,
         x,
         (*gd).hsize.wrapping_add(y),
-        (*wp).screen,
+        &*(*wp).screen,
     );
 }
 unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {
@@ -1123,10 +1123,10 @@ unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CS
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid;
     return format_grid_hyperlink_cstring(
-        gd,
+        &*gd,
         (*data).cx,
         (*gd).hsize.wrapping_add((*data).cy),
-        &raw mut (*data).screen,
+        &(*data).screen,
     );
 }
 unsafe fn window_copy_cursor_word_cb(mut ft: *mut format_tree) -> Option<CString> {
