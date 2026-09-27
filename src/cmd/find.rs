@@ -374,13 +374,13 @@ unsafe fn cmd_find_get_session(
         log_cstr((session) as *const _)
     ));
     if *session as ::core::ffi::c_int == '$' as i32 {
-        (*fs).s = session_find_by_id_str(session);
+        (*fs).s = session_find_by_id_str(session).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         if (*fs).s.is_null() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
     }
-    (*fs).s = session_find(session);
+    (*fs).s = session_find(session).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !(*fs).s.is_null() {
         return 0 as ::core::ffi::c_int;
     }

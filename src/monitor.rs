@@ -68,7 +68,7 @@ unsafe fn monitor_get_session(ms: *mut monitor_set, c: *mut client) -> Option<Rc
         let s = (*ms).session.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
         if s.is_null() {
             sessions_minmax(&*std::ptr::addr_of!(sessions))
-        } else if session_find_by_id((*s).id) == s {
+        } else if session_find_by_id((*s).id).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr) == s {
             s
         } else {
             return None;

@@ -64,15 +64,10 @@ pub(crate) fn session_replace_name(s: &mut session, name: CString) -> CString {
 pub(crate) fn sessions_key(elm: &session) -> Vec<u8> {
     elm.name.as_bytes().to_vec()
 }
-pub fn sessions_find(head: &sessions, elm: &session) -> *mut session {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    let key = elm.name.as_bytes();
-    map.get(key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+pub fn sessions_find(head: &sessions, elm: &session) -> Option<Rc<UnsafeCell<session>>> {
+    let owner = head.storage.as_ref()?;
+    let map = owner.try_borrow_mut().expect("session index already borrowed");
+    map.get(elm.name.as_bytes()).cloned()
 }
 pub unsafe fn sessions_insert(head: *mut sessions, session: Rc<UnsafeCell<session>>) -> *mut session {
     let elm = crate::src::shared::rc::as_ptr(&session);
@@ -267,49 +262,16 @@ pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session {
-    let mut s: session = session {
-        observer: std::rc::Weak::new(),
-        id: 0,
-        name: Default::default(),
-        cwd: Default::default(),
-        creation_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        last_attached_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        activity_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        last_activity_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        lock_timer: event::default(),
-        curw: ::core::ptr::null_mut::<winlink>(),
-        lastw: winlink_stack { storage: None },
-        windows: winlinks { storage: None },
-        statusat: 0,
-        statuslines: 0,
-        options: None,
-        flags: 0,
-        attached: 0,
-        tio: None,
-        environ: None,
-        entry: session_entry { owner: None },
-    };
-    s.name = ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned();
-    return sessions_find(&*std::ptr::addr_of!(sessions), &s);
+pub unsafe fn session_find(name: *const ::core::ffi::c_char) -> Option<Rc<UnsafeCell<session>>> {
+    let index = (*std::ptr::addr_of!(sessions)).storage.as_ref()?;
+    let map = index.try_borrow_mut().expect("session index already borrowed");
+    map.get(CStr::from_ptr(name).to_bytes()).cloned()
 }
-pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut session {
+pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<Rc<UnsafeCell<session>>> {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut id: u_int = 0;
     if *s as ::core::ffi::c_int != '$' as i32 {
-        return ::core::ptr::null_mut::<session>();
+        return None;
     }
     id = strtonum(
         s.offset(1 as ::core::ffi::c_int as isize),
@@ -318,20 +280,20 @@ pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut 
         &raw mut errstr,
     ) as u_int;
     if !errstr.is_null() {
-        return ::core::ptr::null_mut::<session>();
+        return None;
     }
     return session_find_by_id(id);
 }
-pub unsafe fn session_find_by_id(mut id: u_int) -> *mut session {
+pub unsafe fn session_find_by_id(mut id: u_int) -> Option<Rc<UnsafeCell<session>>> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     s = sessions_minmax(&*std::ptr::addr_of!(sessions));
     while !s.is_null() {
         if (*s).id == id {
-            return s;
+            return (*s).observer.upgrade();
         }
         s = sessions_next(&*s);
     }
-    return ::core::ptr::null_mut::<session>();
+    return None;
 }
 pub unsafe fn session_create(
     mut prefix: *const ::core::ffi::c_char,
@@ -386,7 +348,7 @@ pub unsafe fn session_create(
                 &mut *s,
                 CString::new(generated).expect("generated name has no NUL"),
             ));
-            if sessions_find(&*std::ptr::addr_of!(sessions), &*s).is_null() {
+            if sessions_find(&*std::ptr::addr_of!(sessions), &*s).is_none() {
                 break;
             }
         }

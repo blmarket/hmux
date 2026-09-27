@@ -160,8 +160,8 @@ unsafe fn window_panes_get_source(
     if w.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    s = session_find_by_id((*data).source_session);
-    let next_owner = if s.is_null() { None } else { (*s).observer.upgrade() };
+    let next_owner = session_find_by_id((*data).source_session);
+    s = next_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     if let Some(owner) = std::mem::replace(session_owner, next_owner) {
         session_remove_ref(owner, c"window_panes_get_source");
     }

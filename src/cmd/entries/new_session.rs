@@ -248,7 +248,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         10043043949733653460 => {
             if args_has(args, 'A' as i32 as u_char) != 0 {
                 if !sname.is_null() {
-                    as_0 = session_find(sname);
+                    as_0 = session_find(sname).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
                 } else {
                     as_0 = (*target).s;
                 }
@@ -266,7 +266,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     return retval;
                 }
             }
-            if !sname.is_null() && !session_find(sname).is_null() {
+            if !sname.is_null() && !session_find(sname).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
                 cmdq_error(item, |out| {
                     out.write_all(b"duplicate session: ")?;
                     write_cstr(out, sname)

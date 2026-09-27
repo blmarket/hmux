@@ -303,7 +303,7 @@ unsafe fn window_tree_pull_item(
 ) {
     *wp = ::core::ptr::null_mut::<window_pane>();
     *wlp = ::core::ptr::null_mut::<winlink>();
-    *sp = session_find_by_id(item.session as u_int);
+    *sp = session_find_by_id(item.session as u_int).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if (*sp).is_null() {
         return;
     }

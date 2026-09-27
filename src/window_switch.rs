@@ -579,7 +579,7 @@ unsafe fn window_switch_run_command(
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
-            s = session_find_by_id((*item).session as u_int);
+            s = session_find_by_id((*item).session as u_int).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
             if !s.is_null() {
                 let mut bytes = Vec::from(b"=".as_slice());
                 bytes.extend_from_slice((*s).name.as_bytes());
@@ -589,7 +589,7 @@ unsafe fn window_switch_run_command(
             }
         }
         1 => {
-            s = session_find_by_id((*item).session as u_int);
+            s = session_find_by_id((*item).session as u_int).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
             if !s.is_null() {
                 wl = winlink_find_by_index(&raw mut (*s).windows, (*item).winlink);
                 if !s.is_null() && !wl.is_null() {

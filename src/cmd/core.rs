@@ -610,7 +610,7 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut sessio
         return ::core::ptr::null_mut::<winlink>();
     }
     if (*m).s == -(1 as ::core::ffi::c_int) || {
-        s = session_find_by_id((*m).s as u_int);
+        s = session_find_by_id((*m).s as u_int).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         s.is_null()
     } {
         return ::core::ptr::null_mut::<winlink>();

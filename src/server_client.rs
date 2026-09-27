@@ -2102,7 +2102,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 5 => {
-                    fs = session_find_by_id((*sr).argument);
+                    fs = session_find_by_id((*sr).argument).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
                     if fs.is_null() {
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
