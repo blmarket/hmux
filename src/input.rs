@@ -3510,7 +3510,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 0 as ::core::ffi::c_int,
             );
             if !(n == -(1 as ::core::ffi::c_int)) {
-                screen_set_cursor_style(n as u_int, &raw mut (*s).cstyle, &raw mut (*s).mode);
+                screen_set_cursor_style(n as u_int, &mut (*s).cstyle, &mut (*s).mode);
                 if n == 0 as ::core::ffi::c_int {
                     screen_write_mode_clear(sctx, MODE_CURSOR_BLINKING_SET);
                 }
@@ -4986,7 +4986,7 @@ unsafe fn input_set_progress_bar(
     mut state: progress_bar_state,
     mut p: ::core::ffi::c_int,
 ) {
-    screen_set_progress_bar((*ictx).ctx.s, state, p);
+    screen_set_progress_bar(&mut *(*ictx).ctx.s, state, p);
     if !(*ictx).wp.is_null() {
         server_redraw_window_borders((*(*ictx).wp).window as *mut window);
         server_status_window((*(*ictx).wp).window as *mut window);
@@ -5194,11 +5194,11 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         log_debug(format_args!("bad OSC 12: {}", log_cstr((p) as *const _)));
         return;
     }
-    screen_set_cursor_colour((*ictx).ctx.s, c);
+    screen_set_cursor_colour(&mut *(*ictx).ctx.s, c);
 }
 unsafe fn input_osc_112(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     if *p as ::core::ffi::c_int == '\0' as i32 {
-        screen_set_cursor_colour((*ictx).ctx.s, -(1 as ::core::ffi::c_int));
+        screen_set_cursor_colour(&mut *(*ictx).ctx.s, -(1 as ::core::ffi::c_int));
     }
 }
 unsafe fn input_osc_133_exit_status(p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {

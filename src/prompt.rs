@@ -227,15 +227,15 @@ pub unsafe fn prompt_set_options(mut pd: *mut prompt_create_data, mut s: *mut se
         oo,
         b"prompt-cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    screen_set_cursor_style(n, &raw mut (*pd).cstyle, &raw mut (*pd).cmode);
+    screen_set_cursor_style(n, &mut (*pd).cstyle, &mut (*pd).cmode);
     n = options_get_number(
         oo,
         b"prompt-command-cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     screen_set_cursor_style(
         n,
-        &raw mut (*pd).command_cstyle,
-        &raw mut (*pd).command_cmode,
+        &mut (*pd).command_cstyle,
+        &mut (*pd).command_cmode,
     );
     style_apply(
         &raw mut gc,

@@ -84,7 +84,7 @@ pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
     grid_clear_lines((*s).grid_mut(), hsize, sy, 8);
     screen_clear_selection(&mut *s);
     screen_free_titles(s);
-    screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
+    screen_set_progress_bar(&mut *s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
     screen_reset_hyperlinks(s);
 }
 pub unsafe fn screen_reset_hyperlinks(mut s: *mut screen) {
@@ -181,14 +181,14 @@ pub unsafe fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options
     (*s).default_mode = 0 as ::core::ffi::c_int;
     screen_set_cursor_style(
         c as u_int,
-        &raw mut (*s).default_cstyle,
-        &raw mut (*s).default_mode,
+        &mut (*s).default_cstyle,
+        &mut (*s).default_mode,
     );
 }
-pub unsafe fn screen_set_cursor_style(
-    mut style: u_int,
-    mut cstyle: *mut screen_cursor_style,
-    mut mode: *mut ::core::ffi::c_int,
+pub fn screen_set_cursor_style(
+    style: u_int,
+    cstyle: &mut screen_cursor_style,
+    mode: &mut ::core::ffi::c_int,
 ) {
     match style {
         0 => {
@@ -221,8 +221,8 @@ pub unsafe fn screen_set_cursor_style(
         _ => {}
     };
 }
-pub unsafe fn screen_set_cursor_colour(mut s: *mut screen, mut colour: ::core::ffi::c_int) {
-    (*s).ccolour = colour;
+pub fn screen_set_cursor_colour(s: &mut screen, colour: ::core::ffi::c_int) {
+    s.ccolour = colour;
 }
 pub unsafe fn screen_set_title(
     mut s: *mut screen,
@@ -272,17 +272,13 @@ pub unsafe fn screen_pop_title(mut s: *mut screen) {
         (*s).title = title;
     }
 }
-pub unsafe fn screen_set_progress_bar(
-    mut s: *mut screen,
-    mut pbs: progress_bar_state,
-    mut p: ::core::ffi::c_int,
-) {
-    (*s).progress_bar.state = pbs;
+pub fn screen_set_progress_bar(s: &mut screen, pbs: progress_bar_state, p: ::core::ffi::c_int) {
+    s.progress_bar.state = pbs;
     if p >= 0 as ::core::ffi::c_int
         && pbs as ::core::ffi::c_uint
             != PROGRESS_BAR_INDETERMINATE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        (*s).progress_bar.progress = p;
+        s.progress_bar.progress = p;
     }
 }
 pub unsafe fn screen_resize_cursor(
