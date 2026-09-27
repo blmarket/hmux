@@ -33,7 +33,9 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
+use crate::src::shared::mode_tree::{
+    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemData,
+};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
@@ -52,6 +54,7 @@ use crate::src::spawn::{
 };
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -65,7 +68,7 @@ pub struct window_buffer_modedata {
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
-    item_list: Vec<Box<window_buffer_itemdata>>,
+    item_list: Vec<Rc<UnsafeCell<window_buffer_itemdata>>>,
 }
 #[repr(C)]
 pub struct window_buffer_itemdata {
@@ -73,9 +76,6 @@ pub struct window_buffer_itemdata {
     pub order: u_int,
     pub size: size_t,
 }
-
-// The mode tree borrows `item` during callbacks. The box keeps its address
-// stable as the list grows, and owns the edit name for the callback lifetime.
 
 #[repr(C)]
 pub struct window_buffer_editdata {
@@ -192,21 +192,19 @@ pub static mut window_buffer_mode: window_mode = {
 };
 static window_buffer_order_seq: [sort_order; 3] = [SORT_CREATION, SORT_NAME, SORT_SIZE];
 fn window_buffer_add_item(
-    items: &mut Vec<Box<window_buffer_itemdata>>,
+    items: &mut Vec<Rc<UnsafeCell<window_buffer_itemdata>>>,
     name: &CStr,
-) -> *mut window_buffer_itemdata {
-    let name = name.to_owned();
-    let mut owned = Box::new(window_buffer_itemdata {
-        name: name,
+) -> Rc<UnsafeCell<window_buffer_itemdata>> {
+    let item = Rc::new(UnsafeCell::new(window_buffer_itemdata {
+        name: name.to_owned(),
         order: 0,
         size: 0,
-    });
-    let item = &mut *owned as *mut window_buffer_itemdata;
-    items.push(owned);
+    }));
+    items.push(Rc::clone(&item));
     item
 }
 
-fn window_buffer_clear_items(items: &mut Vec<Box<window_buffer_itemdata>>) {
+fn window_buffer_clear_items(items: &mut Vec<Rc<UnsafeCell<window_buffer_itemdata>>>) {
     for item in items.drain(..) {
         drop(item);
     }
@@ -228,7 +226,8 @@ unsafe fn window_buffer_build(
     for pb in buffers {
         let buffer = pb.borrow();
         let name = paste_buffer_name(&buffer);
-        item = window_buffer_add_item(&mut (*data).item_list, name);
+        let item_owner = window_buffer_add_item(&mut (*data).item_list, name);
+        item = item_owner.get();
         (*item).size = buffer.size;
         (*item).order = paste_buffer_order(&buffer);
     }
@@ -240,10 +239,8 @@ unsafe fn window_buffer_build(
     let mut current_block_32: u64;
     i = 0 as u_int;
     while (i as usize) < (*data).item_list.len() {
-        item = {
-            let items = &mut (*data).item_list;
-            &mut *items[i as usize] as *mut window_buffer_itemdata
-        };
+        let item_owner = Rc::clone(&(&(*data).item_list)[i as usize]);
+        item = item_owner.get();
         if let Some(pb) = paste_get_name(&(*item).name) {
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
@@ -271,7 +268,7 @@ unsafe fn window_buffer_build(
                     mode_tree_add(
                         (*data).data,
                         None,
-                        item as *mut ::core::ffi::c_void,
+                        ModeTreeItemData::Buffer(Rc::clone(&item_owner)),
                         (*item).order as uint64_t,
                         &(*item).name,
                         Some(&text),
@@ -285,12 +282,11 @@ unsafe fn window_buffer_build(
     }
 }
 unsafe fn window_buffer_draw(
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut ctx: *mut screen_write_ctx,
+    item: &window_buffer_itemdata,
+    ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let item = &*(itemdata as *const window_buffer_itemdata);
     let cx = (*(*ctx).s).cx;
     let cy = (*(*ctx).s).cy;
     let Some(pb) = paste_get_name(&item.name) else {
@@ -378,11 +374,10 @@ unsafe fn window_buffer_menu(
 }
 unsafe fn window_buffer_get_key(
     mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    item: &window_buffer_itemdata,
     mut line: u_int,
 ) -> key_code {
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -499,21 +494,23 @@ unsafe fn window_buffer_init(
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
-            window_buffer_draw(itemdata, ctx as *mut screen_write_ctx, sx, sy)
+            let item_owner = itemdata.as_buffer().expect("buffer row payload");
+            let item = &*item_owner.get();
+            window_buffer_draw(item, ctx, sx, sy)
         })),
         Some(Box::new(move |itemdata, search, icase| {
-            window_buffer_search(&*(itemdata as *const window_buffer_itemdata), search, icase)
+            let item_owner = itemdata.as_buffer().expect("buffer row payload");
+            let item = &*item_owner.get();
+            window_buffer_search(item, search, icase)
         })),
         Some(Box::new(move |client, key| {
-            window_buffer_menu(
-                data_handle.as_ptr().cast(),
-                client,
-                key,
-            )
+            window_buffer_menu(data_handle.as_ptr().cast(), client, key)
         })),
         None,
         Some(Box::new(move |itemdata, line| {
-            window_buffer_get_key(data_handle.as_ptr().cast(), itemdata, line)
+            let item_owner = itemdata.as_buffer().expect("buffer row payload");
+            let item = &*item_owner.get();
+            window_buffer_get_key(data_handle.as_ptr().cast(), item, line)
         })),
         None,
         Some(window_buffer_sort),
@@ -554,7 +551,10 @@ unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     mut item: *mut window_buffer_itemdata,
 ) {
-    if item == mode_tree_get_current((*data).data) as *mut window_buffer_itemdata
+    if item
+        == mode_tree_get_current(&*(*data).data)
+            .as_buffer()
+            .map_or(std::ptr::null_mut(), |item| item.get())
         && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
@@ -817,11 +817,17 @@ unsafe fn window_buffer_key(
         );
         match key {
             101 => {
-                item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
+                let item_owner = mode_tree_get_current(&*mtd);
+                item = item_owner
+                    .as_buffer()
+                    .map_or(std::ptr::null_mut(), |item| item.get());
                 window_buffer_start_edit(data, item, c);
             }
             100 => {
-                item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
+                let item_owner = mode_tree_get_current(&*mtd);
+                item = item_owner
+                    .as_buffer()
+                    .map_or(std::ptr::null_mut(), |item| item.get());
                 window_buffer_do_delete(data, item);
                 mode_tree_build(mtd);
             }
@@ -829,8 +835,13 @@ unsafe fn window_buffer_key(
                 mode_tree_each_tagged(
                     mtd,
                     |row, _, _| unsafe {
-                        let itemdata = row.borrow().itemdata;
-                        window_buffer_do_delete(data, itemdata.cast())
+                        let itemdata = row.borrow().itemdata.clone();
+                        window_buffer_do_delete(
+                            data,
+                            itemdata
+                                .as_buffer()
+                                .map_or(std::ptr::null_mut(), |item| item.get()),
+                        )
                     },
                     c,
                     key,
@@ -842,8 +853,14 @@ unsafe fn window_buffer_key(
                 mode_tree_each_tagged(
                     mtd,
                     |row, c, _| unsafe {
-                        let itemdata = row.borrow().itemdata;
-                        window_buffer_do_paste(data, itemdata.cast(), c)
+                        let itemdata = row.borrow().itemdata.clone();
+                        window_buffer_do_paste(
+                            data,
+                            itemdata
+                                .as_buffer()
+                                .map_or(std::ptr::null_mut(), |item| item.get()),
+                            c,
+                        )
                     },
                     c,
                     key,
@@ -852,7 +869,10 @@ unsafe fn window_buffer_key(
                 finished = 1 as ::core::ffi::c_int;
             }
             112 | 13 => {
-                item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
+                let item_owner = mode_tree_get_current(&*mtd);
+                item = item_owner
+                    .as_buffer()
+                    .map_or(std::ptr::null_mut(), |item| item.get());
                 window_buffer_do_paste(data, item, c);
                 finished = 1 as ::core::ffi::c_int;
             }
@@ -908,7 +928,8 @@ mod tests {
         let mut items = Vec::new();
         let source = CString::new(b"\xffbuffer".to_vec()).unwrap();
         let first = window_buffer_add_item(&mut items, &source);
-        let first_name = unsafe { ((*first).name).as_ptr().cast_mut() };
+        let first_name = unsafe { (*first.get()).name.as_ptr() };
+        let observer = Rc::downgrade(&first);
         drop(source);
 
         let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
@@ -917,18 +938,19 @@ mod tests {
             window_buffer_add_item(&mut items, empty);
         }
 
-        assert_eq!(first, &mut *items[0] as *mut window_buffer_itemdata);
+        assert!(Rc::ptr_eq(&first, &items[0]));
         assert_eq!(
             unsafe { CStr::from_ptr(first_name).to_bytes() },
             b"\xffbuffer"
         );
-        assert_eq!(unsafe { ((*first).name).as_ptr().cast_mut() }, first_name);
-        assert_eq!(
-            unsafe { (*empty_item).name.as_bytes() },
-            b""
-        );
+        assert_eq!(unsafe { (*first.get()).name.as_ptr() }, first_name);
+        assert_eq!(unsafe { (*empty_item.get()).name.as_bytes() }, b"");
 
         window_buffer_clear_items(&mut items);
         assert!(items.is_empty());
+        assert_eq!(unsafe { (*first.get()).name.as_bytes() }, b"\xffbuffer");
+        assert!(observer.upgrade().is_some());
+        drop(first);
+        assert!(observer.upgrade().is_none());
     }
 }

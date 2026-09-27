@@ -9,6 +9,10 @@ use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result, PromptRef}
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
+use crate::src::window_buffer::window_buffer_itemdata;
+use crate::src::window_client::window_client_itemdata;
+use crate::src::window_customize::window_customize_itemdata;
+use crate::src::window_tree::window_tree_itemdata;
 use std::cell::{RefCell, UnsafeCell};
 use std::rc::{Rc, Weak};
 
@@ -128,6 +132,46 @@ pub type mode_tree_prompt_input_cb = Option<
     >,
 >;
 
+/// Each row keeps its mode-specific record alive across rebuilds and callbacks.
+/// Category rows have no payload. UnsafeCell bridges the remaining translated
+/// mode code while the row and list share the original heap allocation.
+#[derive(Clone, Default)]
+pub enum ModeTreeItemData {
+    #[default]
+    None,
+    Buffer(Rc<UnsafeCell<window_buffer_itemdata>>),
+    Client(Rc<UnsafeCell<window_client_itemdata>>),
+    Customize(Rc<UnsafeCell<window_customize_itemdata>>),
+    Tree(Rc<UnsafeCell<window_tree_itemdata>>),
+}
+
+impl ModeTreeItemData {
+    pub fn as_buffer(&self) -> Option<&Rc<UnsafeCell<window_buffer_itemdata>>> {
+        match self {
+            Self::Buffer(item) => Some(item),
+            _ => None,
+        }
+    }
+    pub fn as_client(&self) -> Option<&Rc<UnsafeCell<window_client_itemdata>>> {
+        match self {
+            Self::Client(item) => Some(item),
+            _ => None,
+        }
+    }
+    pub fn as_customize(&self) -> Option<&Rc<UnsafeCell<window_customize_itemdata>>> {
+        match self {
+            Self::Customize(item) => Some(item),
+            _ => None,
+        }
+    }
+    pub fn as_tree(&self) -> Option<&Rc<UnsafeCell<window_tree_itemdata>>> {
+        match self {
+            Self::Tree(item) => Some(item),
+            _ => None,
+        }
+    }
+}
+
 pub type ModeTreeItemRef = Rc<RefCell<mode_tree_item>>;
 pub type ModeTreeItemWeak = Weak<RefCell<mode_tree_item>>;
 
@@ -141,7 +185,7 @@ pub struct mode_tree_line {
 
 pub struct mode_tree_item {
     pub parent: ModeTreeItemWeak,
-    pub itemdata: *mut ::core::ffi::c_void,
+    pub itemdata: ModeTreeItemData,
     pub line: u_int,
     pub key: key_code,
     pub keystr: Option<std::ffi::CString>,
@@ -218,21 +262,20 @@ pub type mode_tree_help_cb = Option<fn() -> mode_tree_help_info>;
 
 pub type mode_tree_sort_cb = Option<fn(&mut sort_criteria)>;
 
-pub type mode_tree_swap_cb = Option<
-    Box<dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool>,
->;
+pub type mode_tree_swap_cb =
+    Option<Box<dyn FnMut(&ModeTreeItemData, &ModeTreeItemData, &mut sort_criteria) -> bool>>;
 
-pub type mode_tree_key_cb = Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>>;
+pub type mode_tree_key_cb = Option<Box<dyn FnMut(&ModeTreeItemData, u_int) -> key_code>>;
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
 
 pub type mode_tree_menu_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, key_code)>>;
 
 pub type mode_tree_search_cb =
-    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &std::ffi::CStr, bool) -> bool>>;
+    Option<Box<dyn FnMut(&ModeTreeItemData, &std::ffi::CStr, bool) -> bool>>;
 
 pub type mode_tree_draw_cb =
-    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>>;
+    Option<Box<dyn FnMut(&ModeTreeItemData, &mut screen_write_ctx, u_int, u_int)>>;
 
 pub type mode_tree_build_cb = Option<
     Box<

@@ -1,7 +1,9 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
@@ -67,7 +69,8 @@ use crate::src::shared::layout::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemRef,
+    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
+    ModeTreeItemRef,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
@@ -117,7 +120,7 @@ pub struct window_customize_modedata {
     pub hide_global: ::core::ffi::c_int,
     pub hide_default: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
-    item_list: Vec<Box<window_customize_itemdata>>,
+    item_list: Vec<Rc<UnsafeCell<window_customize_itemdata>>>,
     pub fs: cmd_find_state,
     pub change: window_customize_change,
 }
@@ -520,11 +523,10 @@ unsafe fn window_customize_write_hook_fire(
     );
 }
 unsafe fn window_customize_add_item(
-    mut data: *mut window_customize_modedata,
-) -> *mut window_customize_itemdata {
-    let mut owner = Box::new(window_customize_itemdata::new());
-    let item = &mut *owner as *mut window_customize_itemdata;
-    (*data).item_list.push(owner);
+    data: *mut window_customize_modedata,
+) -> Rc<UnsafeCell<window_customize_itemdata>> {
+    let item = Rc::new(UnsafeCell::new(window_customize_itemdata::new()));
+    (*data).item_list.push(Rc::clone(&item));
     item
 }
 unsafe fn window_customize_write_value(
@@ -998,7 +1000,8 @@ unsafe fn window_customize_build_array(
                 b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
                 |out| write_cstr(out, value.as_ptr()),
             );
-            item = window_customize_add_item(data);
+            let item_owner = window_customize_add_item(data);
+            item = item_owner.get();
             (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
             if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
                 (*item).option_type = WINDOW_CUSTOMIZE_HOOKS;
@@ -1018,7 +1021,7 @@ unsafe fn window_customize_build_array(
             mode_tree_add(
                 (*data).data,
                 Some(top),
-                item as *mut ::core::ffi::c_void,
+                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
                 window_customize_get_tag(o, ai, oe),
                 &name,
                 Some(&text),
@@ -1179,7 +1182,8 @@ unsafe fn window_customize_build_option(
             return 0 as u_int;
         }
     }
-    item = window_customize_add_item(data);
+    let item_owner = window_customize_add_item(data);
+    item = item_owner.get();
     (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
     (*item).option_type = type_0;
     (*item).oo = oo;
@@ -1189,7 +1193,7 @@ unsafe fn window_customize_build_option(
     let top = mode_tree_add(
         (*data).data,
         Some(top),
-        item as *mut ::core::ffi::c_void,
+        ModeTreeItemData::Customize(Rc::clone(&item_owner)),
         window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
         CStr::from_ptr(name),
         text.as_deref(),
@@ -1235,7 +1239,7 @@ unsafe fn window_customize_build_options(
     let top = mode_tree_add(
         (*data).data,
         None,
-        NULL,
+        ModeTreeItemData::None,
         window_customize_top_tag(group),
         CStr::from_ptr(title),
         None,
@@ -1325,7 +1329,7 @@ unsafe fn window_customize_build_keys(
     let top = mode_tree_add(
         (*data).data,
         None,
-        NULL,
+        ModeTreeItemData::None,
         window_customize_key_tag(kt.cast(), 0),
         &title,
         None,
@@ -1385,7 +1389,8 @@ unsafe fn window_customize_build_keys(
                     continue;
                 }
             }
-            item = window_customize_add_item(data);
+            let item_owner = window_customize_add_item(data);
+            item = item_owner.get();
             (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
             (*item).scope = WINDOW_CUSTOMIZE_KEY;
             window_customize_set_table(&mut *item, Some((*kt).name.as_c_str()));
@@ -1396,7 +1401,7 @@ unsafe fn window_customize_build_keys(
             let child = mode_tree_add(
                 (*data).data,
                 Some(&top),
-                item as *mut ::core::ffi::c_void,
+                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
                 window_customize_key_tag(bd.cast(), 0),
                 &expanded,
                 None,
@@ -1407,7 +1412,7 @@ unsafe fn window_customize_build_keys(
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
-                item as *mut ::core::ffi::c_void,
+                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
                 window_customize_key_tag(bd.cast(), 1),
                 c"Command",
                 Some(&text),
@@ -1431,7 +1436,7 @@ unsafe fn window_customize_build_keys(
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
-                item as *mut ::core::ffi::c_void,
+                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
                 window_customize_key_tag(bd.cast(), 2),
                 c"Note",
                 Some(&text),
@@ -1449,7 +1454,7 @@ unsafe fn window_customize_build_keys(
             let mti = mode_tree_add(
                 (*data).data,
                 Some(&child),
-                item as *mut ::core::ffi::c_void,
+                ModeTreeItemData::Customize(Rc::clone(&item_owner)),
                 window_customize_key_tag(bd.cast(), 3),
                 c"Repeat",
                 Some(&text),
@@ -1486,7 +1491,7 @@ unsafe fn window_customize_build_environment(
     let top = mode_tree_add(
         (*data).data,
         None,
-        NULL,
+        ModeTreeItemData::None,
         window_customize_top_tag(group),
         CStr::from_ptr(title),
         None,
@@ -1580,7 +1585,8 @@ unsafe fn window_customize_build_environment(
                 continue;
             }
         }
-        item = window_customize_add_item(data);
+        let item_owner = window_customize_add_item(data);
+        item = item_owner.get();
         (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
         (*item).scope = scope;
         (*item).environ = env;
@@ -1601,7 +1607,7 @@ unsafe fn window_customize_build_environment(
         mode_tree_add(
             (*data).data,
             Some(&top),
-            item as *mut ::core::ffi::c_void,
+            ModeTreeItemData::Customize(Rc::clone(&item_owner)),
             (2_u64 << 62) | envent as uint64_t,
             &name,
             text.as_deref(),
@@ -2795,16 +2801,13 @@ unsafe fn window_customize_draw_environment(
 }
 unsafe fn window_customize_draw(
     mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut ctx: *mut screen_write_ctx,
+    item: &Rc<UnsafeCell<window_customize_itemdata>>,
+    ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
-    if item.is_null() {
-        return;
-    }
+    let item = item.get();
     if (*item).type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -2908,21 +2911,14 @@ unsafe fn window_customize_init(
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
-            window_customize_draw(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                ctx as *mut screen_write_ctx,
-                sx,
-                sy,
-            )
+            let Some(item_owner) = itemdata.as_customize() else {
+                return;
+            };
+            window_customize_draw(data_handle.as_ptr().cast(), item_owner, ctx, sx, sy)
         })),
         None,
         Some(Box::new(move |client, key| {
-            window_customize_menu(
-                data_handle.as_ptr().cast(),
-                client,
-                key,
-            )
+            window_customize_menu(data_handle.as_ptr().cast(), client, key)
         })),
         Some(Box::new(move |_| window_customize_height())),
         None,
@@ -3938,7 +3934,11 @@ unsafe fn window_customize_unset_environment(
     {
         return;
     }
-    if item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata {
+    if item
+        == mode_tree_get_current(&*(*data).data)
+            .as_customize()
+            .map_or(std::ptr::null_mut(), |item| item.get())
+    {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
     environ_unset(
@@ -3968,7 +3968,10 @@ unsafe fn window_customize_unset_option(
         return;
     }
     if !(*item).array_key.is_none()
-        && item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata
+        && item
+            == mode_tree_get_current(&*(*data).data)
+                .as_customize()
+                .map_or(std::ptr::null_mut(), |item| item.get())
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
@@ -4302,7 +4305,11 @@ unsafe fn window_customize_unset_key(
     if item.is_null() || window_customize_get_key(item, &raw mut kt, &raw mut bd) == 0 {
         return;
     }
-    if item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata {
+    if item
+        == mode_tree_get_current(&*(*data).data)
+            .as_customize()
+            .map_or(std::ptr::null_mut(), |item| item.get())
+    {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
     key_bindings_remove(((*kt).name).as_ptr().cast_mut(), (*bd).key);
@@ -4321,7 +4328,11 @@ unsafe fn window_customize_reset_key(
     if !dd.is_null() && (*bd).cmdlist == (*dd).cmdlist {
         return;
     }
-    if dd.is_null() && item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata
+    if dd.is_null()
+        && item
+            == mode_tree_get_current(&*(*data).data)
+                .as_customize()
+                .map_or(std::ptr::null_mut(), |item| item.get())
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
@@ -4419,7 +4430,10 @@ unsafe fn window_customize_change_current_callback(
     {
         return PROMPT_CLOSE;
     }
-    item = mode_tree_get_current((*data).data) as *mut window_customize_itemdata;
+    let item_owner = mode_tree_get_current(&*(*data).data);
+    item = item_owner
+        .as_customize()
+        .map_or(std::ptr::null_mut(), |item| item.get());
     if item.is_null() {
         return PROMPT_CLOSE;
     }
@@ -4515,8 +4529,13 @@ unsafe fn window_customize_change_tagged_callback(
     mode_tree_each_tagged(
         (*data).data,
         |row, _, _| unsafe {
-            let itemdata = row.borrow().itemdata;
-            window_customize_change_each(data, itemdata.cast())
+            let itemdata = row.borrow().itemdata.clone();
+            window_customize_change_each(
+                data,
+                itemdata
+                    .as_customize()
+                    .map_or(std::ptr::null_mut(), |item| item.get()),
+            )
         },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
@@ -4637,7 +4656,10 @@ unsafe fn window_customize_key(
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut finished: ::core::ffi::c_int = 0;
     let mut tagged: u_int = 0;
-    item = mode_tree_get_current((*data).data) as *mut window_customize_itemdata;
+    let item_owner = mode_tree_get_current(&*(*data).data);
+    item = item_owner
+        .as_customize()
+        .map_or(std::ptr::null_mut(), |item| item.get());
     if !(*data).editor.is_null() {
         if key == 'q' as i32 as key_code
             || key == '\u{1b}' as i32 as key_code
@@ -4656,7 +4678,10 @@ unsafe fn window_customize_key(
             ::core::ptr::null_mut::<u_int>(),
             ::core::ptr::null_mut::<u_int>(),
         );
-        new_item = mode_tree_get_current((*data).data) as *mut window_customize_itemdata;
+        let new_item_owner = mode_tree_get_current(&*(*data).data);
+        new_item = new_item_owner
+            .as_customize()
+            .map_or(std::ptr::null_mut(), |item| item.get());
         if item != new_item {
             item = new_item;
         }
@@ -4991,7 +5016,9 @@ mod item_owner_tests {
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,
             });
-            let first = window_customize_add_item(data);
+            let first_owner = window_customize_add_item(data);
+            let first = first_owner.get();
+            let observer = Rc::downgrade(&first_owner);
             (*first).data = data;
             window_customize_set_name(&mut *first, Some(c"stable"));
             for _ in 0..128 {
@@ -4999,7 +5026,7 @@ mod item_owner_tests {
             }
             let first_address = {
                 let items = &mut (*data).item_list;
-                &mut *items[0] as *mut window_customize_itemdata
+                items[0].get()
             };
             assert_eq!(first_address, first);
             let detached = window_customize_copy_item(first);
@@ -5017,6 +5044,10 @@ mod item_owner_tests {
                 b"stable"
             );
             window_customize_free_item_callback(detached.cast());
+            assert_eq!((*first).name.as_deref(), Some(c"stable"));
+            assert!(observer.upgrade().is_some());
+            drop(first_owner);
+            assert!(observer.upgrade().is_none());
         }
     }
 }
