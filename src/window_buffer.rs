@@ -270,7 +270,7 @@ unsafe fn window_buffer_build(
                     let text = format_expand_cstring(ft, (*data).format.as_ptr());
                     mode_tree_add(
                         (*data).data,
-                        ::core::ptr::null_mut::<mode_tree_item>(),
+                        None,
                         item as *mut ::core::ffi::c_void,
                         (*item).order as uint64_t,
                         &(*item).name,
@@ -828,7 +828,10 @@ unsafe fn window_buffer_key(
             68 => {
                 mode_tree_each_tagged(
                     mtd,
-                    |row, _, _| unsafe { window_buffer_do_delete(data, (*row).itemdata.cast()) },
+                    |row, _, _| unsafe {
+                        let itemdata = row.borrow().itemdata;
+                        window_buffer_do_delete(data, itemdata.cast())
+                    },
                     c,
                     key,
                     0 as ::core::ffi::c_int,
@@ -838,7 +841,10 @@ unsafe fn window_buffer_key(
             80 => {
                 mode_tree_each_tagged(
                     mtd,
-                    |row, c, _| unsafe { window_buffer_do_paste(data, (*row).itemdata.cast(), c) },
+                    |row, c, _| unsafe {
+                        let itemdata = row.borrow().itemdata;
+                        window_buffer_do_paste(data, itemdata.cast(), c)
+                    },
                     c,
                     key,
                     0 as ::core::ffi::c_int,

@@ -67,7 +67,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_item, mode_tree_prompt_input_cb,
+    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemRef,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
@@ -964,7 +964,7 @@ unsafe fn window_customize_key_is_changed(
 }
 unsafe fn window_customize_build_array(
     mut data: *mut window_customize_modedata,
-    mut top: *mut mode_tree_item,
+    top: &ModeTreeItemRef,
     mut scope: window_customize_scope,
     mut o: *mut options_entry,
     mut ft: *mut format_tree,
@@ -1017,7 +1017,7 @@ unsafe fn window_customize_build_array(
             let text = format_expand_cstring(ft, (*data).format.as_ptr());
             mode_tree_add(
                 (*data).data,
-                top,
+                Some(top),
                 item as *mut ::core::ffi::c_void,
                 window_customize_get_tag(o, ai, oe),
                 &name,
@@ -1033,7 +1033,7 @@ unsafe fn window_customize_build_array(
 }
 unsafe fn window_customize_build_option(
     mut data: *mut window_customize_modedata,
-    mut top: *mut mode_tree_item,
+    top: &ModeTreeItemRef,
     mut scope: window_customize_scope,
     mut o: *mut options_entry,
     mut ft: *mut format_tree,
@@ -1186,19 +1186,19 @@ unsafe fn window_customize_build_option(
     (*item).scope = scope;
     window_customize_set_name(&mut *item, Some(CStr::from_ptr(name)));
     let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
-    top = mode_tree_add(
+    let top = mode_tree_add(
         (*data).data,
-        top,
+        Some(top),
         item as *mut ::core::ffi::c_void,
         window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
         CStr::from_ptr(name),
         text.as_deref(),
         0 as ::core::ffi::c_int,
-    ) as *mut mode_tree_item;
+    );
     if array == 0 {
         return 1 as u_int;
     }
-    return (1 as u_int).wrapping_add(window_customize_build_array(data, top, scope, o, ft));
+    return (1 as u_int).wrapping_add(window_customize_build_array(data, &top, scope, o, ft));
 }
 unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
     let mut o = options_first(oo);
@@ -1226,23 +1226,22 @@ unsafe fn window_customize_build_options(
     mut fs: *mut cmd_find_state,
     mut type_0: window_customize_option_type,
 ) {
-    let mut top: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut loop_0: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut list = Vec::<CString>::new();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
-    top = mode_tree_add(
+    let top = mode_tree_add(
         (*data).data,
-        ::core::ptr::null_mut::<mode_tree_item>(),
+        None,
         NULL,
         window_customize_top_tag(group),
         CStr::from_ptr(title),
         None,
         0 as ::core::ffi::c_int,
-    ) as *mut mode_tree_item;
-    mode_tree_no_tag(top);
+    );
+    mode_tree_no_tag(&top);
     window_customize_find_user_options(oo0, &mut list);
     if !oo1.is_null() {
         window_customize_find_user_options(oo1, &mut list);
@@ -1269,7 +1268,7 @@ unsafe fn window_customize_build_options(
             scope = scope0;
         }
         count = count.wrapping_add(window_customize_build_option(
-            data, top, scope, o, ft, filter, fs, type_0,
+            data, &top, scope, o, ft, filter, fs, type_0,
         ));
     }
     drop(list);
@@ -1294,13 +1293,13 @@ unsafe fn window_customize_build_options(
                 scope = scope0;
             }
             count = count.wrapping_add(window_customize_build_option(
-                data, top, scope, o, ft, filter, fs, type_0,
+                data, &top, scope, o, ft, filter, fs, type_0,
             ));
             loop_0 = options_next(loop_0);
         }
     }
     if (*data).hide_default != 0 && count == 0 as u_int {
-        mode_tree_remove((*data).data, top);
+        mode_tree_remove((*data).data, &top);
     }
 }
 fn window_customize_key_detail(value: &[u8]) -> CString {
@@ -1316,9 +1315,6 @@ unsafe fn window_customize_build_keys(
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
 ) {
-    let mut top: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut child: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -1326,16 +1322,16 @@ unsafe fn window_customize_build_keys(
     let mut title_bytes = b"Key Table - ".to_vec();
     title_bytes.extend_from_slice((*kt).name.as_bytes());
     let title = CString::new(title_bytes).expect("key table name contains no NUL");
-    top = mode_tree_add(
+    let top = mode_tree_add(
         (*data).data,
-        ::core::ptr::null_mut::<mode_tree_item>(),
+        None,
         NULL,
         window_customize_key_tag(kt.cast(), 0),
         &title,
         None,
         0 as ::core::ffi::c_int,
-    ) as *mut mode_tree_item;
-    mode_tree_no_tag(top);
+    );
+    mode_tree_no_tag(&top);
     drop(title);
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -1397,28 +1393,28 @@ unsafe fn window_customize_build_keys(
             let key_string = key_string_format((*item).key, false);
             window_customize_set_name(&mut *item, Some(key_string.as_c_str()));
             let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
-            child = mode_tree_add(
+            let child = mode_tree_add(
                 (*data).data,
-                top,
+                Some(&top),
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 0),
                 &expanded,
                 None,
                 0 as ::core::ffi::c_int,
-            ) as *mut mode_tree_item;
+            );
             let tmp = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
             let text = window_customize_key_detail(tmp.as_bytes());
-            mti = mode_tree_add(
+            let mti = mode_tree_add(
                 (*data).data,
-                child,
+                Some(&child),
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 1),
                 c"Command",
                 Some(&text),
                 -(1 as ::core::ffi::c_int),
-            ) as *mut mode_tree_item;
-            mode_tree_draw_as_parent(mti);
-            mode_tree_no_tag(mti);
+            );
+            mode_tree_draw_as_parent(&mti);
+            mode_tree_no_tag(&mti);
             drop(text);
             let text = if !(*bd).note.is_none() {
                 window_customize_key_detail(
@@ -1432,17 +1428,17 @@ unsafe fn window_customize_build_keys(
             } else {
                 CString::new(Vec::new()).expect("empty key note")
             };
-            mti = mode_tree_add(
+            let mti = mode_tree_add(
                 (*data).data,
-                child,
+                Some(&child),
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 2),
                 c"Note",
                 Some(&text),
                 -(1 as ::core::ffi::c_int),
-            ) as *mut mode_tree_item;
-            mode_tree_draw_as_parent(mti);
-            mode_tree_no_tag(mti);
+            );
+            mode_tree_draw_as_parent(&mti);
+            mode_tree_no_tag(&mti);
             drop(text);
             let flag = if (*bd).flags & KEY_BINDING_REPEAT != 0 {
                 b"on".as_slice()
@@ -1450,17 +1446,17 @@ unsafe fn window_customize_build_keys(
                 b"off".as_slice()
             };
             let text = window_customize_key_detail(flag);
-            mti = mode_tree_add(
+            let mti = mode_tree_add(
                 (*data).data,
-                child,
+                Some(&child),
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_tag(bd.cast(), 3),
                 c"Repeat",
                 Some(&text),
                 -(1 as ::core::ffi::c_int),
-            ) as *mut mode_tree_item;
-            mode_tree_draw_as_parent(mti);
-            mode_tree_no_tag(mti);
+            );
+            mode_tree_draw_as_parent(&mti);
+            mode_tree_no_tag(&mti);
             drop(text);
             count = count.wrapping_add(1);
             bd = key_bindings_next(bd);
@@ -1468,7 +1464,7 @@ unsafe fn window_customize_build_keys(
     }
     format_free(ft);
     if (*data).hide_default != 0 && count == 0 as u_int {
-        mode_tree_remove((*data).data, top);
+        mode_tree_remove((*data).data, &top);
     }
 }
 unsafe fn window_customize_build_environment(
@@ -1481,23 +1477,22 @@ unsafe fn window_customize_build_environment(
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
 ) {
-    let mut top: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut global: ::core::ffi::c_int = 0;
     if (*data).hide_default != 0 {
         return;
     }
-    top = mode_tree_add(
+    let top = mode_tree_add(
         (*data).data,
-        ::core::ptr::null_mut::<mode_tree_item>(),
+        None,
         NULL,
         window_customize_top_tag(group),
         CStr::from_ptr(title),
         None,
         0 as ::core::ffi::c_int,
-    ) as *mut mode_tree_item;
-    mode_tree_no_tag(top);
+    );
+    mode_tree_no_tag(&top);
     global = (scope as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;
@@ -1605,7 +1600,7 @@ unsafe fn window_customize_build_environment(
         };
         mode_tree_add(
             (*data).data,
-            top,
+            Some(&top),
             item as *mut ::core::ffi::c_void,
             (2_u64 << 62) | envent as uint64_t,
             &name,
@@ -3556,13 +3551,13 @@ unsafe fn window_customize_start_edit(
         {
             return;
         }
-        if name == c"Command" {
+        if name.as_ref() == c"Command" {
             value = Cow::Owned(cmd_list_print_cstring(
                 &*(*bd).cmdlist,
                 0 as ::core::ffi::c_int,
             ));
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_COMMAND;
-        } else if name == c"Note" {
+        } else if name.as_ref() == c"Note" {
             value = Cow::Borrowed(if (*bd).note.is_none() {
                 c""
             } else {
@@ -4119,9 +4114,9 @@ unsafe fn window_customize_set_key(
         return;
     }
     let s = mode_tree_get_current_name(&*(*data).data);
-    if s == c"Repeat" {
+    if s.as_ref() == c"Repeat" {
         (*bd).flags ^= KEY_BINDING_REPEAT;
-    } else if s == c"Command" {
+    } else if s.as_ref() == c"Command" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
         let value = cmd_list_print_cstring(&*(*bd).cmdlist, 0 as ::core::ffi::c_int);
@@ -4142,7 +4137,7 @@ unsafe fn window_customize_set_key(
             window_customize_prompt_input_cb(window_customize_set_command_callback, new_item),
             window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
         );
-    } else if s == c"Note" {
+    } else if s.as_ref() == c"Note" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
         new_item = window_customize_new_item();
@@ -4519,7 +4514,10 @@ unsafe fn window_customize_change_tagged_callback(
     }
     mode_tree_each_tagged(
         (*data).data,
-        |row, _, _| unsafe { window_customize_change_each(data, (*row).itemdata.cast()) },
+        |row, _, _| unsafe {
+            let itemdata = row.borrow().itemdata;
+            window_customize_change_each(data, itemdata.cast())
+        },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         0 as ::core::ffi::c_int,
@@ -4548,7 +4546,7 @@ unsafe fn window_customize_add_current(
     } else {
         cmd_find_from_pane(&raw mut fs, (*data).wp, 0 as ::core::ffi::c_int);
     }
-    if name == c"Server Options" {
+    if name.as_ref() == c"Server Options" {
         window_customize_add_option(
             c,
             data,
@@ -4558,7 +4556,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if name == c"Session Options" {
+    if name.as_ref() == c"Session Options" {
         window_customize_add_option(
             c,
             data,
@@ -4568,7 +4566,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if name == c"Window & Pane Options" {
+    if name.as_ref() == c"Window & Pane Options" {
         window_customize_add_option(
             c,
             data,
@@ -4578,7 +4576,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if name == c"Session Hooks" {
+    if name.as_ref() == c"Session Hooks" {
         window_customize_add_option(
             c,
             data,
@@ -4588,7 +4586,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if name == c"Window & Pane Hooks" {
+    if name.as_ref() == c"Window & Pane Hooks" {
         window_customize_add_option(
             c,
             data,
@@ -4598,7 +4596,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if name == c"Global Environment" {
+    if name.as_ref() == c"Global Environment" {
         window_customize_add_environment(
             c,
             data,
@@ -4607,7 +4605,7 @@ unsafe fn window_customize_add_current(
         );
         return 1 as ::core::ffi::c_int;
     }
-    if name == c"Session Environment" {
+    if name.as_ref() == c"Session Environment" {
         window_customize_add_environment(
             c,
             data,

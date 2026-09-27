@@ -128,25 +128,26 @@ pub type mode_tree_prompt_input_cb = Option<
     >,
 >;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+pub type ModeTreeItemRef = Rc<RefCell<mode_tree_item>>;
+pub type ModeTreeItemWeak = Weak<RefCell<mode_tree_item>>;
+
+#[derive(Clone)]
 pub struct mode_tree_line {
-    pub item: *mut mode_tree_item,
+    pub item: ModeTreeItemRef,
     pub depth: u_int,
     pub last: ::core::ffi::c_int,
     pub flat: ::core::ffi::c_int,
 }
 
-#[repr(C)]
 pub struct mode_tree_item {
-    pub parent: *mut mode_tree_item,
+    pub parent: ModeTreeItemWeak,
     pub itemdata: *mut ::core::ffi::c_void,
     pub line: u_int,
     pub key: key_code,
     pub keystr: Option<std::ffi::CString>,
     pub keylen: size_t,
     pub tag: uint64_t,
-    pub name: std::ffi::CString,
+    pub name: Rc<std::ffi::CStr>,
     pub text: Option<std::ffi::CString>,
     pub expanded: ::core::ffi::c_int,
     pub tagged: ::core::ffi::c_int,
@@ -166,7 +167,7 @@ impl mode_tree_item {
             keystr: Default::default(),
             keylen: Default::default(),
             tag: 0,
-            name: Default::default(),
+            name: Rc::from(c""),
             text: Default::default(),
             expanded: Default::default(),
             tagged: Default::default(),
@@ -178,52 +179,38 @@ impl mode_tree_item {
     }
 }
 
-/// Ordered child owners. Boxing keeps row pointers stable across vector growth
-/// and moves between the live and saved trees during a rebuild.
-#[derive(Default)]
+/// Ordered row owners. Parents are weak, so retaining a selected row cannot
+/// keep its ancestors alive after a rebuild or removal.
+#[derive(Clone, Default)]
 pub struct mode_tree_list {
-    pub(crate) items: Vec<Box<mode_tree_item>>,
+    pub(crate) items: Vec<ModeTreeItemRef>,
 }
 
 impl mode_tree_list {
-    pub(crate) fn pointers(&mut self) -> Vec<*mut mode_tree_item> {
-        self.items
-            .iter_mut()
-            .map(|item| &mut **item as *mut _)
-            .collect()
+    pub(crate) fn first(&self) -> Option<ModeTreeItemRef> {
+        self.items.first().cloned()
     }
 
-    pub(crate) fn first(&mut self) -> *mut mode_tree_item {
-        self.items
-            .first_mut()
-            .map_or(std::ptr::null_mut(), |item| &mut **item)
+    pub(crate) fn last(&self) -> Option<ModeTreeItemRef> {
+        self.items.last().cloned()
     }
 
-    pub(crate) fn last(&mut self) -> *mut mode_tree_item {
-        self.items
-            .last_mut()
-            .map_or(std::ptr::null_mut(), |item| &mut **item)
-    }
-
-    pub(crate) fn position(&self, item: *mut mode_tree_item) -> usize {
+    pub(crate) fn position(&self, item: &ModeTreeItemRef) -> usize {
         self.items
             .iter()
-            .position(|candidate| std::ptr::eq(&**candidate, item))
+            .position(|candidate| Rc::ptr_eq(candidate, item))
             .expect("mode tree item belongs to its parent list")
     }
 
-    pub(crate) fn next(&mut self, item: *mut mode_tree_item) -> *mut mode_tree_item {
-        let position = self.position(item);
-        self.items
-            .get_mut(position + 1)
-            .map_or(std::ptr::null_mut(), |item| &mut **item)
+    pub(crate) fn next(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
+        self.items.get(self.position(item) + 1).cloned()
     }
 
-    pub(crate) fn previous(&mut self, item: *mut mode_tree_item) -> *mut mode_tree_item {
+    pub(crate) fn previous(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
         self.position(item)
             .checked_sub(1)
-            .and_then(|position| self.items.get_mut(position))
-            .map_or(std::ptr::null_mut(), |item| &mut **item)
+            .and_then(|position| self.items.get(position))
+            .cloned()
     }
 }
 

@@ -327,7 +327,7 @@ unsafe fn window_client_build(
                 );
                 mode_tree_add(
                     (*data).data,
-                    ::core::ptr::null_mut::<mode_tree_item>(),
+                    None,
                     item as *mut ::core::ffi::c_void,
                     c as uint64_t,
                     (*c).name.as_deref().expect("attached client has a name"),
@@ -808,7 +808,10 @@ unsafe fn window_client_key(
         68 | 88 | 90 => {
             mode_tree_each_tagged(
                 mtd,
-                |row, _, key| unsafe { window_client_do_detach(data, (*row).itemdata.cast(), key) },
+                |row, _, key| unsafe {
+                    let itemdata = row.borrow().itemdata;
+                    window_client_do_detach(data, itemdata.cast(), key)
+                },
                 c,
                 key,
                 0 as ::core::ffi::c_int,
@@ -826,12 +829,7 @@ unsafe fn window_client_key(
         }
         13 => {
             item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
-            mode_tree_run_command(
-                c,
-                None,
-                &(*data).command,
-                &(*item).ttyname,
-            );
+            mode_tree_run_command(c, None, &(*data).command, &(*item).ttyname);
             finished = 1 as ::core::ffi::c_int;
         }
         _ => {}
