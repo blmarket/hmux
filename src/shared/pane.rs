@@ -1,6 +1,6 @@
 //! Authoritative pane declarations, shared by the C translation units.
 
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ffi::CString;
 use std::rc::{Rc, Weak};
@@ -136,8 +136,9 @@ pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
-pub type WindowPanePromptRef = Rc<RefCell<window_pane_prompt>>;
-pub type WindowPanePromptWeak = Weak<RefCell<window_pane_prompt>>;
+/// The prompt cleanup closure owns this record; all other handles observe it.
+pub type WindowPanePromptOwner = refbox::RefBox<window_pane_prompt>;
+pub type WindowPanePromptWeak = Option<refbox::Weak<window_pane_prompt>>;
 
 pub struct window_pane_prompt {
     pub wp_id: u_int,

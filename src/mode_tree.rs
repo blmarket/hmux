@@ -46,7 +46,7 @@ use crate::src::shared::mode_tree::{
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
     mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
     mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
-    ModeTreePromptRef,
+    ModeTreePromptOwner,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -1300,12 +1300,14 @@ fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
     }))
 }
 fn mode_tree_prompt_input_callback(
-    data: &ModeTreePromptRef,
+    data: &refbox::Weak<mode_tree_prompt>,
     input: Option<&CStr>,
     key: prompt_key_result,
 ) -> prompt_result {
     let (client, callback) = {
-        let mut state = data.borrow_mut();
+        let Ok(mut state) = data.try_borrow_mut() else {
+            return PROMPT_CLOSE;
+        };
         (state.c.upgrade(), state.inputcb.take())
     };
     let Some(mut callback) = callback else {
@@ -1318,18 +1320,20 @@ fn mode_tree_prompt_input_callback(
         input,
         key,
     );
-    data.borrow_mut().inputcb = Some(callback);
+    if let Ok(mut state) = data.try_borrow_mut() {
+        state.inputcb = Some(callback);
+    }
     result
 }
-unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptRef) {
+unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptOwner) {
     let (mtd, callback, inputcb) = {
-        let mut state = data.borrow_mut();
+        let mut state = data.try_borrow_mut().expect("prompt cleanup record");
         (state.mtd.take(), state.freecb.take(), state.inputcb.take())
     };
     if let Some(mtd) = &mtd {
         let mtd = crate::src::shared::rc::as_ptr(mtd);
-        if (*mtd).prompt_data.ptr_eq(&Rc::downgrade(data)) {
-            (*mtd).prompt_data = Weak::new();
+        if (*mtd).prompt_data.as_ref().is_some_and(|current| current.is(data)) {
+            (*mtd).prompt_data = None;
         }
     }
     if let Some(callback) = callback {
@@ -1362,7 +1366,7 @@ pub unsafe fn mode_tree_set_prompt(
     }
     mode_tree_clear_prompt(mtd);
     crate::src::shared::rc::retain(mtd);
-    let mtp = Rc::new(RefCell::new(mode_tree_prompt {
+    let mtp = refbox::RefBox::new(mode_tree_prompt {
         mtd: Some(crate::src::shared::rc::take(mtd)),
         c: if c.is_null() {
             Weak::new()
@@ -1371,7 +1375,7 @@ pub unsafe fn mode_tree_set_prompt(
         },
         inputcb,
         freecb,
-    }));
+    });
     (*mtd).prompt_top = (options_get_number(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1381,17 +1385,18 @@ pub unsafe fn mode_tree_set_prompt(
     pd.input = input;
     pd.type_0 = type_0;
     pd.flags = flags | PROMPT_ISMODE;
-    let input_data = mtp.clone();
+    let input_data = mtp.downgrade();
+    let identity = input_data.clone();
     pd.inputcb = Some(Box::new(move |s, key| {
         mode_tree_prompt_input_callback(&input_data, s, key)
     }));
-    let free_data = mtp.clone();
+    let free_data = mtp;
     pd.freecb = Some(Box::new(move || unsafe {
         mode_tree_prompt_free_callback(&free_data)
     }));
     let prompt = prompt_create(pd);
     (*mtd).prompt = Some(prompt.clone());
-    (*mtd).prompt_data = Rc::downgrade(&mtp);
+    (*mtd).prompt_data = Some(identity);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
@@ -1810,9 +1815,9 @@ pub unsafe fn mode_tree_key(
     if let Some(prompt) = (*mtd).prompt.clone() {
         let tree = crate::src::shared::rc::downgrade(mtd);
         redraw = 0 as ::core::ffi::c_int;
-        let mtp = (*mtd).prompt_data.upgrade();
+        let mtp = (*mtd).prompt_data.clone();
         if let Some(mtp) = &mtp {
-            mtp.borrow_mut().c = if c.is_null() {
+            mtp.try_borrow_mut().expect("live prompt callback record").c = if c.is_null() {
                 Weak::new()
             } else {
                 crate::src::shared::rc::downgrade(c)
@@ -1871,8 +1876,8 @@ pub unsafe fn mode_tree_key(
             return 0;
         }
         if let Some(mtp) = &mtp {
-            if (*mtd).prompt_data.ptr_eq(&Rc::downgrade(mtp)) {
-                mtp.borrow_mut().c = Weak::new();
+            if (*mtd).prompt_data.as_ref() == Some(mtp) {
+                mtp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
             }
         }
         if (*mtd)
@@ -2424,13 +2429,13 @@ mod mode_prompt_data_tests {
     use crate::src::text::utf8::utf8_fromcstr_vec;
     use std::cell::{Cell, UnsafeCell};
 
-    fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> ModeTreePromptRef {
-        Rc::new(RefCell::new(mode_tree_prompt {
+    fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> ModeTreePromptOwner {
+        refbox::RefBox::new(mode_tree_prompt {
             mtd: Some(tree.clone()),
             c: Weak::new(),
             inputcb: None,
             freecb: None,
-        }))
+        })
     }
 
     #[test]
@@ -2441,32 +2446,35 @@ mod mode_prompt_data_tests {
             let weak_tree = Rc::downgrade(&tree);
             let old = data(&tree);
             let replacement = data(&tree);
-            (*mtd).prompt_data = Rc::downgrade(&replacement);
+            (*mtd).prompt_data = Some(replacement.downgrade());
             let frees = Rc::new(Cell::new(0));
             let count = frees.clone();
-            let weak_old = Rc::downgrade(&old);
+            let weak_old = old.downgrade();
             let observed = weak_old.clone();
-            old.borrow_mut().freecb = Some(Box::new(move || {
+            old.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                 // No record borrow may span the user cleanup callback.
-                assert!(observed.upgrade().unwrap().borrow_mut().mtd.is_none());
+                assert!(observed.try_borrow_mut().unwrap().mtd.is_none());
                 count.set(count.get() + 1);
             }));
             assert_eq!(Rc::strong_count(&tree), 3);
             mode_tree_prompt_free_callback(&old);
             assert_eq!(Rc::strong_count(&tree), 2);
-            assert!(old.borrow().mtd.is_none());
-            assert!((*mtd).prompt_data.ptr_eq(&Rc::downgrade(&replacement)));
+            assert!(old.try_borrow_mut().unwrap().mtd.is_none());
+            assert!((*mtd)
+                .prompt_data
+                .as_ref()
+                .is_some_and(|current| current.is(&replacement)));
             mode_tree_prompt_free_callback(&old);
             assert_eq!(frees.get(), 1);
             assert_eq!(Rc::strong_count(&tree), 2);
             mode_tree_prompt_free_callback(&replacement);
-            assert!((*mtd).prompt_data.upgrade().is_none());
+            assert!((*mtd).prompt_data.is_none());
             assert_eq!(Rc::strong_count(&tree), 1);
             drop(tree);
             // Retaining the closed callback records does not retain the tree.
             assert!(weak_tree.upgrade().is_none());
             drop(old);
-            assert!(weak_old.upgrade().is_none());
+            assert!(!weak_old.is_alive());
         }
     }
 
@@ -2479,22 +2487,23 @@ mod mode_prompt_data_tests {
                 let retained_tree = retain_tree.then(|| tree.clone());
                 let mtd = rc::as_ptr(&tree);
                 let data = data(&tree);
-                let weak_data = Rc::downgrade(&data);
+                let weak_data = data.downgrade();
                 let tree_slot = Rc::new(RefCell::new(Some(tree)));
                 let pr = Rc::new(RefCell::new(prompt {
                     buffer: utf8_fromcstr_vec(c""),
                     flags: PROMPT_SINGLE,
                     ..Default::default()
                 }));
-                let input_data = data.clone();
+                let input_data = data.downgrade();
                 pr.borrow_mut().inputcb = Some(Box::new(move |text, key| {
                     mode_tree_prompt_input_callback(&input_data, text, key)
                 }));
-                let free_data = data.clone();
+                let free_data = data;
+                let data = weak_data.clone();
                 pr.borrow_mut().freecb =
                     Some(Box::new(move || mode_tree_prompt_free_callback(&free_data)));
                 (*mtd).prompt = Some(pr.clone());
-                (*mtd).prompt_data = Rc::downgrade(&data);
+                (*mtd).prompt_data = Some(data.clone());
                 (*mtd).lines.push(mode_tree_line {
                     item: Rc::new(RefCell::new(mode_tree_item::empty())),
                     depth: 0,
@@ -2505,7 +2514,7 @@ mod mode_prompt_data_tests {
                 let input_events = events.clone();
                 let slot = tree_slot.clone();
                 let observed = weak_tree.clone();
-                data.borrow_mut().inputcb = Some(Box::new(move |client, input, key| {
+                data.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |client, input, key| {
                     assert!(client.is_none());
                     assert_eq!(input, Some(c"x"));
                     assert_eq!(key, PROMPT_KEY_CLOSE);
@@ -2522,7 +2531,7 @@ mod mode_prompt_data_tests {
                 }));
                 let free_events = events.clone();
                 let observed = weak_tree.clone();
-                data.borrow_mut().freecb = Some(Box::new(move || {
+                data.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                     assert!(observed.upgrade().is_some());
                     free_events.borrow_mut().push("freed");
                 }));
@@ -2547,12 +2556,15 @@ mod mode_prompt_data_tests {
                 assert!(tree_slot.borrow().is_none());
                 drop(retained_tree);
                 assert!(weak_tree.upgrade().is_none());
-                assert!(data.borrow().mtd.is_none());
-                assert!(data.borrow().inputcb.is_none());
+                assert!(!data.is_alive());
                 assert_eq!(Rc::strong_count(&events), 1);
                 drop(pr);
                 drop(data);
-                assert!(weak_data.upgrade().is_none());
+                assert!(!weak_data.is_alive());
+                assert_eq!(
+                    mode_tree_prompt_input_callback(&weak_data, None, PROMPT_KEY_CLOSE),
+                    PROMPT_CLOSE,
+                );
             }
         }
     }

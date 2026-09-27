@@ -95,7 +95,7 @@ impl Default for mode_tree_data {
             current: 0,
             screen: screen::empty(),
             prompt: None,
-            prompt_data: Weak::new(),
+            prompt_data: None,
             prompt_cx: 0,
             prompt_top: 0,
             preview: 0,
@@ -111,11 +111,12 @@ impl Default for mode_tree_data {
 
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
-pub type ModeTreePromptRef = Rc<RefCell<mode_tree_prompt>>;
-pub type ModeTreePromptWeak = Weak<RefCell<mode_tree_prompt>>;
+/// The prompt cleanup closure owns this record; all other handles observe it.
+pub type ModeTreePromptOwner = refbox::RefBox<mode_tree_prompt>;
+pub type ModeTreePromptWeak = Option<refbox::Weak<mode_tree_prompt>>;
 
 pub struct mode_tree_prompt {
-    /// Taken at logical cleanup, even if a dispatch still retains this record.
+    /// Taken at logical cleanup before dropping the callback record.
     pub mtd: Option<Rc<UnsafeCell<mode_tree_data>>>,
     pub c: Weak<UnsafeCell<client>>,
     pub inputcb: mode_tree_prompt_input_cb,

@@ -35,6 +35,7 @@ guidance; other listed migrations still require that review.
 
 | Allocation | Result |
 | --- | --- |
+| Pane and mode-tree prompt callback records | The cleanup closure solely owns a RefBox. Input closures and parent identity slots hold weak observers. Dispatch takes out the callback and ends its record borrow before invoking it; cleanup clears only the matching identity and preserves client/tree release order. |
 | Paste buffers | The creation-order index solely owns `RefBox<paste_buffer>` records. Name lookup, formats, and editors hold weak identities; reads borrow only during use. Deletion invalidates observers, replacement cannot be mistaken for the old buffer, and event dispatch releases borrows before listeners run. |
 | Hyperlink entries | The already reference-counted table owns boxed URI records; lookup returns a table-bound borrow. Style transfers copy values before insertion can evict their source. Entries have no weak observers. |
 | Prompt history and mode-tree names | Owners store `CString`; readers that cross mutation or teardown take independent string snapshots. Neither string store needs weak observers. |
