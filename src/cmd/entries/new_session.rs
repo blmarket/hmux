@@ -555,7 +555,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                         }
-                                                        s = session_create(
+                                                        let session_owner = session_create(
                                                             prefix.as_ref().map_or(
                                                                 ::core::ptr::null(),
                                                                 |name| name.as_ptr(),
@@ -567,6 +567,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             oo,
                                                             tiop,
                                                         );
+                                                        s = session_owner.get();
                                                         sc.item = item;
                                                         sc.s = s;
                                                         if detached == 0 {

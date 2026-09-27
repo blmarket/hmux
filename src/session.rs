@@ -306,7 +306,7 @@ pub unsafe fn session_create(
     env: Box<environ>,
     mut oo: *mut options,
     mut tio: *mut termios,
-) -> *mut session {
+) -> Rc<UnsafeCell<session>> {
     let owner = session::new();
     let s = crate::src::shared::rc::as_ptr(&owner);
     (*s).tio = if tio.is_null() {
@@ -357,7 +357,7 @@ pub unsafe fn session_create(
             }
         }
     }
-    sessions_insert(&raw mut sessions, owner);
+    sessions_insert(&raw mut sessions, Rc::clone(&owner));
     log_debug(format_args!(
         "new session {} ${}",
         log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
@@ -367,7 +367,7 @@ pub unsafe fn session_create(
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
     session_update_activity(s, &raw mut (*s).creation_time);
-    return s;
+    owner
 }
 pub unsafe fn session_add_ref(s: *mut session, from: *const ::core::ffi::c_char) -> Rc<UnsafeCell<session>> {
     let owner = (*s).observer.upgrade().expect("live Rc session");
