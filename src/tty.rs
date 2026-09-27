@@ -1465,52 +1465,45 @@ fn tty_is_visible(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn tty_clamp_line(
-    ctx: &tty_ctx,
-    mut px: u_int,
-    mut py: u_int,
-    mut nx: u_int,
-    mut i: *mut u_int,
-    mut x: *mut u_int,
-    mut rx: *mut u_int,
-    mut ry: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut xoff: ::core::ffi::c_int = (ctx.rxoff as u_int).wrapping_add(px) as ::core::ffi::c_int;
-    if tty_is_visible(ctx, px, py, nx, 1 as u_int) == 0 {
-        return 0 as ::core::ffi::c_int;
+#[derive(Debug, PartialEq, Eq)]
+struct tty_clamped_line {
+    skip: u_int,
+    x: u_int,
+    y: u_int,
+    width: u_int,
+}
+
+fn tty_clamp_line(ctx: &tty_ctx, px: u_int, py: u_int, nx: u_int) -> Option<tty_clamped_line> {
+    let xoff = (ctx.rxoff as u_int).wrapping_add(px) as i32;
+    if tty_is_visible(ctx, px, py, nx, 1) == 0 {
+        return None;
     }
-    *ry = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
-    if xoff >= ctx.wox as ::core::ffi::c_int
+    let y = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
+    let (skip, x, width) = if xoff >= ctx.wox as i32
         && (xoff as u_int).wrapping_add(nx) <= ctx.wox.wrapping_add(ctx.wsx)
     {
-        *i = 0 as u_int;
-        *x = (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox);
-        *rx = nx;
-    } else if xoff < ctx.wox as ::core::ffi::c_int
+        (
+            0,
+            (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox),
+            nx,
+        )
+    } else if xoff < ctx.wox as i32
         && (xoff as u_int).wrapping_add(nx) > ctx.wox.wrapping_add(ctx.wsx)
     {
-        *i = ctx.wox;
-        *x = 0 as u_int;
-        *rx = ctx.wsx;
-    } else if xoff < ctx.wox as ::core::ffi::c_int {
-        *i = ctx.wox.wrapping_sub((ctx.xoff as u_int).wrapping_add(px));
-        *x = 0 as u_int;
-        *rx = nx.wrapping_sub(*i);
+        (ctx.wox, 0, ctx.wsx)
+    } else if xoff < ctx.wox as i32 {
+        let skip = ctx.wox.wrapping_sub((ctx.xoff as u_int).wrapping_add(px));
+        (skip, 0, nx.wrapping_sub(skip))
     } else {
-        *i = 0 as u_int;
-        *x = (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox);
-        *rx = ctx.wsx.wrapping_sub(*x);
+        let x = (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox);
+        (0, x, ctx.wsx.wrapping_sub(x))
+    };
+    if width > nx {
+        unsafe {
+            fatalx(|out| write!(out, "tty_clamp_line: x too big, {} > {}", width, nx));
+        }
     }
-    if *rx > nx {
-        fatalx(|out| {
-            write_cstr(
-                out,
-                b"tty_clamp_line\0" as *const u8 as *const ::core::ffi::c_char,
-            )?;
-            write!(out, ": x too big, {} > {}", (*rx) as u32, (nx) as u32)
-        });
-    }
-    return 1 as ::core::ffi::c_int;
+    Some(tty_clamped_line { skip, x, y, width })
 }
 unsafe fn tty_clear_line(
     mut tty: *mut tty,
@@ -1580,10 +1573,6 @@ unsafe fn tty_clear_pane_line(
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut i: u_int = 0;
-    let mut l: u_int = 0;
-    let mut x: u_int = 0;
-    let mut rx: u_int = 0;
-    let mut ry: u_int = 0;
     log_debug(format_args!(
         "{}: {}, {} at {},{}",
         "tty_clear_pane_line",
@@ -1597,16 +1586,12 @@ unsafe fn tty_clear_pane_line(
         (px) as u32,
         (py) as u32
     ));
-    if tty_clamp_line(
-        ctx,
-        px,
-        py,
-        nx,
-        &raw mut l,
-        &raw mut x,
-        &raw mut rx,
-        &raw mut ry,
-    ) != 0
+    if let Some(tty_clamped_line {
+        skip: _,
+        x,
+        y: ry,
+        width: rx,
+    }) = tty_clamp_line(ctx, px, py, nx)
     {
         r = tty_check_overlay_range(tty, x, ry, rx);
         i = 0 as u_int;
@@ -1626,77 +1611,70 @@ unsafe fn tty_clear_pane_line(
         }
     }
 }
-unsafe fn tty_clamp_area(
+#[derive(Debug, PartialEq, Eq)]
+struct tty_clamped_area {
+    x: u_int,
+    y: u_int,
+    width: u_int,
+    height: u_int,
+}
+
+fn tty_clamp_area(
     ctx: &tty_ctx,
-    mut px: u_int,
-    mut py: u_int,
-    mut nx: u_int,
-    mut ny: u_int,
-    mut i: *mut u_int,
-    mut j: *mut u_int,
-    mut x: *mut u_int,
-    mut y: *mut u_int,
-    mut rx: *mut u_int,
-    mut ry: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut xoff: u_int = (ctx.rxoff as u_int).wrapping_add(px);
-    let mut yoff: u_int = (ctx.ryoff as u_int).wrapping_add(py);
+    px: u_int,
+    py: u_int,
+    nx: u_int,
+    ny: u_int,
+) -> Option<tty_clamped_area> {
+    let xoff = (ctx.rxoff as u_int).wrapping_add(px);
+    let yoff = (ctx.ryoff as u_int).wrapping_add(py);
     if tty_is_visible(ctx, px, py, nx, ny) == 0 {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
-    if xoff >= ctx.wox && xoff.wrapping_add(nx) <= ctx.wox.wrapping_add(ctx.wsx) {
-        *i = 0 as u_int;
-        *x = (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox);
-        *rx = nx;
+    let (x, width) = if xoff >= ctx.wox && xoff.wrapping_add(nx) <= ctx.wox.wrapping_add(ctx.wsx) {
+        (
+            (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox),
+            nx,
+        )
     } else if xoff < ctx.wox && xoff.wrapping_add(nx) > ctx.wox.wrapping_add(ctx.wsx) {
-        *i = ctx.wox;
-        *x = 0 as u_int;
-        *rx = ctx.wsx;
+        (0, ctx.wsx)
     } else if xoff < ctx.wox {
-        *i = ctx.wox.wrapping_sub((ctx.xoff as u_int).wrapping_add(px));
-        *x = 0 as u_int;
-        *rx = nx.wrapping_sub(*i);
+        let skip = ctx.wox.wrapping_sub((ctx.xoff as u_int).wrapping_add(px));
+        (0, nx.wrapping_sub(skip))
     } else {
-        *i = 0 as u_int;
-        *x = (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox);
-        *rx = ctx.wsx.wrapping_sub(*x);
+        let x = (ctx.xoff as u_int).wrapping_add(px).wrapping_sub(ctx.wox);
+        (x, ctx.wsx.wrapping_sub(x))
+    };
+    if width > nx {
+        unsafe {
+            fatalx(|out| write!(out, "tty_clamp_area: x too big, {} > {}", width, nx));
+        }
     }
-    if *rx > nx {
-        fatalx(|out| {
-            write_cstr(
-                out,
-                b"tty_clamp_area\0" as *const u8 as *const ::core::ffi::c_char,
-            )?;
-            write!(out, ": x too big, {} > {}", (*rx) as u32, (nx) as u32)
-        });
-    }
-    if yoff >= ctx.woy && yoff.wrapping_add(ny) <= ctx.woy.wrapping_add(ctx.wsy) {
-        *j = 0 as u_int;
-        *y = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
-        *ry = ny;
+    let (y, height) = if yoff >= ctx.woy && yoff.wrapping_add(ny) <= ctx.woy.wrapping_add(ctx.wsy) {
+        (
+            (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy),
+            ny,
+        )
     } else if yoff < ctx.woy && yoff.wrapping_add(ny) > ctx.woy.wrapping_add(ctx.wsy) {
-        *j = ctx.woy;
-        *y = 0 as u_int;
-        *ry = ctx.wsy;
+        (0, ctx.wsy)
     } else if yoff < ctx.woy {
-        *j = ctx.woy.wrapping_sub((ctx.yoff as u_int).wrapping_add(py));
-        *y = 0 as u_int;
-        *ry = ny.wrapping_sub(*j);
+        let skip = ctx.woy.wrapping_sub((ctx.yoff as u_int).wrapping_add(py));
+        (0, ny.wrapping_sub(skip))
     } else {
-        *j = 0 as u_int;
-        *y = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
-        *ry = ctx.wsy.wrapping_sub(*y);
+        let y = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
+        (y, ctx.wsy.wrapping_sub(y))
+    };
+    if height > ny {
+        unsafe {
+            fatalx(|out| write!(out, "tty_clamp_area: y too big, {} > {}", height, ny));
+        }
     }
-    if *ry > ny {
-        fatalx(|out| {
-            write_cstr(
-                out,
-                b"tty_clamp_area\0" as *const u8 as *const ::core::ffi::c_char,
-            )?;
-            write!(out, ": y too big, {} > {}", (*ry) as u32, (ny) as u32)
-        });
-    }
-    return 1 as ::core::ffi::c_int;
+    Some(tty_clamped_area {
+        x,
+        y,
+        width,
+        height,
+    })
 }
 unsafe fn tty_clear_area(
     mut tty: *mut tty,
@@ -1790,35 +1768,12 @@ unsafe fn tty_clear_pane_area(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let mut i: u_int = 0;
-    let mut j: u_int = 0;
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    let mut rx: u_int = 0;
-    let mut ry: u_int = 0;
-    if tty_clamp_area(
-        ctx,
-        px,
-        py,
-        nx,
-        ny,
-        &raw mut i,
-        &raw mut j,
-        &raw mut x,
-        &raw mut y,
-        &raw mut rx,
-        &raw mut ry,
-    ) != 0
-    {
-        tty_clear_area(tty, ctx, y, ry, x, rx, bg);
+    if let Some(area) = tty_clamp_area(ctx, px, py, nx, ny) {
+        tty_clear_area(tty, ctx, area.y, area.height, area.x, area.width, bg);
     }
 }
 unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_int) {
     let mut nx: u_int = ctx.sx;
-    let mut i: u_int = 0;
-    let mut x: u_int = 0;
-    let mut rx: u_int = 0;
-    let mut ry: u_int = 0;
     let mut j: u_int = 0;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
@@ -1859,16 +1814,12 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_
         }
         return;
     }
-    if tty_clamp_line(
-        ctx,
-        0 as u_int,
-        py,
-        nx,
-        &raw mut i,
-        &raw mut x,
-        &raw mut rx,
-        &raw mut ry,
-    ) != 0
+    if let Some(tty_clamped_line {
+        skip: i,
+        x,
+        y: ry,
+        width: rx,
+    }) = tty_clamp_line(ctx, 0 as u_int, py, nx)
     {
         r = tty_check_overlay_range(tty, x, ry, rx);
         j = 0 as u_int;
@@ -1891,23 +1842,15 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_
     }
 }
 pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut i: u_int = 0;
-    let mut x: u_int = 0;
-    let mut rx: u_int = 0;
-    let mut ry: u_int = 0;
     let mut j: u_int = 0;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
-    if tty_clamp_line(
-        ctx,
-        ctx.ocx,
-        ctx.ocy,
-        ctx.data.count(),
-        &raw mut i,
-        &raw mut x,
-        &raw mut rx,
-        &raw mut ry,
-    ) != 0
+    if let Some(tty_clamped_line {
+        skip: i,
+        x,
+        y: ry,
+        width: rx,
+    }) = tty_clamp_line(ctx, ctx.ocx, ctx.ocy, ctx.data.count())
     {
         r = tty_check_overlay_range(tty, x, ry, rx);
         j = 0 as u_int;
@@ -3439,5 +3382,54 @@ pub unsafe fn tty_set_progress_bar(mut tty: *mut tty, mut pb: *mut progress_bar)
             (*pb).state as ::core::ffi::c_int,
             (*pb).progress,
         );
+    }
+}
+
+#[cfg(test)]
+mod clipping_tests {
+    use super::*;
+
+    #[test]
+    fn clipping_matches_tmux_at_viewport_edges_and_for_empty_regions() {
+        let ctx = tty_ctx {
+            flags: TTY_CTX_WINDOW_BIGGER,
+            xoff: 8,
+            yoff: 18,
+            rxoff: 8,
+            ryoff: 18,
+            wox: 10,
+            woy: 20,
+            wsx: 30,
+            wsy: 10,
+            ..Default::default()
+        };
+        // Expected geometry from the pinned tmux tty_clamp_line/area functions.
+        // The source skip when both sides are clipped deliberately follows tmux.
+        for (input, line, area) in [
+            ((3, 2, 5, 2), Some((0, 1, 0, 5)), Some((1, 0, 5, 2))),
+            ((0, 2, 5, 3), Some((2, 0, 0, 3)), Some((0, 0, 3, 3))),
+            ((30, 2, 6, 5), Some((0, 28, 0, 2)), Some((28, 0, 2, 5))),
+            ((0, 2, 40, 20), Some((10, 0, 0, 30)), Some((0, 0, 30, 10))),
+            ((0, 2, 2, 1), None, None),
+            ((32, 2, 2, 1), None, None),
+            ((3, 0, 5, 2), None, None),
+            ((3, 12, 5, 1), None, None),
+            ((3, 3, 0, 0), Some((0, 1, 1, 0)), Some((1, 1, 0, 0))),
+            ((0, 0, 5, 5), None, Some((0, 0, 3, 3))),
+            ((30, 10, 6, 5), Some((0, 28, 8, 2)), Some((28, 8, 2, 2))),
+            ((0, 0, 40, 20), None, Some((0, 0, 30, 10))),
+        ] {
+            let (px, py, nx, ny) = input;
+            assert_eq!(
+                tty_clamp_line(&ctx, px, py, nx).map(|r| (r.skip, r.x, r.y, r.width)),
+                line,
+                "line {input:?}"
+            );
+            assert_eq!(
+                tty_clamp_area(&ctx, px, py, nx, ny).map(|r| (r.x, r.y, r.width, r.height)),
+                area,
+                "area {input:?}"
+            );
+        }
     }
 }
