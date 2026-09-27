@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{memcmp, memcpy, strchr, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, strchr, strlcat, strlen};
 use crate::src::format::bytes::xformat;
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatalx, log_cstr, log_debug};
@@ -701,236 +701,88 @@ pub unsafe fn grid_move_cells(
         }
     }
 }
-unsafe fn grid_string_cells_fg(
-    mut gc: *const grid_cell,
-    mut values: *mut ::core::ffi::c_int,
-) -> size_t {
-    let mut n: size_t = 0;
-    let mut r: u_char = 0;
-    let mut g: u_char = 0;
-    let mut b: u_char = 0;
-    let mut c: ::core::ffi::c_int = 0;
-    n = 0 as size_t;
-    if (*gc).fg & COLOUR_FLAG_THEME != 0 {
-        c = colour_theme_terminal_colour(((*gc).fg & 0xff as ::core::ffi::c_int) as u_int);
-        if c == 8 as ::core::ffi::c_int {
-            let fresh31 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh31 as isize) = 39 as ::core::ffi::c_int;
-        } else {
-            let fresh32 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh32 as isize) = c + 30 as ::core::ffi::c_int;
-        }
-    } else if (*gc).fg & COLOUR_FLAG_256 != 0 {
-        let fresh33 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh33 as isize) = 38 as ::core::ffi::c_int;
-        let fresh34 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh34 as isize) = 5 as ::core::ffi::c_int;
-        let fresh35 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh35 as isize) = (*gc).fg & 0xff as ::core::ffi::c_int;
-    } else if (*gc).fg & COLOUR_FLAG_RGB != 0 {
-        let fresh36 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh36 as isize) = 38 as ::core::ffi::c_int;
-        let fresh37 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh37 as isize) = 2 as ::core::ffi::c_int;
-        (r, g, b) = colour_split_rgb((*gc).fg);
-        let fresh38 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh38 as isize) = r as ::core::ffi::c_int;
-        let fresh39 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh39 as isize) = g as ::core::ffi::c_int;
-        let fresh40 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh40 as isize) = b as ::core::ffi::c_int;
+unsafe fn grid_string_cells_fg(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
+    let colour = gc.fg;
+    if colour & COLOUR_FLAG_THEME != 0 {
+        let terminal = colour_theme_terminal_colour((colour & 0xff) as u_int);
+        values[0] = if terminal == 8 { 39 } else { terminal + 30 };
+        1
+    } else if colour & COLOUR_FLAG_256 != 0 {
+        values[..3].copy_from_slice(&[38, 5, colour & 0xff]);
+        3
+    } else if colour & COLOUR_FLAG_RGB != 0 {
+        let (r, g, b) = colour_split_rgb(colour);
+        values[..5].copy_from_slice(&[38, 2, r as i32, g as i32, b as i32]);
+        5
     } else {
-        match (*gc).fg {
-            0..=7 => {
-                let fresh41 = n;
-                n = n.wrapping_add(1);
-                *values.offset(fresh41 as isize) = (*gc).fg + 30 as ::core::ffi::c_int;
-            }
-            8 => {
-                let fresh42 = n;
-                n = n.wrapping_add(1);
-                *values.offset(fresh42 as isize) = 39 as ::core::ffi::c_int;
-            }
-            90..=97 => {
-                let fresh43 = n;
-                n = n.wrapping_add(1);
-                *values.offset(fresh43 as isize) = (*gc).fg;
-            }
-            _ => {}
-        }
+        values[0] = match colour {
+            0..=7 => colour + 30,
+            8 => 39,
+            90..=97 => colour + 0,
+            _ => return 0,
+        };
+        1
     }
-    return n;
 }
-unsafe fn grid_string_cells_bg(
-    mut gc: *const grid_cell,
-    mut values: *mut ::core::ffi::c_int,
-) -> size_t {
-    let mut n: size_t = 0;
-    let mut r: u_char = 0;
-    let mut g: u_char = 0;
-    let mut b: u_char = 0;
-    let mut c: ::core::ffi::c_int = 0;
-    n = 0 as size_t;
-    if (*gc).bg & COLOUR_FLAG_THEME != 0 {
-        c = colour_theme_terminal_colour(((*gc).bg & 0xff as ::core::ffi::c_int) as u_int);
-        if c == 8 as ::core::ffi::c_int {
-            let fresh18 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh18 as isize) = 49 as ::core::ffi::c_int;
-        } else {
-            let fresh19 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh19 as isize) = c + 40 as ::core::ffi::c_int;
-        }
-    } else if (*gc).bg & COLOUR_FLAG_256 != 0 {
-        let fresh20 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh20 as isize) = 48 as ::core::ffi::c_int;
-        let fresh21 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh21 as isize) = 5 as ::core::ffi::c_int;
-        let fresh22 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh22 as isize) = (*gc).bg & 0xff as ::core::ffi::c_int;
-    } else if (*gc).bg & COLOUR_FLAG_RGB != 0 {
-        let fresh23 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh23 as isize) = 48 as ::core::ffi::c_int;
-        let fresh24 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh24 as isize) = 2 as ::core::ffi::c_int;
-        (r, g, b) = colour_split_rgb((*gc).bg);
-        let fresh25 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh25 as isize) = r as ::core::ffi::c_int;
-        let fresh26 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh26 as isize) = g as ::core::ffi::c_int;
-        let fresh27 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh27 as isize) = b as ::core::ffi::c_int;
+
+unsafe fn grid_string_cells_bg(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
+    let colour = gc.bg;
+    if colour & COLOUR_FLAG_THEME != 0 {
+        let terminal = colour_theme_terminal_colour((colour & 0xff) as u_int);
+        values[0] = if terminal == 8 { 49 } else { terminal + 40 };
+        1
+    } else if colour & COLOUR_FLAG_256 != 0 {
+        values[..3].copy_from_slice(&[48, 5, colour & 0xff]);
+        3
+    } else if colour & COLOUR_FLAG_RGB != 0 {
+        let (r, g, b) = colour_split_rgb(colour);
+        values[..5].copy_from_slice(&[48, 2, r as i32, g as i32, b as i32]);
+        5
     } else {
-        match (*gc).bg {
-            0..=7 => {
-                let fresh28 = n;
-                n = n.wrapping_add(1);
-                *values.offset(fresh28 as isize) = (*gc).bg + 40 as ::core::ffi::c_int;
-            }
-            8 => {
-                let fresh29 = n;
-                n = n.wrapping_add(1);
-                *values.offset(fresh29 as isize) = 49 as ::core::ffi::c_int;
-            }
-            90..=97 => {
-                let fresh30 = n;
-                n = n.wrapping_add(1);
-                *values.offset(fresh30 as isize) = (*gc).bg + 10 as ::core::ffi::c_int;
-            }
-            _ => {}
-        }
+        values[0] = match colour {
+            0..=7 => colour + 40,
+            8 => 49,
+            90..=97 => colour + 10,
+            _ => return 0,
+        };
+        1
     }
-    return n;
 }
-unsafe fn grid_string_cells_us(
-    mut gc: *const grid_cell,
-    mut values: *mut ::core::ffi::c_int,
-) -> size_t {
-    let mut n: size_t = 0;
-    let mut r: u_char = 0;
-    let mut g: u_char = 0;
-    let mut b: u_char = 0;
-    let mut c: ::core::ffi::c_int = 0;
-    n = 0 as size_t;
-    if (*gc).us & COLOUR_FLAG_THEME != 0 {
-        c = colour_theme_terminal_colour(((*gc).us & 0xff as ::core::ffi::c_int) as u_int);
-        if c == 8 as ::core::ffi::c_int {
-            let fresh6 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh6 as isize) = 59 as ::core::ffi::c_int;
+
+unsafe fn grid_string_cells_us(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
+    let colour = gc.us;
+    if colour & COLOUR_FLAG_THEME != 0 {
+        let terminal = colour_theme_terminal_colour((colour & 0xff) as u_int);
+        if terminal == 8 {
+            values[0] = 59;
+            1
         } else {
-            let fresh7 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh7 as isize) = 58 as ::core::ffi::c_int;
-            let fresh8 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh8 as isize) = 5 as ::core::ffi::c_int;
-            let fresh9 = n;
-            n = n.wrapping_add(1);
-            *values.offset(fresh9 as isize) = c;
+            values[..3].copy_from_slice(&[58, 5, terminal]);
+            3
         }
-    } else if (*gc).us & COLOUR_FLAG_256 != 0 {
-        let fresh10 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh10 as isize) = 58 as ::core::ffi::c_int;
-        let fresh11 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh11 as isize) = 5 as ::core::ffi::c_int;
-        let fresh12 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh12 as isize) = (*gc).us & 0xff as ::core::ffi::c_int;
-    } else if (*gc).us & COLOUR_FLAG_RGB != 0 {
-        let fresh13 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh13 as isize) = 58 as ::core::ffi::c_int;
-        let fresh14 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh14 as isize) = 2 as ::core::ffi::c_int;
-        (r, g, b) = colour_split_rgb((*gc).us);
-        let fresh15 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh15 as isize) = r as ::core::ffi::c_int;
-        let fresh16 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh16 as isize) = g as ::core::ffi::c_int;
-        let fresh17 = n;
-        n = n.wrapping_add(1);
-        *values.offset(fresh17 as isize) = b as ::core::ffi::c_int;
+    } else if colour & COLOUR_FLAG_256 != 0 {
+        values[..3].copy_from_slice(&[58, 5, colour & 0xff]);
+        3
+    } else if colour & COLOUR_FLAG_RGB != 0 {
+        let (r, g, b) = colour_split_rgb(colour);
+        values[..5].copy_from_slice(&[58, 2, r as i32, g as i32, b as i32]);
+        5
+    } else {
+        0
     }
-    return n;
 }
 unsafe fn grid_string_cells_add_code(
     mut buf: *mut ::core::ffi::c_char,
     mut len: size_t,
-    mut n: u_int,
-    mut s: *mut ::core::ffi::c_int,
-    mut newc: *mut ::core::ffi::c_int,
-    mut oldc: *mut ::core::ffi::c_int,
-    mut nnewc: size_t,
-    mut noldc: size_t,
+    s: &[i32],
+    newc: &[i32],
+    oldc: &[i32],
     mut flags: ::core::ffi::c_int,
 ) {
     let mut i: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
-    let mut reset: ::core::ffi::c_int = (n != 0 as u_int
-        && *s.offset(0 as ::core::ffi::c_int as isize) == 0 as ::core::ffi::c_int)
-        as ::core::ffi::c_int;
-    if nnewc == 0 as size_t {
-        return;
-    }
-    if reset == 0
-        && nnewc == noldc
-        && memcmp(
-            newc as *const ::core::ffi::c_void,
-            oldc as *const ::core::ffi::c_void,
-            nnewc.wrapping_mul(::core::mem::size_of::<::core::ffi::c_int>() as size_t),
-        ) == 0 as ::core::ffi::c_int
-    {
-        return;
-    }
-    if reset != 0
-        && (*newc.offset(0 as ::core::ffi::c_int as isize) == 49 as ::core::ffi::c_int
-            || *newc.offset(0 as ::core::ffi::c_int as isize) == 39 as ::core::ffi::c_int)
-    {
+    let reset = s.first() == Some(&0);
+    if newc.is_empty() || (!reset && newc == oldc) || (reset && matches!(newc[0], 39 | 49)) {
         return;
     }
     if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
@@ -947,17 +799,11 @@ unsafe fn grid_string_cells_add_code(
         );
     }
     i = 0 as u_int;
-    while (i as size_t) < nnewc {
-        if (i.wrapping_add(1 as u_int) as size_t) < nnewc {
-            xformat(
-                &mut tmp,
-                format_args!("{};", (*newc.offset(i as isize)) as i32),
-            );
+    while (i as usize) < newc.len() {
+        if (i.wrapping_add(1) as usize) < newc.len() {
+            xformat(&mut tmp, format_args!("{};", newc[i as usize]));
         } else {
-            xformat(
-                &mut tmp,
-                format_args!("{}", (*newc.offset(i as isize)) as i32),
-            );
+            xformat(&mut tmp, format_args!("{}", newc[i as usize]));
         }
         strlcat(buf, &raw mut tmp as *mut ::core::ffi::c_char, len);
         i = i.wrapping_add(1);
@@ -1160,43 +1006,34 @@ unsafe fn grid_string_cells_code(
         }
         strlcat(buf, b"m\0" as *const u8 as *const ::core::ffi::c_char, len);
     }
-    nnewc = grid_string_cells_fg(gc, &raw mut newc as *mut ::core::ffi::c_int);
-    noldc = grid_string_cells_fg(lastgc, &raw mut oldc as *mut ::core::ffi::c_int);
+    nnewc = grid_string_cells_fg(&*gc, &mut newc);
+    noldc = grid_string_cells_fg(&*lastgc, &mut oldc);
     grid_string_cells_add_code(
         buf,
         len,
-        n as u_int,
-        &raw mut s as *mut ::core::ffi::c_int,
-        &raw mut newc as *mut ::core::ffi::c_int,
-        &raw mut oldc as *mut ::core::ffi::c_int,
-        nnewc,
-        noldc,
+        &s[..n],
+        &newc[..nnewc],
+        &oldc[..noldc],
         flags,
     );
-    nnewc = grid_string_cells_bg(gc, &raw mut newc as *mut ::core::ffi::c_int);
-    noldc = grid_string_cells_bg(lastgc, &raw mut oldc as *mut ::core::ffi::c_int);
+    nnewc = grid_string_cells_bg(&*gc, &mut newc);
+    noldc = grid_string_cells_bg(&*lastgc, &mut oldc);
     grid_string_cells_add_code(
         buf,
         len,
-        n as u_int,
-        &raw mut s as *mut ::core::ffi::c_int,
-        &raw mut newc as *mut ::core::ffi::c_int,
-        &raw mut oldc as *mut ::core::ffi::c_int,
-        nnewc,
-        noldc,
+        &s[..n],
+        &newc[..nnewc],
+        &oldc[..noldc],
         flags,
     );
-    nnewc = grid_string_cells_us(gc, &raw mut newc as *mut ::core::ffi::c_int);
-    noldc = grid_string_cells_us(lastgc, &raw mut oldc as *mut ::core::ffi::c_int);
+    nnewc = grid_string_cells_us(&*gc, &mut newc);
+    noldc = grid_string_cells_us(&*lastgc, &mut oldc);
     grid_string_cells_add_code(
         buf,
         len,
-        n as u_int,
-        &raw mut s as *mut ::core::ffi::c_int,
-        &raw mut newc as *mut ::core::ffi::c_int,
-        &raw mut oldc as *mut ::core::ffi::c_int,
-        nnewc,
-        noldc,
+        &s[..n],
+        &newc[..nnewc],
+        &oldc[..noldc],
         flags,
     );
     if attr & GRID_ATTR_CHARSET as u_int != 0 && lastattr & GRID_ATTR_CHARSET as u_int == 0 {
@@ -1823,6 +1660,50 @@ pub fn grid_cell_attr_display(attr: i32) -> impl std::fmt::Display {
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn colour_parameters_keep_theme_priority_and_default_underline_semantics() {
+        unsafe {
+            for (colour, fg, bg, us) in [
+                (8, &[39][..], &[49][..], &[][..]),
+                (9, &[][..], &[][..], &[][..]),
+                (91, &[91][..], &[101][..], &[][..]),
+                (
+                    COLOUR_FLAG_256 | 17,
+                    &[38, 5, 17][..],
+                    &[48, 5, 17][..],
+                    &[58, 5, 17][..],
+                ),
+                (
+                    COLOUR_FLAG_RGB | 0x123456,
+                    &[38, 2, 18, 52, 86][..],
+                    &[48, 2, 18, 52, 86][..],
+                    &[58, 2, 18, 52, 86][..],
+                ),
+                (
+                    COLOUR_FLAG_THEME | COLOUR_FLAG_RGB | COLOUR_FLAG_256 | 4,
+                    &[32][..],
+                    &[42][..],
+                    &[58, 5, 2][..],
+                ),
+                (COLOUR_FLAG_THEME | 255, &[39][..], &[49][..], &[59][..]),
+            ] {
+                let cell = grid_cell {
+                    fg: colour,
+                    bg: colour,
+                    us: colour,
+                    ..grid_default_cell
+                };
+                let mut values = [-1; 64];
+                let count = grid_string_cells_fg(&cell, &mut values);
+                assert_eq!(&values[..count], fg);
+                let count = grid_string_cells_bg(&cell, &mut values);
+                assert_eq!(&values[..count], bg);
+                let count = grid_string_cells_us(&cell, &mut values);
+                assert_eq!(&values[..count], us);
+            }
+        }
+    }
 
     #[test]
     fn flag_descriptions_keep_order_unknown_bits_and_independent_values() {
