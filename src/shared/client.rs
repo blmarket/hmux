@@ -276,7 +276,7 @@ pub struct client_files {
 }
 
 pub struct client_file {
-    pub c: *mut client,
+    pub c: Option<ClientOwner>,
     pub peer: *mut tmuxpeer,
     pub tree: *mut client_files,
     pub stream: ::core::ffi::c_int,

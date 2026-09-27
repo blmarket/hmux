@@ -8,8 +8,8 @@ Tests and foreign ABI records are included. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields, their disposition, and the lifecycle reason. **65 fields were migrated;
-255 remain raw.** A skipped candidate is not a claim that its current raw API is
+fields, their disposition, and the lifecycle reason. **66 fields were migrated;
+254 remain raw.** A skipped candidate is not a claim that its current raw API is
 safe, nor that migration is impossible. It means this review did not establish
 the ownership, aliasing, and callback guarantees needed for that substitution.
 
@@ -68,7 +68,7 @@ disposition for every remaining field and rejects stale skipped entries.
 | `OptionCommand.0`, `cmd_parse_result.cmdlist`, `cmdq_item.cmdlist/state` | Optional existing `Rc<UnsafeCell<_>>` owners. Retain counts and explicit cleanup points are preserved. Parse results now drop their list automatically unless ownership is transferred; queue items retain their independent references. |
 | `key_tables.storage`, `key_table_entry.owner`, `client.keytable` | Registry and client fields now hold their existing `Rc<UnsafeCell<key_table>>` references. Weak traversal indexes follow the typed registry. Removal transfers the registry reference back to the legacy caller; client switch/cleanup takes its owner at the former unref point. |
 | `EventPayloadValue::Client/Session/Window/Pane` | Existing retained references are stored as `Rc<UnsafeCell<_>>`. Item Drop still detaches the value before invoking the original model-specific release function, preserving deferred release and last-window-close notifications. |
-| `cmd_if_shell_data.client`, `cmd_load_buffer_data.client`, `cmd_run_shell_data.client`, `popup_data.c`, `format_tree.client` | `Option<ClientOwner>` holds each existing retained reference. Drop uses deferred client release even on early exits; explicit teardown takes the owner at the original point. Readers project only a raw observer, without a client-lifetime borrow. |
+| `cmd_if_shell_data.client`, `cmd_load_buffer_data.client`, `cmd_run_shell_data.client`, `popup_data.c`, `format_tree.client`, `client_file.c` | `Option<ClientOwner>` holds each existing retained reference. Drop uses deferred client release even on early exits; explicit teardown takes the owner at the original point. Readers project only a raw observer, without a client-lifetime borrow. |
 | `cmd_run_shell_data.s`, `monitor_set.session` | `Option<SessionOwner>` holds the existing retained session reference and preserves deferred session release and diagnostic labels. Teardown takes it at the same point as before. Current/last-session observers in clients remain raw. |
 
 
@@ -96,7 +96,7 @@ The TSV gives a separate decision for every field. The main blockers are:
 ## Validation
 
 `cargo test --workspace`: **598 passed**. The inventory coverage check passes
-for all **255** remaining fields, and `git diff --check` is clean.
+for all **254** remaining fields, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
