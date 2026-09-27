@@ -1948,37 +1948,32 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         }
     }
 }
-pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const grid_cell) -> grid_cell {
-    if (*gc).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-        && (*(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int)
-            < 0x7f as ::core::ffi::c_int
+pub unsafe fn tty_check_codeset(tty: &tty, gc: &grid_cell) -> grid_cell {
+    if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+        && (gc.data.data[0] as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
     {
         return *gc;
     }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+    if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
         return *gc;
     }
-    if (*(*tty).client).flags & CLIENT_UTF8 as uint64_t != 0 {
+    if (*tty.client).flags & CLIENT_UTF8 as uint64_t != 0 {
         return *gc;
     }
     let mut new = *gc;
-    if let Some(ch) = CStr::from_bytes_until_nul(&(*gc).data.data)
+    if let Some(ch) = CStr::from_bytes_until_nul(&gc.data.data)
         .ok()
-        .and_then(|text| tty_acs_reverse_get(text, (*gc).data.size as usize))
+        .and_then(|text| tty_acs_reverse_get(text, gc.data.size as usize))
     {
         utf8_set(&mut new.data, ch);
         new.attr = (new.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
         return new;
     }
-    new.data.size = (*gc).data.width;
+    new.data.size = gc.data.width;
     if new.data.size as ::core::ffi::c_int > UTF8_SIZE {
         new.data.size = UTF8_SIZE as u_char;
     }
-    memset(
-        &raw mut new.data.data as *mut u_char as *mut ::core::ffi::c_void,
-        '_' as i32,
-        new.data.size as size_t,
-    );
+    new.data.data[..new.data.size as usize].fill(b'_');
     return new;
 }
 unsafe fn tty_check_overlay(mut tty: *mut tty, mut px: u_int, mut py: u_int) -> ::core::ffi::c_int {
@@ -2108,7 +2103,7 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, mut ctx: *const tty_ctx
         tty_draw_pane(tty, ctx, (*ctx).ocy);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).ocy);
     tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, (*ctx).c2rust_unnamed.n);
 }
@@ -2123,12 +2118,12 @@ pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, mut ctx: *const tty_ctx
         tty_draw_pane(tty, ctx, (*ctx).ocy);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).ocy);
     tty_emulate_repeat(tty, TTYC_DCH, TTYC_DCH1, (*ctx).c2rust_unnamed.n);
 }
 pub unsafe fn tty_cmd_clearcharacter(mut tty: *mut tty, mut ctx: *const tty_ctx) {
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_clear_pane_line(
         tty,
         ctx,
@@ -2152,7 +2147,7 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         tty_redraw_region(tty, ctx);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, (*ctx).orupper, (*ctx).orlower);
     tty_margin_off(tty);
     tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).ocy);
@@ -2174,7 +2169,7 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         tty_redraw_region(tty, ctx);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, (*ctx).orupper, (*ctx).orlower);
     tty_margin_off(tty);
     tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).ocy);
@@ -2200,7 +2195,7 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         tty_redraw_region(tty, ctx);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, (*ctx).orupper, (*ctx).orlower);
     tty_margin_pane(tty, ctx);
     tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).orupper);
@@ -2225,7 +2220,7 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         tty_redraw_region(tty, ctx);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, (*ctx).orupper, (*ctx).orlower);
     tty_margin_pane(tty, ctx);
     if (*ctx).c2rust_unnamed.n == 1 as u_int || tty_term_has((*tty).term, TTYC_INDN) == 0 {
@@ -2268,7 +2263,7 @@ pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         tty_redraw_region(tty, ctx);
         return;
     }
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, (*ctx).orupper, (*ctx).orlower);
     tty_margin_pane(tty, ctx);
     tty_cursor_pane(tty, ctx, (*ctx).ocx, (*ctx).orupper);
@@ -2287,7 +2282,7 @@ pub unsafe fn tty_cmd_clearendofscreen(mut tty: *mut tty, mut ctx: *const tty_ct
     let mut py: u_int = 0;
     let mut nx: u_int = 0;
     let mut ny: u_int = 0;
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, 0 as u_int, (*ctx).sy.wrapping_sub(1 as u_int));
     tty_margin_off(tty);
     px = 0 as u_int;
@@ -2305,7 +2300,7 @@ pub unsafe fn tty_cmd_clearstartofscreen(mut tty: *mut tty, mut ctx: *const tty_
     let mut py: u_int = 0;
     let mut nx: u_int = 0;
     let mut ny: u_int = 0;
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, 0 as u_int, (*ctx).sy.wrapping_sub(1 as u_int));
     tty_margin_off(tty);
     px = 0 as u_int;
@@ -2323,7 +2318,7 @@ pub unsafe fn tty_cmd_clearscreen(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     let mut py: u_int = 0;
     let mut nx: u_int = 0;
     let mut ny: u_int = 0;
-    tty_default_attributes(tty, (*ctx).bg, &raw const (*ctx).style_ctx);
+    tty_default_attributes(tty, (*ctx).bg, Some(&(*ctx).style_ctx));
     tty_region_pane(tty, ctx, 0 as u_int, (*ctx).sy.wrapping_sub(1 as u_int));
     tty_margin_off(tty);
     px = 0 as u_int;
@@ -2342,8 +2337,8 @@ pub unsafe fn tty_cmd_alignmenttest(mut tty: *mut tty, mut ctx: *const tty_ctx) 
     }
     tty_attributes(
         tty,
-        &raw const grid_default_cell,
-        &raw const (*ctx).style_ctx,
+        &grid_default_cell,
+        Some(&(*ctx).style_ctx),
     );
     tty_region_pane(tty, ctx, 0 as u_int, (*ctx).sy.wrapping_sub(1 as u_int));
     tty_margin_off(tty);
@@ -2415,7 +2410,7 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         tty_invalidate(tty);
     }
     tty_cursor_pane_unless_wrap(tty, ctx, (*ctx).ocx, (*ctx).ocy);
-    tty_cell(tty, (*ctx).cell, &raw const (*ctx).style_ctx);
+    tty_cell(tty, &*(*ctx).cell, Some(&(*ctx).style_ctx));
     if (*ctx).flags & TTY_CTX_CELL_INVALIDATE != 0 {
         tty_invalidate(tty);
     }
@@ -2456,7 +2451,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     }
     tty_margin_off(tty);
     tty_cursor_pane_unless_wrap(tty, ctx, (*ctx).ocx, (*ctx).ocy);
-    tty_attributes(tty, (*ctx).cell, &raw const (*ctx).style_ctx);
+    tty_attributes(tty, &*(*ctx).cell, Some(&(*ctx).style_ctx));
     px = ((*ctx).xoff as u_int)
         .wrapping_add((*ctx).ocx)
         .wrapping_sub((*ctx).wox);
@@ -2533,42 +2528,33 @@ pub unsafe fn tty_cmd_syncstart(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         }
     }
 }
-pub unsafe fn tty_cell(
-    mut tty: *mut tty,
-    mut gc: *const grid_cell,
-    mut style_ctx: *const tty_style_ctx,
-) {
-    let mut gcp: *const grid_cell = ::core::ptr::null::<grid_cell>();
+pub unsafe fn tty_cell(tty: *mut tty, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
     if (*(*tty).term).flags & TERM_NOAM != 0
-        && (*tty).cy == (*tty).sy.wrapping_sub(1 as u_int)
-        && (*tty).cx == (*tty).sx.wrapping_sub(1 as u_int)
+        && (*tty).cy == (*tty).sy.wrapping_sub(1)
+        && (*tty).cx == (*tty).sx.wrapping_sub(1)
     {
         return;
     }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+    if gc.flags as i32 & GRID_FLAG_PADDING != 0 {
         return;
     }
     if tty_check_overlay(tty, (*tty).cx, (*tty).cy) == 0 {
         return;
     }
-    let converted = tty_check_codeset(tty, gc);
-    gcp = &converted;
-    tty_attributes(tty, gcp, style_ctx);
-    if (*gcp).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
-        if (*(&raw const (*gcp).data.data as *const u_char) as ::core::ffi::c_int)
-            < 0x20 as ::core::ffi::c_int
-            || *(&raw const (*gcp).data.data as *const u_char) as ::core::ffi::c_int
-                == 0x7f as ::core::ffi::c_int
-        {
+    let converted = tty_check_codeset(&*tty, gc);
+    tty_attributes(tty, &converted, style_ctx);
+    if converted.data.size == 1 {
+        let byte = converted.data.data[0];
+        if byte < 0x20 || byte == 0x7f {
             return;
         }
-        tty_putc(tty, *(&raw const (*gcp).data.data as *const u_char));
+        tty_putc(tty, byte);
         return;
     }
     tty_putn(
         tty,
         &converted.data.data[..converted.data.size as usize],
-        (*gcp).data.width as u_int,
+        converted.data.width as u_int,
     );
 }
 pub unsafe fn tty_reset(mut tty: *mut tty) {
@@ -2948,43 +2934,18 @@ unsafe fn tty_dim_default_colour(
     }
     return c;
 }
-pub unsafe fn tty_attributes(
-    mut tty: *mut tty,
-    mut gc: *const grid_cell,
-    mut style_ctx: *const tty_style_ctx,
-) {
-    let mut tc: *mut grid_cell = &raw mut (*tty).cell;
-    let mut gc2: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
+pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
+    let mut gc2 = *gc;
     let mut palette: *mut colour_palette = ::core::ptr::null_mut::<colour_palette>();
     let mut changed: ::core::ffi::c_int = 0;
-    if style_ctx.is_null() {
-        style_ctx = &raw mut tty_default_style_ctx;
-    }
-    palette = (*style_ctx).palette;
-    memcpy(
-        &raw mut gc2 as *mut ::core::ffi::c_void,
-        gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
+    let style_ctx = style_ctx.unwrap_or(&*std::ptr::addr_of!(tty_default_style_ctx));
+    palette = style_ctx.palette;
+    if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
         if gc2.fg == 8 as ::core::ffi::c_int {
-            gc2.fg = (*(*style_ctx).defaults).fg;
+            gc2.fg = (*style_ctx.defaults).fg;
         }
         if gc2.bg == 8 as ::core::ffi::c_int {
-            gc2.bg = (*(*style_ctx).defaults).bg;
+            gc2.bg = (*style_ctx.defaults).bg;
         }
         if !palette.is_null() {
             changed = colour_palette_get(palette, gc2.fg);
@@ -3000,14 +2961,14 @@ pub unsafe fn tty_attributes(
     gc2.fg = tty_map_theme_colour(tty, gc2.fg);
     gc2.bg = tty_map_theme_colour(tty, gc2.bg);
     gc2.us = tty_map_theme_colour(tty, gc2.us);
-    if (*style_ctx).dim != 0 as u_int {
+    if style_ctx.dim != 0 as u_int {
         gc2.fg = tty_dim_default_colour(tty, gc2.fg, 1 as ::core::ffi::c_int);
         gc2.bg = tty_dim_default_colour(tty, gc2.bg, 0 as ::core::ffi::c_int);
-        changed = colour_dim(gc2.fg, (*style_ctx).dim);
+        changed = colour_dim(gc2.fg, style_ctx.dim);
         if changed != -(1 as ::core::ffi::c_int) {
             gc2.fg = changed;
         }
-        changed = colour_dim(gc2.bg, (*style_ctx).dim);
+        changed = colour_dim(gc2.bg, style_ctx.dim);
         if changed != -(1 as ::core::ffi::c_int) {
             gc2.bg = changed;
         }
@@ -3036,14 +2997,14 @@ pub unsafe fn tty_attributes(
     tty_check_fg(tty, palette, &raw mut gc2);
     tty_check_bg(tty, palette, &raw mut gc2);
     tty_check_us(tty, palette, &raw mut gc2);
-    if (*tc).attr as ::core::ffi::c_int & !(gc2.attr as ::core::ffi::c_int) != 0
-        || (*tc).us != gc2.us && gc2.us == 0 as ::core::ffi::c_int
+    if (*tty).cell.attr as ::core::ffi::c_int & !(gc2.attr as ::core::ffi::c_int) != 0
+        || (*tty).cell.us != gc2.us && gc2.us == 0 as ::core::ffi::c_int
     {
         tty_reset(tty);
     }
     tty_colours(tty, &raw mut gc2);
-    changed = gc2.attr as ::core::ffi::c_int & !((*tc).attr as ::core::ffi::c_int);
-    (*tc).attr = gc2.attr;
+    changed = gc2.attr as ::core::ffi::c_int & !((*tty).cell.attr as ::core::ffi::c_int);
+    (*tty).cell.attr = gc2.attr;
     if changed & GRID_ATTR_BRIGHT != 0 {
         tty_putcode(tty, TTYC_BOLD);
     }
@@ -3088,12 +3049,8 @@ pub unsafe fn tty_attributes(
     if changed & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty.as_ref()) != 0 {
         tty_putcode(tty, TTYC_SMACS);
     }
-    tty_hyperlink(tty, gc, (*style_ctx).hyperlinks);
-    memcpy(
-        &raw mut (*tty).last_cell as *mut ::core::ffi::c_void,
-        &raw mut gc2 as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    tty_hyperlink(tty, gc, style_ctx.hyperlinks);
+    (*tty).last_cell = gc2;
 }
 unsafe fn tty_colours(mut tty: *mut tty, mut gc: *const grid_cell) {
     let mut tc: *mut grid_cell = &raw mut (*tty).cell;
@@ -3514,32 +3471,10 @@ pub unsafe fn tty_default_colours(
         }
     }
 }
-pub unsafe fn tty_default_attributes(
-    mut tty: *mut tty,
-    mut bg: u_int,
-    mut style_ctx: *const tty_style_ctx,
-) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    gc.bg = bg as ::core::ffi::c_int;
-    tty_attributes(tty, &raw mut gc, style_ctx);
+pub unsafe fn tty_default_attributes(tty: *mut tty, bg: u_int, style_ctx: Option<&tty_style_ctx>) {
+    let mut gc = grid_default_cell;
+    gc.bg = bg as i32;
+    tty_attributes(tty, &gc, style_ctx);
 }
 unsafe fn tty_clipboard_query_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;

@@ -1483,7 +1483,7 @@ unsafe fn redraw_draw_border_span(
     }
     i = 0 as u_int;
     while i < n {
-        tty_cell(tty, &raw mut gc, ::core::ptr::null::<tty_style_ctx>());
+        tty_cell(tty, &gc, None);
         i = i.wrapping_add(1);
     }
     if isolates != 0 {
@@ -1649,13 +1649,13 @@ unsafe fn redraw_draw_scrollbar_span(
     while i < n {
         if (*span).data.c2rust_unnamed.sb.flags & REDRAW_SCROLLBAR_LEFT != 0 {
             if off.wrapping_add(i) >= sb_w && off.wrapping_add(i) < sb_w.wrapping_add(sb_pad) {
-                tty_cell(tty, &raw mut pad_gc, ::core::ptr::null::<tty_style_ctx>());
+                tty_cell(tty, &pad_gc, None);
                 current_block_40 = 3437258052017859086;
             } else {
                 current_block_40 = 7828949454673616476;
             }
         } else if off.wrapping_add(i) < sb_pad {
-            tty_cell(tty, &raw mut pad_gc, ::core::ptr::null::<tty_style_ctx>());
+            tty_cell(tty, &pad_gc, None);
             current_block_40 = 3437258052017859086;
         } else {
             current_block_40 = 7828949454673616476;
@@ -1667,7 +1667,7 @@ unsafe fn redraw_draw_scrollbar_span(
                 } else {
                     gcp = &raw mut gc;
                 }
-                tty_cell(tty, gcp, ::core::ptr::null::<tty_style_ctx>());
+                tty_cell(tty, &*gcp, None);
             }
             _ => {}
         }

@@ -240,7 +240,7 @@ pub unsafe fn tty_draw_line(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     last.bg = (*defaults).bg;
-    tty_default_attributes(tty, 8 as u_int, style_ctx);
+    tty_default_attributes(tty, 8 as u_int, style_ctx.as_ref());
     cx = 0 as u_int;
     i = px;
     while i < px.wrapping_add(nx) {
@@ -276,7 +276,7 @@ pub unsafe fn tty_draw_line(
                 }
             }
         }
-        tty_attributes(tty, &raw mut last, style_ctx);
+        tty_attributes(tty, &last, style_ctx.as_ref());
         log_debug(format_args!(
             "{}: clearing {} padding cells",
             "tty_draw_line",
@@ -329,7 +329,7 @@ pub unsafe fn tty_draw_line(
                         if empty != 0 as ::core::ffi::c_int {
                             gcp = &raw mut gc;
                         } else {
-                            converted = tty_check_codeset(tty, &raw mut gc);
+                            converted = tty_check_codeset(&*tty, &gc);
                             gcp = &converted;
                             if (*gcp).flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
                                 memcpy(
@@ -382,7 +382,7 @@ pub unsafe fn tty_draw_line(
                     if current_state as ::core::ffi::c_uint
                         == TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        tty_attributes(tty, &raw mut last, style_ctx);
+                        tty_attributes(tty, &last, style_ctx.as_ref());
                         tty_draw_line_clear(
                             tty,
                             atx.wrapping_add(last_i),
@@ -397,7 +397,7 @@ pub unsafe fn tty_draw_line(
                         != TTY_DRAW_LINE_SAME as ::core::ffi::c_int as ::core::ffi::c_uint
                         && len != 0 as size_t
                     {
-                        tty_attributes(tty, &raw mut last, style_ctx);
+                        tty_attributes(tty, &last, style_ctx.as_ref());
                         if atx.wrapping_add(i).wrapping_sub(width) != 0 as u_int || wrapped == 0 {
                             tty_cursor(tty, atx.wrapping_add(i).wrapping_sub(width), aty);
                         }
