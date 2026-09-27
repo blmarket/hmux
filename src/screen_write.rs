@@ -12,7 +12,7 @@ use crate::src::grid::{
     grid_get_line_mut,
 };
 use crate::src::layout::layout_fix_panes;
-use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
+use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::screen::{
@@ -4076,7 +4076,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return;
     }
-    if screen_write_combine(ctx, gc) != 0 as ::core::ffi::c_int {
+    if screen_write_combine(&mut *ctx, &*gc) != 0 as ::core::ffi::c_int {
         return;
     }
     screen_write_collect_flush(
@@ -4285,15 +4285,11 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         i = i.wrapping_add(1);
     }
 }
-unsafe fn screen_write_combine(
-    mut ctx: *mut screen_write_ctx,
-    mut gc: *const grid_cell,
-) -> ::core::ffi::c_int {
+unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::core::ffi::c_int {
     let mut r = Vec::new();
-    let mut s: *mut screen = (*ctx).s;
-    let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
-    let mut gd: *mut grid = (*s).grid_mut();
-    let mut ud: *const utf8_data = &raw const (*gc).data;
+    let mut s: *mut screen = ctx.s;
+    let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
+    let ud = &gc.data;
     let mut oo: *mut options = global_options;
     let mut i: u_int = 0;
     let mut n: u_int = 0;
@@ -4361,12 +4357,12 @@ unsafe fn screen_write_combine(
     let mut zero_width: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if utf8_is_hangul_filler(&*ud) != 0 {
+    if utf8_is_hangul_filler(ud) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if utf8_is_zwj(&*ud) != 0 {
+    if utf8_is_zwj(ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
-    } else if utf8_is_vs(&*ud) != 0 {
+    } else if utf8_is_vs(ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
         if options_get_number(
             oo,
@@ -4375,40 +4371,37 @@ unsafe fn screen_write_combine(
         {
             force_wide = 1 as ::core::ffi::c_int;
         }
-    } else if (*ud).width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+    } else if ud.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         zero_width = 1 as ::core::ffi::c_int;
     }
-    if ((*ud).size as ::core::ffi::c_int) < 2 as ::core::ffi::c_int || cx == 0 as u_int {
+    if (ud.size as ::core::ffi::c_int) < 2 as ::core::ffi::c_int || cx == 0 as u_int {
         return zero_width;
     }
     log_debug(format_args!(
         "{}: character {} at {},{} (width {})",
         "screen_write_combine",
-        log_cstr_n(
-            (&raw const (*ud).data as *const u_char) as *const _,
-            (*ud).size as ::core::ffi::c_int
-        ),
+        log_bytes(&ud.data[..ud.size as usize]),
         (cx) as u32,
         (cy) as u32,
-        ((*ud).width as ::core::ffi::c_int) as u32
+        (ud.width as ::core::ffi::c_int) as u32
     ));
     n = 1 as u_int;
-    grid_view_get_cell(&*gd, cx.wrapping_sub(n), cy, &mut last);
+    grid_view_get_cell((*s).grid(), cx.wrapping_sub(n), cy, &mut last);
     if cx != 1 as u_int && last.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         n = 2 as u_int;
-        grid_view_get_cell(&*gd, cx.wrapping_sub(n), cy, &mut last);
+        grid_view_get_cell((*s).grid(), cx.wrapping_sub(n), cy, &mut last);
     }
     if n != last.data.width as u_int || last.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return zero_width;
     }
     if zero_width == 0 {
-        match hanguljamo_check_state(&last.data, &*ud) as ::core::ffi::c_uint {
+        match hanguljamo_check_state(&last.data, ud) as ::core::ffi::c_uint {
             3 => return 1 as ::core::ffi::c_int,
             1 => return 0 as ::core::ffi::c_int,
             0 => {
-                if utf8_should_combine(&last.data, &*ud) != 0 {
+                if utf8_should_combine(&last.data, ud) != 0 {
                     force_wide = 1 as ::core::ffi::c_int;
-                } else if utf8_should_combine(&*ud, &last.data) != 0 {
+                } else if utf8_should_combine(ud, &last.data) != 0 {
                     force_wide = 1 as ::core::ffi::c_int;
                 } else if utf8_has_zwj(&last.data) == 0 {
                     return 0 as ::core::ffi::c_int;
@@ -4417,7 +4410,7 @@ unsafe fn screen_write_combine(
             2 | _ => {}
         }
     }
-    if (last.data.size as ::core::ffi::c_int + (*ud).size as ::core::ffi::c_int) as usize
+    if (last.data.size as ::core::ffi::c_int + ud.size as ::core::ffi::c_int) as usize
         > ::core::mem::size_of::<[u_char; 32]>() as usize
     {
         return zero_width;
@@ -4430,28 +4423,17 @@ unsafe fn screen_write_combine(
     log_debug(format_args!(
         "{}: {} -> {} at {},{} (offset {}, width {})",
         "screen_write_combine",
-        log_cstr_n(
-            (&raw const (*ud).data as *const u_char) as *const _,
-            (*ud).size as ::core::ffi::c_int
-        ),
-        log_cstr_n(
-            (&raw mut last.data.data as *mut u_char) as *const _,
-            last.data.size as ::core::ffi::c_int
-        ),
+        log_bytes(&ud.data[..ud.size as usize]),
+        log_bytes(&last.data.data[..last.data.size as usize]),
         (cx.wrapping_sub(n)) as u32,
         (cy) as u32,
         (n) as u32,
         (last.data.width as ::core::ffi::c_int) as u32
     ));
-    memcpy(
-        (&raw mut last.data.data as *mut u_char)
-            .offset(last.data.size as ::core::ffi::c_int as isize)
-            as *mut ::core::ffi::c_void,
-        &raw const (*ud).data as *const u_char as *const ::core::ffi::c_void,
-        (*ud).size as size_t,
-    );
-    last.data.size =
-        (last.data.size as ::core::ffi::c_int + (*ud).size as ::core::ffi::c_int) as u_char;
+    let size = last.data.size as usize;
+    let combined_size = size + ud.size as usize;
+    last.data.data[size..combined_size].copy_from_slice(&ud.data[..ud.size as usize]);
+    last.data.size = combined_size as u_char;
     if last.data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int && force_wide != 0 {
         last.data.width = 2 as u_char;
         n = 2 as u_int;
@@ -4459,9 +4441,9 @@ unsafe fn screen_write_combine(
     } else {
         force_wide = 0 as ::core::ffi::c_int;
     }
-    grid_view_set_cell(&mut *gd, cx.wrapping_sub(n), cy, &last);
+    grid_view_set_cell((*s).grid_mut(), cx.wrapping_sub(n), cy, &last);
     if force_wide != 0 {
-        grid_view_set_padding(&mut *gd, cx.wrapping_sub(1 as u_int), cy, last.bg);
+        grid_view_set_padding((*s).grid_mut(), cx.wrapping_sub(1 as u_int), cy, last.bg);
     }
     if !wp.is_null() {
         xoff = (*wp).xoff;
@@ -4494,7 +4476,7 @@ unsafe fn screen_write_combine(
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    ttyctx.cell = &raw mut last;
+    ttyctx.cell = &last;
     if force_wide != 0 {
         ttyctx.flags |= TTY_CTX_CELL_INVALIDATE;
     }
