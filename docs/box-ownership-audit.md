@@ -35,6 +35,7 @@ guidance; other listed migrations still require that review.
 
 | Allocation | Result |
 | --- | --- |
+| Mode-tree rows | Parent lists solely own RefBox rows. Parent links, visible lines, and traversal snapshots hold weak identities. Key/search/tag callbacks release row borrows before dispatch and stop when rows or trees are removed; names and action inputs use independent snapshots. Already reference-counted mode data remains retained during callback dispatch. |
 | Prompt roots | Clients, panes, and modes solely own RefBox prompts. Dispatch observes weakly and takes both callbacks out before input, deferring cleanup until input returns even if the sole owner is removed. Status cleanup detaches its screen before callbacks can install replacements. |
 | Menu state | Windows solely own RefBox menu records. Redraw scenes and key dispatch hold weak identities; key dispatch releases borrows before callbacks. Cancellation takes ownership out of the window and keeps its screen alive until the callback returns, preserving replacements and window teardown. |
 | Mode buffer/client/customize/tree payloads | Mode lists solely own RefBox records; rows retain weak identities. Actions copy independent input snapshots before callbacks can rebuild the list. Client snapshots retain the already reference-counted client and preserve deferred release. |

@@ -13,7 +13,7 @@ use crate::src::window_buffer::window_buffer_itemdata;
 use crate::src::window_client::window_client_itemdata;
 use crate::src::window_customize::window_customize_itemdata;
 use crate::src::window_tree::window_tree_itemdata;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -227,8 +227,36 @@ impl ModeTreeItemData {
     }
 }
 
-pub type ModeTreeItemRef = Rc<RefCell<mode_tree_item>>;
-pub type ModeTreeItemWeak = Weak<RefCell<mode_tree_item>>;
+/// A row identity. Only its containing list owns the allocation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModeTreeItemRef(refbox::Weak<mode_tree_item>);
+pub type ModeTreeItemWeak = Option<ModeTreeItemRef>;
+
+impl ModeTreeItemRef {
+    pub(crate) fn observe(owner: &refbox::RefBox<mode_tree_item>) -> Self {
+        Self(owner.downgrade())
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.0.is_alive()
+    }
+
+    pub fn try_borrow(&self) -> Option<refbox::Borrow<'_, mode_tree_item>> {
+        match self.0.try_borrow_mut() {
+            Ok(row) => Some(row),
+            Err(refbox::BorrowError::Dropped) => None,
+            Err(refbox::BorrowError::Borrowed) => panic!("mode row already borrowed"),
+        }
+    }
+
+    pub fn borrow(&self) -> refbox::Borrow<'_, mode_tree_item> {
+        self.try_borrow().expect("live mode row")
+    }
+
+    pub fn borrow_mut(&self) -> refbox::Borrow<'_, mode_tree_item> {
+        self.borrow()
+    }
+}
 
 #[derive(Clone)]
 pub struct mode_tree_line {
@@ -278,38 +306,43 @@ impl mode_tree_item {
     }
 }
 
-/// Ordered row owners. Parents are weak, so retaining a selected row cannot
-/// keep its ancestors alive after a rebuild or removal.
-#[derive(Clone, Default)]
+/// Ordered sole owners. Parent links, visible lines, and traversal observe weakly.
+#[derive(Default)]
 pub struct mode_tree_list {
-    pub(crate) items: Vec<ModeTreeItemRef>,
+    pub(crate) items: Vec<refbox::RefBox<mode_tree_item>>,
 }
 
 impl mode_tree_list {
+    pub(crate) fn snapshot(&self) -> Vec<ModeTreeItemRef> {
+        self.items.iter().map(ModeTreeItemRef::observe).collect()
+    }
+
     pub(crate) fn first(&self) -> Option<ModeTreeItemRef> {
-        self.items.first().cloned()
+        self.items.first().map(ModeTreeItemRef::observe)
     }
 
     pub(crate) fn last(&self) -> Option<ModeTreeItemRef> {
-        self.items.last().cloned()
+        self.items.last().map(ModeTreeItemRef::observe)
     }
 
     pub(crate) fn position(&self, item: &ModeTreeItemRef) -> usize {
         self.items
             .iter()
-            .position(|candidate| Rc::ptr_eq(candidate, item))
+            .position(|candidate| item.0.is(candidate))
             .expect("mode tree item belongs to its parent list")
     }
 
     pub(crate) fn next(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
-        self.items.get(self.position(item) + 1).cloned()
+        self.items
+            .get(self.position(item) + 1)
+            .map(ModeTreeItemRef::observe)
     }
 
     pub(crate) fn previous(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
         self.position(item)
             .checked_sub(1)
             .and_then(|position| self.items.get(position))
-            .cloned()
+            .map(ModeTreeItemRef::observe)
     }
 }
 
