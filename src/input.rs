@@ -4805,7 +4805,7 @@ unsafe fn input_osc_colour_reply(
     if c == -(1 as ::core::ffi::c_int) {
         return;
     }
-    colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
+    (r, g, b) = colour_split_rgb(c);
     if end_type as ::core::ffi::c_uint == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         end = b"\x07\0" as *const u8 as *const ::core::ffi::c_char;

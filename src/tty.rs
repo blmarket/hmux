@@ -1071,7 +1071,7 @@ unsafe fn tty_force_cursor_colour(mut tty: *mut tty, mut c: ::core::ffi::c_int) 
     if c == -(1 as ::core::ffi::c_int) {
         tty_putcode(tty, TTYC_CR);
     } else {
-        colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb(c);
         let colour = format_cstring(format_args!("rgb:{r:02x}/{g:02x}/{b:02x}"))
             .expect("RGB colour contains no NUL");
         tty_putcode_s(tty, colour.as_ptr());
@@ -3234,7 +3234,7 @@ unsafe fn tty_check_fg(
         if (*(*tty).term).flags & TERM_RGBCOLOURS != 0 {
             return;
         }
-        colour_split_rgb((*gc).fg, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb((*gc).fg);
         (*gc).fg = colour_find_rgb(r, g, b);
     }
     if (*(*tty).term).flags & TERM_256COLOURS != 0 {
@@ -3289,7 +3289,7 @@ unsafe fn tty_check_bg(
         if (*(*tty).term).flags & TERM_RGBCOLOURS != 0 {
             return;
         }
-        colour_split_rgb((*gc).bg, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb((*gc).bg);
         (*gc).bg = colour_find_rgb(r, g, b);
     }
     if (*(*tty).term).flags & TERM_256COLOURS != 0 {
@@ -3426,7 +3426,7 @@ unsafe fn tty_colours_us(mut tty: *mut tty, mut gc: *const grid_cell) {
             );
             return;
         }
-        colour_split_rgb((*gc).us, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb((*gc).us);
         c = (65536 as ::core::ffi::c_int * r as ::core::ffi::c_int
             + 256 as ::core::ffi::c_int * g as ::core::ffi::c_int
             + b as ::core::ffi::c_int) as u_int;
@@ -3458,12 +3458,7 @@ unsafe fn tty_try_colour(
         return 0 as ::core::ffi::c_int;
     }
     if colour & COLOUR_FLAG_RGB != 0 {
-        colour_split_rgb(
-            colour & 0xffffff as ::core::ffi::c_int,
-            &raw mut r,
-            &raw mut g,
-            &raw mut b,
-        );
+        (r, g, b) = colour_split_rgb(colour & 0xffffff as ::core::ffi::c_int);
         if *type_0 as ::core::ffi::c_int == '3' as i32
             && tty_term_has((*tty).term, TTYC_SETRGBF) != 0
         {

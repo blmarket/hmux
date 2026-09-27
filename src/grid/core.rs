@@ -739,7 +739,7 @@ unsafe fn grid_string_cells_fg(
         let fresh37 = n;
         n = n.wrapping_add(1);
         *values.offset(fresh37 as isize) = 2 as ::core::ffi::c_int;
-        colour_split_rgb((*gc).fg, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb((*gc).fg);
         let fresh38 = n;
         n = n.wrapping_add(1);
         *values.offset(fresh38 as isize) = r as ::core::ffi::c_int;
@@ -809,7 +809,7 @@ unsafe fn grid_string_cells_bg(
         let fresh24 = n;
         n = n.wrapping_add(1);
         *values.offset(fresh24 as isize) = 2 as ::core::ffi::c_int;
-        colour_split_rgb((*gc).bg, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb((*gc).bg);
         let fresh25 = n;
         n = n.wrapping_add(1);
         *values.offset(fresh25 as isize) = r as ::core::ffi::c_int;
@@ -885,7 +885,7 @@ unsafe fn grid_string_cells_us(
         let fresh14 = n;
         n = n.wrapping_add(1);
         *values.offset(fresh14 as isize) = 2 as ::core::ffi::c_int;
-        colour_split_rgb((*gc).us, &raw mut r, &raw mut g, &raw mut b);
+        (r, g, b) = colour_split_rgb((*gc).us);
         let fresh15 = n;
         n = n.wrapping_add(1);
         *values.offset(fresh15 as isize) = r as ::core::ffi::c_int;

@@ -208,15 +208,12 @@ pub unsafe fn colour_join_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::
         | b as ::core::ffi::c_int & 0xff as ::core::ffi::c_int
         | COLOUR_FLAG_RGB;
 }
-pub unsafe fn colour_split_rgb(
-    mut c: ::core::ffi::c_int,
-    mut r: *mut u_char,
-    mut g: *mut u_char,
-    mut b: *mut u_char,
-) {
-    *r = (c >> 16 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) as u_char;
-    *g = (c >> 8 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) as u_char;
-    *b = (c & 0xff as ::core::ffi::c_int) as u_char;
+pub fn colour_split_rgb(colour: i32) -> (u_char, u_char, u_char) {
+    (
+        (colour >> 16 & 0xff) as u_char,
+        (colour >> 8 & 0xff) as u_char,
+        (colour & 0xff) as u_char,
+    )
 }
 pub unsafe fn colour_force_rgb(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if c & COLOUR_FLAG_RGB != 0 {
@@ -250,7 +247,7 @@ pub unsafe fn colour_dim(mut c: ::core::ffi::c_int, mut dim: u_int) -> ::core::f
     if c == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
     }
-    colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
+    (r, g, b) = colour_split_rgb(c);
     r = (r as u_int)
         .wrapping_mul((100 as u_int).wrapping_sub(dim))
         .wrapping_div(100 as u_int) as u_char;
