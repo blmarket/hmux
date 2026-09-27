@@ -9,7 +9,7 @@ use hmux2::src::shared::prompt::*;
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::{
     cell::RefCell,
-    ffi::{CStr, CString},
+    ffi::CString,
     rc::Rc,
 };
 
@@ -52,7 +52,7 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
         ] {
             let definition = (&*std::ptr::addr_of!(options_table))
                 .iter()
-                .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == name)
+                .find(|entry| entry.name == Some(name))
                 .unwrap();
             options_default(session, definition);
         }

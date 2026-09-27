@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{
     cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
@@ -243,7 +244,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut s: *mut session = (*target).s;
     let mut wp: *mut window_pane = (*target).wp;
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut oo: *mut options = (*wp).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options);
     let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut visible: ::core::ffi::c_int = 0;

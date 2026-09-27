@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
@@ -97,7 +98,7 @@ unsafe fn window_set_fill_cell(
         |out| write!(out, "{}", ((inside == 0) as ::core::ffi::c_int) as i32),
     );
     value = options_get_string(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_cstring(ft, value);
@@ -232,7 +233,7 @@ pub unsafe fn window_pane_get_border_style(
     }
     if *flag == 0 {
         ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), c, s, (*s).curw, wp);
-        style_apply(saved, (*wp).options, option, ft);
+        style_apply(saved, options_owner_ptr(&mut (*wp).options), option, ft);
         format_free(ft);
         *flag = 1 as ::core::ffi::c_int;
     }
@@ -292,7 +293,7 @@ pub unsafe fn window_make_pane_status(
     );
     format_defaults(ft, c, (*c).session, (*(*c).session).curw, wp);
     fmt = options_get_string(
-        (*wp).options,
+        options_owner_ptr(&mut (*wp).options),
         b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_time_cstring(ft, fmt);

@@ -22,7 +22,7 @@ pub struct session {
     pub windows: winlinks,
     pub statusat: ::core::ffi::c_int,
     pub statuslines: u_int,
-    pub options: *mut options,
+    pub options: Option<Box<options>>,
     pub flags: ::core::ffi::c_int,
     pub attached: u_int,
     pub tio: Option<Box<termios>>,

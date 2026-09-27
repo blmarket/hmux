@@ -318,7 +318,7 @@ pub unsafe fn tty_get_features(mut feat: ::core::ffi::c_int) -> *const ::core::f
     return &raw mut s as *mut ::core::ffi::c_char;
 }
 pub unsafe fn tty_feature_present(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();

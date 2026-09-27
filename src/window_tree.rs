@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
@@ -128,14 +129,7 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 pub const WINDOW_TREE_DEFAULT_COMMAND: [::core::ffi::c_char; 23] = unsafe {
     ::core::mem::transmute::<[u8; 23], [::core::ffi::c_char; 23]>(*b"switch-client -Zt '%%'\0")
 };
-pub const WINDOW_TREE_DEFAULT_FORMAT: [::core::ffi::c_char; 582] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 582],
-        [::core::ffi::c_char; 582],
-    >(
-        *b"#{?pane_format,#{?pane_marked,#[fg=thememagenta],}#{?pane_floating_flag,#[underscore],}#{pane_current_command}#[fg=themelightgrey]#{pane_flags}#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: \"#{pane_title}\",},window_format,#{?window_marked_flag,#[fg=thememagenta],}#{window_name}#[fg=themelightgrey]#{window_flags}#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: \"#{pane_title}\",},#[fg=themelightgrey]#{session_windows} windows#{?session_grouped, (group #{session_group}: #{session_group_list}),}#{?session_attached, (attached),}}\0",
-    )
-};
+pub const WINDOW_TREE_DEFAULT_FORMAT: &CStr = c"#{?pane_format,#{?pane_marked,#[fg=thememagenta],}#{?pane_floating_flag,#[underscore],}#{pane_current_command}#[fg=themelightgrey]#{pane_flags}#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: \"#{pane_title}\",},window_format,#{?window_marked_flag,#[fg=thememagenta],}#{window_name}#[fg=themelightgrey]#{window_flags}#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: \"#{pane_title}\",},#[fg=themelightgrey]#{session_windows} windows#{?session_grouped, (group #{session_group}: #{session_group_list}),}#{?session_attached, (attached),}}";
 pub const WINDOW_TREE_DEFAULT_KEY_FORMAT: [::core::ffi::c_char; 83] = unsafe {
     ::core::mem::transmute::<[u8; 83], [::core::ffi::c_char; 83]>(
         *b"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}\0",
@@ -203,10 +197,10 @@ static window_tree_menu_items: [menu_item<'static>; 12] = [
         command: None,
     },
 ];
-pub static mut window_tree_mode: window_mode = {
+pub static window_tree_mode: window_mode = {
     window_mode {
         name: c"tree-mode",
-        default_format: WINDOW_TREE_DEFAULT_FORMAT.as_ptr(),
+        default_format: Some(WINDOW_TREE_DEFAULT_FORMAT),
         flags: 0,
         init: Some(
             window_tree_init
@@ -848,7 +842,7 @@ unsafe fn window_tree_draw_session(
     }
     window_tree_border_cell(
         &raw mut gc,
-        (*(*(*data).wp).window).options,
+        options_owner_ptr(&mut (*(*(*data).wp).window).options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -903,7 +897,7 @@ unsafe fn window_tree_draw_session(
             loop_0 = loop_0.wrapping_add(1);
         } else {
             w = (*wl).window;
-            oo = (*w).options;
+            oo = options_owner_ptr(&mut (*w).options);
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
                 ::core::ptr::null_mut::<cmdq_item>(),
@@ -1108,7 +1102,7 @@ unsafe fn window_tree_draw_window(
     }
     window_tree_border_cell(
         &raw mut gc,
-        (*(*(*data).wp).window).options,
+        options_owner_ptr(&mut (*(*(*data).wp).window).options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -1163,7 +1157,7 @@ unsafe fn window_tree_draw_window(
             if loop_0 < start {
                 loop_0 = loop_0.wrapping_add(1);
             } else {
-                oo = (*wp).options;
+                oo = options_owner_ptr(&mut (*wp).options);
                 ft = format_create(
                     ::core::ptr::null_mut::<client>(),
                     ::core::ptr::null_mut::<cmdq_item>(),
@@ -1323,7 +1317,7 @@ unsafe fn window_tree_draw_info(
             }
             window_tree_border_cell(
                 &raw mut gc,
-                (*(*(*data).wp).window).options,
+                options_owner_ptr(&mut (*(*(*data).wp).window).options),
                 ::core::ptr::null_mut::<format_tree>(),
             );
             screen_write_cursormove(
@@ -1383,7 +1377,7 @@ unsafe fn window_tree_draw_info(
     if sx > 14 as u_int && i < sy {
         window_tree_border_cell(
             &raw mut gc,
-            (*(*(*data).wp).window).options,
+            options_owner_ptr(&mut (*(*(*data).wp).window).options),
             ::core::ptr::null_mut::<format_tree>(),
         );
         screen_write_cursormove(

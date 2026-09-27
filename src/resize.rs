@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::cmd_find_from_window;
 use crate::src::control::control_get_window_size;
 use crate::src::events::{events_fire, events_fire_window};
@@ -444,7 +445,7 @@ pub unsafe fn default_window_size(
         ) == 0
         {
             value = options_get_string(
-                (*s).options,
+                options_owner_ptr(&mut (*s).options),
                 b"default-size\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if sscanf(
@@ -503,11 +504,11 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
         ((*w).sy) as u32
     ));
     type_0 = options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     current = options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"aggressive-resize\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     changed = clients_calculate_size(

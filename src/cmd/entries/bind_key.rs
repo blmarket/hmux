@@ -115,6 +115,6 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         }
         1 | _ => {}
     }
-    key_bindings_add(tablename, key, note, repeat, pr.cmdlist);
+    key_bindings_add(tablename, key, note, repeat, pr.take_cmdlist());
     return CMD_RETURN_NORMAL;
 }

@@ -67,10 +67,10 @@ pub enum EventPayloadValue {
     Time(time_t),
     Int(::core::ffi::c_int),
     Uint(u_int),
-    Client(*mut client),
-    Session(*mut session),
-    Window(*mut window),
-    Pane(*mut window_pane),
+    Client(std::rc::Rc<std::cell::UnsafeCell<client>>),
+    Session(std::rc::Rc<std::cell::UnsafeCell<session>>),
+    Window(std::rc::Rc<std::cell::UnsafeCell<window>>),
+    Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
     Pointer(EventPayloadPointer),
 }
 impl EventPayloadValue {
@@ -115,25 +115,25 @@ impl EventPayloadValue {
         let Self::Client(value) = self else {
             panic!("incorrect event payload type")
         };
-        *value
+        super::rc::as_ptr(value)
     }
     pub fn session(&self) -> *mut session {
         let Self::Session(value) = self else {
             panic!("incorrect event payload type")
         };
-        *value
+        super::rc::as_ptr(value)
     }
     pub fn window(&self) -> *mut window {
         let Self::Window(value) = self else {
             panic!("incorrect event payload type")
         };
-        *value
+        super::rc::as_ptr(value)
     }
     pub fn pane(&self) -> *mut window_pane {
         let Self::Pane(value) = self else {
             panic!("incorrect event payload type")
         };
-        *value
+        super::rc::as_ptr(value)
     }
     pub fn pointer(&self) -> &EventPayloadPointer {
         let Self::Pointer(value) = self else {

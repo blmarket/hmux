@@ -972,7 +972,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     global_s_options = options_create(::core::ptr::null_mut::<options>());
     global_w_options = options_create(::core::ptr::null_mut::<options>());
     oe = &raw const options_table as *const options_table_entry;
-    while !(*oe).name.is_null() {
+    while !(*oe).name_ptr().is_null() {
         if (*oe).scope & OPTIONS_TABLE_SERVER != 0 {
             options_default(global_options, oe);
         }

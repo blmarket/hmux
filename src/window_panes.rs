@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
 };
@@ -88,10 +89,10 @@ pub struct window_panes_area {
 }
 
 pub const WINDOW_MODE_FILL_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub static mut window_panes_mode: window_mode = {
+pub static window_panes_mode: window_mode = {
     window_mode {
         name: c"panes-mode",
-        default_format: ::core::ptr::null::<::core::ffi::c_char>(),
+        default_format: None,
         flags: WINDOW_MODE_HIDE_PANE_STATUS
             | WINDOW_MODE_NO_STACK
             | WINDOW_MODE_FILL_WINDOW
@@ -325,7 +326,7 @@ unsafe fn window_panes_get_border_cell(
     );
     style_apply(
         gc,
-        (*(*wp).window).options,
+        options_owner_ptr(&mut (*(*wp).window).options),
         b"display-panes-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
@@ -1095,7 +1096,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     format = options_get_string(
-        (*(*(*data).wp).window).options,
+        options_owner_ptr(&mut (*(*(*data).wp).window).options),
         b"display-panes-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *format as ::core::ffi::c_int == '\0' as i32 {
@@ -1148,7 +1149,7 @@ unsafe fn window_panes_draw_number(
     let mut s: *mut session = (*data).session;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wl: *mut winlink = (*s).curw;
-    let mut oo: *mut options = (*(*(*data).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*data).wp).window).options);
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1542,7 +1543,7 @@ unsafe fn window_panes_init(
     s = (*target).s;
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"display-panes-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as u_int;
     } else {

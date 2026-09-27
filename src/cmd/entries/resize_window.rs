@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_result};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
@@ -146,7 +147,7 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         );
     }
     options_set_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
         WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong,
     );

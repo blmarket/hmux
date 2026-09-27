@@ -100,7 +100,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_pane_set_mode(
             wp,
             ::core::ptr::null_mut::<window_pane>(),
-            &raw const window_clock_mode,
+            &window_clock_mode,
             item,
             ::core::ptr::null_mut::<cmd_find_state>(),
             ::core::ptr::null_mut::<args>(),
@@ -128,7 +128,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if window_pane_set_mode(
         wp,
         swp,
-        &raw const window_copy_mode,
+        &window_copy_mode,
         item,
         ::core::ptr::null_mut::<cmd_find_state>(),
         args,

@@ -11,7 +11,7 @@ use hmux2::src::prompt_history::{
 };
 use hmux2::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
 use hmux2::src::tmux::global_options;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 
 #[test]
@@ -22,7 +22,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         for name in [c"prompt-history-limit", c"history-file"] {
             let definition = (&*std::ptr::addr_of!(options_table))
                 .iter()
-                .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == name)
+                .find(|entry| entry.name == Some(name))
                 .unwrap();
             options_default(options, definition);
         }

@@ -81,7 +81,7 @@ unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     window_pane_set_mode(
         wp,
         ::core::ptr::null_mut::<window_pane>(),
-        &raw const window_tree_mode,
+        &window_tree_mode,
         item,
         target,
         &mut *new_args,

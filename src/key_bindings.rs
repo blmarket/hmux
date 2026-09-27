@@ -1,3 +1,4 @@
+use crate::src::shared::key::key_table_owner_ptr;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_command,
@@ -25,7 +26,7 @@ use std::ffi::CStr;
 
 #[repr(C)]
 pub struct key_tables {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut key_table>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, crate::src::shared::key::KeyTableOwner>>>,
 }
 
 static mut key_tables: key_tables = key_tables { storage: None };
@@ -187,7 +188,7 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
         key_tables_remove(&raw mut key_tables, table);
         c = clients.first();
         while !c.is_null() {
-            if (*c).keytable == table {
+            if key_table_owner_ptr(&(*c).keytable) == table {
                 server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
             }
             c = clients.next(c);
@@ -864,9 +865,9 @@ pub unsafe fn key_bindings_init() {
         }
         cmdq_append(
             ::core::ptr::null_mut::<client>(),
-            cmdq_get_command(pr.cmdlist, ::core::ptr::null_mut::<cmdq_state>()),
+            cmdq_get_command(pr.cmdlist_ptr(), ::core::ptr::null_mut::<cmdq_state>()),
         );
-        cmd_list_free(pr.cmdlist);
+        drop(pr.cmdlist.take());
         i = i.wrapping_add(1);
     }
     cmdq_append(
@@ -931,7 +932,7 @@ pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_ta
         .try_borrow_mut()
         .expect("key table index already borrowed");
     let key = elm.name.as_bytes();
-    map.get(key).copied().unwrap_or(std::ptr::null_mut())
+    map.get(key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
 }
 pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
     let key = (*elm).name.as_bytes();
@@ -941,9 +942,9 @@ pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *
         .try_borrow_mut()
         .expect("key table index already borrowed");
     match map.entry(key.to_vec()) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Occupied(entry) => return crate::src::shared::rc::as_ptr(entry.get()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(crate::src::shared::rc::take(elm));
             (*elm).entry.owner = Some(observer);
         }
     }
@@ -961,10 +962,11 @@ pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> *
         let mut map = owner
             .try_borrow_mut()
             .expect("key table index already borrowed");
-        if map.get(key).copied() != Some(elm) {
+        if map.get(key).map(crate::src::shared::rc::as_ptr) != Some(elm) {
             return std::ptr::null_mut();
         }
-        map.remove(key);
+        let detached = map.remove(key).expect("matching key table");
+        let _ = crate::src::shared::rc::into_raw(detached);
         map.is_empty()
     };
     (*elm).entry.owner = None;
@@ -981,7 +983,7 @@ pub unsafe fn key_tables_minmax(head: &key_tables) -> *mut key_table {
         .try_borrow_mut()
         .expect("key table index already borrowed");
     let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    pair.map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
     let Some(owner) = elm.entry.owner.as_ref() else {
@@ -995,7 +997,7 @@ pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
     let key = elm.name.as_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 
 

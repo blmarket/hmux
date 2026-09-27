@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args;
@@ -166,7 +167,7 @@ pub unsafe fn cmd_attach_session(
         }
         if Eflag == 0 {
             environ_update(
-                (*s).options,
+                options_owner_ptr(&mut (*s).options),
                 (*c).environ.as_deref().expect("client environment"),
                 (*s).environ.as_deref_mut().expect("session environment"),
             );
@@ -199,7 +200,7 @@ pub unsafe fn cmd_attach_session(
         }
         if Eflag == 0 {
             environ_update(
-                (*s).options,
+                options_owner_ptr(&mut (*s).options),
                 (*c).environ.as_deref().expect("client environment"),
                 (*s).environ.as_deref_mut().expect("session environment"),
             );

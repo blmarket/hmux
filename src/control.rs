@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{nfds_t, pollfd};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
-use crate::src::monitor::{monitor_add, monitor_create_client, monitor_destroy, monitor_remove};
+use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
@@ -36,7 +36,7 @@ use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::limits::SIZE_MAX;
-use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
+use crate::src::shared::monitor::{monitor_callback, monitor_change};
 use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
@@ -333,7 +333,7 @@ mod control_queue_tests {
                     label: "monitor",
                     order: order.clone(),
                 };
-                let subs = monitor_create_client(
+                let subs = monitor_create_client_owned(
                     c,
                     monitor_callback(move |_| {
                         let _ = &probe;
@@ -370,7 +370,7 @@ mod control_queue_tests {
                     )
                 };
                 let cs = client.control_state.as_deref_mut().unwrap();
-                cs.subs = subs;
+                cs.subs = Some(subs);
                 cs.read_event = read_event;
                 cs.write_event = write_event;
                 cs.windows.set(4, 80, 24);
@@ -681,7 +681,7 @@ pub unsafe fn control_reset_pane(c: *mut client, wp: *mut window_pane) {
     }
 }
 unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> ::core::ffi::c_int {
-    let Some(cs) = (*c).control_state.as_deref() else {
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
         return 1;
     };
     let mut size: size_t = 0;
@@ -1025,7 +1025,7 @@ unsafe fn control_error_callback(c: *mut client) {
 unsafe fn control_read_callback(c: *mut client) {
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
-        let Some(cs) = (*c).control_state.as_deref() else {
+        let Some(cs) = (*c).control_state.as_deref_mut() else {
             break;
         };
         let Some(line) = evbuffer_readln(&mut *(*cs.read_event).input) else {
@@ -1384,7 +1384,7 @@ unsafe fn control_write_callback(c: *mut client) {
     }
     control_flush_all_blocks(c);
     loop {
-        let Some(cs) = (*c).control_state.as_deref() else {
+        let Some(cs) = (*c).control_state.as_deref_mut() else {
             return;
         };
         let buffered = evbuffer_get_length(&*(*cs.write_event).output);
@@ -1406,7 +1406,7 @@ unsafe fn control_write_callback(c: *mut client) {
         let limit = (space / cs.pending_count as size_t / 3).max(CONTROL_WRITE_MINIMUM as size_t);
         let pending = cs.pending_snapshot();
         for pane in pending {
-            let Some(cs) = (*c).control_state.as_deref() else {
+            let Some(cs) = (*c).control_state.as_deref_mut() else {
                 return;
             };
             if evbuffer_get_length(&*(*cs.write_event).output) >= CONTROL_BUFFER_HIGH as size_t {
@@ -1445,7 +1445,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
         w = (*wp).window as *mut window;
         control_notify_write(c, |out| {
             out.write_all(b"%subscription-changed ")?;
-            write_cstr(out, change.name)?;
+            out.write_all(change.name.to_bytes())?;
             write!(
                 out,
                 " ${} @{} {} %{} : ",
@@ -1454,13 +1454,13 @@ unsafe fn control_sub_change(change: &monitor_change) {
                 ((*wl).idx) as u32,
                 ((*wp).id) as u32
             )?;
-            write_cstr(out, change.value)
+            out.write_all(change.value.to_bytes())
         });
     } else if !wl.is_null() {
         w = (*wl).window;
         control_notify_write(c, |out| {
             out.write_all(b"%subscription-changed ")?;
-            write_cstr(out, change.name)?;
+            out.write_all(change.name.to_bytes())?;
             write!(
                 out,
                 " ${} @{} {} - : ",
@@ -1468,14 +1468,14 @@ unsafe fn control_sub_change(change: &monitor_change) {
                 ((*w).id) as u32,
                 ((*wl).idx) as u32
             )?;
-            write_cstr(out, change.value)
+            out.write_all(change.value.to_bytes())
         });
     } else {
         control_notify_write(c, |out| {
             out.write_all(b"%subscription-changed ")?;
-            write_cstr(out, change.name)?;
+            out.write_all(change.name.to_bytes())?;
             write!(out, " ${} - - - : ", ((*s).id) as u32)?;
-            write_cstr(out, change.value)
+            out.write_all(change.value.to_bytes())
         });
     };
 }
@@ -1488,15 +1488,15 @@ pub unsafe fn control_start(mut c: *mut client) {
     }
     setblocking((*c).fd, 0 as ::core::ffi::c_int);
     (*c).control_state = Some(Box::new(control_state::new()));
-    let subs = monitor_create_client(
+    let subs = monitor_create_client_owned(
         c,
         monitor_callback(|change| unsafe { control_sub_change(change) }),
-    ) as *mut monitor_set;
+    );
     let cs = (*c)
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    cs.subs = subs;
+    cs.subs = Some(subs);
     cs.read_event = bufferevent_new(
         (*c).fd,
         bufferevent_data_callback(move |_| unsafe { control_read_callback(c) }),
@@ -1571,12 +1571,12 @@ pub unsafe fn control_discard_all(mut c: *mut client) {
     bufferevent_disable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
 }
 pub unsafe fn control_stop(c: *mut client) {
-    let Some(cs) = (*c).control_state.as_deref() else {
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
         return;
     };
-    let (subs, read_event, write_event) = (cs.subs, cs.read_event, cs.write_event);
+    let (subs, read_event, write_event) = (cs.subs.take(), cs.read_event, cs.write_event);
     // Keep the owner published until callbacks and external resources are gone.
-    monitor_destroy(subs);
+    drop(subs);
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t == 0 {
         bufferevent_free(write_event);
     }
@@ -1605,17 +1605,17 @@ pub unsafe fn control_add_sub(
 ) {
     let subs = (*c)
         .control_state
-        .as_deref()
+        .as_deref_mut()
         .expect("control client state")
-        .subs;
+        .subs.as_mut().expect("control subscriptions").as_ptr();
     monitor_add(subs, name, type_0, id, format, MONITOR_NOTIFY_INITIAL);
 }
 pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
     let subs = (*c)
         .control_state
-        .as_deref()
+        .as_deref_mut()
         .expect("control client state")
-        .subs;
+        .subs.as_mut().expect("control subscriptions").as_ptr();
     monitor_remove(subs, name);
 }
 

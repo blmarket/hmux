@@ -6,7 +6,6 @@ use hmux2::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_p
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
 use hmux2::src::tmux::global_s_options;
-use std::ffi::CStr;
 
 #[test]
 fn grid_word_collects_wide_cells_and_returns_owned_strings() {
@@ -15,7 +14,7 @@ fn grid_word_collects_wide_cells_and_returns_owned_strings() {
         let s_options = options_create(core::ptr::null_mut());
         let definition = (*(&raw const options_table))
             .iter()
-            .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == c"word-separators")
+            .find(|entry| entry.name == Some(c"word-separators"))
             .unwrap();
         options_default(s_options, definition);
         global_s_options = s_options;

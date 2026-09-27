@@ -19,7 +19,7 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
         term.codes = vec![tty_code::None; TTYC_MS as usize + 1].into_boxed_slice();
         let mut terminal = tty {
             client: &raw mut client,
-            term: &raw mut term,
+            term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             ..Default::default()
         };
@@ -30,14 +30,14 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
             |_, _| {},
         );
         let capability = c"\x1b]52;%p1%s;%p2%s\x07";
-        term.codes[TTYC_MS as usize] = tty_code::String(capability.to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] = tty_code::String(capability.to_owned());
         tty_set_selection(&raw mut terminal, c"c", b"ignored while stopped");
         assert!(evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).is_none());
         terminal.flags = TTY_STARTED;
-        term.codes[TTYC_MS as usize] = tty_code::None;
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] = tty_code::None;
         tty_set_selection(&raw mut terminal, c"c", b"ignored without capability");
         assert!(evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).is_none());
-        term.codes[TTYC_MS as usize] = tty_code::String(capability.to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] = tty_code::String(capability.to_owned());
         for (selector, input, expected) in [
             (c"c", b"A\0B".as_slice(), b"\x1b]52;c;QQBC\x07".as_slice()),
             (c"", b"hi".as_slice(), b"\x1b]52;;aGk=\x07".as_slice()),

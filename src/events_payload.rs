@@ -81,15 +81,15 @@ impl Drop for event_payload_item {
         );
         unsafe {
             match value {
-                EventPayloadValue::Client(client) => server_client_unref(client),
+                EventPayloadValue::Client(client) => server_client_unref(crate::src::shared::rc::into_raw(client)),
                 EventPayloadValue::Session(session) => {
-                    session_remove_ref(session, c"event_payload_free_value".as_ptr())
+                    session_remove_ref(crate::src::shared::rc::into_raw(session), c"event_payload_free_value".as_ptr())
                 }
                 EventPayloadValue::Window(window) => {
-                    window_remove_ref(window, c"event_payload_free_value".as_ptr())
+                    window_remove_ref(crate::src::shared::rc::into_raw(window), c"event_payload_free_value".as_ptr())
                 }
                 EventPayloadValue::Pane(pane) => {
-                    window_pane_remove_ref(pane, c"event_payload_free_value".as_ptr())
+                    window_pane_remove_ref(crate::src::shared::rc::into_raw(pane), c"event_payload_free_value".as_ptr())
                 }
                 _ => {}
             }
@@ -277,7 +277,7 @@ pub unsafe fn event_payload_set_client(ep: &mut event_payload, mut c: *mut clien
     let mut name: *const ::core::ffi::c_char =
         b"client\0" as *const u8 as *const ::core::ffi::c_char;
     crate::src::shared::rc::retain(c);
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Client(c));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Client(crate::src::shared::rc::take(c)));
 }
 pub unsafe fn event_payload_set_session(
     ep: &mut event_payload,
@@ -288,7 +288,7 @@ pub unsafe fn event_payload_set_session(
         s,
         b"event_payload_set_session\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Session(s));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Session(crate::src::shared::rc::take(s)));
 }
 pub unsafe fn event_payload_set_window(
     ep: &mut event_payload,
@@ -299,7 +299,7 @@ pub unsafe fn event_payload_set_window(
         w,
         b"event_payload_set_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Window(w));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Window(crate::src::shared::rc::take(w)));
 }
 pub unsafe fn event_payload_set_pane(
     ep: &mut event_payload,
@@ -310,7 +310,7 @@ pub unsafe fn event_payload_set_pane(
         wp,
         b"event_payload_set_pane\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(wp));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(crate::src::shared::rc::take(wp)));
 }
 pub unsafe fn event_payload_set_pointer(
     ep: &mut event_payload,
@@ -476,25 +476,25 @@ pub unsafe fn event_payload_log(
 }
 pub unsafe fn event_payload_get_client(ep: &event_payload) -> *mut client {
     match event_payload_find(ep, c"client").map(|item| &item.value) {
-        Some(EventPayloadValue::Client(value)) => *value,
+        Some(EventPayloadValue::Client(value)) => crate::src::shared::rc::as_ptr(value),
         _ => std::ptr::null_mut(),
     }
 }
 pub unsafe fn event_payload_get_session(ep: &event_payload) -> *mut session {
     match event_payload_find(ep, c"session").map(|item| &item.value) {
-        Some(EventPayloadValue::Session(value)) => *value,
+        Some(EventPayloadValue::Session(value)) => crate::src::shared::rc::as_ptr(value),
         _ => std::ptr::null_mut(),
     }
 }
 pub unsafe fn event_payload_get_window(ep: &event_payload) -> *mut window {
     match event_payload_find(ep, c"window").map(|item| &item.value) {
-        Some(EventPayloadValue::Window(value)) => *value,
+        Some(EventPayloadValue::Window(value)) => crate::src::shared::rc::as_ptr(value),
         _ => std::ptr::null_mut(),
     }
 }
 pub unsafe fn event_payload_get_pane(ep: &event_payload) -> *mut window_pane {
     match event_payload_find(ep, c"pane").map(|item| &item.value) {
-        Some(EventPayloadValue::Pane(value)) => *value,
+        Some(EventPayloadValue::Pane(value)) => crate::src::shared::rc::as_ptr(value),
         _ => std::ptr::null_mut(),
     }
 }

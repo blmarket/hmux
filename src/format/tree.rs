@@ -1,3 +1,4 @@
+use crate::src::shared::format::FormatTreeOwner;
 use crate::src::log::log_cstr;
 use crate::src::shared::format::FormatEntryState;
 // Private tree-storage implementation.  It owns the format-entry tree and
@@ -112,17 +113,18 @@ pub(super) unsafe fn format_create_add_item(mut ft: *mut format_tree, mut item: 
         ::core::mem::size_of::<mouse_event>() as size_t,
     );
 }
-pub unsafe fn format_create(
-    mut c: *mut client,
-    mut item: *mut cmdq_item,
-    mut tag: ::core::ffi::c_int,
-    mut flags: ::core::ffi::c_int,
-) -> *mut format_tree {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    ft = Box::into_raw(Box::new(format_tree::default()));
+/// Construct the sole owner; callers may project pointers for legacy readers.
+unsafe fn format_create_box(
+    c: *mut client,
+    item: *mut cmdq_item,
+    tag: ::core::ffi::c_int,
+    flags: ::core::ffi::c_int,
+) -> Box<format_tree> {
+    let mut owner = Box::new(format_tree::default());
+    let ft = &raw mut *owner;
     if !c.is_null() {
         (*ft).client = c;
-        crate::src::shared::rc::retain((*ft).client);
+        crate::src::shared::rc::retain(c);
     }
     (*ft).item = item;
     (*ft).tag = tag as u_int;
@@ -130,19 +132,61 @@ pub unsafe fn format_create(
     if !item.is_null() {
         format_create_add_item(ft, item);
     }
-    return ft;
+    owner
 }
-pub unsafe fn format_free(ft: *mut format_tree) {
-    // Preserve tmux's key order and finish each entry's cleanup outside a map
-    // borrow, before releasing the tree's retained client.
+
+pub unsafe fn format_create(
+    c: *mut client,
+    item: *mut cmdq_item,
+    tag: ::core::ffi::c_int,
+    flags: ::core::ffi::c_int,
+) -> *mut format_tree {
+    Box::into_raw(format_create_box(c, item, tag, flags))
+}
+
+pub unsafe fn format_create_owned(
+    c: *mut client,
+    item: *mut cmdq_item,
+    tag: ::core::ffi::c_int,
+    flags: ::core::ffi::c_int,
+) -> FormatTreeOwner {
+    FormatTreeOwner { tree: Some(format_create_box(c, item, tag, flags)) }
+}
+
+unsafe fn format_clear(ft: *mut format_tree) {
+    // Capture destructors may add entries to this same tree. End each map
+    // borrow before dispatch, and never hold a whole-tree reference here.
     while let Some((_, entry)) = (*ft).tree.entries.pop_first() {
         drop(entry);
     }
     if !(*ft).client.is_null() {
         server_client_unref((*ft).client);
     }
+}
+
+pub unsafe fn format_free(ft: *mut format_tree) {
+    format_clear(ft);
     drop(Box::from_raw(ft));
 }
+
+impl FormatTreeOwner {
+    pub fn as_ptr(&mut self) -> *mut format_tree {
+        &raw mut **self.tree.as_mut().expect("live format owner")
+    }
+}
+
+impl Drop for FormatTreeOwner {
+    fn drop(&mut self) {
+        if let Some(mut tree) = self.tree.take() {
+            unsafe { format_clear(&raw mut *tree) };
+        }
+    }
+}
+
+pub fn format_owner_ptr(owner: &mut Option<FormatTreeOwner>) -> *mut format_tree {
+    owner.as_mut().map_or(std::ptr::null_mut(), FormatTreeOwner::as_ptr)
+}
+
 pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::core::ffi::c_char) {
     if log_get_level() == 0 as ::core::ffi::c_int {
         return;
@@ -459,29 +503,39 @@ mod tests {
                 unsafe { format_add_cstr(self.ft.as_ptr(), c"from-drop", c"created") };
             }
         }
-        unsafe {
-            let ft = tree();
-            let calls = Rc::new(Cell::new(0));
-            for replace in [true, false] {
-                let capture = Reenter {
-                    ft: std::ptr::NonNull::new(ft).unwrap(),
-                    calls: calls.clone(),
-                };
-                format_add_owned_cb(ft, c"capture", move |_| {
-                    let _keep_capture = &capture;
-                    None
+        for owned in [false, true] {
+            unsafe {
+                let mut owner = owned.then(|| {
+                    format_create_owned(std::ptr::null_mut(), std::ptr::null_mut(), FORMAT_NONE, 0)
                 });
-                if replace {
-                    format_add_cstr(ft, c"capture", c"replacement");
-                    assert_eq!(calls.get(), 1);
-                    assert_eq!(text_value(ft, c"from-drop").unwrap().as_c_str(), c"created");
+                let ft = owner
+                    .as_mut()
+                    .map_or_else(|| tree(), FormatTreeOwner::as_ptr);
+                let calls = Rc::new(Cell::new(0));
+                for replace in [true, false] {
+                    let capture = Reenter {
+                        ft: std::ptr::NonNull::new(ft).unwrap(),
+                        calls: calls.clone(),
+                    };
+                    format_add_owned_cb(ft, c"capture", move |_| {
+                        let _keep_capture = &capture;
+                        None
+                    });
+                    if replace {
+                        format_add_cstr(ft, c"capture", c"replacement");
+                        assert_eq!(calls.get(), 1);
+                        assert_eq!(text_value(ft, c"from-drop").unwrap().as_c_str(), c"created");
+                    }
                 }
+                if owned {
+                    drop(owner);
+                } else {
+                    format_free(ft);
+                }
+                assert_eq!(calls.get(), 2);
             }
-            format_free(ft);
-            assert_eq!(calls.get(), 2);
         }
     }
-
     #[test]
     fn merge_copies_only_materialized_values_and_supports_the_same_tree() {
         unsafe {

@@ -70,7 +70,7 @@ fn aliases_parent_fallback_and_shadowing() {
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"display-panes-colour")
+            .find(|oe| oe.name == Some(c"display-panes-colour"))
             .unwrap();
         let canonical = options_default(parent, definition);
         assert_eq!(
@@ -126,22 +126,22 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"status-left")
+            .find(|oe| oe.name == Some(c"status-left"))
             .unwrap();
         let default = options_default(oo, definition);
         assert_eq!(
             CStr::from_ptr((*default).value.string_ptr()),
-            CStr::from_ptr(definition.default_str)
+            definition.default_str.unwrap()
         );
-        assert_eq!(options_get_only(oo, definition.name), default);
+        assert_eq!(options_get_only(oo, definition.name_ptr()), default);
 
         let empty_definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"status-right")
+            .find(|oe| oe.name == Some(c"status-right"))
             .unwrap();
         let empty = options_empty(oo, empty_definition);
         assert!((*empty).value.string_ptr().is_null());
-        options_set_string(oo, empty_definition.name, 1, |out| {
+        options_set_string(oo, empty_definition.name_ptr(), 1, |out| {
             write_cstr(out, c"tail".as_ptr())
         });
         assert_eq!(CStr::from_ptr((*empty).value.string_ptr()), c"(null)tail");
@@ -156,7 +156,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"update-environment")
+            .find(|oe| oe.name == Some(c"update-environment"))
             .unwrap();
         let array = options_empty(oo, definition);
         assert!(options_array_first(array).is_null());
@@ -280,7 +280,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"update-environment")
+            .find(|oe| oe.name == Some(c"update-environment"))
             .unwrap();
         let strings = options_empty(oo, definition);
         let mut input = b"  ONE,\xff TWO,,\0ignored".to_vec();
@@ -299,7 +299,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
 
         let colour_definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"pane-colours")
+            .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
         let colours = options_empty(oo, colour_definition);
         let mut cause: Option<CString> = None;

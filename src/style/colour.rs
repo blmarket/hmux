@@ -1,3 +1,4 @@
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
@@ -472,8 +473,8 @@ pub unsafe fn colour_format_escape_for_client(
 ) -> Option<std::ffi::CString> {
     let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
     if let Some(client) = c {
-        if client.tty.flags & TTY_OPENED != 0 && !client.tty.term.is_null() {
-            flags = (*client.tty.term).flags;
+        if client.tty.flags & TTY_OPENED != 0 && !tty_term_owner_ptr(&client.tty.term).is_null() {
+            flags = (*tty_term_owner_ptr(&client.tty.term)).flags;
         }
     }
     if colour & COLOUR_FLAG_THEME != 0 {

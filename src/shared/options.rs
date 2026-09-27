@@ -66,7 +66,7 @@ mod tests {
 /// Box-owned by options_create; parent and entry back-pointers are borrowed.
 #[repr(C)]
 pub struct options {
-    pub(crate) tree: BTreeMap<Vec<u8>, *mut options_entry>,
+    pub(crate) tree: BTreeMap<Vec<u8>, Box<options_entry>>,
     pub parent: *mut options,
 }
 
@@ -87,18 +87,21 @@ pub struct options_entry {
     pub value: options_value,
     pub cached: ::core::ffi::c_int,
     pub style: style,
-    pub monitor_data: *mut ::core::ffi::c_void,
+    pub monitor_data: Option<Box<crate::src::hooks::hooks_monitor>>,
     pub fire_count: u_int,
     pub fire_time: time_t,
 }
 
-pub struct OptionCommand(pub *mut cmd_list);
+pub struct OptionCommand(pub Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>);
 
-impl Drop for OptionCommand {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            unsafe { crate::src::cmd::cmd_list_free(self.0) };
-        }
+impl OptionCommand {
+    /// Transfer the existing retained reference; do not increment its count.
+    pub unsafe fn from_retained(ptr: *mut cmd_list) -> Self {
+        Self(if ptr.is_null() {
+            None
+        } else {
+            Some(super::rc::take(ptr))
+        })
     }
 }
 
@@ -130,7 +133,10 @@ impl options_value {
 
     pub fn cmdlist(&self) -> *mut cmd_list {
         match self {
-            Self::Command(value) => value.0,
+            Self::Command(value) => value
+                .0
+                .as_ref()
+                .map_or(std::ptr::null_mut(), super::rc::as_ptr),
             Self::Empty => ::core::ptr::null_mut(),
             _ => panic!("option value is not a command"),
         }
@@ -147,21 +153,21 @@ impl options_value {
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct options_table_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alternative_name: *const ::core::ffi::c_char,
+    pub name: Option<&'static std::ffi::CStr>,
+    pub alternative_name: Option<&'static std::ffi::CStr>,
     pub type_0: options_table_type,
     pub scope: ::core::ffi::c_int,
     pub flags: ::core::ffi::c_int,
     pub minimum: u_int,
     pub maximum: u_int,
-    pub choices: *mut *const ::core::ffi::c_char,
-    pub default_str: *const ::core::ffi::c_char,
+    pub choices: &'static [&'static std::ffi::CStr],
+    pub default_str: Option<&'static std::ffi::CStr>,
     pub default_num: ::core::ffi::c_longlong,
-    pub default_arr: *mut *const ::core::ffi::c_char,
-    pub separator: *const ::core::ffi::c_char,
-    pub pattern: *const ::core::ffi::c_char,
-    pub text: *const ::core::ffi::c_char,
-    pub unit: *const ::core::ffi::c_char,
+    pub default_arr: Option<&'static [&'static std::ffi::CStr]>,
+    pub separator: Option<&'static std::ffi::CStr>,
+    pub pattern: Option<&'static std::ffi::CStr>,
+    pub text: Option<&'static std::ffi::CStr>,
+    pub unit: Option<&'static std::ffi::CStr>,
 }
 
 /// Numeric indices precede bytewise-ordered text keys.
@@ -171,10 +177,10 @@ pub enum OptionsArrayKey {
     Text(Vec<u8>),
 }
 
-/// Rust-owned index; items and their values retain their C allocation contract.
+/// Sole owner of boxed array items and their values.
 #[derive(Default)]
 pub struct options_array_storage {
-    pub(crate) entries: BTreeMap<OptionsArrayKey, *mut options_array_item>,
+    pub(crate) entries: BTreeMap<OptionsArrayKey, Box<options_array_item>>,
 }
 
 #[derive(Copy, Clone)]
@@ -182,4 +188,32 @@ pub struct options_array_storage {
 pub struct options_name_map {
     pub from: &'static ::std::ffi::CStr,
     pub to: &'static ::std::ffi::CStr,
+}
+
+impl options_table_entry {
+    pub fn name_ptr(&self) -> *const std::ffi::c_char {
+        self.name.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+    pub fn alternative_name_ptr(&self) -> *const std::ffi::c_char {
+        self.alternative_name
+            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+    pub fn default_str_ptr(&self) -> *const std::ffi::c_char {
+        self.default_str
+            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+    pub fn separator_ptr(&self) -> *const std::ffi::c_char {
+        self.separator
+            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+    pub fn pattern_ptr(&self) -> *const std::ffi::c_char {
+        self.pattern
+            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+    pub fn text_ptr(&self) -> *const std::ffi::c_char {
+        self.text.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+    pub fn unit_ptr(&self) -> *const std::ffi::c_char {
+        self.unit.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
 }

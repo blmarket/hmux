@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::compat::strtonum::strtonum;
@@ -146,7 +147,7 @@ impl input_ctx {
             utf8started: 0,
             ch: 0,
             last: Default::default(),
-            state: ::core::ptr::null(),
+            state: &input_state_ground,
             flags: 0,
             requests: VecDeque::new(),
             request_count: 0,
@@ -173,6 +174,33 @@ unsafe fn input_clear_params(ictx: &mut input_ctx) {
 #[cfg(test)]
 mod input_buffer_ownership_tests {
     use super::*;
+
+    #[test]
+    fn dropping_the_input_owner_cancels_registered_timers() {
+        unsafe {
+            let mut owner = input_init(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+            for timer in [&mut owner.ground_timer, &mut owner.request_timer] {
+                let calls = calls.clone();
+                event_set(timer, -1, 0, move |_, _| calls.set(calls.get() + 1));
+                let timeout = timeval { tv_sec: 0, tv_usec: 0 };
+                assert_eq!(event_add(timer, &timeout), 0);
+            }
+            // Moving the owning Box into a model field must preserve timer
+            // addresses. Dropping that field must cancel both registrations.
+            let slot = Some(owner);
+            drop(slot);
+            crate::src::reactor::event_loop();
+            assert_eq!(calls.get(), 0);
+            assert_eq!(std::rc::Rc::strong_count(&calls), 1);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 
     #[test]
     fn colon_parameter_survives_later_numeric_error_until_next_split() {
@@ -757,1293 +785,1293 @@ unsafe fn input_table_find<'a>(
         .ok()
         .map(|index| &table[index])
 }
-static mut input_state_ground: input_state = {
+static input_state_ground: input_state = {
     input_state {
         name: c"ground",
         enter: Some(input_ground),
         exit: None,
-        transitions: &raw const input_state_ground_table as *const input_transition,
+        transitions: &input_state_ground_table,
     }
 };
-static mut input_state_esc_enter: input_state = {
+static input_state_esc_enter: input_state = {
     input_state {
         name: c"esc_enter",
         enter: Some(input_clear),
         exit: None,
-        transitions: &raw const input_state_esc_enter_table as *const input_transition,
+        transitions: &input_state_esc_enter_table,
     }
 };
-static mut input_state_esc_intermediate: input_state = {
+static input_state_esc_intermediate: input_state = {
     input_state {
         name: c"esc_intermediate",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_esc_intermediate_table as *const input_transition,
+        transitions: &input_state_esc_intermediate_table,
     }
 };
-static mut input_state_csi_enter: input_state = {
+static input_state_csi_enter: input_state = {
     input_state {
         name: c"csi_enter",
         enter: Some(input_clear),
         exit: None,
-        transitions: &raw const input_state_csi_enter_table as *const input_transition,
+        transitions: &input_state_csi_enter_table,
     }
 };
-static mut input_state_csi_parameter: input_state = {
+static input_state_csi_parameter: input_state = {
     input_state {
         name: c"csi_parameter",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_csi_parameter_table as *const input_transition,
+        transitions: &input_state_csi_parameter_table,
     }
 };
-static mut input_state_csi_intermediate: input_state = {
+static input_state_csi_intermediate: input_state = {
     input_state {
         name: c"csi_intermediate",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_csi_intermediate_table as *const input_transition,
+        transitions: &input_state_csi_intermediate_table,
     }
 };
-static mut input_state_csi_ignore: input_state = {
+static input_state_csi_ignore: input_state = {
     input_state {
         name: c"csi_ignore",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_csi_ignore_table as *const input_transition,
+        transitions: &input_state_csi_ignore_table,
     }
 };
-static mut input_state_dcs_enter: input_state = {
+static input_state_dcs_enter: input_state = {
     input_state {
         name: c"dcs_enter",
         enter: Some(input_enter_dcs),
         exit: None,
-        transitions: &raw const input_state_dcs_enter_table as *const input_transition,
+        transitions: &input_state_dcs_enter_table,
     }
 };
-static mut input_state_dcs_parameter: input_state = {
+static input_state_dcs_parameter: input_state = {
     input_state {
         name: c"dcs_parameter",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_dcs_parameter_table as *const input_transition,
+        transitions: &input_state_dcs_parameter_table,
     }
 };
-static mut input_state_dcs_intermediate: input_state = {
+static input_state_dcs_intermediate: input_state = {
     input_state {
         name: c"dcs_intermediate",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_dcs_intermediate_table as *const input_transition,
+        transitions: &input_state_dcs_intermediate_table,
     }
 };
-static mut input_state_dcs_handler: input_state = {
+static input_state_dcs_handler: input_state = {
     input_state {
         name: c"dcs_handler",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_dcs_handler_table as *const input_transition,
+        transitions: &input_state_dcs_handler_table,
     }
 };
-static mut input_state_dcs_escape: input_state = {
+static input_state_dcs_escape: input_state = {
     input_state {
         name: c"dcs_escape",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_dcs_escape_table as *const input_transition,
+        transitions: &input_state_dcs_escape_table,
     }
 };
-static mut input_state_dcs_ignore: input_state = {
+static input_state_dcs_ignore: input_state = {
     input_state {
         name: c"dcs_ignore",
         enter: None,
         exit: None,
-        transitions: &raw const input_state_dcs_ignore_table as *const input_transition,
+        transitions: &input_state_dcs_ignore_table,
     }
 };
-static mut input_state_osc_string: input_state = {
+static input_state_osc_string: input_state = {
     input_state {
         name: c"osc_string",
         enter: Some(input_enter_osc),
         exit: Some(input_exit_osc),
-        transitions: &raw const input_state_osc_string_table as *const input_transition,
+        transitions: &input_state_osc_string_table,
     }
 };
-static mut input_state_apc_string: input_state = {
+static input_state_apc_string: input_state = {
     input_state {
         name: c"apc_string",
         enter: Some(input_enter_apc),
         exit: Some(input_exit_apc),
-        transitions: &raw const input_state_apc_string_table as *const input_transition,
+        transitions: &input_state_apc_string_table,
     }
 };
-static mut input_state_rename_string: input_state = {
+static input_state_rename_string: input_state = {
     input_state {
         name: c"rename_string",
         enter: Some(input_enter_rename),
         exit: Some(input_exit_rename),
-        transitions: &raw const input_state_rename_string_table as *const input_transition,
+        transitions: &input_state_rename_string_table,
     }
 };
-static mut input_state_consume_st: input_state = {
+static input_state_consume_st: input_state = {
     input_state {
         name: c"consume_st",
         enter: Some(input_enter_rename),
         exit: None,
-        transitions: &raw const input_state_consume_st_table as *const input_transition,
+        transitions: &input_state_consume_st_table,
     }
 };
-static mut input_state_ground_table: [input_transition; 10] = {
+static input_state_ground_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_print),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0x7f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x80 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: Some(input_top_bit_set),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_esc_enter_table: [input_transition; 23] = {
+static input_state_esc_enter_table: [input_transition; 23] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_esc_intermediate,
+            state: Some(&input_state_esc_intermediate),
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x4f as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x50 as ::core::ffi::c_int,
             last: 0x50 as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_dcs_enter,
+            state: Some(&input_state_dcs_enter),
         },
         input_transition {
             first: 0x51 as ::core::ffi::c_int,
             last: 0x57 as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x58 as ::core::ffi::c_int,
             last: 0x58 as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_consume_st,
+            state: Some(&input_state_consume_st),
         },
         input_transition {
             first: 0x59 as ::core::ffi::c_int,
             last: 0x59 as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x5a as ::core::ffi::c_int,
             last: 0x5a as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x5b as ::core::ffi::c_int,
             last: 0x5b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_csi_enter,
+            state: Some(&input_state_csi_enter),
         },
         input_transition {
             first: 0x5c as ::core::ffi::c_int,
             last: 0x5c as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x5d as ::core::ffi::c_int,
             last: 0x5d as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_osc_string,
+            state: Some(&input_state_osc_string),
         },
         input_transition {
             first: 0x5e as ::core::ffi::c_int,
             last: 0x5e as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_consume_st,
+            state: Some(&input_state_consume_st),
         },
         input_transition {
             first: 0x5f as ::core::ffi::c_int,
             last: 0x5f as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_apc_string,
+            state: Some(&input_state_apc_string),
         },
         input_transition {
             first: 0x60 as ::core::ffi::c_int,
             last: 0x6a as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x6b as ::core::ffi::c_int,
             last: 0x6b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_rename_string,
+            state: Some(&input_state_rename_string),
         },
         input_transition {
             first: 0x6c as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_esc_intermediate_table: [input_transition; 10] = {
+static input_state_esc_intermediate_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_esc_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_csi_enter_table: [input_transition; 14] = {
+static input_state_csi_enter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_csi_intermediate,
+            state: Some(&input_state_csi_intermediate),
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: &raw const input_state_csi_parameter,
+            state: Some(&input_state_csi_parameter),
         },
         input_transition {
             first: 0x3a as ::core::ffi::c_int,
             last: 0x3a as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: &raw const input_state_csi_parameter,
+            state: Some(&input_state_csi_parameter),
         },
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: &raw const input_state_csi_parameter,
+            state: Some(&input_state_csi_parameter),
         },
         input_transition {
             first: 0x3c as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_csi_parameter,
+            state: Some(&input_state_csi_parameter),
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_csi_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_csi_parameter_table: [input_transition; 14] = {
+static input_state_csi_parameter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_csi_intermediate,
+            state: Some(&input_state_csi_intermediate),
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x3a as ::core::ffi::c_int,
             last: 0x3a as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x3c as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_csi_ignore,
+            state: Some(&input_state_csi_ignore),
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_csi_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_csi_intermediate_table: [input_transition; 11] = {
+static input_state_csi_intermediate_table: [input_transition; 11] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_csi_ignore,
+            state: Some(&input_state_csi_ignore),
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_csi_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_csi_ignore_table: [input_transition; 10] = {
+static input_state_csi_ignore_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_dcs_enter_table: [input_transition; 14] = {
+static input_state_dcs_enter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_dcs_intermediate,
+            state: Some(&input_state_dcs_intermediate),
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: &raw const input_state_dcs_parameter,
+            state: Some(&input_state_dcs_parameter),
         },
         input_transition {
             first: 0x3a as ::core::ffi::c_int,
             last: 0x3a as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_dcs_ignore,
+            state: Some(&input_state_dcs_ignore),
         },
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: &raw const input_state_dcs_parameter,
+            state: Some(&input_state_dcs_parameter),
         },
         input_transition {
             first: 0x3c as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_dcs_parameter,
+            state: Some(&input_state_dcs_parameter),
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: &raw const input_state_dcs_handler,
+            state: Some(&input_state_dcs_handler),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_dcs_parameter_table: [input_transition; 14] = {
+static input_state_dcs_parameter_table: [input_transition; 14] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: &raw const input_state_dcs_intermediate,
+            state: Some(&input_state_dcs_intermediate),
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x3a as ::core::ffi::c_int,
             last: 0x3a as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_dcs_ignore,
+            state: Some(&input_state_dcs_ignore),
         },
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
             handler: Some(input_parameter),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x3c as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_dcs_ignore,
+            state: Some(&input_state_dcs_ignore),
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: &raw const input_state_dcs_handler,
+            state: Some(&input_state_dcs_handler),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_dcs_intermediate_table: [input_transition; 11] = {
+static input_state_dcs_intermediate_table: [input_transition; 11] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
             handler: Some(input_intermediate),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_dcs_ignore,
+            state: Some(&input_state_dcs_ignore),
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: &raw const input_state_dcs_handler,
+            state: Some(&input_state_dcs_handler),
         },
         input_transition {
             first: 0x7f as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_dcs_handler_table: [input_transition; 4] = {
+static input_state_dcs_handler_table: [input_transition; 4] = {
     [
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_dcs_escape,
+            state: Some(&input_state_dcs_escape),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_dcs_escape_table: [input_transition; 4] = {
+static input_state_dcs_escape_table: [input_transition; 4] = {
     [
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x5b as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: &raw const input_state_dcs_handler,
+            state: Some(&input_state_dcs_handler),
         },
         input_transition {
             first: 0x5c as ::core::ffi::c_int,
             last: 0x5c as ::core::ffi::c_int,
             handler: Some(input_dcs_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x5d as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: &raw const input_state_dcs_handler,
+            state: Some(&input_state_dcs_handler),
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_dcs_ignore_table: [input_transition; 8] = {
+static input_state_dcs_ignore_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_osc_string_table: [input_transition; 10] = {
+static input_state_osc_string_table: [input_transition; 10] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x6 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x7 as ::core::ffi::c_int,
             last: 0x7 as ::core::ffi::c_int,
             handler: Some(input_end_bel),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x8 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_apc_string_table: [input_transition; 8] = {
+static input_state_apc_string_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_rename_string_table: [input_transition; 8] = {
+static input_state_rename_string_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: Some(input_input),
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
-static mut input_state_consume_st_table: [input_transition; 8] = {
+static input_state_consume_st_table: [input_transition; 8] = {
     [
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
             handler: Some(input_c0_dispatch),
-            state: &raw const input_state_ground,
+            state: Some(&input_state_ground),
         },
         input_transition {
             first: 0x1b as ::core::ffi::c_int,
             last: 0x1b as ::core::ffi::c_int,
             handler: None,
-            state: &raw const input_state_esc_enter,
+            state: Some(&input_state_esc_enter),
         },
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
         input_transition {
             first: -(1 as ::core::ffi::c_int),
             last: -(1 as ::core::ffi::c_int),
             handler: None,
-            state: ::core::ptr::null::<input_state>(),
+            state: None,
         },
     ]
 };
@@ -2172,9 +2200,9 @@ pub unsafe fn input_init(
     mut bev: *mut bufferevent,
     mut palette: *mut colour_palette,
     mut c: *mut client,
-) -> *mut input_ctx {
-    let mut ictx: *mut input_ctx = ::core::ptr::null_mut::<input_ctx>();
-    ictx = Box::into_raw(Box::new(input_ctx::new()));
+) -> Box<input_ctx> {
+    let mut owner = Box::new(input_ctx::new());
+    let ictx = &raw mut *owner;
     (*ictx).wp = wp;
     (*ictx).event = bev;
     (*ictx).palette = palette;
@@ -2192,23 +2220,32 @@ pub unsafe fn input_init(
         move |_, _| unsafe { input_request_timer_callback(ictx as *mut ::core::ffi::c_void) },
     );
     input_reset(ictx, 0 as ::core::ffi::c_int);
-    return ictx;
+    owner
 }
-pub unsafe fn input_free(mut ictx: *mut input_ctx) {
-    input_clear_params(&mut *ictx);
-    loop {
-        let ir = input_ctx_requests(ictx)
-            .front_mut()
-            .map(|owner| &mut **owner as *mut input_request);
-        let Some(ir) = ir else {
-            break;
-        };
-        input_free_request(ir);
+
+pub fn input_free(ictx: Box<input_ctx>) {
+    drop(ictx);
+}
+
+impl Drop for input_ctx {
+    fn drop(&mut self) {
+        unsafe {
+            let ictx = self as *mut input_ctx;
+            input_clear_params(&mut *ictx);
+            loop {
+                let ir = input_ctx_requests(ictx)
+                    .front_mut()
+                    .map(|owner| &mut **owner as *mut input_request);
+                let Some(ir) = ir else {
+                    break;
+                };
+                input_free_request(ir);
+            }
+            event_del(&raw mut (*ictx).request_timer);
+            event_del(&raw mut (*ictx).ground_timer);
+            screen_write_stop_sync((*ictx).wp);
+        }
     }
-    event_del(&raw mut (*ictx).request_timer);
-    event_del(&raw mut (*ictx).ground_timer);
-    screen_write_stop_sync((*ictx).wp);
-    drop(Box::from_raw(ictx));
 }
 pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -2224,51 +2261,40 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
         screen_write_stop(&mut *sctx);
     }
     input_clear(ictx);
-    (*ictx).state = &raw const input_state_ground as *const input_state;
+    (*ictx).state = &input_state_ground;
     (*ictx).flags = 0 as ::core::ffi::c_int;
 }
 pub fn input_pending(ictx: &mut input_ctx) -> &mut evbuffer {
     &mut ictx.since_ground
 }
-unsafe fn input_set_state(mut ictx: *mut input_ctx, mut itr: *const input_transition) {
+unsafe fn input_set_state(mut ictx: *mut input_ctx, state: &'static input_state) {
     if (*(*ictx).state).exit.is_some() {
         (*(*ictx).state).exit.expect("non-null function pointer")(ictx);
     }
-    (*ictx).state = (*itr).state as *const input_state;
+    (*ictx).state = state;
     if (*(*ictx).state).enter.is_some() {
         (*(*ictx).state).enter.expect("non-null function pointer")(ictx);
     }
 }
 unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len: size_t) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut state: *const input_state = ::core::ptr::null::<input_state>();
-    let mut itr: *const input_transition = ::core::ptr::null::<input_transition>();
-    let mut off: size_t = 0 as size_t;
+    let mut state: Option<&'static input_state> = None;
+    let mut transition: Option<&'static input_transition> = None;
+    let mut off: size_t = 0;
     while off < len {
-        let fresh16 = off;
-        off = off.wrapping_add(1);
-        (*ictx).ch = *buf.offset(fresh16 as isize) as ::core::ffi::c_int;
-        if (*ictx).state != state
-            || itr.is_null()
-            || (*ictx).ch < (*itr).first
-            || (*ictx).ch > (*itr).last
+        (*ictx).ch = *buf.add(off) as ::core::ffi::c_int;
+        off += 1;
+        if !state.is_some_and(|state| std::ptr::eq((*ictx).state, state))
+            || !transition.is_some_and(|itr| (*ictx).ch >= itr.first && (*ictx).ch <= itr.last)
         {
-            itr = (*(*ictx).state).transitions;
-            while (*itr).first != -(1 as ::core::ffi::c_int)
-                && (*itr).last != -(1 as ::core::ffi::c_int)
-            {
-                if (*ictx).ch >= (*itr).first && (*ictx).ch <= (*itr).last {
-                    break;
-                }
-                itr = itr.offset(1);
-            }
-            if (*itr).first == -(1 as ::core::ffi::c_int)
-                || (*itr).last == -(1 as ::core::ffi::c_int)
-            {
-                fatalx(|out| out.write_all(b"no transition from state"));
-            }
+            transition = (*ictx).state.transitions.iter()
+                .take_while(|itr| itr.first != -1 && itr.last != -1)
+                .find(|itr| (*ictx).ch >= itr.first && (*ictx).ch <= itr.last);
         }
-        state = (*ictx).state as *const input_state;
+        let Some(itr) = transition else {
+            fatalx(|out| out.write_all(b"no transition from state"));
+        };
+        state = Some((*ictx).state);
         if (*itr).handler != Some(input_print) {
             screen_write_collect_end(&mut *sctx);
         }
@@ -2277,10 +2303,10 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
         {
             continue;
         }
-        if !(*itr).state.is_null() {
-            input_set_state(ictx, itr);
+        if let Some(state) = itr.state {
+            input_set_state(ictx, state);
         }
-        if (*ictx).state != &raw const input_state_ground {
+        if !std::ptr::eq((*ictx).state, &input_state_ground) {
             evbuffer_add(
                 &mut *(*ictx).since_ground,
                 &raw mut (*ictx).ch as *const ::core::ffi::c_void,
@@ -2304,7 +2330,7 @@ pub unsafe fn input_parse_buffer(
     mut buf: *const u_char,
     mut len: size_t,
 ) {
-    let mut ictx: *mut input_ctx = (*wp).ictx;
+    let mut ictx: *mut input_ctx = (*wp).ictx.as_deref_mut().map_or(std::ptr::null_mut(), |ictx| ictx);
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     if len == 0 as size_t {
         return;
@@ -3149,7 +3175,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         };
                     } else {
                         if !(*ictx).wp.is_null() {
-                            oo = (*(*ictx).wp).options;
+                            oo = options_owner_ptr(&mut (*(*ictx).wp).options);
                         } else {
                             oo = global_w_options;
                         }
@@ -4448,7 +4474,7 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         } else {
             if !wp.is_null() {
-                oo = (*wp).options;
+                oo = options_owner_ptr(&mut (*wp).options);
             } else {
                 oo = global_w_options;
             }
@@ -4488,7 +4514,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     if wp.is_null() {
         oo = global_w_options;
     } else {
-        oo = (*wp).options;
+        oo = options_owner_ptr(&mut (*wp).options);
     }
     if (*ictx).flags & INPUT_DISCARD != 0 {
         log_debug(format_args!(
@@ -4587,7 +4613,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         0 | 2 => {
             if !wp.is_null()
                 && options_get_number(
-                    (*wp).options,
+                    options_owner_ptr(&mut (*wp).options),
                     b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
                 ) != 0
                 && screen_set_title(
@@ -4671,7 +4697,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
     ));
     if !wp.is_null()
         && options_get_number(
-            (*wp).options,
+            options_owner_ptr(&mut (*wp).options),
             b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         && screen_set_title(
@@ -4702,7 +4728,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         return;
     }
     if options_get_number(
-        (*(*ictx).wp).options,
+        options_owner_ptr(&mut (*(*ictx).wp).options),
         b"allow-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -4721,7 +4747,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
     w = (*wp).window as *mut window;
     if (*ictx).input_len == 0 as size_t {
         o = options_get_only(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if !o.is_null() {
@@ -4732,7 +4758,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
             );
         }
         if options_get_number(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0
         {
@@ -4744,7 +4770,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         }
     } else {
         options_set_number(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_longlong,
         );

@@ -113,15 +113,15 @@ unsafe fn monitor_report(
     mut s: *mut session,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
-    mut value: *const ::core::ffi::c_char,
-    mut last: *const ::core::ffi::c_char,
+    value: &CStr,
+    last: Option<&CStr>,
 ) {
     // A callback may remove the item while still using the change record.
     let name = (*me).name.clone();
     let mut change: monitor_change = monitor_change {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
-        value: ::core::ptr::null::<::core::ffi::c_char>(),
-        last: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: &name,
+        value,
+        last,
         c: ::core::ptr::null_mut::<client>(),
         s: ::core::ptr::null_mut::<session>(),
         wl: ::core::ptr::null_mut::<winlink>(),
@@ -131,13 +131,10 @@ unsafe fn monitor_report(
         "{}: {} changed to {}",
         "monitor_report",
         log_cstr((name.as_ptr()) as *const _),
-        log_cstr((value) as *const _)
+        log_cstr(value.as_ptr())
     ));
     (*me).fire_count = (*me).fire_count.wrapping_add(1);
     (*me).fire_time = current_time;
-    change.name = name.as_ptr();
-    change.value = value;
-    change.last = last;
     change.c = (*ms).client;
     change.s = s;
     change.wl = wl;
@@ -167,8 +164,8 @@ unsafe fn monitor_check_value(
                 s,
                 wl,
                 wp,
-                value.as_ptr(),
-                ::core::ptr::null::<::core::ffi::c_char>(),
+                value,
+                None,
             );
         }
         return;
@@ -181,7 +178,7 @@ unsafe fn monitor_check_value(
     let old = (*owned_last).replace(next);
     let previous = old.as_ref().expect("monitor last value existed");
     if notify {
-        monitor_report(ms, me, s, wl, wp, value.as_ptr(), previous.as_ptr());
+        monitor_report(ms, me, s, wl, wp, value, Some(previous));
     }
 }
 unsafe fn monitor_check_session(
@@ -588,7 +585,7 @@ pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mu
     }
     return ms;
 }
-pub unsafe fn monitor_destroy(mut ms: *mut monitor_set) {
+unsafe fn monitor_clear(mut ms: *mut monitor_set) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     if !ms.is_null() {
@@ -609,8 +606,41 @@ pub unsafe fn monitor_destroy(mut ms: *mut monitor_set) {
                 b"monitor_destroy\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
+    }
+}
+pub unsafe fn monitor_destroy(ms: *mut monitor_set) {
+    if !ms.is_null() {
+        monitor_clear(ms);
         drop(Box::from_raw(ms));
     }
+}
+
+impl crate::src::shared::monitor::MonitorOwner {
+    pub fn as_ptr(&mut self) -> *mut monitor_set {
+        &raw mut **self.0.as_mut().expect("live monitor owner")
+    }
+}
+impl Drop for crate::src::shared::monitor::MonitorOwner {
+    fn drop(&mut self) {
+        if let Some(mut owner) = self.0.take() {
+            unsafe {
+                monitor_clear(&raw mut *owner);
+            }
+            drop(owner);
+        }
+    }
+}
+pub unsafe fn monitor_create_client_owned(
+    c: *mut client,
+    cb: monitor_cb,
+) -> crate::src::shared::monitor::MonitorOwner {
+    crate::src::shared::monitor::MonitorOwner(Some(Box::from_raw(monitor_create_client(c, cb))))
+}
+pub unsafe fn monitor_create_session_owned(
+    s: *mut session,
+    cb: monitor_cb,
+) -> crate::src::shared::monitor::MonitorOwner {
+    crate::src::shared::monitor::MonitorOwner(Some(Box::from_raw(monitor_create_session(s, cb))))
 }
 pub struct ParsedMonitor {
     pub name: CString,
@@ -810,34 +840,38 @@ pub unsafe fn monitor_get_fire_time(
     return (*me).fire_time;
 }
 
+
+// Insertion transfers a raw Box owner only on success; removal returns it to the
+// caller. Duplicate and wrong-index operations leave ownership unchanged.
 pub unsafe fn monitor_items_find(head: &monitor_items, elm: &monitor_item) -> *mut monitor_item {
+    let key = elm.name.as_bytes().to_vec();
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let map = owner
+    let mut map = owner
         .try_borrow_mut()
         .expect("monitor item index already borrowed");
-    let key = elm.name.as_bytes();
-    map.get(key).copied().unwrap_or(std::ptr::null_mut())
+    map.get_mut(&key)
+        .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
 pub unsafe fn monitor_items_insert(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    let key = (*elm).name.as_bytes();
+    let key = (*elm).name.as_bytes().to_vec();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
         .try_borrow_mut()
         .expect("monitor item index already borrowed");
-    match map.entry(key.to_vec()) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
             (*elm).entry.owner = Some(observer);
+            entry.insert(Box::from_raw(elm));
+            std::ptr::null_mut()
         }
     }
-    std::ptr::null_mut()
 }
 pub unsafe fn monitor_items_remove(
     head: *mut monitor_items,
@@ -846,82 +880,83 @@ pub unsafe fn monitor_items_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = (*elm).name.as_bytes();
+    let key = (*elm).name.as_bytes().to_vec();
     let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let empty = {
+    let (mut node, empty) = {
         let mut map = owner
             .try_borrow_mut()
             .expect("monitor item index already borrowed");
-        if map.get(key).copied() != Some(elm) {
+        if map.get_mut(&key).map(|node| &raw mut **node) != Some(elm) {
             return std::ptr::null_mut();
         }
-        map.remove(key);
-        map.is_empty()
+        let node = map.remove(&key).expect("matching monitor node");
+        (node, map.is_empty())
     };
-    (*elm).entry.owner = None;
+    node.entry.owner = None;
     if empty {
         (*head).storage = None;
     }
-    elm
+    Box::into_raw(node)
 }
 pub unsafe fn monitor_items_minmax(head: &monitor_items) -> *mut monitor_item {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let map = owner
+    let mut map = owner
         .try_borrow_mut()
         .expect("monitor item index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    map.iter_mut()
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 pub unsafe fn monitor_items_next(elm: &monitor_item) -> *mut monitor_item {
-    let Some(owner) = elm.entry.owner.as_ref() else {
+    let key = elm.name.as_bytes().to_vec();
+    let Some(owner) = elm.entry.owner.clone() else {
         return std::ptr::null_mut();
     };
-    let map = match owner.try_borrow_mut() {
+    let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
         Err(refbox::BorrowError::Borrowed) => panic!("monitor item index already borrowed"),
     };
-    let key = elm.name.as_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+    map.range_mut((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 
-fn monitor_panes_key(elm: &monitor_pane) -> (u32, u32) {
-    (elm.pane, elm.idx)
-}
+// Insertion transfers a raw Box owner only on success; removal returns it to the
+// caller. Duplicate and wrong-index operations leave ownership unchanged.
 pub unsafe fn monitor_panes_find(head: &monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
+    let key = (elm.pane, elm.idx);
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let map = owner
+    let mut map = owner
         .try_borrow_mut()
         .expect("monitor pane index already borrowed");
-    let key = monitor_panes_key(elm);
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
+    map.get_mut(&key)
+        .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
 pub unsafe fn monitor_panes_insert(
     head: *mut monitor_panes,
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
-    let key = monitor_panes_key(&*elm);
+    let key = ((*elm).pane, (*elm).idx);
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
         .try_borrow_mut()
         .expect("monitor pane index already borrowed");
     match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
             (*elm).entry.owner = Some(observer);
+            entry.insert(Box::from_raw(elm));
+            std::ptr::null_mut()
         }
     }
-    std::ptr::null_mut()
 }
 pub unsafe fn monitor_panes_remove(
     head: *mut monitor_panes,
@@ -930,85 +965,86 @@ pub unsafe fn monitor_panes_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = monitor_panes_key(&*elm);
+    let key = ((*elm).pane, (*elm).idx);
     let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let empty = {
+    let (mut node, empty) = {
         let mut map = owner
             .try_borrow_mut()
             .expect("monitor pane index already borrowed");
-        if map.get(&key).copied() != Some(elm) {
+        if map.get_mut(&key).map(|node| &raw mut **node) != Some(elm) {
             return std::ptr::null_mut();
         }
-        map.remove(&key);
-        map.is_empty()
+        let node = map.remove(&key).expect("matching monitor node");
+        (node, map.is_empty())
     };
-    (*elm).entry.owner = None;
+    node.entry.owner = None;
     if empty {
         (*head).storage = None;
     }
-    elm
+    Box::into_raw(node)
 }
 pub unsafe fn monitor_panes_minmax(head: &monitor_panes) -> *mut monitor_pane {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let map = owner
+    let mut map = owner
         .try_borrow_mut()
         .expect("monitor pane index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    map.iter_mut()
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 pub unsafe fn monitor_panes_next(elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(owner) = elm.entry.owner.as_ref() else {
+    let key = (elm.pane, elm.idx);
+    let Some(owner) = elm.entry.owner.clone() else {
         return std::ptr::null_mut();
     };
-    let map = match owner.try_borrow_mut() {
+    let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
         Err(refbox::BorrowError::Borrowed) => panic!("monitor pane index already borrowed"),
     };
-    let key = monitor_panes_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+    map.range_mut((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 
-fn monitor_windows_key(elm: &monitor_window) -> (u32, u32) {
-    (elm.window, elm.idx)
-}
+// Insertion transfers a raw Box owner only on success; removal returns it to the
+// caller. Duplicate and wrong-index operations leave ownership unchanged.
 pub unsafe fn monitor_windows_find(
     head: &monitor_windows,
     elm: &monitor_window,
 ) -> *mut monitor_window {
+    let key = (elm.window, elm.idx);
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let map = owner
+    let mut map = owner
         .try_borrow_mut()
         .expect("monitor window index already borrowed");
-    let key = monitor_windows_key(elm);
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
+    map.get_mut(&key)
+        .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
 pub unsafe fn monitor_windows_insert(
     head: *mut monitor_windows,
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
-    let key = monitor_windows_key(&*elm);
+    let key = ((*elm).window, (*elm).idx);
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
         .try_borrow_mut()
         .expect("monitor window index already borrowed");
     match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
             (*elm).entry.owner = Some(observer);
+            entry.insert(Box::from_raw(elm));
+            std::ptr::null_mut()
         }
     }
-    std::ptr::null_mut()
 }
 pub unsafe fn monitor_windows_remove(
     head: *mut monitor_windows,
@@ -1017,51 +1053,51 @@ pub unsafe fn monitor_windows_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = monitor_windows_key(&*elm);
+    let key = ((*elm).window, (*elm).idx);
     let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let empty = {
+    let (mut node, empty) = {
         let mut map = owner
             .try_borrow_mut()
             .expect("monitor window index already borrowed");
-        if map.get(&key).copied() != Some(elm) {
+        if map.get_mut(&key).map(|node| &raw mut **node) != Some(elm) {
             return std::ptr::null_mut();
         }
-        map.remove(&key);
-        map.is_empty()
+        let node = map.remove(&key).expect("matching monitor node");
+        (node, map.is_empty())
     };
-    (*elm).entry.owner = None;
+    node.entry.owner = None;
     if empty {
         (*head).storage = None;
     }
-    elm
+    Box::into_raw(node)
 }
 pub unsafe fn monitor_windows_minmax(head: &monitor_windows) -> *mut monitor_window {
     let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let map = owner
+    let mut map = owner
         .try_borrow_mut()
         .expect("monitor window index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    map.iter_mut()
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window {
-    let Some(owner) = elm.entry.owner.as_ref() else {
+    let key = (elm.window, elm.idx);
+    let Some(owner) = elm.entry.owner.clone() else {
         return std::ptr::null_mut();
     };
-    let map = match owner.try_borrow_mut() {
+    let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
         Err(refbox::BorrowError::Borrowed) => panic!("monitor window index already borrowed"),
     };
-    let key = monitor_windows_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+    map.range_mut((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
-
 #[cfg(test)]
 mod last_owner_tests {
     use super::*;
@@ -1087,10 +1123,10 @@ mod last_owner_tests {
                 ::core::ptr::null_mut(),
                 crate::src::shared::monitor::monitor_callback(move |change| {
                     let mut capture = callback_capture.borrow_mut();
-                    capture.value = CStr::from_ptr(change.value).to_bytes().to_vec();
-                    capture.last = CStr::from_ptr(change.last).to_bytes().to_vec();
-                    monitor_remove(capture.set, change.name);
-                    capture.name = CStr::from_ptr(change.name).to_bytes().to_vec();
+                    capture.value = change.value.to_bytes().to_vec();
+                    capture.last = change.last.expect("previous value").to_bytes().to_vec();
+                    monitor_remove(capture.set, change.name.as_ptr());
+                    capture.name = change.name.to_bytes().to_vec();
                 }),
             );
             capture.borrow_mut().set = set;

@@ -1,3 +1,4 @@
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
@@ -1339,7 +1340,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     {
         tdkc = (&raw const tty_default_code_keys as *const tty_default_key_code).offset(i as isize)
             as *const tty_default_key_code;
-        s = tty_term_string((*tty).term, (*tdkc).code);
+        s = tty_term_string(tty_term_owner_ptr(&(*tty).term), (*tdkc).code);
         if *s as ::core::ffi::c_int != '\0' as i32 {
             tty_keys_add(tty, s, (*tdkc).key);
         }

@@ -1261,7 +1261,7 @@ pub unsafe fn tty_term_create(
     mut name: *mut ::core::ffi::c_char,
     mut caps: *mut *mut ::core::ffi::c_char,
     mut ncaps: u_int,
-) -> Result<*mut tty_term, CString> {
+) -> Result<Box<tty_term>, CString> {
     let mut c: *mut client = (*tty).client;
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
@@ -1293,7 +1293,6 @@ pub unsafe fn tty_term_create(
     });
 
     term = &raw mut *owner;
-    let _ = Box::into_raw(owner);
     (*term).tty = tty as *mut tty;
     (*term).entry.le_next = tty_terms.lh_first;
     if !(*term).entry.le_next.is_null() {
@@ -1479,22 +1478,32 @@ pub unsafe fn tty_term_create(
             ));
             i = i.wrapping_add(1);
         }
-        return Ok(term);
+        return Ok(owner);
     };
-    tty_term_free(term);
+    drop(owner);
     Err(error.expect("unsupported terminal has an error message"))
 }
-pub unsafe fn tty_term_free(mut term: *mut tty_term) {
-    log_debug(format_args!(
-        "removing term {}",
-        log_cstr((((*term).name).as_ptr().cast_mut()) as *const _)
-    ));
-    if !(*term).entry.le_next.is_null() {
-        (*(*term).entry.le_next).entry.le_prev = (*term).entry.le_prev;
-    }
-    *(*term).entry.le_prev = (*term).entry.le_next;
-    drop(Box::from_raw(term));
+pub fn tty_term_free(term: Box<tty_term>) {
+    drop(term);
 }
+
+impl Drop for tty_term {
+    fn drop(&mut self) {
+        // Empty/test terminals are unregistered. Constructors link the stable
+        // Box before validation, so this also unlinks on every failure path.
+        if self.entry.le_prev.is_null() {
+            return;
+        }
+        unsafe {
+            log_debug(format_args!("removing term {}", log_cstr(self.name.as_ptr())));
+            if !self.entry.le_next.is_null() {
+                (*self.entry.le_next).entry.le_prev = self.entry.le_prev;
+            }
+            *self.entry.le_prev = self.entry.le_next;
+        }
+    }
+}
+
 pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
     let fd: ::core::ffi::c_int = STDIN_FILENO;
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
@@ -1592,11 +1601,16 @@ impl Drop for CurrentTerminalOwner {
         }
     }
 }
-pub unsafe fn tty_term_has(mut term: *mut tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
+/// Read-only legacy projection; ownership stays with the TTY.
+pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> *const tty_term {
+    owner.as_deref().map_or(std::ptr::null(), |term| term)
+}
+
+pub unsafe fn tty_term_has(mut term: *const tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
     (!matches!((&(*term).codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
 }
 pub unsafe fn tty_term_has_name(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
@@ -1610,7 +1624,7 @@ pub unsafe fn tty_term_has_name(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn tty_term_string(
-    term: *mut tty_term,
+    term: *const tty_term,
     code: tty_code_code,
 ) -> *const ::core::ffi::c_char {
     match &(&(*term).codes)[code as usize] {
@@ -1620,7 +1634,7 @@ pub unsafe fn tty_term_string(
     }
 }
 pub unsafe fn tty_term_string_i(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
 ) -> *const ::core::ffi::c_char {
@@ -1637,7 +1651,7 @@ pub unsafe fn tty_term_string_i(
     return s;
 }
 pub unsafe fn tty_term_string_ii(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
@@ -1655,7 +1669,7 @@ pub unsafe fn tty_term_string_ii(
     return s;
 }
 pub unsafe fn tty_term_string_iii(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
@@ -1674,7 +1688,7 @@ pub unsafe fn tty_term_string_iii(
     return s;
 }
 pub unsafe fn tty_term_string_s(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -1691,7 +1705,7 @@ pub unsafe fn tty_term_string_s(
     return s;
 }
 pub unsafe fn tty_term_string_ss(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut code: tty_code_code,
     mut a: *const ::core::ffi::c_char,
     mut b: *const ::core::ffi::c_char,
@@ -1708,14 +1722,14 @@ pub unsafe fn tty_term_string_ss(
     }
     return s;
 }
-pub unsafe fn tty_term_number(term: *mut tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+pub unsafe fn tty_term_number(term: *const tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&(*term).codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Number(value) => *value,
         _ => fatalx(|out| write!(out, "not a number: {}", (code) as i32)),
     }
 }
-pub unsafe fn tty_term_flag(term: *mut tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+pub unsafe fn tty_term_flag(term: *const tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&(*term).codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Flag(value) => *value,
@@ -1723,7 +1737,7 @@ pub unsafe fn tty_term_flag(term: *mut tty_term, code: tty_code_code) -> ::core:
     }
 }
 pub unsafe fn tty_term_describe(
-    mut term: *mut tty_term,
+    mut term: *const tty_term,
     mut code: tty_code_code,
 ) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 256] = [0; 256];
@@ -1772,6 +1786,43 @@ pub unsafe fn tty_term_describe(
 #[cfg(test)]
 mod term_string_owner_tests {
     use super::*;
+
+    #[test]
+    fn terminal_owners_unlink_after_constructor_failure_and_out_of_order_drop() {
+        use crate::src::options::{options_create_owned, options_empty, options_search};
+        unsafe {
+            let saved = global_options;
+            let initial_head = tty_terms.lh_first;
+            let mut options = options_create_owned(std::ptr::null_mut());
+            global_options = &raw mut *options;
+            for name in [c"terminal-features", c"terminal-overrides"] {
+                options_empty(global_options, options_search(name.as_ptr()));
+            }
+            let mut client = client::empty();
+            client.environ = Some(crate::src::environ::environ_create());
+            let mut terminal = tty::empty();
+            terminal.client = &raw mut client;
+            let name = c"owner-test".as_ptr().cast_mut();
+
+            // A failed constructor must remove its already-published address.
+            let failed = tty_term_create(&mut terminal, name, std::ptr::null_mut(), 0);
+            assert_eq!(failed.err().unwrap().as_c_str(), c"terminal does not support clear");
+            assert_eq!(tty_terms.lh_first, initial_head);
+
+            let mut caps = [c"clear=C".as_ptr().cast_mut(), c"cup=P".as_ptr().cast_mut()];
+            let first = tty_term_create(&mut terminal, name, caps.as_mut_ptr(), 2).unwrap();
+            let first_ptr = &*first as *const tty_term;
+            terminal.term = Some(first);
+            let second = tty_term_create(&mut terminal, name, caps.as_mut_ptr(), 2).unwrap();
+            assert!(std::ptr::eq(second.entry.le_next, first_ptr));
+            // Remove the tail before the head; the head's back-links must be repaired.
+            drop(terminal.term.take());
+            assert_eq!(second.entry.le_next, initial_head);
+            drop(second);
+            assert_eq!(tty_terms.lh_first, initial_head);
+            global_options = saved;
+        }
+    }
 
     #[test]
     fn override_tokens_keep_escaping_limits_and_independent_storage() {

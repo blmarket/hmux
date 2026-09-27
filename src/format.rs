@@ -172,7 +172,7 @@ mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_cstr, format_add_tv, format_create, format_each, format_free,
+    format_add, format_add_cstr, format_add_tv, format_create, format_create_owned, format_owner_ptr, format_each, format_free,
     format_get_pane, format_log_debug, format_merge,
 };
 mod jobs;

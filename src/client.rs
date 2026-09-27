@@ -323,10 +323,10 @@ pub unsafe fn client_main(
         if pr.status as ::core::ffi::c_uint
             == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if cmd_list_any_have(pr.cmdlist) != 0 {
+            if cmd_list_any_have(pr.cmdlist_ptr()) != 0 {
                 flags |= CLIENT_STARTSERVER as uint64_t;
             }
-            cmd_list_free(pr.cmdlist);
+            drop(pr.cmdlist.take());
         }
     }
     client_proc = proc_start(b"client\0" as *const u8 as *const ::core::ffi::c_char);

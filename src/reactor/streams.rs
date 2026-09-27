@@ -11,7 +11,7 @@ use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
 struct StreamState {
-    stream: *mut bufferevent,
+    stream: RefCell<Option<Box<bufferevent>>>,
     fd: c_int,
     original_flags: c_int,
     pid: u32,
@@ -93,7 +93,11 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
             if !s.live.get() {
                 break;
             }
-            let stream = s.stream;
+            let stream = s
+                .stream
+                .borrow_mut()
+                .as_deref_mut()
+                .map_or(std::ptr::null_mut(), |stream| stream as *mut bufferevent);
             let (read, write, generation) = unsafe {
                 let b = &*stream;
                 (
@@ -138,8 +142,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                             .min(65536)
                     };
                     if count > 0 {
-                        let n =
-                            super::evbuffer_read(&mut *(*stream).input, s.fd, count as c_int);
+                        let n = super::evbuffer_read(&mut *(*stream).input, s.fd, count as c_int);
                         if n > 0 {
                             if (*(*stream).input).remaining() >= (*stream).wm_read.low {
                                 let cb = (*stream).readcb.clone();
@@ -224,15 +227,16 @@ pub unsafe fn bufferevent_new(
         }
         flags
     };
-    let stream = Box::into_raw(Box::new(bufferevent {
+    let mut owner = Box::new(bufferevent {
         readcb,
         writecb,
         errorcb,
         enabled: 4,
         ..Default::default()
-    }));
+    });
+    let stream = &raw mut *owner;
     let s = Rc::new(StreamState {
-        stream,
+        stream: RefCell::new(Some(owner)),
         fd,
         original_flags,
         pid: std::process::id(),
@@ -245,8 +249,14 @@ pub unsafe fn bufferevent_new(
     STREAMS.with(|r| r.borrow_mut().insert(stream as usize, s.clone()));
     BUFFERS.with(|b| {
         let mut b = b.borrow_mut();
-        b.insert((&*(*stream).input as *const evbuffer) as usize, Rc::downgrade(&s));
-        b.insert((&*(*stream).output as *const evbuffer) as usize, Rc::downgrade(&s));
+        b.insert(
+            (&*(*stream).input as *const evbuffer) as usize,
+            Rc::downgrade(&s),
+        );
+        b.insert(
+            (&*(*stream).output as *const evbuffer) as usize,
+            Rc::downgrade(&s),
+        );
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
@@ -273,7 +283,50 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
         if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
             libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
         }
-        drop(Box::from_raw(stream));
+        // Task state may still be retained by the callback that called free.
+        // Detach the allocation now and release the slot borrow before capture Drop.
+        let owner = s.stream.borrow_mut().take();
+        drop(owner);
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    use crate::src::shared::event::bufferevent_data_callback;
+
+    #[test]
+    fn free_detaches_stream_before_dropping_callback_captures() {
+        struct Probe {
+            state: Rc<StreamState>,
+            dropped: Rc<Cell<bool>>,
+        }
+        impl Drop for Probe {
+            fn drop(&mut self) {
+                assert!(!self.state.live.get());
+                assert!(self.state.stream.borrow_mut().is_none());
+                self.dropped.set(true);
+            }
+        }
+        unsafe {
+            let stream = bufferevent_new(-1, None, None, None);
+            let retained = state(&*stream);
+            let dropped = Rc::new(Cell::new(false));
+            let probe = Probe {
+                state: retained.clone(),
+                dropped: dropped.clone(),
+            };
+            (*stream).readcb = bufferevent_data_callback(move |_| {
+                let _ = &probe;
+            });
+            bufferevent_free(stream);
+            assert!(dropped.get());
+            assert!(retained.stream.borrow().is_none());
+            assert_eq!(Rc::strong_count(&retained), 1);
+            // An already removed registration does not release the owner twice.
+            bufferevent_free(stream);
+            super::super::shutdown_runtime();
+        }
     }
 }
 pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut evbuffer {

@@ -111,7 +111,7 @@ pub struct window {
     pub outside_cell: grid_cell,
     pub flags: ::core::ffi::c_int,
     pub alerts_queued: ::core::ffi::c_int,
-    pub options: *mut options,
+    pub options: Option<Box<options>>,
     pub winlinks: window_winlinks,
     pub entry: window_entry,
 }
@@ -140,7 +140,7 @@ pub struct window_winlinks {
 pub struct window_mode_entry {
     pub wp: *mut window_pane,
     pub swp: *mut window_pane,
-    pub mode: *const window_mode,
+    pub mode: &'static window_mode,
     pub data: *mut ::core::ffi::c_void,
     pub screen: *mut screen,
     pub prefix: u_int,
@@ -151,7 +151,7 @@ pub struct window_mode_entry {
 #[repr(C)]
 pub struct window_mode {
     pub name: &'static ::std::ffi::CStr,
-    pub default_format: *const ::core::ffi::c_char,
+    pub default_format: Option<&'static std::ffi::CStr>,
     pub flags: ::core::ffi::c_int,
     pub init: Option<
         unsafe fn(
@@ -194,7 +194,7 @@ impl Default for window_mode {
     fn default() -> Self {
         Self {
             name: c"",
-            default_format: ::core::ptr::null(),
+            default_format: None,
             flags: 0,
             init: None,
             free: None,

@@ -1,3 +1,5 @@
+use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::{memcpy, memset, strlcat, strlen};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
@@ -93,9 +95,8 @@ pub struct redraw_draw_ctx<'scene> {
 pub struct redraw_build_cell {
     pub data: redraw_span_data,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct redraw_build_ctx {
+pub struct redraw_build_ctx<'a> {
     pub c: *mut client,
     pub w: *mut window,
     pub ox: u_int,
@@ -103,7 +104,7 @@ pub struct redraw_build_ctx {
     pub sx: u_int,
     pub sy: u_int,
     pub ind: ::core::ffi::c_int,
-    pub cells: *mut redraw_build_cell,
+    pub cells: &'a mut [redraw_build_cell],
 }
 
 pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
@@ -229,11 +230,6 @@ unsafe fn redraw_get_window_offset(c: &mut client) -> tty_window_view {
 unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx) {
     let mut s: *mut session = (*c).session;
     let mut w: *mut window = (*(*s).curw).window;
-    memset(
-        bctx as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<redraw_build_ctx>() as size_t,
-    );
     (*bctx).c = c;
     (*bctx).w = w;
     let view = redraw_get_window_offset(&mut *c);
@@ -242,7 +238,7 @@ unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx
     (*bctx).sx = view.sx;
     (*bctx).sy = view.sy;
     (*bctx).ind = options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"pane-border-indicators\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
 }
@@ -251,10 +247,8 @@ unsafe fn redraw_get_build_cell(
     mut x: u_int,
     mut y: u_int,
 ) -> *mut redraw_build_cell {
-    return (*bctx)
-        .cells
-        .offset(y.wrapping_mul((*bctx).sx).wrapping_add(x) as isize)
-        as *mut redraw_build_cell;
+    let index = y as usize * (*bctx).sx as usize + x as usize;
+    &raw mut (*bctx).cells[index]
 }
 unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
@@ -933,7 +927,7 @@ fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
         _ => false,
     }
 }
-unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<redraw_build_cell>) {
+unsafe fn redraw_build_cells<'a>(mut bctx: *mut redraw_build_ctx<'a>, cells: &'a mut Vec<redraw_build_cell>) {
     let mut w: *mut window = (*bctx).w;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ncells: size_t = 0;
@@ -964,7 +958,7 @@ unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<re
         }
         cells.resize_with(ncells, redraw_build_cell::default);
     }
-    (*bctx).cells = cells.as_mut_ptr();
+    (*bctx).cells = &mut cells[..ncells];
     y = 0 as u_int;
     while y < (*bctx).sy {
         x = 0 as u_int;
@@ -993,7 +987,7 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> Option<Box<redraw_scene>> {
         sx: 0,
         sy: 0,
         ind: 0,
-        cells: ::core::ptr::null_mut::<redraw_build_cell>(),
+        cells: &mut [],
     };
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut last: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
@@ -1182,7 +1176,7 @@ unsafe fn redraw_get_default_border_style(
     let scene = dctx.scene;
     let mut c: *mut client = scene.c;
     let mut s: *mut session = (*c).session;
-    let mut oo: *mut options = (*scene.w).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*scene.w).options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut dgc: *mut grid_cell = &mut dctx.default_gc;
     if !dctx.flags & REDRAW_DEFAULT_SET != 0 {
@@ -1743,10 +1737,10 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> redraw_draw_ctx<'_> {
     if server_is_marked(s, (*s).curw, marked_pane.wp) != 0 {
         dctx.marked = marked_pane.wp;
     }
-    if options_get_number((*s).options, c"status-position".as_ptr()) == 0 {
+    if options_get_number(options_owner_ptr(&mut (*s).options), c"status-position".as_ptr()) == 0 {
         dctx.flags |= REDRAW_STATUS_TOP;
     }
-    if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has((*c).tty.term, TTYC_BIDI) != 0 {
+    if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has(tty_term_owner_ptr(&(*c).tty.term), TTYC_BIDI) != 0 {
         dctx.flags |= REDRAW_ISOLATES;
     }
     dctx

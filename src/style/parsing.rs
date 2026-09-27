@@ -1074,7 +1074,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     oe = crate::src::options::options_table_entry(o);
     let style = format_single_cstring(
         ::core::ptr::null_mut::<cmdq_item>(),
-        (*oe).default_str,
+        (*oe).default_str_ptr(),
         ::core::ptr::null_mut::<client>(),
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),

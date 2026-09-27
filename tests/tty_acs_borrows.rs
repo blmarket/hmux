@@ -16,9 +16,9 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_U8 as usize + 1].into_boxed_slice();
         term.acs[b'q' as usize] = [0x80, 0];
-        let terminal = tty {
+        let mut terminal = tty {
             client: &mut client,
-            term: &mut term,
+            term: Some(Box::new(term)),
             ..Default::default()
         };
         for (utf8, u8_cap, legacy) in [
@@ -29,7 +29,7 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
             (true, Some(0), true),
         ] {
             client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
-            term.codes[TTYC_U8 as usize] = u8_cap.map_or(tty_code::None, tty_code::Number);
+            terminal.term.as_deref_mut().unwrap().codes[TTYC_U8 as usize] = u8_cap.map_or(tty_code::None, tty_code::Number);
             assert_eq!(tty_acs_needed(Some(&terminal)) != 0, legacy);
             let mapped = tty_acs_get(Some(&terminal), b'q').unwrap();
             assert_eq!(
@@ -41,7 +41,7 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
                 }
             );
             if legacy {
-                assert_eq!(mapped.to_bytes().as_ptr(), term.acs[b'q' as usize].as_ptr());
+                assert_eq!(mapped.to_bytes().as_ptr(), terminal.term.as_deref().unwrap().acs[b'q' as usize].as_ptr());
             }
             assert!(tty_acs_get(Some(&terminal), b'A').is_none());
         }

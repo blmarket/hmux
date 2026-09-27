@@ -1,3 +1,4 @@
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
 use crate::src::log::{fatalx, log_debug, log_get_level};
@@ -42,17 +43,17 @@ unsafe fn tty_draw_line_clear(
         && nx >= 10 as u_int
         && tty_fake_bce(&*tty, defaults, bg) == 0
     {
-        if px.wrapping_add(nx) >= (*tty).sx && tty_term_has((*tty).term, TTYC_EL) != 0 {
+        if px.wrapping_add(nx) >= (*tty).sx && tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_EL) != 0 {
             tty_cursor(tty, px, py);
             tty_putcode(tty, TTYC_EL);
             return;
         }
-        if px == 0 as u_int && tty_term_has((*tty).term, TTYC_EL1) != 0 {
+        if px == 0 as u_int && tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_EL1) != 0 {
             tty_cursor(tty, px.wrapping_add(nx).wrapping_sub(1 as u_int), py);
             tty_putcode(tty, TTYC_EL1);
             return;
         }
-        if tty_term_has((*tty).term, TTYC_ECH) != 0 {
+        if tty_term_has(tty_term_owner_ptr(&(*tty).term), TTYC_ECH) != 0 {
             tty_cursor(tty, px, py);
             tty_putcode_i(tty, TTYC_ECH, nx as ::core::ffi::c_int);
             return;

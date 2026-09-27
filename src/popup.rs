@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{format_create_defaults, format_free};
@@ -81,7 +82,7 @@ pub struct popup_data {
     pub defaults: grid_cell,
     pub palette: refbox::RefBox<colour_palette>,
     pub job: *mut job,
-    pub ictx: *mut input_ctx,
+    pub ictx: Option<Box<input_ctx>>,
     pub status: ::core::ffi::c_int,
     pub px: u_int,
     pub py: u_int,
@@ -248,8 +249,8 @@ impl Drop for popup_data {
             if !self.job.is_null() {
                 job_free(self.job);
             }
-            if !self.ictx.is_null() {
-                input_free(self.ictx);
+            if let Some(ictx) = self.ictx.take() {
+                input_free(ictx);
             }
             screen_free(&mut self.s);
             colour_palette_free(Some(
@@ -299,7 +300,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     if s.is_null() {
         return;
     }
-    o = (*(*(*s).curw).window).options;
+    o = options_owner_ptr(&mut (*(*(*s).curw).window).options);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
         c,
@@ -863,7 +864,7 @@ unsafe fn popup_job_update_cb(job: &mut job, popup: &PopupGuard) {
     (*c).overlay_check = None;
     let render = PopupRenderSnapshot::new(popup);
     input_parse_screen(
-        (*pd).ictx,
+        (*pd).ictx.as_deref_mut().map_or(std::ptr::null_mut(), |ictx| ictx),
         s,
         Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
         data as *const u_char,
@@ -1062,9 +1063,9 @@ pub unsafe fn popup_display(
         link: 0,
     };
     if !s.is_null() {
-        o = (*(*(*s).curw).window).options;
+        o = options_owner_ptr(&mut (*(*(*s).curw).window).options);
     } else {
-        o = (*(*(*(*c).session).curw).window).options;
+        o = options_owner_ptr(&mut (*(*(*(*c).session).curw).window).options);
     }
     if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
         lines = options_get_number(
@@ -1196,12 +1197,12 @@ pub unsafe fn popup_display(
     if (*pd).job.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    (*pd).ictx = input_init(
+    (*pd).ictx = Some(input_init(
         ::core::ptr::null_mut::<window_pane>(),
         job_get_event((*pd).job),
         (*pd).palette.as_ptr().cast_mut(),
         c,
-    );
+    ));
     (*pd).published = true;
     let check_cb = popup_check_callback(owner.handle());
     let mode = owner.handle();

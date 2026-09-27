@@ -9,7 +9,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::format_expand_cstring;
 use crate::src::grid::grid_default_cell;
-use crate::src::hooks::hooks_monitor_free;
 use crate::src::input::input_set_buffer_size;
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::layout::layout_fix_panes;
@@ -217,7 +216,7 @@ unsafe fn options_value_to_cstring(
                     .to_owned()
                 }
             }
-            5 => CStr::from_ptr(*(*tableentry).choices.offset(ov.number() as isize)).to_owned(),
+            5 => (*tableentry).choices[ov.number() as usize].to_owned(),
             _ => {
                 fatalx(|out| out.write_all(b"not a number option type"));
             }
@@ -231,26 +230,43 @@ unsafe fn options_value_to_cstring(
     }
     c"".to_owned()
 }
-pub unsafe fn options_create(mut parent: *mut options) -> *mut options {
-    let oo = Box::new(options {
+/// Project only the owning field for a legacy raw-pointer call. The result is
+/// an observer, valid only while the box remains installed and live.
+pub fn options_owner_ptr(owner: &mut Option<Box<options>>) -> *mut options {
+    owner.as_deref_mut().map_or(std::ptr::null_mut(), |root| root)
+}
+
+pub fn options_create_owned(parent: *mut options) -> Box<options> {
+    Box::new(options {
         tree: Default::default(),
         parent,
-    });
-    Box::into_raw(oo)
+    })
 }
-pub unsafe fn options_free(mut oo: *mut options) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut tmp: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    o = options_first(oo);
-    while !o.is_null() && {
-        tmp = options_next(o);
-        1 as ::core::ffi::c_int != 0
-    } {
-        options_remove(o);
-        o = tmp;
-    }
+
+/// Legacy ownership transfer. The caller must eventually consume the returned
+/// allocation with options_free or transfer it to a model owner.
+pub unsafe fn options_create(parent: *mut options) -> *mut options {
+    Box::into_raw(options_create_owned(parent))
+}
+
+pub unsafe fn options_free(oo: *mut options) {
     drop(Box::from_raw(oo));
 }
+
+impl Drop for options {
+    fn drop(&mut self) {
+        unsafe {
+            // Preserve value-before-monitor cleanup and the existing key order.
+            let mut entry = options_first(self);
+            while !entry.is_null() {
+                let next = options_next(entry);
+                options_remove(entry);
+                entry = next;
+            }
+        }
+    }
+}
+
 pub unsafe fn options_get_parent(mut oo: *mut options) -> *mut options {
     return (*oo).parent;
 }
@@ -260,30 +276,32 @@ pub unsafe fn options_set_parent(mut oo: *mut options, mut parent: *mut options)
 pub unsafe fn options_first(mut oo: *mut options) -> *mut options_entry {
     (*oo)
         .tree
-        .values()
+        .values_mut()
         .next()
-        .copied()
+        .map(|entry| &mut **entry as *mut options_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn options_next(mut o: *mut options_entry) -> *mut options_entry {
     let key = (*o).name.as_bytes();
     (*(*o).owner)
         .tree
-        .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .range_mut::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map(|(_, entry)| *entry)
+        .map(|(_, entry)| &mut **entry as *mut options_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn options_get_only(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
-    let entries = &(*oo).tree;
-    entries
-        .get(CStr::from_ptr(name).to_bytes())
-        .or_else(|| entries.get(CStr::from_ptr(options_map_name(name)).to_bytes()))
-        .copied()
-        .unwrap_or(std::ptr::null_mut())
+    let entries = &mut (*oo).tree;
+    let key = CStr::from_ptr(name).to_bytes();
+    let key = if entries.contains_key(key) {
+        key
+    } else {
+        CStr::from_ptr(options_map_name(name)).to_bytes()
+    };
+    entries.get_mut(key).map_or(std::ptr::null_mut(), |entry| &mut **entry)
 }
 pub unsafe fn options_get(
     mut oo: *mut options,
@@ -305,7 +323,7 @@ pub unsafe fn options_empty(
     mut oe: *const options_table_entry,
 ) -> *mut options_entry {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    o = options_add(oo, (*oe).name);
+    o = options_add(oo, (*oe).name_ptr());
     (*o).tableentry = oe;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         (*o).value = options_value::Array(options_array_storage::default());
@@ -319,46 +337,43 @@ pub unsafe fn options_default(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut key: [::core::ffi::c_char; 32] = [0; 32];
-    let mut i: u_int = 0;
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     o = options_empty(oo, oe);
     ov = &raw mut (*o).value;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        if (*oe).default_arr.is_null() {
+        if (*oe).default_arr.is_none() {
             options_array_assign(
                 o,
-                (*oe).default_str,
+                (*oe).default_str_ptr(),
                 ::core::ptr::null_mut::<Option<CString>>(),
             );
             return o;
         }
-        i = 0 as u_int;
-        while !(*(*oe).default_arr.offset(i as isize)).is_null() {
+        for (i, value) in (*oe).default_arr.expect("array defaults").iter().enumerate() {
             xformat(&mut key, format_args!("{}", i as u32));
             options_array_set(
                 o,
                 &raw mut key as *mut ::core::ffi::c_char,
-                *(*oe).default_arr.offset(i as isize),
+                value.as_ptr(),
                 0 as ::core::ffi::c_int,
                 ::core::ptr::null_mut::<Option<CString>>(),
             );
-            i = i.wrapping_add(1);
         }
         return o;
     }
     match (*oe).type_0 as ::core::ffi::c_uint {
         0 => {
-            set_scalar_string(&mut *o, CStr::from_ptr((*oe).default_str).to_owned());
+            set_scalar_string(&mut *o, CStr::from_ptr((*oe).default_str_ptr()).to_owned());
         }
         6 => {
             pr = cmd_parse_from_string(
-                CStr::from_ptr((*oe).default_str),
+                CStr::from_ptr((*oe).default_str_ptr()),
                 ::core::ptr::null_mut::<cmd_parse_input>(),
             );
             match pr.status as ::core::ffi::c_uint {
                 0 => {}
                 1 => {
-                    (*ov) = options_value::Command(OptionCommand(pr.cmdlist));
+                    (*ov) = options_value::Command(OptionCommand(pr.cmdlist.take()));
                 }
                 _ => {}
             }
@@ -373,13 +388,13 @@ pub unsafe fn options_default(
 /// libc-owned return value below.
 pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CString {
     match oe.type_0 as ::core::ffi::c_uint {
-        0 | 6 => CStr::from_ptr(oe.default_str).to_owned(),
+        0 | 6 => CStr::from_ptr(oe.default_str_ptr()).to_owned(),
         1 => CString::new(oe.default_num.to_string())
             .expect("decimal option default contains no NUL"),
         2 => key_string_format(oe.default_num as key_code, false),
         3 => colour_format(oe.default_num as ::core::ffi::c_int),
         4 => if oe.default_num != 0 { c"on" } else { c"off" }.to_owned(),
-        5 => CStr::from_ptr(*oe.choices.offset(oe.default_num as isize)).to_owned(),
+        5 => oe.choices[oe.default_num as usize].to_owned(),
         _ => {
             fatalx(|out| out.write_all(b"unknown option type"));
         }
@@ -396,19 +411,19 @@ unsafe fn options_add(
     if !o.is_null() {
         options_remove(o);
     }
-    let owned = Box::new(options_entry {
+    let mut owned = Box::new(options_entry {
         owner: oo,
         name,
         tableentry: ::core::ptr::null(),
         value: options_value::Empty,
         cached: 0,
         style: Default::default(),
-        monitor_data: ::core::ptr::null_mut(),
+        monitor_data: None,
         fire_count: 0,
         fire_time: 0,
     });
-    o = Box::into_raw(owned);
-    (*oo).tree.insert((*o).name.as_bytes().to_vec(), o);
+    o = &raw mut *owned;
+    (*oo).tree.insert(owned.name.as_bytes().to_vec(), owned);
     return o;
 }
 unsafe fn options_remove(mut o: *mut options_entry) {
@@ -419,11 +434,10 @@ unsafe fn options_remove(mut o: *mut options_entry) {
     // Release the value before the monitor, including array storage after its
     // items have been cleared.
     options_value_free(&raw mut (*o).value);
-    if !(*o).monitor_data.is_null() {
-        hooks_monitor_free((*o).monitor_data);
-    }
-    (*oo).tree.remove((*o).name.as_bytes());
-    drop(Box::from_raw(o));
+    drop((*o).monitor_data.take());
+    // Cleanup above must precede unlinking and dropping the boxed entry.
+    let key = (*o).name.as_bytes().to_vec();
+    drop((*oo).tree.remove(key.as_slice()));
 }
 pub unsafe fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
     return (*o).name.as_ptr();
@@ -432,13 +446,16 @@ pub unsafe fn options_owner(mut o: *mut options_entry) -> *mut options {
     return (*o).owner;
 }
 pub unsafe fn options_get_monitor_data(mut o: *mut options_entry) -> *mut ::core::ffi::c_void {
-    return (*o).monitor_data;
+    (*o).monitor_data.as_deref_mut().map_or(std::ptr::null_mut(), |monitor| {
+        (monitor as *mut crate::src::hooks::hooks_monitor).cast()
+    })
 }
 pub unsafe fn options_set_monitor_data(
     mut o: *mut options_entry,
-    mut data: *mut ::core::ffi::c_void,
+    data: Option<Box<crate::src::hooks::hooks_monitor>>,
 ) {
-    (*o).monitor_data = data;
+    let previous = std::mem::replace(&mut (*o).monitor_data, data);
+    drop(previous);
 }
 pub unsafe fn options_hook_fired(mut o: *mut options_entry) {
     (*o).fire_count = (*o).fire_count.wrapping_add(1);
@@ -460,33 +477,30 @@ unsafe fn options_array_item(
     (*o).value
         .array_storage()
         .entries
-        .get(&options_array_index(CStr::from_ptr(key)))
-        .copied()
+        .get_mut(&options_array_index(CStr::from_ptr(key)))
+        .map(|item| &mut **item as *mut options_array_item)
         .unwrap_or(::core::ptr::null_mut())
 }
 unsafe fn options_array_new(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    let owner = Box::new(options_array_item {
+    let mut owner = Box::new(options_array_item {
         key: CStr::from_ptr(key).to_owned(),
         value: options_value::Empty,
         owner: o,
     });
-    let a = Box::into_raw(owner);
+    let a = &raw mut *owner;
     (*o).value
         .array_storage()
         .entries
-        .insert(options_array_index(CStr::from_ptr(key)), a);
+        .insert(options_array_index(CStr::from_ptr(key)), owner);
     return a;
 }
 unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(&raw mut (*a).value);
-    (*o).value
-        .array_storage()
-        .entries
-        .remove(&options_array_index((*a).key.as_c_str()));
-    drop(Box::from_raw(a));
+    let key = options_array_index((*a).key.as_c_str());
+    drop((*o).value.array_storage().entries.remove(&key));
 }
 pub unsafe fn options_array_clear(mut o: *mut options_entry) {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
@@ -581,7 +595,7 @@ pub unsafe fn options_array_set(
         } else {
             options_value_free(&raw mut (*a).value);
         }
-        (*a).value = options_value::Command(OptionCommand(pr.cmdlist));
+        (*a).value = options_value::Command(OptionCommand(pr.cmdlist.take()));
         return 0 as ::core::ffi::c_int;
     }
     if (*o).tableentry.is_null()
@@ -641,7 +655,7 @@ pub unsafe fn options_array_assign(
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
-    separator = (*(*o).tableentry).separator;
+    separator = (*(*o).tableentry).separator_ptr();
     if separator.is_null() {
         separator = b" ,\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -709,8 +723,9 @@ pub unsafe fn options_array_first(mut o: *mut options_entry) -> *mut options_arr
     (*o).value
         .array_storage()
         .entries
-        .first_key_value()
-        .map_or(::core::ptr::null_mut(), |(_, &item)| item)
+        .values_mut()
+        .next()
+        .map_or(::core::ptr::null_mut(), |item| &mut **item)
 }
 pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options_array_item {
     let key = options_array_index((*a).key.as_c_str());
@@ -718,9 +733,9 @@ pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options
         .value
         .array_storage()
         .entries
-        .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .range_mut((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(::core::ptr::null_mut(), |(_, &item)| item)
+        .map_or(::core::ptr::null_mut(), |(_, item)| &mut **item)
 }
 pub unsafe fn options_array_item_key(mut a: *mut options_array_item) -> *const ::core::ffi::c_char {
     return (*a).key.as_ptr();
@@ -804,8 +819,8 @@ pub fn options_parse_owned(input: &CStr) -> Option<OwnedOptionName> {
 pub unsafe fn options_search(mut name: *const ::core::ffi::c_char) -> *const options_table_entry {
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     oe = &raw const options_table as *const options_table_entry;
-    while !(*oe).name.is_null() {
-        if strcmp((*oe).name, name) == 0 as ::core::ffi::c_int {
+    while !(*oe).name_ptr().is_null() {
+        if strcmp((*oe).name_ptr(), name) == 0 as ::core::ffi::c_int {
             return oe;
         }
         oe = oe.offset(1);
@@ -827,8 +842,8 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
         [::core::ptr::null::<options_table_entry>(); 273];
     let mut candidate_count = 0usize;
     let mut oe = &raw const options_table as *const options_table_entry;
-    while candidate_count < candidates.len() && !(*oe).name.is_null() {
-        candidates[candidate_count] = std::ffi::CStr::from_ptr((*oe).name).to_bytes();
+    while candidate_count < candidates.len() && !(*oe).name_ptr().is_null() {
+        candidates[candidate_count] = std::ffi::CStr::from_ptr((*oe).name_ptr()).to_bytes();
         entries[candidate_count] = oe;
         candidate_count += 1;
         oe = oe.offset(1);
@@ -850,7 +865,7 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
     ) {
         Ok(OptionNameMatch::User) => Ok(parsed),
         Ok(OptionNameMatch::BuiltIn(index)) => {
-            parsed.name = CStr::from_ptr((*entries[index]).name).to_owned();
+            parsed.name = CStr::from_ptr((*entries[index]).name_ptr()).to_owned();
             Ok(parsed)
         }
         Err(OptionNameMatchError::Ambiguous) => Err(OptionMatchFailure::Ambiguous),
@@ -956,7 +971,7 @@ pub unsafe fn options_set_string(
                 == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint)
     {
         if *name as ::core::ffi::c_int != '@' as i32 {
-            separator = (*(*o).tableentry).separator;
+            separator = (*(*o).tableentry).separator_ptr();
             if separator.is_null() {
                 separator = b"\0" as *const u8 as *const ::core::ffi::c_char;
             }
@@ -1071,7 +1086,7 @@ pub unsafe fn options_set_command(
             out.write_all(b" is not a command")
         });
     }
-    (*o).value = options_value::Command(OptionCommand(value));
+    (*o).value = options_value::Command(OptionCommand::from_retained(value));
     return o;
 }
 pub unsafe fn options_scope_from_name(
@@ -1092,13 +1107,13 @@ pub unsafe fn options_scope_from_name(
         return options_scope_from_flags(args, window, fs, oo, cause);
     }
     oe = &raw const options_table as *const options_table_entry;
-    while !(*oe).name.is_null() {
-        if strcmp((*oe).name, name) == 0 as ::core::ffi::c_int {
+    while !(*oe).name_ptr().is_null() {
+        if strcmp((*oe).name_ptr(), name) == 0 as ::core::ffi::c_int {
             break;
         }
         oe = oe.offset(1);
     }
-    if (*oe).name.is_null() {
+    if (*oe).name_ptr().is_null() {
         format_options_cause!(
             cause,
             b"unknown option: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1129,7 +1144,7 @@ pub unsafe fn options_scope_from_name(
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = (*s).options;
+                *oo = options_owner_ptr(&mut (*s).options);
                 scope = OPTIONS_TABLE_SESSION;
             }
             current_block_38 = 980989089337379490;
@@ -1148,7 +1163,7 @@ pub unsafe fn options_scope_from_name(
                         b"no current pane\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 } else {
-                    *oo = (*wp).options;
+                    *oo = options_owner_ptr(&mut (*wp).options);
                     scope = OPTIONS_TABLE_PANE;
                 }
                 current_block_38 = 980989089337379490;
@@ -1180,7 +1195,7 @@ pub unsafe fn options_scope_from_name(
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = (*(*wl).window).options;
+                *oo = options_owner_ptr(&mut (*(*wl).window).options);
                 scope = OPTIONS_TABLE_WINDOW;
             }
         }
@@ -1219,7 +1234,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = (*wp).options;
+        *oo = options_owner_ptr(&mut (*wp).options);
         return 0x8 as ::core::ffi::c_int;
     } else if window != 0 || args_has(args, 'w' as i32 as u_char) != 0 {
         if args_has(args, 'g' as i32 as u_char) != 0 {
@@ -1241,7 +1256,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = (*(*wl).window).options;
+        *oo = options_owner_ptr(&mut (*(*wl).window).options);
         return 0x4 as ::core::ffi::c_int;
     } else {
         if args_has(args, 'g' as i32 as u_char) != 0 {
@@ -1263,7 +1278,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = (*s).options;
+        *oo = options_owner_ptr(&mut (*s).options);
         return 0x2 as ::core::ffi::c_int;
     };
 }
@@ -1359,7 +1374,7 @@ unsafe fn options_from_string_check(
         return 0 as ::core::ffi::c_int;
     }
     if strcmp(
-        (*oe).name,
+        (*oe).name_ptr(),
         b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
         && checkshell(value) == 0
@@ -1371,8 +1386,8 @@ unsafe fn options_from_string_check(
         );
         return -(1 as ::core::ffi::c_int);
     }
-    if !(*oe).pattern.is_null()
-        && fnmatch((*oe).pattern, value, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int
+    if !(*oe).pattern_ptr().is_null()
+        && fnmatch((*oe).pattern_ptr(), value, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int
     {
         format_options_cause!(
             cause,
@@ -1447,17 +1462,11 @@ pub unsafe fn options_find_choice(
     mut value: *const ::core::ffi::c_char,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut cp: *mut *const ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
-    let mut n: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut choice: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    cp = (*oe).choices;
-    while !(*cp).is_null() {
-        if strcmp(*cp, value) == 0 as ::core::ffi::c_int {
-            choice = n;
+    let mut choice: ::core::ffi::c_int = -1;
+    for (n, candidate) in (*oe).choices.iter().enumerate() {
+        if *candidate == CStr::from_ptr(value) {
+            choice = n as ::core::ffi::c_int;
         }
-        n += 1;
-        cp = cp.offset(1);
     }
     if choice == -(1 as ::core::ffi::c_int) {
         format_options_cause!(
@@ -1604,7 +1613,7 @@ pub unsafe fn options_from_string(
                     return -(1 as ::core::ffi::c_int);
                 }
                 1 => {
-                    options_set_command(oo, name, pr.cmdlist);
+                    options_set_command(oo, name, pr.take_cmdlist());
                     return 0 as ::core::ffi::c_int;
                 }
                 _ => {}
@@ -1655,7 +1664,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             if !(*w).active.is_null() {
-                if options_get_number((*w).options, name) != 0 {
+                if options_get_number(options_owner_ptr(&mut (*w).options), name) != 0 {
                     (*(*w).active).flags |= PANE_CHANGED;
                 }
             }
@@ -1801,7 +1810,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
-            colour_palette_from_option(Some(&mut (*wp).palette), (*wp).options);
+            colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options));
             wp = window_pane_tree_next(&*wp);
         }
     }
@@ -1821,11 +1830,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             (*w).sb = options_get_number(
-                (*w).options,
+                options_owner_ptr(&mut (*w).options),
                 b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
             (*w).sb_pos = options_get_number(
-                (*w).options,
+                options_owner_ptr(&mut (*w).options),
                 b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
@@ -1850,7 +1859,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
-            style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, (*wp).options);
+            style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, options_owner_ptr(&mut (*wp).options));
             wp = window_pane_tree_next(&*wp);
         }
         w = windows_minmax(&*std::ptr::addr_of!(windows));
@@ -1943,7 +1952,7 @@ mod array_string_owner_tests {
         unsafe {
             let oo = options_create(::core::ptr::null_mut());
             let mut table: options_table_entry = Default::default();
-            table.name = c"sample-array".as_ptr();
+            table.name = Some(c"sample-array");
             table.type_0 = OPTIONS_TABLE_STRING;
             table.flags = OPTIONS_TABLE_IS_ARRAY;
             let o = options_empty(oo, &raw const table);

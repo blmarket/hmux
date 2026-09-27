@@ -13,7 +13,7 @@ fn strings_preserve_bytes_and_title_and_path_require_both_delimiters() {
             .into_boxed_slice();
         let mut terminal = tty {
             client: &raw mut client,
-            term: &raw mut term,
+            term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             cx: 4,
             cy: 2,
@@ -29,13 +29,13 @@ fn strings_preserve_bytes_and_title_and_path_require_both_delimiters() {
         evbuffer_drain(terminal.out.as_deref_mut().unwrap(), 4);
         assert_eq!((terminal.cx, terminal.cy), (4, 2));
 
-        term.codes[TTYC_TSL as usize] = tty_code::String(c"\x1b]2;".to_owned());
-        term.codes[TTYC_SWD as usize] = tty_code::String(c"\x1b]7;".to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_TSL as usize] = tty_code::String(c"\x1b]2;".to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_SWD as usize] = tty_code::String(c"\x1b]7;".to_owned());
         tty_set_title(&raw mut terminal, text);
         tty_set_path(&raw mut terminal, c"file:///tmp");
         assert!(evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).is_none());
 
-        term.codes[TTYC_FSL as usize] = tty_code::String(c"\x07".to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_FSL as usize] = tty_code::String(c"\x07".to_owned());
         tty_set_title(&raw mut terminal, text);
         tty_set_path(&raw mut terminal, c"file:///tmp");
         tty_set_title(&raw mut terminal, c"");

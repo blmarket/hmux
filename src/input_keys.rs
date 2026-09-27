@@ -26,61 +26,48 @@ use crate::src::text::utf8::{utf8_to_data, utf8_towc};
 use crate::src::tmux::global_options;
 use crate::src::window::window_pane_is_visible;
 use std::ffi::{CStr, CString};
+use std::borrow::Cow;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct input_key_entry {
     pub key: key_code,
-    pub data: *const ::core::ffi::c_char,
+    pub data: Cow<'static, CStr>,
 }
 #[derive(Default)]
 pub struct input_key_tree {
-    entries: std::collections::BTreeMap<key_code, *mut input_key_entry>,
-    generated: Vec<Box<InputKeyGenerated>>,
+    entries: std::collections::BTreeMap<key_code, InputKeyValue>,
 }
 
-// The public entry borrows the CString beside it. The tree keeps these boxes
-// for its lifetime, so growing the owner vector does not move entry pointers.
-struct InputKeyGenerated {
-    entry: input_key_entry,
-    _data: CString,
-}
 pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUSE_ALL;
 
-// The old RB comparator ordered entries by their unsigned key value. The map
-// therefore preserves exact lookup, duplicate insertion, and in-order
-// traversal semantics without storing links in each input_key_entry.
-fn input_key_tree_find(head: &input_key_tree, key: key_code) -> *mut input_key_entry {
-    head.entries
-        .get(&key)
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
+// Defaults have immutable static backing; generated entries own stable boxes.
+enum InputKeyValue {
+    Static(&'static input_key_entry),
+    Generated(Box<input_key_entry>),
 }
-
-unsafe fn input_key_tree_insert(
-    head: &mut input_key_tree,
-    elm: &mut input_key_entry,
-) -> *mut input_key_entry {
-    match head.entries.entry(elm.key) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(&raw mut *elm);
-            ::core::ptr::null_mut::<input_key_entry>()
+impl InputKeyValue {
+    fn entry(&self) -> &input_key_entry {
+        match self {
+            Self::Static(entry) => entry,
+            Self::Generated(entry) => entry,
         }
     }
 }
 
-unsafe fn input_key_tree_insert_generated(
-    head: &mut input_key_tree,
-    mut generated: Box<InputKeyGenerated>,
-) {
-    let entry = &raw mut generated.entry;
-    if input_key_tree_insert(head, &mut *entry).is_null() {
-        head.generated.push(generated);
-    }
+fn input_key_tree_find(head: &input_key_tree, key: key_code) -> *const input_key_entry {
+    head.entries
+        .get(&key)
+        .map_or(std::ptr::null(), |value| value.entry())
 }
 
-fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<InputKeyGenerated> {
+fn input_key_tree_insert_generated(head: &mut input_key_tree, generated: Box<input_key_entry>) {
+    head.entries
+        .entry(generated.key)
+        .or_insert(InputKeyValue::Generated(generated));
+}
+
+fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<input_key_entry> {
     let mut bytes = template.to_bytes().to_vec();
     let modifier = bytes
         .iter()
@@ -88,383 +75,358 @@ fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<InputKey
         .expect("modified key template has no placeholder");
     bytes[modifier] = b'0' + j as u8;
     let data = CString::new(bytes).expect("modified key template contains an interior NUL");
-    Box::new(InputKeyGenerated {
-        entry: input_key_entry {
-            key,
-            data: data.as_ptr(),
-        },
-        _data: data,
+    Box::new(input_key_entry {
+        key,
+        data: Cow::Owned(data),
     })
-}
-
-unsafe fn input_key_tree_minmax(head: &input_key_tree) -> *mut input_key_entry {
-    let entry = head.entries.iter().next();
-    entry
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
-}
-
-unsafe fn input_key_tree_next(
-    head: &input_key_tree,
-    elm: &input_key_entry,
-) -> *mut input_key_entry {
-    head.entries
-        .range((
-            std::ops::Bound::Excluded(elm.key),
-            std::ops::Bound::Unbounded,
-        ))
-        .next()
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
 }
 pub static mut input_key_tree: input_key_tree = input_key_tree {
     entries: std::collections::BTreeMap::new(),
-    generated: Vec::new(),
 };
 
-static mut input_key_defaults: [input_key_entry; 85] = [
+static input_key_defaults: [input_key_entry; 85] = [
     input_key_entry {
         key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[200~"),
     },
     input_key_entry {
         key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
-        data: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[200~"),
     },
     input_key_entry {
         key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[201~"),
     },
     input_key_entry {
         key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
-        data: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[201~"),
     },
     input_key_entry {
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1BOP\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOP"),
     },
     input_key_entry {
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1BOQ\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOQ"),
     },
     input_key_entry {
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1BOR\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOR"),
     },
     input_key_entry {
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1BOS\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOS"),
     },
     input_key_entry {
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[15~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[15~"),
     },
     input_key_entry {
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[17~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[17~"),
     },
     input_key_entry {
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[18~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[18~"),
     },
     input_key_entry {
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[19~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[19~"),
     },
     input_key_entry {
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[20~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[20~"),
     },
     input_key_entry {
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[21~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[21~"),
     },
     input_key_entry {
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[23~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[23~"),
     },
     input_key_entry {
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[24~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[24~"),
     },
     input_key_entry {
         key: KEYC_IC as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[2~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[2~"),
     },
     input_key_entry {
         key: KEYC_DC as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[3~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[3~"),
     },
     input_key_entry {
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[1~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1~"),
     },
     input_key_entry {
         key: KEYC_END as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[4~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[4~"),
     },
     input_key_entry {
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[6~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[6~"),
     },
     input_key_entry {
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[5~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[5~"),
     },
     input_key_entry {
         key: KEYC_BTAB as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[Z\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[Z"),
     },
     input_key_entry {
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
-        data: b"\x1BOA\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOA"),
     },
     input_key_entry {
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
-        data: b"\x1BOB\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOB"),
     },
     input_key_entry {
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
-        data: b"\x1BOC\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOC"),
     },
     input_key_entry {
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
-        data: b"\x1BOD\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOD"),
     },
     input_key_entry {
         key: KEYC_UP as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[A\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[A"),
     },
     input_key_entry {
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[B\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[B"),
     },
     input_key_entry {
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[C\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[C"),
     },
     input_key_entry {
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code,
-        data: b"\x1B[D\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[D"),
     },
     input_key_entry {
         key: KEYC_KP_SLASH as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOo\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOo"),
     },
     input_key_entry {
         key: KEYC_KP_STAR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOj\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOj"),
     },
     input_key_entry {
         key: KEYC_KP_MINUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOm\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOm"),
     },
     input_key_entry {
         key: KEYC_KP_SEVEN as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOw\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOw"),
     },
     input_key_entry {
         key: KEYC_KP_EIGHT as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOx\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOx"),
     },
     input_key_entry {
         key: KEYC_KP_NINE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOy\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOy"),
     },
     input_key_entry {
         key: KEYC_KP_PLUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOk\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOk"),
     },
     input_key_entry {
         key: KEYC_KP_FOUR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOt\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOt"),
     },
     input_key_entry {
         key: KEYC_KP_FIVE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOu\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOu"),
     },
     input_key_entry {
         key: KEYC_KP_SIX as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOv\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOv"),
     },
     input_key_entry {
         key: KEYC_KP_ONE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOq\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOq"),
     },
     input_key_entry {
         key: KEYC_KP_TWO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOr\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOr"),
     },
     input_key_entry {
         key: KEYC_KP_THREE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOs\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOs"),
     },
     input_key_entry {
         key: KEYC_KP_ENTER as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOM\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOM"),
     },
     input_key_entry {
         key: KEYC_KP_ZERO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOp\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOp"),
     },
     input_key_entry {
         key: KEYC_KP_PERIOD as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
-        data: b"\x1BOn\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1BOn"),
     },
     input_key_entry {
         key: KEYC_KP_SLASH as ::core::ffi::c_ulong as key_code,
-        data: b"/\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"/"),
     },
     input_key_entry {
         key: KEYC_KP_STAR as ::core::ffi::c_ulong as key_code,
-        data: b"*\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"*"),
     },
     input_key_entry {
         key: KEYC_KP_MINUS as ::core::ffi::c_ulong as key_code,
-        data: b"-\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"-"),
     },
     input_key_entry {
         key: KEYC_KP_SEVEN as ::core::ffi::c_ulong as key_code,
-        data: b"7\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"7"),
     },
     input_key_entry {
         key: KEYC_KP_EIGHT as ::core::ffi::c_ulong as key_code,
-        data: b"8\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"8"),
     },
     input_key_entry {
         key: KEYC_KP_NINE as ::core::ffi::c_ulong as key_code,
-        data: b"9\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"9"),
     },
     input_key_entry {
         key: KEYC_KP_PLUS as ::core::ffi::c_ulong as key_code,
-        data: b"+\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"+"),
     },
     input_key_entry {
         key: KEYC_KP_FOUR as ::core::ffi::c_ulong as key_code,
-        data: b"4\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"4"),
     },
     input_key_entry {
         key: KEYC_KP_FIVE as ::core::ffi::c_ulong as key_code,
-        data: b"5\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"5"),
     },
     input_key_entry {
         key: KEYC_KP_SIX as ::core::ffi::c_ulong as key_code,
-        data: b"6\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"6"),
     },
     input_key_entry {
         key: KEYC_KP_ONE as ::core::ffi::c_ulong as key_code,
-        data: b"1\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"1"),
     },
     input_key_entry {
         key: KEYC_KP_TWO as ::core::ffi::c_ulong as key_code,
-        data: b"2\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"2"),
     },
     input_key_entry {
         key: KEYC_KP_THREE as ::core::ffi::c_ulong as key_code,
-        data: b"3\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"3"),
     },
     input_key_entry {
         key: KEYC_KP_ENTER as ::core::ffi::c_ulong as key_code,
-        data: b"\n\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\n"),
     },
     input_key_entry {
         key: KEYC_KP_ZERO as ::core::ffi::c_ulong as key_code,
-        data: b"0\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"0"),
     },
     input_key_entry {
         key: KEYC_KP_PERIOD as ::core::ffi::c_ulong as key_code,
-        data: b".\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"."),
     },
     input_key_entry {
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_P\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_P"),
     },
     input_key_entry {
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_Q\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_Q"),
     },
     input_key_entry {
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_R\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_R"),
     },
     input_key_entry {
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_S\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_S"),
     },
     input_key_entry {
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[15;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[15;_~"),
     },
     input_key_entry {
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[17;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[17;_~"),
     },
     input_key_entry {
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[18;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[18;_~"),
     },
     input_key_entry {
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[19;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[19;_~"),
     },
     input_key_entry {
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[20;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[20;_~"),
     },
     input_key_entry {
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[21;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[21;_~"),
     },
     input_key_entry {
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[23;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[23;_~"),
     },
     input_key_entry {
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[24;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[24;_~"),
     },
     input_key_entry {
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_A\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_A"),
     },
     input_key_entry {
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_B\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_B"),
     },
     input_key_entry {
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_C\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_C"),
     },
     input_key_entry {
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_D\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_D"),
     },
     input_key_entry {
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_H\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_H"),
     },
     input_key_entry {
         key: KEYC_END as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[1;_F\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[1;_F"),
     },
     input_key_entry {
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[5;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[5;_~"),
     },
     input_key_entry {
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[6;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[6;_~"),
     },
     input_key_entry {
         key: KEYC_IC as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[2;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[2;_~"),
     },
     input_key_entry {
         key: KEYC_DC as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
-        data: b"\x1B[3;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        data: Cow::Borrowed(c"\x1B[3;_~"),
     },
 ];
-static mut input_key_modifiers: [key_code; 9] = [
+static input_key_modifiers: [key_code; 9] = [
     0 as ::core::ffi::c_int as key_code,
     0 as ::core::ffi::c_int as key_code,
     KEYC_SHIFT,
@@ -475,7 +437,7 @@ static mut input_key_modifiers: [key_code; 9] = [
     KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
-unsafe fn input_key_get(mut key: key_code) -> *mut input_key_entry {
+unsafe fn input_key_get(mut key: key_code) -> *const input_key_entry {
     return input_key_tree_find(&*(&raw const input_key_tree), key);
 }
 unsafe fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
@@ -490,48 +452,34 @@ unsafe fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
     return 1 as size_t;
 }
 pub unsafe fn input_key_build() {
-    let mut ike: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    let mut i: u_int = 0;
-    let mut j: u_int = 0;
-    let mut key: key_code = 0;
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[input_key_entry; 85]>() as usize)
-            .wrapping_div(::core::mem::size_of::<input_key_entry>() as usize)
-    {
-        ike = (&raw mut input_key_defaults as *mut input_key_entry).offset(i as isize)
-            as *mut input_key_entry;
-        if !((*ike).key as ::core::ffi::c_ulonglong) & KEYC_BUILD_MODIFIERS != 0 {
-            input_key_tree_insert(&mut *(&raw mut input_key_tree), &mut *ike);
+    let tree = &mut *(&raw mut input_key_tree);
+    for entry in &input_key_defaults {
+        if entry.key & KEYC_BUILD_MODIFIERS == 0 {
+            tree.entries
+                .entry(entry.key)
+                .or_insert(InputKeyValue::Static(entry));
         } else {
-            j = 2 as u_int;
-            while (j as usize)
-                < (::core::mem::size_of::<[key_code; 9]>() as usize)
-                    .wrapping_div(::core::mem::size_of::<key_code>() as usize)
-            {
-                key = ((*ike).key as ::core::ffi::c_ulonglong & !KEYC_BUILD_MODIFIERS) as key_code;
+            for j in 2..input_key_modifiers.len() {
+                let key = entry.key & !KEYC_BUILD_MODIFIERS;
                 let generated = input_key_generated(
-                    CStr::from_ptr((*ike).data),
-                    key | input_key_modifiers[j as usize],
-                    j,
+                    entry.data.as_ref(),
+                    key | input_key_modifiers[j],
+                    j as u_int,
                 );
-                input_key_tree_insert_generated(&mut *(&raw mut input_key_tree), generated);
-                j = j.wrapping_add(1);
+                input_key_tree_insert_generated(tree, generated);
             }
         }
-        i = i.wrapping_add(1);
     }
-    ike = input_key_tree_minmax(&*(&raw const input_key_tree));
-    while !ike.is_null() {
-        let key_string = key_string_format((*ike).key, true);
+    for value in tree.entries.values() {
+        let entry = value.entry();
+        let key_string = key_string_format(entry.key, true);
         log_debug(format_args!(
             "{}: 0x{:x} ({}) is {}",
             "input_key_build",
-            ((*ike).key) as u64,
-            log_cstr((key_string.as_ptr()) as *const _),
-            log_cstr(((*ike).data) as *const _)
+            entry.key,
+            log_cstr(key_string.as_ptr()),
+            log_cstr(entry.data.as_ptr()),
         ));
-        ike = input_key_tree_next(&*(&raw const input_key_tree), &*ike);
     }
 }
 pub unsafe fn input_key_pane(
@@ -751,7 +699,7 @@ pub unsafe fn input_key(
     mut bev: *mut bufferevent,
     mut key: key_code,
 ) -> ::core::ffi::c_int {
-    let mut ike: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
+    let mut ike: *const input_key_entry = ::core::ptr::null::<input_key_entry>();
     let mut newkey: key_code = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -897,7 +845,7 @@ pub unsafe fn input_key(
             "{}: found key 0x{:x}: \"{}\"",
             "input_key",
             key,
-            log_cstr(((*ike).data) as *const _)
+            log_cstr((*ike).data.as_ptr())
         ));
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             == (KEYC_TYPE_FUNCTION as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
@@ -923,8 +871,8 @@ pub unsafe fn input_key(
         input_key_write(
             b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
             bev,
-            (*ike).data,
-            strlen((*ike).data),
+            (*ike).data.as_ptr(),
+            (*ike).data.to_bytes().len(),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -1093,7 +1041,7 @@ mod tests {
             let mut tree = input_key_tree::default();
             input_key_tree_insert_generated(&mut tree, input_key_generated(c"\x1b[1;_A", 7, 2));
             let first = input_key_tree_find(&tree, 7);
-            assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
+            assert_eq!((*first).data.as_ref(), c"\x1b[1;2A");
 
             for key in 10..110 {
                 input_key_tree_insert_generated(
@@ -1102,9 +1050,9 @@ mod tests {
                 );
             }
             input_key_tree_insert_generated(&mut tree, input_key_generated(c"\x1b[1;_C", 7, 4));
-            assert_eq!(tree.generated.len(), 101);
+            assert_eq!(tree.entries.len(), 101);
             assert_eq!(input_key_tree_find(&tree, 7), first);
-            assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
+            assert_eq!((*first).data.as_ref(), c"\x1b[1;2A");
         }
     }
 }

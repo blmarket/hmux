@@ -1,3 +1,4 @@
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UTF8;
 use crate::src::shared::grid::*;
@@ -636,7 +637,7 @@ pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
     let Some(terminal) = terminal else {
         return 0;
     };
-    if tty_term_has(terminal.term, TTYC_U8) != 0 && tty_term_number(terminal.term, TTYC_U8) == 0 {
+    if tty_term_has(tty_term_owner_ptr(&terminal.term), TTYC_U8) != 0 && tty_term_number(tty_term_owner_ptr(&terminal.term), TTYC_U8) == 0 {
         return 1;
     }
     ((*terminal.client).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
@@ -645,7 +646,7 @@ pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
 /// The terminal and its capabilities must remain valid while the result is borrowed.
 pub unsafe fn tty_acs_get(terminal: Option<&tty>, ch: u_char) -> Option<&CStr> {
     if tty_acs_needed(terminal) != 0 {
-        let term = &*terminal.expect("legacy ACS requires a terminal").term;
+        let term = terminal.expect("legacy ACS requires a terminal").term.as_deref().expect("terminal capabilities");
         let bytes = &term.acs[ch as usize];
         if bytes[0] == 0 {
             return None;

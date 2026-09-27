@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
@@ -91,18 +92,11 @@ pub const WINDOW_SWITCH_TYPE_SESSION: window_switch_type = 0;
 pub const WINDOW_SWITCH_DEFAULT_COMMAND: [::core::ffi::c_char; 23] = unsafe {
     ::core::mem::transmute::<[u8; 23], [::core::ffi::c_char; 23]>(*b"switch-client -Zt '%%'\0")
 };
-pub const WINDOW_SWITCH_DEFAULT_FORMAT: [::core::ffi::c_char; 350] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 350],
-        [::core::ffi::c_char; 350],
-    >(
-        *b"#{?window_format,#{window_name} #[dim]#{session_name}:#{window_index}#{window_flags}#[default] #[dim]#{pane_current_command}#[default] #[dim]#{?#{!=:#{pane_title},#{host_short}},#{pane_title},}#[default],#{session_name} #[dim]#{session_windows} windows#[default] #{?session_attached,attached,#[dim]detached#[default]} #[dim]#{window_name}#[default]}\0",
-    )
-};
-pub static mut window_switch_mode: window_mode = {
+pub const WINDOW_SWITCH_DEFAULT_FORMAT: &CStr = c"#{?window_format,#{window_name} #[dim]#{session_name}:#{window_index}#{window_flags}#[default] #[dim]#{pane_current_command}#[default] #[dim]#{?#{!=:#{pane_title},#{host_short}},#{pane_title},}#[default],#{session_name} #[dim]#{session_windows} windows#[default] #{?session_attached,attached,#[dim]detached#[default]} #[dim]#{window_name}#[default]}";
+pub static window_switch_mode: window_mode = {
     window_mode {
         name: c"switch-mode",
-        default_format: WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr(),
+        default_format: Some(WINDOW_SWITCH_DEFAULT_FORMAT),
         flags: 0,
         init: Some(
             window_switch_init
@@ -299,7 +293,7 @@ unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut c
 unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
-    let mut oo: *mut options = (*wp).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -501,7 +495,7 @@ unsafe fn window_switch_init(
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    prompt_set_options(&mut pd, ((*fs).s).as_ref());
+    prompt_set_options(&mut pd, ((*fs).s).as_mut());
     pd.fs = fs.as_ref();
     pd.prompt = c"(search) ";
     pd.input = Some(c"");

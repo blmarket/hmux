@@ -1,3 +1,6 @@
+use crate::src::shared::key::key_table_owner_ptr;
+use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::options::options_owner_ptr;
 // Built-in callbacks return owned bytes or copied timestamps. The sorted
 // immutable table is shared by lookup and enumeration; external user callbacks
 // retain their separate C ABI.
@@ -1025,12 +1028,12 @@ unsafe fn format_cb_client_cell_width(mut ft: *mut format_tree) -> Option<CStrin
     return None;
 }
 unsafe fn format_cb_client_colours(mut ft: *mut format_tree) -> Option<CString> {
-    let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
+    let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
     let mut colours: u_int = 0;
     if (*ft).c.is_null() || !(*(*ft).c).tty.flags & TTY_STARTED != 0 {
         return None;
     }
-    term = (*(*ft).c).tty.term;
+    term = tty_term_owner_ptr(&(*(*ft).c).tty.term);
     if (*term).flags & TERM_RGBCOLOURS != 0 {
         colours = 16777216 as ::core::ffi::c_int as u_int;
     } else if (*term).flags & TERM_256COLOURS != 0 {
@@ -1084,7 +1087,7 @@ unsafe fn format_cb_client_height(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_client_key_table(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some((*(*(*ft).c).keytable).name.clone());
+        return Some((*key_table_owner_ptr(&(*(*ft).c).keytable)).name.clone());
     }
     return None;
 }
@@ -1126,7 +1129,7 @@ unsafe fn format_cb_client_prefix(mut ft: *mut format_tree) -> Option<CString> {
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !(*ft).c.is_null() {
         name = server_client_get_key_table((*ft).c);
-        if strcmp(((*(*(*ft).c).keytable).name).as_ptr().cast_mut(), name)
+        if strcmp(((*key_table_owner_ptr(&(*(*ft).c).keytable)).name).as_ptr().cast_mut(), name)
             == 0 as ::core::ffi::c_int
         {
             return Some(c"0".to_owned());
@@ -2114,7 +2117,7 @@ unsafe fn format_cb_pane_search_string(mut ft: *mut format_tree) -> Option<CStri
 unsafe fn format_cb_pane_synchronized(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if options_get_number(
-            (*(*ft).wp).options,
+            options_owner_ptr(&mut (*(*ft).wp).options),
             b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
@@ -2605,7 +2608,7 @@ unsafe fn format_cb_window_manual_height(mut ft: *mut format_tree) -> Option<CSt
         return None;
     }
     if options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) != WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong
     {
@@ -2788,7 +2791,7 @@ unsafe fn format_cb_window_manual_width(mut ft: *mut format_tree) -> Option<CStr
         return None;
     }
     if options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) != WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong
     {
@@ -2860,13 +2863,13 @@ unsafe fn format_cb_window_activity(mut ft: *mut format_tree) -> Option<time_t> 
     return None;
 }
 unsafe fn format_cb_buffer_mode_format(_ft: *mut format_tree) -> Option<CString> {
-    return Some(CStr::from_ptr(window_buffer_mode.default_format).to_owned());
+    return Some(window_buffer_mode.default_format.expect("mode default format").to_owned());
 }
 unsafe fn format_cb_client_mode_format(_ft: *mut format_tree) -> Option<CString> {
-    return Some(CStr::from_ptr(window_client_mode.default_format).to_owned());
+    return Some(window_client_mode.default_format.expect("mode default format").to_owned());
 }
 unsafe fn format_cb_tree_mode_format(_ft: *mut format_tree) -> Option<CString> {
-    return Some(CStr::from_ptr(window_tree_mode.default_format).to_owned());
+    return Some(window_tree_mode.default_format.expect("mode default format").to_owned());
 }
 unsafe fn format_cb_uid(_ft: *mut format_tree) -> Option<CString> {
     return Some(

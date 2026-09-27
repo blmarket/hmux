@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_target};
@@ -137,8 +138,8 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             return CMD_RETURN_ERROR;
         }
         crate::src::shared::rc::retain(table);
-        key_bindings_unref_table((*tc).keytable as *mut key_table);
-        (*tc).keytable = table as *mut key_table;
+        drop((*tc).keytable.take());
+        (*tc).keytable = Some(crate::src::shared::rc::take(table));
         return CMD_RETURN_NORMAL;
     }
     sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
@@ -199,7 +200,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     if args_has(args, 'E' as i32 as u_char) == 0 {
         environ_update(
-            (*s).options,
+            options_owner_ptr(&mut (*s).options),
             (*tc).environ.as_deref().expect("client environment"),
             (*s).environ.as_deref_mut().expect("session environment"),
         );

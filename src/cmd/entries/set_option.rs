@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
@@ -443,7 +444,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                     current_block = 10095721787123848864;
                                     break;
                                 }
-                                po = options_get_only((*loop_0).options, name);
+                                po = options_get_only(options_owner_ptr(&mut (*loop_0).options), name);
                                 if !po.is_null() {
                                     if options_remove_or_default(po, array_key, &raw mut cause)
                                         != 0 as ::core::ffi::c_int
@@ -501,7 +502,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                     error = options_from_string(
                                         oo,
                                         options_table_entry(parent),
-                                        (*options_table_entry(parent)).name,
+                                        (*options_table_entry(parent)).name_ptr(),
                                         value,
                                         args_has(args, 'a' as i32 as u_char),
                                         &raw mut cause,

@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand_result};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
@@ -277,12 +278,12 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_send_prefix_entry) {
         if args_has(args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
-                (*s).options,
+                options_owner_ptr(&mut (*s).options),
                 b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
             ) as key_code;
         } else {
             key = options_get_number(
-                (*s).options,
+                options_owner_ptr(&mut (*s).options),
                 b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
             ) as key_code;
         }
@@ -291,7 +292,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
         colour_palette_clear(Some(&mut (*wp).palette));
-        input_reset((*wp).ictx, 1 as ::core::ffi::c_int);
+        input_reset((*wp).ictx.as_deref_mut().expect("pane input context"), 1 as ::core::ffi::c_int);
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }
     if count == 0 as u_int {

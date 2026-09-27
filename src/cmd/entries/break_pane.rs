@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::find::cmd_find_from_session;
@@ -182,7 +183,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if !name.is_null() {
             window_set_name(w, name, 0 as ::core::ffi::c_int);
             options_set_number(
-                (*w).options,
+                options_owner_ptr(&mut (*w).options),
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_longlong,
             );
@@ -209,7 +210,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         (*wp).window = window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel) as *mut window;
         w = (*wp).window as *mut window;
         // window_create supplied the temporary reference released after attach.
-        options_set_parent((*wp).options, (*w).options);
+        options_set_parent(options_owner_ptr(&mut (*wp).options), options_owner_ptr(&mut (*w).options));
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         window_pane_list_insert_front(w, wp);
         window_pane_z_insert_front(w, wp);
@@ -222,7 +223,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 .expect("check_name validated the explicit window name");
             drop(window_replace_name(w, cleaned));
             options_set_number(
-                (*w).options,
+                options_owner_ptr(&mut (*w).options),
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_longlong,
             );
@@ -231,7 +232,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if idx == -(1 as ::core::ffi::c_int) {
             idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
                 - options_get_number(
-                    (*dst_s).options,
+                    options_owner_ptr(&mut (*dst_s).options),
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
@@ -244,7 +245,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         };
         layout_init(w, wp);
         (*wp).flags |= PANE_CHANGED;
-        colour_palette_from_option(Some(&mut (*wp).palette), (*wp).options);
+        colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options));
         window_remove_ref(
             w,
             b"cmd_break_pane_exec\0" as *const u8 as *const ::core::ffi::c_char,

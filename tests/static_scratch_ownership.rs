@@ -10,7 +10,6 @@ use hmux2::src::{
     },
     tty::tty_check_codeset,
 };
-use std::ptr::null_mut;
 
 #[test]
 fn mouse_encodings_preserve_tmux_bytes_and_independent_results() {

@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_parse;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
@@ -94,7 +95,7 @@ pub struct window_copy_mode_data {
     /// Owned snapshot for copy mode, or command output for view mode.
     backing: Option<Box<screen>>,
     pub backing_written: ::core::ffi::c_int,
-    pub ictx: *mut input_ctx,
+    pub ictx: Option<Box<input_ctx>>,
     pub sync_added: u_int,
     pub sync_collected: u_int,
     pub sync_generation: u_int,
@@ -171,6 +172,7 @@ impl window_copy_mode_data {
 
 impl Drop for window_copy_mode_data {
     fn drop(&mut self) {
+        drop(self.ictx.take());
         self.clear_backing();
     }
 }
@@ -181,7 +183,7 @@ impl Default for window_copy_mode_data {
             screen: screen::empty(),
             backing: None,
             backing_written: 0,
-            ictx: std::ptr::null_mut(),
+            ictx: None,
             sync_added: 0,
             sync_collected: 0,
             sync_generation: 0,
@@ -290,7 +292,7 @@ impl window_copy_cmd_state {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_46 {
-    pub command: *const ::core::ffi::c_char,
+    pub command: &'static CStr,
     pub minargs: u_int,
     pub maxargs: u_int,
     pub args: args_parse,
@@ -325,10 +327,10 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 
 pub const REG_NOTBOL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static mut window_copy_mode: window_mode = {
+pub static window_copy_mode: window_mode = {
     window_mode {
         name: c"copy-mode",
-        default_format: ::core::ptr::null::<::core::ffi::c_char>(),
+        default_format: None,
         flags: 0,
         init: Some(
             window_copy_init
@@ -367,10 +369,10 @@ pub static mut window_copy_mode: window_mode = {
         ),
     }
 };
-pub static mut window_view_mode: window_mode = {
+pub static window_view_mode: window_mode = {
     window_mode {
         name: c"view-mode",
-        default_format: ::core::ptr::null::<::core::ffi::c_char>(),
+        default_format: None,
         flags: 0,
         init: Some(
             window_copy_view_init
@@ -587,7 +589,7 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
     );
     screen_set_default_cursor(&mut (*data).screen, global_w_options);
     (*data).modekeys = options_get_number(
-        (*(*wp).window).options,
+        options_owner_ptr(&mut (*(*wp).window).options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     event_set(
@@ -687,12 +689,12 @@ unsafe fn window_copy_view_init(
     (*data).line_numbers = 0 as ::core::ffi::c_int;
     (*data).backing = Some(Box::new(screen::empty()));
     screen_init((*data).backing_mut(), sx, (*base).grid().sy, UINT_MAX);
-    (*data).ictx = input_init(
+    (*data).ictx = Some(input_init(
         ::core::ptr::null_mut::<window_pane>(),
         ::core::ptr::null_mut::<bufferevent>(),
         ::core::ptr::null_mut::<colour_palette>(),
         ::core::ptr::null_mut::<client>(),
-    );
+    ));
     (*data).mx = (*data).cx;
     (*data).my = (*data).backing().grid()
         .hsize
@@ -706,8 +708,8 @@ unsafe fn window_copy_free(mut wme: *mut window_mode_entry) {
     event_del(&raw mut (*data).dragtimer);
     event_del(&raw mut (*data).refresh_timer);
     window_copy_clear_searchmark(&mut *data);
-    if !(*data).ictx.is_null() {
-        input_free((*data).ictx);
+    if let Some(ictx) = (*data).ictx.take() {
+        input_free(ictx);
     }
     (*data).clear_backing();
     screen_free(&mut (*data).screen);
@@ -767,7 +769,7 @@ pub unsafe fn window_copy_add(
     if parse != 0 {
         let text = format_message_with(write);
         input_parse_screen(
-            (*data).ictx,
+            (*data).ictx.as_deref_mut().map_or(std::ptr::null_mut(), |ictx| ictx),
             backing,
             Some(Box::new(|_| {})),
             text.as_ptr() as *const u_char,
@@ -1433,7 +1435,7 @@ unsafe fn window_copy_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut
 unsafe fn window_copy_key_table(mut wme: *mut window_mode_entry) -> *const ::core::ffi::c_char {
     let mut wp: *mut window_pane = (*wme).wp;
     if options_get_number(
-        (*(*wp).window).options,
+        options_owner_ptr(&mut (*(*wp).window).options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == MODEKEY_VI as ::core::ffi::c_longlong
     {
@@ -2516,7 +2518,7 @@ unsafe fn window_copy_cmd_next_word(mut cs: *mut window_copy_cmd_state) -> windo
     let mut np: u_int = (*wme).prefix;
     let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     separators = options_get_string(
-        (*(*cs).s).options,
+        options_owner_ptr(&mut (*(*cs).s).options),
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
     while np != 0 as u_int {
@@ -2532,7 +2534,7 @@ unsafe fn window_copy_cmd_next_word_end(
     let mut np: u_int = (*wme).prefix;
     let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     separators = options_get_string(
-        (*(*cs).s).options,
+        options_owner_ptr(&mut (*(*cs).s).options),
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
     while np != 0 as u_int {
@@ -2555,7 +2557,7 @@ unsafe fn window_copy_cmd_selection_mode(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut so: *mut options = (*(*cs).s).options;
+    let mut so: *mut options = options_owner_ptr(&mut (*(*cs).s).options);
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     let mut sx: u_int = 0;
@@ -2729,7 +2731,7 @@ unsafe fn window_copy_cmd_previous_word(
     let mut np: u_int = (*wme).prefix;
     let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     separators = options_get_string(
-        (*(*cs).s).options,
+        options_owner_ptr(&mut (*(*cs).s).options),
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
     while np != 0 as u_int {
@@ -2939,7 +2941,7 @@ unsafe fn window_copy_cmd_select_word(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut so: *mut options = (*(*cs).s).options;
+    let mut so: *mut options = options_owner_ptr(&mut (*(*cs).s).options);
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -3657,7 +3659,7 @@ unsafe fn window_copy_cmd_line_numbers_toggle(
 static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
     [
         C2RustUnnamed_46 {
-            command: b"append-selection\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"append-selection",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3671,7 +3673,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_append_selection),
         },
         C2RustUnnamed_46 {
-            command: b"append-selection-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"append-selection-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3685,7 +3687,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_append_selection_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"back-to-indentation\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"back-to-indentation",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3699,7 +3701,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_back_to_indentation),
         },
         C2RustUnnamed_46 {
-            command: b"begin-selection\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"begin-selection",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3713,7 +3715,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_begin_selection),
         },
         C2RustUnnamed_46 {
-            command: b"bottom-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"bottom-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3727,7 +3729,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_bottom_line),
         },
         C2RustUnnamed_46 {
-            command: b"cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3741,7 +3743,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"clear-selection\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"clear-selection",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3755,7 +3757,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_clear_selection),
         },
         C2RustUnnamed_46 {
-            command: b"copy-end-of-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-end-of-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3769,7 +3771,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_end_of_line),
         },
         C2RustUnnamed_46 {
-            command: b"copy-end-of-line-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-end-of-line-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3783,7 +3785,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_end_of_line_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe-end-of-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-pipe-end-of-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3797,8 +3799,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe_end_of_line),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe-end-of-line-and-cancel\0" as *const u8
-                as *const ::core::ffi::c_char,
+            command: c"copy-pipe-end-of-line-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3812,7 +3813,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe_end_of_line_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"copy-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3826,7 +3827,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_line),
         },
         C2RustUnnamed_46 {
-            command: b"copy-line-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-line-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3840,7 +3841,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_line_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-pipe-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3854,7 +3855,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe_line),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe-line-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-pipe-line-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3868,7 +3869,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe_line_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe-no-clear\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-pipe-no-clear",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3882,7 +3883,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe_no_clear),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-pipe",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3896,7 +3897,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe),
         },
         C2RustUnnamed_46 {
-            command: b"copy-pipe-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-pipe-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3910,7 +3911,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_pipe_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"copy-selection-no-clear\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-selection-no-clear",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3924,7 +3925,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_selection_no_clear),
         },
         C2RustUnnamed_46 {
-            command: b"copy-selection\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-selection",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3938,7 +3939,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_selection),
         },
         C2RustUnnamed_46 {
-            command: b"copy-selection-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"copy-selection-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3952,7 +3953,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_copy_selection_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-down\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-down",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3966,7 +3967,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_cursor_down),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-down-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3980,7 +3981,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_cursor_down_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-left\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-left",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -3994,7 +3995,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_cursor_left),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-right\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-right",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4008,7 +4009,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_cursor_right),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-up\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-up",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4022,7 +4023,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_cursor_up),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-centre-vertical\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-centre-vertical",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4036,7 +4037,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_centre_vertical),
         },
         C2RustUnnamed_46 {
-            command: b"cursor-centre-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"cursor-centre-horizontal",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4050,7 +4051,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_centre_horizontal),
         },
         C2RustUnnamed_46 {
-            command: b"end-of-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"end-of-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4064,7 +4065,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_end_of_line),
         },
         C2RustUnnamed_46 {
-            command: b"goto-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"goto-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4078,7 +4079,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_goto_line),
         },
         C2RustUnnamed_46 {
-            command: b"halfpage-down\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"halfpage-down",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4092,7 +4093,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_halfpage_down),
         },
         C2RustUnnamed_46 {
-            command: b"halfpage-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"halfpage-down-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4106,7 +4107,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_halfpage_down_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"halfpage-up\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"halfpage-up",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4120,7 +4121,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_halfpage_up),
         },
         C2RustUnnamed_46 {
-            command: b"history-bottom\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"history-bottom",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4134,7 +4135,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_history_bottom),
         },
         C2RustUnnamed_46 {
-            command: b"history-top\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"history-top",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4148,7 +4149,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_history_top),
         },
         C2RustUnnamed_46 {
-            command: b"jump-again\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-again",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4162,7 +4163,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_again),
         },
         C2RustUnnamed_46 {
-            command: b"jump-backward\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-backward",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4176,7 +4177,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_backward),
         },
         C2RustUnnamed_46 {
-            command: b"jump-forward\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-forward",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4190,7 +4191,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_forward),
         },
         C2RustUnnamed_46 {
-            command: b"jump-reverse\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-reverse",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4204,7 +4205,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_reverse),
         },
         C2RustUnnamed_46 {
-            command: b"jump-to-backward\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-to-backward",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4218,7 +4219,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_to_backward),
         },
         C2RustUnnamed_46 {
-            command: b"jump-to-forward\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-to-forward",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4232,7 +4233,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_to_forward),
         },
         C2RustUnnamed_46 {
-            command: b"jump-to-mark\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"jump-to-mark",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4246,7 +4247,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_jump_to_mark),
         },
         C2RustUnnamed_46 {
-            command: b"line-numbers-on\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"line-numbers-on",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4260,7 +4261,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_line_numbers_on),
         },
         C2RustUnnamed_46 {
-            command: b"line-numbers-off\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"line-numbers-off",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4274,7 +4275,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_line_numbers_off),
         },
         C2RustUnnamed_46 {
-            command: b"line-numbers-toggle\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"line-numbers-toggle",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4288,7 +4289,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_line_numbers_toggle),
         },
         C2RustUnnamed_46 {
-            command: b"next-prompt\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-prompt",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4302,7 +4303,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_prompt),
         },
         C2RustUnnamed_46 {
-            command: b"previous-prompt\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"previous-prompt",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4316,7 +4317,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_previous_prompt),
         },
         C2RustUnnamed_46 {
-            command: b"middle-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"middle-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4330,7 +4331,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_middle_line),
         },
         C2RustUnnamed_46 {
-            command: b"next-matching-bracket\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-matching-bracket",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4344,7 +4345,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_matching_bracket),
         },
         C2RustUnnamed_46 {
-            command: b"next-paragraph\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-paragraph",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4358,7 +4359,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_paragraph),
         },
         C2RustUnnamed_46 {
-            command: b"next-space\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-space",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4372,7 +4373,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_space),
         },
         C2RustUnnamed_46 {
-            command: b"next-space-end\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-space-end",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4386,7 +4387,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_space_end),
         },
         C2RustUnnamed_46 {
-            command: b"next-word\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-word",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4400,7 +4401,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_word),
         },
         C2RustUnnamed_46 {
-            command: b"next-word-end\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"next-word-end",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4414,7 +4415,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_next_word_end),
         },
         C2RustUnnamed_46 {
-            command: b"other-end\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"other-end",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4428,7 +4429,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_other_end),
         },
         C2RustUnnamed_46 {
-            command: b"page-down\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"page-down",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4442,7 +4443,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_page_down),
         },
         C2RustUnnamed_46 {
-            command: b"page-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"page-down-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4456,7 +4457,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_page_down_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"page-up\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"page-up",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4470,7 +4471,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_page_up),
         },
         C2RustUnnamed_46 {
-            command: b"pipe-no-clear\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"pipe-no-clear",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4484,7 +4485,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_pipe_no_clear),
         },
         C2RustUnnamed_46 {
-            command: b"pipe\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"pipe",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4498,7 +4499,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_pipe),
         },
         C2RustUnnamed_46 {
-            command: b"pipe-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"pipe-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4512,7 +4513,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_pipe_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"previous-matching-bracket\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"previous-matching-bracket",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4526,7 +4527,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_previous_matching_bracket),
         },
         C2RustUnnamed_46 {
-            command: b"previous-paragraph\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"previous-paragraph",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4540,7 +4541,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_previous_paragraph),
         },
         C2RustUnnamed_46 {
-            command: b"previous-space\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"previous-space",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4554,7 +4555,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_previous_space),
         },
         C2RustUnnamed_46 {
-            command: b"previous-word\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"previous-word",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4568,7 +4569,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_previous_word),
         },
         C2RustUnnamed_46 {
-            command: b"recentre-top-bottom\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"recentre-top-bottom",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4582,7 +4583,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_recentre_top_bottom),
         },
         C2RustUnnamed_46 {
-            command: b"rectangle-on\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"rectangle-on",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4596,7 +4597,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_rectangle_on),
         },
         C2RustUnnamed_46 {
-            command: b"rectangle-off\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"rectangle-off",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4610,7 +4611,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_rectangle_off),
         },
         C2RustUnnamed_46 {
-            command: b"rectangle-toggle\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"rectangle-toggle",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4624,7 +4625,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_rectangle_toggle),
         },
         C2RustUnnamed_46 {
-            command: b"refresh-on\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"refresh-on",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4638,7 +4639,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_refresh_on),
         },
         C2RustUnnamed_46 {
-            command: b"refresh-off\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"refresh-off",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4652,7 +4653,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_refresh_off),
         },
         C2RustUnnamed_46 {
-            command: b"refresh-now\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"refresh-now",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4666,7 +4667,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_refresh_now),
         },
         C2RustUnnamed_46 {
-            command: b"refresh-toggle\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"refresh-toggle",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4680,7 +4681,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_refresh_toggle),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-bottom\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-bottom",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4694,7 +4695,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_bottom),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-down\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-down",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4708,7 +4709,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_down),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-down-and-cancel",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4722,7 +4723,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_down_and_cancel),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-exit-on\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-exit-on",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4736,7 +4737,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_exit_on),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-exit-off\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-exit-off",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4750,7 +4751,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_exit_off),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-exit-toggle\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-exit-toggle",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4764,7 +4765,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_exit_toggle),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-middle\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-middle",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4778,7 +4779,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_middle),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-to-mouse\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-to-mouse",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4792,7 +4793,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_to_mouse),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-top\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-top",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4806,7 +4807,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_top),
         },
         C2RustUnnamed_46 {
-            command: b"scroll-up\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"scroll-up",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4820,7 +4821,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_scroll_up),
         },
         C2RustUnnamed_46 {
-            command: b"search-again\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-again",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4834,7 +4835,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_again),
         },
         C2RustUnnamed_46 {
-            command: b"search-backward\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-backward",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4848,7 +4849,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_backward),
         },
         C2RustUnnamed_46 {
-            command: b"search-backward-text\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-backward-text",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4862,7 +4863,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_backward_text),
         },
         C2RustUnnamed_46 {
-            command: b"search-backward-incremental\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-backward-incremental",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4876,7 +4877,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_backward_incremental),
         },
         C2RustUnnamed_46 {
-            command: b"search-forward\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-forward",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4890,7 +4891,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_forward),
         },
         C2RustUnnamed_46 {
-            command: b"search-forward-text\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-forward-text",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4904,7 +4905,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_forward_text),
         },
         C2RustUnnamed_46 {
-            command: b"search-forward-incremental\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-forward-incremental",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4918,7 +4919,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_forward_incremental),
         },
         C2RustUnnamed_46 {
-            command: b"search-reverse\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"search-reverse",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4932,7 +4933,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_search_reverse),
         },
         C2RustUnnamed_46 {
-            command: b"select-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"select-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4946,7 +4947,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_select_line),
         },
         C2RustUnnamed_46 {
-            command: b"select-word\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"select-word",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4960,7 +4961,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_select_word),
         },
         C2RustUnnamed_46 {
-            command: b"selection-mode\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"selection-mode",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4974,7 +4975,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_selection_mode),
         },
         C2RustUnnamed_46 {
-            command: b"set-mark\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"set-mark",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -4988,7 +4989,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_set_mark),
         },
         C2RustUnnamed_46 {
-            command: b"start-of-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"start-of-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -5002,7 +5003,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_start_of_line),
         },
         C2RustUnnamed_46 {
-            command: b"stop-selection\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"stop-selection",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -5016,7 +5017,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_stop_selection),
         },
         C2RustUnnamed_46 {
-            command: b"toggle-position\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"toggle-position",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -5030,7 +5031,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
             f: Some(window_copy_cmd_toggle_position),
         },
         C2RustUnnamed_46 {
-            command: b"top-line\0" as *const u8 as *const ::core::ffi::c_char,
+            command: c"top-line",
             minargs: 0,
             maxargs: 0,
             args: args_parse {
@@ -5096,7 +5097,7 @@ unsafe fn window_copy_command(
         < (::core::mem::size_of::<[C2RustUnnamed_46; 99]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_46>() as usize)
     {
-        if strcmp(window_copy_cmd_table[i as usize].command, command) == 0 as ::core::ffi::c_int {
+        if strcmp(window_copy_cmd_table[i as usize].command.as_ptr(), command) == 0 as ::core::ffi::c_int {
             flags = window_copy_cmd_table[i as usize].flags;
             if !c.is_null()
                 && (*c).flags & CLIENT_READONLY as uint64_t != 0
@@ -5135,7 +5136,7 @@ unsafe fn window_copy_command(
         && !(*data).searchmark.is_empty()
     {
         keys = options_get_number(
-            (*(*wp).window).options,
+            options_owner_ptr(&mut (*(*wp).window).options),
             b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
         if clear as ::core::ffi::c_uint
@@ -6140,12 +6141,12 @@ unsafe fn window_copy_search(
     );
     screen_write_stop(&mut ctx);
     wrapflag = options_get_number(
-        (*(*wp).window).options,
+        options_owner_ptr(&mut (*(*wp).window).options),
         b"wrap-search\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     cis = window_copy_is_lowercase(str);
     keys = options_get_number(
-        (*(*wp).window).options,
+        options_owner_ptr(&mut (*(*wp).window).options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if direction != 0 {
@@ -6763,7 +6764,7 @@ unsafe fn window_copy_update_style(
     if window_copy_search_mark_at(data, (*data).cx, cy, &raw mut cursor) == 0 as ::core::ffi::c_int
     {
         keys = options_get_number(
-            (*(*wp).window).options,
+            options_owner_ptr(&mut (*(*wp).window).options),
             b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
         if cursor != 0 as u_int && keys == MODEKEY_EMACS && (*data).searchdirection != 0 {
@@ -6871,7 +6872,7 @@ unsafe fn window_copy_write_one(
 unsafe fn window_copy_line_number_mode(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let mut mode: ::core::ffi::c_int = 0;
     if (*data).line_numbers == 0 {
         return WINDOW_COPY_LINE_NUMBERS_OFF as ::core::ffi::c_int;
@@ -6902,7 +6903,7 @@ unsafe fn window_copy_line_numbers_active(mut wme: *mut window_mode_entry) -> ::
         as ::core::ffi::c_int;
 }
 unsafe fn window_copy_cursor_line_active(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
-    let mut oo: *mut options = (*(*(*wme).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options);
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = options_get_string(
         oo,
@@ -6981,7 +6982,7 @@ pub unsafe fn window_copy_set_line_numbers(
     mut enabled: ::core::ffi::c_int,
 ) {
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
-    if wme.is_null() || (*wme).mode != &raw const window_copy_mode {
+    if wme.is_null() || !std::ptr::eq((*wme).mode, &window_copy_mode) {
         return;
     }
     window_copy_set_line_numbers1(wme, enabled, 0 as ::core::ffi::c_int);
@@ -6992,7 +6993,7 @@ unsafe fn window_copy_set_line_numbers1(
     mut force: ::core::ffi::c_int,
 ) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*(*wme).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options);
     let mut active: ::core::ffi::c_int = 0;
     let mut line_numbers: ::core::ffi::c_int = 0;
     if data.is_null() {
@@ -7041,7 +7042,7 @@ unsafe fn window_copy_write_line(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -7778,7 +7779,7 @@ unsafe fn window_copy_set_selection(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -7917,7 +7918,7 @@ unsafe fn window_copy_get_selection(mut wme: *mut window_mode_entry) -> Option<V
     }
     xx = (*s).grid().sx;
     keys = options_get_number(
-        (*(*wp).window).options,
+        options_owner_ptr(&mut (*(*wp).window).options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if (*data).rectflag != 0 {
@@ -8258,7 +8259,7 @@ unsafe fn window_copy_cursor_limit(
     mut allow_onemore: ::core::ffi::c_int,
 ) -> u_int {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*(*wme).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options);
     if allow_onemore != 0
         || options_get_number(
             oo,
@@ -8430,7 +8431,7 @@ unsafe fn window_copy_cursor_left(mut wme: *mut window_mode_entry) {
 unsafe fn window_copy_cursor_right(mut wme: *mut window_mode_entry, mut all: ::core::ffi::c_int) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let back_s = (*data).backing();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -8464,7 +8465,7 @@ unsafe fn window_copy_cursor_up(
     mut scroll_only: ::core::ffi::c_int,
 ) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*(*wme).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options);
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -8571,7 +8572,7 @@ unsafe fn window_copy_cursor_down(
     mut scroll_only: ::core::ffi::c_int,
 ) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*(*wme).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options);
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -8738,7 +8739,7 @@ unsafe fn window_copy_cursor_jump_to(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_copy_cursor_jump_to_back(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*(*wme).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options);
     let back_s = (*data).backing();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -8803,7 +8804,7 @@ unsafe fn window_copy_cursor_next_word_end_pos(
 ) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let back_s = (*data).backing();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -8841,7 +8842,7 @@ unsafe fn window_copy_cursor_next_word_end(
 ) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let back_s = (*data).backing();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -8921,7 +8922,7 @@ unsafe fn window_copy_cursor_previous_word(
     let mut hsize: u_int = 0;
     let mut stop_at_eol: ::core::ffi::c_int = 0;
     if options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == MODEKEY_EMACS as ::core::ffi::c_longlong
     {
@@ -9230,7 +9231,7 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
     if wme.is_null() {
         return;
     }
-    if (*wme).mode != &raw const window_copy_mode && (*wme).mode != &raw const window_view_mode {
+    if !std::ptr::eq((*wme).mode, &window_copy_mode) && !std::ptr::eq((*wme).mode, &window_view_mode) {
         return;
     }
     if cmd_mouse_at(wp, m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
@@ -9267,7 +9268,7 @@ pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event
     if wme.is_null() {
         return;
     }
-    if (*wme).mode != &raw const window_copy_mode && (*wme).mode != &raw const window_view_mode {
+    if !std::ptr::eq((*wme).mode, &window_copy_mode) && !std::ptr::eq((*wme).mode, &window_view_mode) {
         return;
     }
     if cmd_mouse_at(wp, m, &raw mut x, &raw mut y, 1 as ::core::ffi::c_int)
@@ -9365,7 +9366,7 @@ unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
     if wme.is_null() {
         return;
     }
-    if (*wme).mode != &raw const window_copy_mode && (*wme).mode != &raw const window_view_mode {
+    if !std::ptr::eq((*wme).mode, &window_copy_mode) && !std::ptr::eq((*wme).mode, &window_view_mode) {
         return;
     }
     data = (*wme).data as *mut window_copy_mode_data;
@@ -9411,7 +9412,7 @@ unsafe fn window_copy_drag_release(mut c: *mut client, mut m: *mut mouse_event) 
     if wme.is_null() {
         return;
     }
-    if (*wme).mode != &raw const window_copy_mode && (*wme).mode != &raw const window_view_mode {
+    if !std::ptr::eq((*wme).mode, &window_copy_mode) && !std::ptr::eq((*wme).mode, &window_view_mode) {
         return;
     }
     data = (*wme).data as *mut window_copy_mode_data;
@@ -9591,7 +9592,7 @@ mod backing_owner_tests {
             let entry = options_table
                 .iter()
                 .find(|entry| {
-                    !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys"
+                    entry.name == Some(c"extended-keys")
                 })
                 .unwrap();
             options_default(global_options, entry);
@@ -9665,7 +9666,7 @@ mod backing_owner_tests {
             let mut mode = window_mode_entry {
                 wp: &mut pane,
                 swp: &mut pane,
-                mode: &raw const window_copy_mode,
+                mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),
                 screen: std::ptr::null_mut(),
                 prefix: 0,

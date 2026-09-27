@@ -364,7 +364,7 @@ pub struct tty {
     pub last_cell: grid_cell,
     pub flags: ::core::ffi::c_int,
     /// Box-owned terminal record while TTY_OPENED is set; invalidated by tty_close.
-    pub term: *mut tty_term,
+    pub term: Option<Box<tty_term>>,
     pub mouse_last_x: u_int,
     pub mouse_last_y: u_int,
     pub mouse_last_b: u_int,

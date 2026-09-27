@@ -252,13 +252,13 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     }
     buf
 }
-unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &window_pane) -> Vec<u8> {
+unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec<u8> {
     let mut buf = Vec::new();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: [::core::ffi::c_char; 5] = [0; 5];
     let mut linelen: size_t = 0;
     let mut i: u_int = 0;
-    let pending = input_pending(&mut *wp.ictx);
+    let pending = input_pending(wp.ictx.as_deref_mut().expect("pane input context"));
     line =
         evbuffer_pullup(pending, -1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
@@ -590,7 +590,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         buf = cmd_capture_pane_grid(&*wp);
     } else if args_has(args, 'P' as i32 as u_char) != 0 && args_has(args, 'H' as i32 as u_char) == 0
     {
-        buf = cmd_capture_pane_pending(args, &*wp);
+        buf = cmd_capture_pane_pending(args, &mut *wp);
     } else {
         match cmd_capture_pane_history(args, item, &*wp) {
             Some(history) => buf = history,

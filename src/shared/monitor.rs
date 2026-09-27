@@ -28,10 +28,10 @@ pub struct monitor_set {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct monitor_change {
-    pub name: *const ::core::ffi::c_char,
-    pub value: *const ::core::ffi::c_char,
-    pub last: *const ::core::ffi::c_char,
+pub struct monitor_change<'a> {
+    pub name: &'a std::ffi::CStr,
+    pub value: &'a std::ffi::CStr,
+    pub last: Option<&'a std::ffi::CStr>,
     pub c: *mut client,
     pub s: *mut session,
     pub wl: *mut winlink,
@@ -46,7 +46,7 @@ pub fn monitor_callback(callback: impl Fn(&monitor_change) + 'static) -> monitor
 
 #[repr(C)]
 pub struct monitor_items {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut monitor_item>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>>>,
 }
 
 #[repr(C)]
@@ -85,13 +85,13 @@ impl monitor_item {
 #[repr(C)]
 pub struct monitor_item_entry {
     /// Weak traversal handle into the monitor item index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut monitor_item>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>>>,
 }
 
 #[repr(C)]
 pub struct monitor_windows {
     pub storage:
-        Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), *mut monitor_window>>>,
+        Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), Box<monitor_window>>>>,
 }
 
 #[repr(C)]
@@ -118,12 +118,12 @@ impl monitor_window {
 #[repr(C)]
 pub struct monitor_window_entry {
     /// Weak traversal handle into the monitor window index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), *mut monitor_window>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_window>>>>,
 }
 
 #[repr(C)]
 pub struct monitor_panes {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), *mut monitor_pane>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>>,
 }
 
 #[repr(C)]
@@ -150,5 +150,9 @@ impl monitor_pane {
 #[repr(C)]
 pub struct monitor_pane_entry {
     /// Weak traversal handle into the monitor pane index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), *mut monitor_pane>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>>,
 }
+
+/// Sole monitor-set owner. Detach the allocation before destroying callbacks,
+/// which can reenter the enclosing client or option.
+pub struct MonitorOwner(pub(crate) Option<Box<monitor_set>>);

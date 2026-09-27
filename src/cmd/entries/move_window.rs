@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source};
@@ -140,7 +141,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     if sflag == 0
         && options_get_number(
-            (*src).options,
+            options_owner_ptr(&mut (*src).options),
             b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {

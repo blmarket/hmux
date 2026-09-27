@@ -20,7 +20,7 @@ use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
-use crate::src::format::{format_add, format_add_cstr, format_create, format_free, format_merge};
+use crate::src::format::{format_add, format_add_cstr, format_create_owned, format_owner_ptr, format_merge};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
@@ -144,10 +144,8 @@ pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
     }
-    if !(*item).cmdlist.is_null() {
-        cmd_list_free((*item).cmdlist);
-    }
-    cmdq_free_state((*item).state);
+    drop((*item).cmdlist.take());
+    drop((*item).state.take());
     drop(owner);
 }
 
@@ -206,7 +204,7 @@ pub unsafe fn cmdq_get_target_client(mut item: *mut cmdq_item) -> *mut client {
     return (*item).target_client;
 }
 pub unsafe fn cmdq_get_state(mut item: *mut cmdq_item) -> *mut cmdq_state {
-    return (*item).state;
+    (*item).state.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
 }
 pub unsafe fn cmdq_get_target(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*item).target;
@@ -215,13 +213,13 @@ pub unsafe fn cmdq_get_source(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*item).source;
 }
 pub unsafe fn cmdq_get_event(mut item: *mut cmdq_item) -> *mut key_event {
-    return &raw mut (*(*item).state).event;
+    return &raw mut (*cmdq_get_state(item)).event;
 }
 pub unsafe fn cmdq_get_current(mut item: *mut cmdq_item) -> *mut cmd_find_state {
-    return &raw mut (*(*item).state).current;
+    return &raw mut (*cmdq_get_state(item)).current;
 }
 pub unsafe fn cmdq_get_flags(mut item: *mut cmdq_item) -> ::core::ffi::c_int {
-    return (*(*item).state).flags;
+    return (*cmdq_get_state(item)).flags;
 }
 pub unsafe fn cmdq_new_state(
     mut current: *mut cmd_find_state,
@@ -240,7 +238,7 @@ pub unsafe fn cmdq_new_state(
     };
     let state = crate::src::shared::rc::new(cmdq_state {
         flags,
-        formats: ::core::ptr::null_mut(),
+        formats: None,
         event: snapshot,
         current: Default::default(),
     });
@@ -272,32 +270,30 @@ pub unsafe fn cmdq_free_state(mut state: *mut cmdq_state) {
     crate::src::shared::rc::release(state);
 }
 unsafe fn cmdq_destroy_state(state: *mut cmdq_state) {
-    if !(*state).formats.is_null() {
-        format_free((*state).formats);
-    }
+    drop((*state).formats.take());
 }
 /// Copy a literal key and value into the command queue state's formats.
 pub unsafe fn cmdq_add_format(state: *mut cmdq_state, key: &CStr, value: &CStr) {
-    if (*state).formats.is_null() {
-        (*state).formats = format_create(
+    if (*state).formats.is_none() {
+        (*state).formats = Some(format_create_owned(
             ::core::ptr::null_mut::<client>(),
             ::core::ptr::null_mut::<cmdq_item>(),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
-        );
+        ));
     }
-    format_add_cstr((*state).formats, key, value);
+    format_add_cstr(format_owner_ptr(&mut (*state).formats), key, value);
 }
 pub unsafe fn cmdq_add_formats(mut state: *mut cmdq_state, mut ft: *mut format_tree) {
-    if (*state).formats.is_null() {
-        (*state).formats = format_create(
+    if (*state).formats.is_none() {
+        (*state).formats = Some(format_create_owned(
             ::core::ptr::null_mut::<client>(),
             ::core::ptr::null_mut::<cmdq_item>(),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
-        );
+        ));
     }
-    format_merge((*state).formats, ft);
+    format_merge(format_owner_ptr(&mut (*state).formats), ft);
 }
 pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_tree) {
     if !(*item).cmd.is_null() {
@@ -308,8 +304,8 @@ pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_t
             |out| write_cstr(out, entry.name.as_ptr()),
         );
     }
-    if !(*(*item).state).formats.is_null() {
-        format_merge(ft, (*(*item).state).formats);
+    if (*cmdq_get_state(item)).formats.is_some() {
+        format_merge(ft, format_owner_ptr(&mut (*cmdq_get_state(item)).formats));
     }
 }
 pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut cmdq_item {
@@ -399,7 +395,7 @@ pub unsafe fn cmdq_insert_hook(
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if (*(*item).state).flags & CMDQ_STATE_NOHOOKS != 0 {
+    if (*cmdq_get_state(item)).flags & CMDQ_STATE_NOHOOKS != 0 {
         return;
     }
     let name = format_message_with(write);
@@ -468,10 +464,8 @@ unsafe fn cmdq_remove(mut item: *mut cmdq_item) {
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
     }
-    if !(*item).cmdlist.is_null() {
-        cmd_list_free((*item).cmdlist);
-    }
-    cmdq_free_state((*item).state);
+    drop((*item).cmdlist.take());
+    drop((*item).state.take());
     let queue = (*item).queue;
     let position = (*queue).position(item);
     let owner = (*queue).list.remove(position).expect("queued command item");
@@ -523,10 +517,10 @@ pub unsafe fn cmdq_get_command(
         item = cmdq_new_named_item(Some(entry.name));
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
-        (*item).state = cmdq_link_state(state);
-        (*item).cmdlist = cmdlist;
+        (*item).state = Some(crate::src::shared::rc::take(cmdq_link_state(state)));
         (*item).cmd = cmd;
         crate::src::shared::rc::retain(cmdlist);
+        (*item).cmdlist = Some(crate::src::shared::rc::take(cmdlist));
         log_debug(format_args!(
             "{}: {} group {}",
             "cmdq_get_command",
@@ -570,7 +564,7 @@ unsafe fn cmdq_find_flag(
 }
 unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut c: *mut client = (*item).client;
-    let mut state: *mut cmdq_state = (*item).state;
+    let mut state: *mut cmdq_state = cmdq_get_state(item);
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let tmp = cmd_print_cstring(&*(*item).cmd);
@@ -631,7 +625,7 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
 unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut name: *const ::core::ffi::c_char = cmdq_name((*item).client);
-    let mut state: *mut cmdq_state = (*item).state;
+    let mut state: *mut cmdq_state = cmdq_get_state(item);
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args: *mut args = cmd_get_args(cmd);
     let entry = cmd_get_entry(&*cmd);
@@ -716,8 +710,8 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                             if cmd_find_valid_state(&(*item).target) != 0 {
                                 fsp = &raw mut (*item).target;
                                 current_block = 8704759739624374314;
-                            } else if cmd_find_valid_state(&(*(*item).state).current) != 0 {
-                                fsp = &raw mut (*(*item).state).current;
+                            } else if cmd_find_valid_state(&(*cmdq_get_state(item)).current) != 0 {
+                                fsp = &raw mut (*cmdq_get_state(item)).current;
                                 current_block = 8704759739624374314;
                             } else if cmd_find_from_client(
                                 &raw mut fs,
@@ -751,8 +745,8 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         fsp = ::core::ptr::null_mut::<cmd_find_state>();
         if cmd_find_valid_state(&(*item).target) != 0 {
             fsp = &raw mut (*item).target;
-        } else if cmd_find_valid_state(&(*(*item).state).current) != 0 {
-            fsp = &raw mut (*(*item).state).current;
+        } else if cmd_find_valid_state(&(*cmdq_get_state(item)).current) != 0 {
+            fsp = &raw mut (*cmdq_get_state(item)).current;
         } else if cmd_find_from_client(&raw mut fs, (*item).client, 0 as ::core::ffi::c_int)
             == 0 as ::core::ffi::c_int
         {
@@ -794,11 +788,11 @@ pub unsafe fn cmdq_get_callback_owned(
     });
     (*item).type_0 = CMDQ_CALLBACK;
     (*item).group = 0 as u_int;
-    (*item).state = cmdq_new_state(
+    (*item).state = Some(crate::src::shared::rc::take(cmdq_new_state(
         ::core::ptr::null_mut::<cmd_find_state>(),
         ::core::ptr::null_mut::<key_event>(),
         0 as ::core::ffi::c_int,
-    );
+    )));
     (*item).cb = cb;
     return item;
 }

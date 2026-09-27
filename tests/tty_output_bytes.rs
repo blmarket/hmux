@@ -95,7 +95,7 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
             term.flags = if no_auto_margin { TERM_NOAM } else { 0 };
             let mut terminal = tty {
                 client: &raw mut client,
-                term: &raw mut term,
+                term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 sx: 8,
                 sy: 3,
@@ -124,7 +124,7 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
             let mut term = tty_term::empty();
             let mut terminal = tty {
                 client: &raw mut client,
-                term: &raw mut term,
+                term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 sx: 2000,
                 sy: 2,

@@ -24,7 +24,7 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
         let table = &*(&raw const options_table);
         let definition = table
             .iter()
-            .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys")
+            .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
         options_default(global_options, definition);
         let menu = menu {

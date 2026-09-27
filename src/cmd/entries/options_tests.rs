@@ -72,10 +72,10 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     cfg_finished = 0;
 
     let command = CString::new(command).expect("command has no embedded NUL");
-    let parsed = cmd_parse_from_string(command.as_c_str(), std::ptr::null_mut());
+    let mut parsed = cmd_parse_from_string(command.as_c_str(), std::ptr::null_mut());
     assert_eq!(parsed.status, CMD_PARSE_SUCCESS, "command={command:?}");
 
-    let command_list = parsed.cmdlist;
+    let command_list = parsed.take_cmdlist();
     let item: *mut cmdq_item = cmdq_get_command(command_list, std::ptr::null_mut());
     assert!(!item.is_null(), "command={command:?}");
     cmd_list_free(command_list);
@@ -98,10 +98,10 @@ fn command_queue_name_keeps_entry_label_and_item_pointer() {
     unsafe {
         let _globals = OptionGlobalsGuard::new();
         let command = c"set-option status on";
-        let parsed = cmd_parse_from_string(command, std::ptr::null_mut());
+        let mut parsed = cmd_parse_from_string(command, std::ptr::null_mut());
         assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
 
-        let command_list = parsed.cmdlist;
+        let command_list = parsed.take_cmdlist();
         let item = cmdq_get_command(command_list, std::ptr::null_mut());
         assert!(!item.is_null());
         cmd_list_free(command_list);

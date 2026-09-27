@@ -1,7 +1,6 @@
 use hmux2::src::options::*;
 use hmux2::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
 use hmux2::src::style::colour::*;
-use std::ffi::CStr;
 use std::ptr::null_mut;
 
 #[test]
@@ -68,7 +67,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
-            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"pane-colours")
+            .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
         let array = options_empty(oo, definition);
         let mut p = colour_palette::default();

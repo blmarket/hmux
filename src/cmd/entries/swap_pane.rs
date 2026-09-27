@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
@@ -145,10 +146,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         (*dst_lc).wp = src_wp;
         (*src_wp).layout_cell = dst_lc as *mut layout_cell;
         (*src_wp).window = dst_w as *mut window;
-        options_set_parent((*src_wp).options, (*dst_w).options);
+        options_set_parent(options_owner_ptr(&mut (*src_wp).options), options_owner_ptr(&mut (*dst_w).options));
         (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         (*dst_wp).window = src_w as *mut window;
-        options_set_parent((*dst_wp).options, (*src_w).options);
+        options_set_parent(options_owner_ptr(&mut (*dst_wp).options), options_owner_ptr(&mut (*src_w).options));
         (*dst_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         sx = (*src_wp).sx;
         sy = (*src_wp).sy;
@@ -179,8 +180,8 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         if src_w != dst_w {
             window_pane_stack_remove(&raw mut (*src_w).last_panes, src_wp);
             window_pane_stack_remove(&raw mut (*dst_w).last_panes, dst_wp);
-            colour_palette_from_option(Some(&mut (*src_wp).palette), (*src_wp).options);
-            colour_palette_from_option(Some(&mut (*dst_wp).palette), (*dst_wp).options);
+            colour_palette_from_option(Some(&mut (*src_wp).palette), options_owner_ptr(&mut (*src_wp).options));
+            colour_palette_from_option(Some(&mut (*dst_wp).palette), options_owner_ptr(&mut (*dst_wp).options));
             layout_fix_panes(src_w, ::core::ptr::null_mut::<window_pane>());
             redraw_invalidate_scene(src_w);
             server_redraw_window(src_w);

@@ -146,10 +146,10 @@ pub struct cmdq_item {
     pub number: u_int,
     pub time: time_t,
     pub flags: ::core::ffi::c_int,
-    pub state: *mut cmdq_state,
+    pub state: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>>,
     pub source: cmd_find_state,
     pub target: cmd_find_state,
-    pub cmdlist: *mut cmd_list,
+    pub cmdlist: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
     pub cmd: *mut cmd,
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
@@ -276,7 +276,7 @@ pub struct cmd_entry {
 /// through `cmdq_free_state`.
 pub struct cmdq_state {
     pub flags: ::core::ffi::c_int,
-    pub formats: *mut format_tree,
+    pub formats: Option<super::format::FormatTreeOwner>,
     pub event: key_event,
     pub current: cmd_find_state,
 }
@@ -312,15 +312,27 @@ impl cmd_parse_input {
 
 pub struct cmd_parse_result {
     pub status: cmd_parse_status,
-    pub cmdlist: *mut cmd_list,
+    pub cmdlist: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
     pub error: Option<CString>,
 }
 
 impl cmd_parse_result {
+    pub fn cmdlist_ptr(&self) -> *mut cmd_list {
+        self.cmdlist
+            .as_ref()
+            .map_or(std::ptr::null_mut(), super::rc::as_ptr)
+    }
+    /// Transfer the retained list to a legacy consuming API.
+    pub fn take_cmdlist(&mut self) -> *mut cmd_list {
+        self.cmdlist.take().map_or(std::ptr::null_mut(), |owner| {
+            std::rc::Rc::into_raw(owner).cast_mut().cast()
+        })
+    }
+
     pub fn empty() -> Self {
         Self {
             status: CMD_PARSE_ERROR,
-            cmdlist: ::core::ptr::null_mut(),
+            cmdlist: None,
             error: None,
         }
     }

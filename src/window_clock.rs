@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::{
     clock_gettime, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
 };
@@ -37,10 +38,10 @@ pub struct window_clock_mode_data {
     pub tim: time_t,
     pub timer: event,
 }
-pub static mut window_clock_mode: window_mode = {
+pub static window_clock_mode: window_mode = {
     window_mode {
         name: c"clock-mode",
-        default_format: ::core::ptr::null::<::core::ffi::c_char>(),
+        default_format: None,
         flags: 0,
         init: Some(
             window_clock_init
@@ -756,14 +757,14 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     );
     style_apply(
         &raw mut gc,
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"clock-mode-colour\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
     format_free(ft);
     colour = gc.fg;
     style = options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"clock-mode-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     screen_write_start(&mut ctx, s);

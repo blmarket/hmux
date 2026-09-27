@@ -33,7 +33,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
         global_w_options = window;
         let definition = (&*std::ptr::addr_of!(options_table))
             .iter()
-            .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys")
+            .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
         options_default(server, definition);
 

@@ -1,3 +1,5 @@
+use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::options::options_owner_ptr;
 // Private expression parser/evaluator.  The modifier parser, loops,
 // conditionals, escaping, job expansion, and recursive expansion routines
 // remain in their original order. The
@@ -212,16 +214,16 @@ pub(super) unsafe fn format_find(
         let name = parsed.name.as_ptr();
         o = options_get(global_options, name);
         if o.is_null() && !(*ft).wp.is_null() {
-            o = options_get((*(*ft).wp).options, name);
+            o = options_get(options_owner_ptr(&mut (*(*ft).wp).options), name);
         }
         if o.is_null() && !(*ft).w.is_null() {
-            o = options_get((*(*ft).w).options, name);
+            o = options_get(options_owner_ptr(&mut (*(*ft).w).options), name);
         }
         if o.is_null() {
             o = options_get(global_w_options, name);
         }
         if o.is_null() && !(*ft).s.is_null() {
-            o = options_get((*(*ft).s).options, name);
+            o = options_get(options_owner_ptr(&mut (*(*ft).s).options), name);
         }
         if o.is_null() {
             o = options_get(global_s_options, name);
@@ -1034,7 +1036,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     format_add(nft, key.as_ptr(), |out| {
         write!(out, "{}", ((wl == (*s).curw) as ::core::ffi::c_int) as i32)
     });
-    o = options_first((*(*wl).window).options);
+    o = options_first(options_owner_ptr(&mut (*(*wl).window).options));
     while !o.is_null() {
         oname = options_name(o);
         if *oname as ::core::ffi::c_int == '@' as i32 {
@@ -1603,18 +1605,18 @@ pub(super) unsafe fn format_loop_options(
             if global != 0 {
                 oo = global_w_options;
             } else if !(*ft).w.is_null() {
-                oo = (*(*ft).w).options;
+                oo = options_owner_ptr(&mut (*(*ft).w).options);
             }
         } else if !strchr(flags, 's' as i32).is_null() {
             if global != 0 {
                 oo = global_s_options;
             } else if !(*ft).s.is_null() {
-                oo = (*(*ft).s).options;
+                oo = options_owner_ptr(&mut (*(*ft).s).options);
             }
         } else if !strchr(flags, 'p' as i32).is_null() {
             if !(global != 0) {
                 if !(*ft).wp.is_null() {
-                    oo = (*(*ft).wp).options;
+                    oo = options_owner_ptr(&mut (*(*ft).wp).options);
                 }
             }
         } else if global != 0 {
@@ -2649,20 +2651,20 @@ pub(super) unsafe fn format_replace(
         || modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0
     {
         if (*ft).c.is_null()
-            || (*(*ft).c).tty.term.is_null()
+            || tty_term_owner_ptr(&(*(*ft).c).tty.term).is_null()
             || (*(*ft).c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0
         {
             value = c"".to_owned();
         } else {
             if modifiers & FORMAT_CLIENT_TERMCAP as uint64_t != 0 {
-                if tty_term_has_name((*(*ft).c).tty.term, copy) != 0 {
+                if tty_term_has_name(tty_term_owner_ptr(&(*(*ft).c).tty.term), copy) != 0 {
                     value = c"1".to_owned();
                 } else {
                     value = c"0".to_owned();
                 }
             }
             if modifiers & FORMAT_CLIENT_TERMFEAT as uint64_t != 0 {
-                if tty_feature_present((*(*ft).c).tty.term, copy) != 0 {
+                if tty_feature_present(tty_term_owner_ptr(&(*(*ft).c).tty.term), copy) != 0 {
                     value = c"1".to_owned();
                 } else {
                     value = c"0".to_owned();

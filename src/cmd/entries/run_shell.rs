@@ -130,11 +130,11 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
         }
     }
     wme = (*wp).modes.active;
-    if wme.is_null() || (*wme).mode != &raw const window_view_mode {
+    if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
         window_pane_set_mode(
             wp,
             ::core::ptr::null_mut::<window_pane>(),
-            &raw const window_view_mode,
+            &window_view_mode,
             ::core::ptr::null_mut::<cmdq_item>(),
             ::core::ptr::null_mut::<cmd_find_state>(),
             ::core::ptr::null_mut::<args>(),

@@ -1,3 +1,4 @@
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_get_target_client, cmdq_print};
@@ -56,13 +57,13 @@ unsafe fn cmd_show_messages_terminals(
 ) -> ::core::ffi::c_int {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
+    let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
     let mut i: u_int = 0;
     let mut n: u_int = 0;
     n = 0 as u_int;
     term = tty_terms.lh_first;
     while !term.is_null() {
-        if !(args_has(args, 't' as i32 as u_char) != 0 && !tc.is_null() && term != (*tc).tty.term) {
+        if !(args_has(args, 't' as i32 as u_char) != 0 && !tc.is_null() && term != tty_term_owner_ptr(&(*tc).tty.term)) {
             if blank != 0 {
                 cmdq_print(item, |out| {
                     write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)

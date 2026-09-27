@@ -195,7 +195,7 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
-    let mut mode: *const window_mode = ::core::ptr::null::<window_mode>();
+    let mode: &'static window_mode;
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -208,20 +208,20 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if paste_is_empty() != 0 {
             return CMD_RETURN_NORMAL;
         }
-        mode = &raw const window_buffer_mode;
+        mode = &window_buffer_mode;
     } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_choose_client_entry) {
         if server_client_how_many() == 0 as u_int {
             return CMD_RETURN_NORMAL;
         }
-        mode = &raw const window_client_mode;
+        mode = &window_client_mode;
     } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_customize_mode_entry) {
-        mode = &raw const window_customize_mode;
+        mode = &window_customize_mode;
     } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_switch_mode_entry) {
-        mode = &raw const window_switch_mode;
+        mode = &window_switch_mode;
     } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_display_panes_entry) {
-        mode = &raw const window_panes_mode;
+        mode = &window_panes_mode;
     } else {
-        mode = &raw const window_tree_mode;
+        mode = &window_tree_mode;
     }
     window_pane_set_mode(
         wp,

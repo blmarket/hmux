@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{
@@ -740,7 +741,7 @@ fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: Option<&CStr>) {
 pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     let mut wp: *mut window_pane = (*mtd).wp;
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = (*(*wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -1398,7 +1399,7 @@ pub unsafe fn mode_tree_set_prompt(
     let mut pd = prompt_create_data::default();
     if !c.is_null() && !(*c).session.is_null() {
         s = (*c).session;
-        oo = (*s).options;
+        oo = options_owner_ptr(&mut (*s).options);
     } else {
         s = ::core::ptr::null_mut::<session>();
         oo = global_s_options;
@@ -1419,7 +1420,7 @@ pub unsafe fn mode_tree_set_prompt(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong) as ::core::ffi::c_int;
-    prompt_set_options(&mut pd, s.as_ref());
+    prompt_set_options(&mut pd, s.as_mut());
     pd.prompt = prompt;
     pd.input = input;
     pd.type_0 = type_0;
@@ -1729,7 +1730,7 @@ unsafe fn mode_tree_draw_help_line(
 }
 unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen_write_ctx) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = (*(*(*mtd).wp).window).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*mtd).wp).window).options);
     let mut box_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],

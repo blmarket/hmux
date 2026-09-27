@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
@@ -330,7 +331,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         style = args_get(args, 's' as i32 as u_char);
         if !style.is_null() {
             if options_set_string(
-                (*new_wp).options,
+                options_owner_ptr(&mut (*new_wp).options),
                 b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_int,
                 |out| write_cstr(out, style),
@@ -344,7 +345,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 current_block = 9814746494299271243;
             } else {
                 options_set_string(
-                    (*new_wp).options,
+                    options_owner_ptr(&mut (*new_wp).options),
                     b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
                     0 as ::core::ffi::c_int,
                     |out| write_cstr(out, style),
@@ -361,7 +362,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 style = args_get(args, 'S' as i32 as u_char);
                 if !style.is_null() {
                     if options_set_string(
-                        (*new_wp).options,
+                        options_owner_ptr(&mut (*new_wp).options),
                         b"pane-active-border-style\0" as *const u8 as *const ::core::ffi::c_char,
                         0 as ::core::ffi::c_int,
                         |out| write_cstr(out, style),
@@ -385,7 +386,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                         style = args_get(args, 'R' as i32 as u_char);
                         if !style.is_null() {
                             if options_set_string(
-                                (*new_wp).options,
+                                options_owner_ptr(&mut (*new_wp).options),
                                 b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char,
                                 0 as ::core::ffi::c_int,
                                 |out| write_cstr(out, style),
@@ -408,7 +409,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                             _ => {
                                 if args_has(args, 'B' as i32 as u_char) != 0 {
                                     options_set_number(
-                                        (*new_wp).options,
+                                        options_owner_ptr(&mut (*new_wp).options),
                                         b"pane-border-lines\0" as *const u8
                                             as *const ::core::ffi::c_char,
                                         lines as ::core::ffi::c_longlong,
@@ -418,14 +419,14 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                     || args_has(args, 'm' as i32 as u_char) != 0
                                 {
                                     options_set_number(
-                                        (*new_wp).options,
+                                        options_owner_ptr(&mut (*new_wp).options),
                                         b"remain-on-exit\0" as *const u8
                                             as *const ::core::ffi::c_char,
                                         3 as ::core::ffi::c_longlong,
                                     );
                                     if args_has(args, 'm' as i32 as u_char) != 0 {
                                         options_set_string(
-                                            (*new_wp).options,
+                                            options_owner_ptr(&mut (*new_wp).options),
                                             b"remain-on-exit-format\0" as *const u8
                                                 as *const ::core::ffi::c_char,
                                             0 as ::core::ffi::c_int,

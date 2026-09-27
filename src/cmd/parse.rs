@@ -293,7 +293,7 @@ unsafe fn cmd_parse_expand_alias(
     let Some(cmd_parse_argument::String(name)) = cmd.arguments.items.front().map(Box::as_ref)
     else {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = cmd_list_new();
+        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
         return true;
     };
     let Some(alias) = cmd_get_alias(name) else {
@@ -316,7 +316,7 @@ unsafe fn cmd_parse_expand_alias(
     };
     let Some(last) = cmds.items.last_mut() else {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = cmd_list_new();
+        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
         return true;
     };
     drop(
@@ -351,7 +351,7 @@ unsafe fn cmd_parse_build_command(
                 if pr.status != CMD_PARSE_SUCCESS {
                     return;
                 }
-                ArgumentValue::commands(rc::take(pr.cmdlist))
+                ArgumentValue::commands(pr.cmdlist.take().expect("successful command parse"))
             }
             cmd_parse_argument::ParsedCommands(commands) => {
                 ArgumentValue::borrowed_commands(commands)
@@ -362,8 +362,8 @@ unsafe fn cmd_parse_build_command(
     match cmd_parse(&values, pi.file.as_deref(), pi.line, pi.flags) {
         Ok(command) => {
             pr.status = CMD_PARSE_SUCCESS;
-            pr.cmdlist = cmd_list_new();
-            cmd_list_append(pr.cmdlist, command);
+            pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
+            cmd_list_append(pr.cmdlist_ptr(), command);
         }
         Err(cause) => {
             pr.status = CMD_PARSE_ERROR;
@@ -384,7 +384,7 @@ unsafe fn cmd_parse_build_commands(
     let command_count = cmds.items.len();
     if command_count == 0 {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = cmd_list_new();
+        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
         return;
     }
     cmd_parse_log_commands(cmds, c"cmd_parse_build_commands");
@@ -411,8 +411,8 @@ unsafe fn cmd_parse_build_commands(
             cmd_list_free(current);
             return;
         }
-        cmd_list_append_all(current, pr.cmdlist);
-        cmd_list_free(pr.cmdlist);
+        cmd_list_append_all(current, pr.cmdlist_ptr());
+        drop(pr.cmdlist.take());
     }
     if !current.is_null() {
         cmd_parse_print_commands(pi, current);
@@ -426,7 +426,7 @@ unsafe fn cmd_parse_build_commands(
         log_bytes(s.as_bytes())
     ));
     pr.status = CMD_PARSE_SUCCESS;
-    pr.cmdlist = result;
+    pr.cmdlist = Some(rc::take(result));
 }
 pub unsafe fn cmd_parse_from_file(
     mut f: *mut FILE,
@@ -501,9 +501,9 @@ pub unsafe fn cmd_parse_and_append(
     if pr.status == CMD_PARSE_ERROR {
         return Err(pr.error.take());
     }
-    item = cmdq_get_command(pr.cmdlist, state);
+    item = cmdq_get_command(pr.cmdlist_ptr(), state);
     cmdq_append(c, item);
-    cmd_list_free(pr.cmdlist);
+    drop(pr.cmdlist.take());
     Ok(pr.status)
 }
 pub unsafe fn cmd_parse_from_buffer(
@@ -533,7 +533,7 @@ pub unsafe fn cmd_parse_from_buffer(
     }
     if len == 0 as size_t {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = cmd_list_new();
+        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
         return pr;
     }
     let mut cmds = match cmd_parse_do_buffer(std::slice::from_raw_parts(buf.cast(), len), &mut *pi)
@@ -672,9 +672,28 @@ mod parser_collection_tests {
             flags: CMD_PARSE_NOALIAS,
             ..Default::default()
         };
-        let result = cmd_parse_from_string(source, &mut input);
+        let mut result = cmd_parse_from_string(source, &mut input);
         assert_eq!(result.status, CMD_PARSE_SUCCESS, "{:?}", result.error);
-        rc::take(result.cmdlist)
+        result.cmdlist.take().expect("successful command parse")
+    }
+
+    #[test]
+    fn queue_retains_commands_after_parse_result_is_dropped() {
+        unsafe {
+            let mut input = cmd_parse_input {
+                flags: CMD_PARSE_NOALIAS,
+                ..Default::default()
+            };
+            let result = cmd_parse_from_string(c"display-message retained", &mut input);
+            assert_eq!(result.status, CMD_PARSE_SUCCESS);
+            let observer = Rc::downgrade(result.cmdlist.as_ref().unwrap());
+            let item = cmdq_get_command(result.cmdlist_ptr(), std::ptr::null_mut());
+            drop(result);
+            assert!(observer.upgrade().is_some());
+            assert_eq!((*(*item).cmd).entry.name, c"display-message");
+            crate::src::cmd::queue::cmdq_free_detached(item);
+            assert!(observer.upgrade().is_none());
+        }
     }
 
     #[test]
@@ -770,10 +789,10 @@ mod parser_collection_tests {
                         "built command must retain its nested command list"
                     );
                     assert_eq!(
-                        cmd_list_print_cstring(&*result.cmdlist, 0).as_bytes(),
+                        cmd_list_print_cstring(&*result.cmdlist_ptr(), 0).as_bytes(),
                         b"if-shell -F 1 { display-message -p nested }"
                     );
-                    cmd_list_free(result.cmdlist);
+                    drop(result.cmdlist.take());
                     assert!(observer.upgrade().is_none());
                 }
             }

@@ -191,14 +191,14 @@ fn iteration_allows_nested_reads_and_copy_from_an_owned_snapshot() {
 fn update_borrows_sources_and_accepts_owned_snapshots() {
     use hmux2::src::environ::environ_update;
     use hmux2::src::options::{options_array_set, options_create, options_empty, options_free};
-    use std::{ffi::CStr, ptr::null_mut};
+    use std::ptr::null_mut;
     unsafe {
         let options = options_create(null_mut());
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|entry| {
-                !entry.name.is_null() && CStr::from_ptr(entry.name) == c"update-environment"
+                entry.name == Some(c"update-environment")
             })
             .unwrap();
         let array = options_empty(options, definition);

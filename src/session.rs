@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
@@ -294,7 +295,7 @@ pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session
         windows: winlinks { storage: None },
         statusat: 0,
         statuslines: 0,
-        options: ::core::ptr::null_mut::<options>(),
+        options: None,
         flags: 0,
         attached: 0,
         tio: None,
@@ -355,7 +356,12 @@ pub unsafe fn session_create(
     (*s).lastw.reserved = std::ptr::null_mut();
     (*s).windows.storage = None;
     (*s).environ = Some(env);
-    (*s).options = oo;
+    // session_create consumes the caller's option-root allocation.
+    (*s).options = if oo.is_null() {
+        None
+    } else {
+        Some(Box::from_raw(oo))
+    };
     status_update_cache(s);
     if !name.is_null() {
         drop(session_replace_name(
@@ -423,9 +429,7 @@ unsafe fn session_free(s: *mut session) {
         log_cstr(((*s).name.as_ptr()) as *const _)
     ));
     drop((*s).environ.take());
-    if !(*s).options.is_null() {
-        options_free((*s).options);
-    }
+    drop((*s).options.take());
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
 }
 pub unsafe fn session_destroy(
@@ -523,7 +527,7 @@ pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeva
         tv.tv_usec = 0 as __suseconds_t;
         tv.tv_sec = tv.tv_usec as __time_t;
         tv.tv_sec = options_get_number(
-            (*s).options,
+            options_owner_ptr(&mut (*s).options),
             b"lock-after-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as __time_t;
         if tv.tv_sec != 0 as __time_t {
@@ -1038,7 +1042,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
     let mut new_curw_idx: ::core::ffi::c_int = 0;
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     new_idx = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     new_curw_idx = 0 as ::core::ffi::c_int;
@@ -1117,7 +1121,7 @@ pub unsafe fn session_update_history(mut s: *mut session) {
     let mut limit: u_int = 0;
     let mut osize: u_int = 0;
     limit = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);

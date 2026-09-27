@@ -39,6 +39,11 @@ pub unsafe fn take<T>(ptr: *mut T) -> Rc<UnsafeCell<T>> {
     Rc::from_raw(ptr.cast::<UnsafeCell<T>>())
 }
 
+/// Transfer a typed owner back to a legacy retained-reference API.
+pub fn into_raw<T>(owner: Rc<UnsafeCell<T>>) -> *mut T {
+    Rc::into_raw(owner).cast_mut().cast()
+}
+
 /// Consume one retained raw reference.
 ///
 /// # Safety

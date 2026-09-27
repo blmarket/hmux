@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
@@ -278,14 +279,7 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     };
 }
 
-pub const WINDOW_CUSTOMIZE_DEFAULT_FORMAT: [::core::ffi::c_char; 227] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 227],
-        [::core::ffi::c_char; 227],
-    >(
-        *b"#{?is_option,#{?option_is_global,,#[reverse](#{option_scope})#[default] }#[fg=themelightgrey]#[ignore]#{option_value}#{?option_unit, #{option_unit},},#{?is_environment,#[fg=themelightgrey]#[ignore]#{environment_value},#{key}}}\0",
-    )
-};
+pub const WINDOW_CUSTOMIZE_DEFAULT_FORMAT: &CStr = c"#{?is_option,#{?option_is_global,,#[reverse](#{option_scope})#[default] }#[fg=themelightgrey]#[ignore]#{option_value}#{?option_unit, #{option_unit},},#{?is_environment,#[fg=themelightgrey]#[ignore]#{environment_value},#{key}}}";
 static window_customize_menu_items: [menu_item<'static>; 11] = [
     menu_item {
         name: c"Select",
@@ -343,10 +337,10 @@ static window_customize_menu_items: [menu_item<'static>; 11] = [
         command: None,
     },
 ];
-pub static mut window_customize_mode: window_mode = {
+pub static window_customize_mode: window_mode = {
     window_mode {
         name: c"options-mode",
-        default_format: WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr(),
+        default_format: Some(WINDOW_CUSTOMIZE_DEFAULT_FORMAT),
         flags: 0,
         init: Some(
             window_customize_init
@@ -429,10 +423,10 @@ unsafe fn window_customize_get_tree(
         0 | 1 => return ::core::ptr::null_mut::<options>(),
         2 => return global_options,
         3 => return global_s_options,
-        4 => return (*(*fs).s).options,
+        4 => return options_owner_ptr(&mut (*(*fs).s).options),
         5 => return global_w_options,
-        6 => return (*(*fs).w).options,
-        7 => return (*(*fs).wp).options,
+        6 => return options_owner_ptr(&mut (*(*fs).w).options),
+        7 => return options_owner_ptr(&mut (*(*fs).wp).options),
         8 | 9 => return ::core::ptr::null_mut::<options>(),
         _ => {}
     }
@@ -844,7 +838,7 @@ unsafe fn window_customize_set_command_value(
         return -(1 as ::core::ffi::c_int);
     };
     let kt = crate::src::shared::rc::as_ptr(&table);
-    let pr = cmd_parse_from_string(
+    let mut pr = cmd_parse_from_string(
         CStr::from_ptr(s),
         ::core::ptr::null_mut::<cmd_parse_input>(),
     );
@@ -855,10 +849,10 @@ unsafe fn window_customize_set_command_value(
         return -(1 as ::core::ffi::c_int);
     }
     let Some(bd) = (*kt).key_bindings.get_mut(item.key) else {
-        crate::src::cmd::cmd_list_free(pr.cmdlist);
+        drop(pr.cmdlist.take());
         return -1;
     };
-    bd.commands = crate::src::shared::rc::take(pr.cmdlist);
+    bd.commands = pr.cmdlist.take().expect("successful command parse");
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_customize_set_note_value(
@@ -1139,11 +1133,11 @@ unsafe fn window_customize_build_option(
         |out| write_cstr(out, scope_text.as_ptr()),
     );
     drop(scope_text);
-    if !oe.is_null() && !(*oe).unit.is_null() {
+    if !oe.is_null() && !(*oe).unit_ptr().is_null() {
         format_add(
             ft,
             b"option_unit\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, (*oe).unit),
+            |out| write_cstr(out, (*oe).unit_ptr()),
         );
     } else {
         format_add(
@@ -1698,7 +1692,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        (*fs.s).options,
+        options_owner_ptr(&mut (*fs.s).options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1713,9 +1707,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        (*fs.w).options,
+        options_owner_ptr(&mut (*fs.w).options),
         WINDOW_CUSTOMIZE_PANE,
-        (*fs.wp).options,
+        options_owner_ptr(&mut (*fs.wp).options),
         ft,
         filter,
         &raw mut fs,
@@ -1728,7 +1722,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        (*fs.s).options,
+        options_owner_ptr(&mut (*fs.s).options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1743,9 +1737,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        (*fs.w).options,
+        options_owner_ptr(&mut (*fs.w).options),
         WINDOW_CUSTOMIZE_PANE,
-        (*fs.wp).options,
+        options_owner_ptr(&mut (*fs.wp).options),
         ft,
         filter,
         &raw mut fs,
@@ -1949,8 +1943,6 @@ unsafe fn window_customize_draw_option(
         us: 0,
         link: 0,
     };
-    let mut choice: *mut *const ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
     let mut text: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1999,16 +1991,16 @@ unsafe fn window_customize_draw_option(
     is_user_hook = (*name as ::core::ffi::c_int == '@' as i32 && hooks_is_event(name) != 0)
         as ::core::ffi::c_int;
     is_any_hook = (is_hook != 0 || is_monitor != 0 || is_user_hook != 0) as ::core::ffi::c_int;
-    if !oe.is_null() && !(*oe).unit.is_null() {
+    if !oe.is_null() && !(*oe).unit_ptr().is_null() {
         space = b" \0" as *const u8 as *const ::core::ffi::c_char;
-        unit = (*oe).unit;
+        unit = (*oe).unit_ptr();
     }
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
         &fs,
     );
-    if oe.is_null() || (*oe).text.is_null() {
+    if oe.is_null() || (*oe).text_ptr().is_null() {
         if is_monitor != 0 {
             text = b"This hook runs when a monitor changes.\0" as *const u8
                 as *const ::core::ffi::c_char;
@@ -2020,7 +2012,7 @@ unsafe fn window_customize_draw_option(
                 as *const ::core::ffi::c_char;
         }
     } else {
-        text = (*oe).text;
+        text = (*oe).text_ptr();
     }
     if !(screen_write_text(
         &mut *ctx,
@@ -2339,12 +2331,11 @@ unsafe fn window_customize_draw_option(
                                                                     as ::core::ffi::c_int
                                                                     as ::core::ffi::c_uint
                                                         {
-                                                            choice = (*oe).choices;
-                                                            while !(*choice).is_null() {
+                                                            for choice in (*oe).choices {
                                                                 strlcat(
                                                                     &raw mut choices
                                                                         as *mut ::core::ffi::c_char,
-                                                                    *choice,
+                                                                    choice.as_ptr(),
                                                                     ::core::mem::size_of::<
                                                                         [::core::ffi::c_char; 256],
                                                                     >(
@@ -2357,7 +2348,6 @@ unsafe fn window_customize_draw_option(
                                                                     ::core::mem::size_of::<[::core::ffi::c_char; 256]>()
                                                                         as size_t,
                                                                 );
-                                                                choice = choice.offset(1);
                                                             }
                                                             choices[strlen(
                                                                 &raw mut choices
@@ -3534,7 +3524,7 @@ unsafe fn window_customize_edit_close_cb(
     wp = window_pane_find_by_id(ed.wp_id);
     if !wp.is_null() {
         wme = (*wp).modes.active;
-        if !wme.is_null() && (*wme).mode == &raw const window_customize_mode {
+        if !wme.is_null() && std::ptr::eq((*wme).mode, &window_customize_mode) {
             data = (*wme).data as *mut window_customize_modedata;
             if NonNull::new((*data).editor) == Some(editor) {
                 (*data).editor = ::core::ptr::null_mut::<spawn_editor_state>();
@@ -3815,10 +3805,7 @@ unsafe fn window_customize_set_option(
             == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         choice = options_get_number(oo, name) as u_int;
-        if (*(*oe)
-            .choices
-            .offset(choice.wrapping_add(1 as u_int) as isize))
-        .is_null()
+        if choice as usize + 1 >= (&(*oe).choices).len()
         {
             choice = 0 as u_int;
         } else {
@@ -4159,10 +4146,10 @@ unsafe fn window_customize_set_command_callback(
         }
         1 | _ => {
             let Some(bd) = (*kt).key_bindings.get_mut(item.key) else {
-                crate::src::cmd::cmd_list_free(pr.cmdlist);
+                drop(pr.cmdlist.take());
                 return PROMPT_CLOSE;
             };
-            bd.commands = crate::src::shared::rc::take(pr.cmdlist);
+            bd.commands = pr.cmdlist.take().expect("successful command parse");
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
             (*(*data).wp).flags |= PANE_REDRAW;
@@ -4371,7 +4358,7 @@ unsafe fn window_customize_add_key_callback(
                 key,
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
-                pr.cmdlist,
+                pr.take_cmdlist(),
             );
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
@@ -4689,7 +4676,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION,
-            (*fs.s).options,
+            options_owner_ptr(&mut (*fs.s).options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4699,7 +4686,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_PANE,
-            (*fs.wp).options,
+            options_owner_ptr(&mut (*fs.wp).options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4709,7 +4696,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION,
-            (*fs.s).options,
+            options_owner_ptr(&mut (*fs.s).options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4719,7 +4706,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_PANE,
-            (*fs.wp).options,
+            options_owner_ptr(&mut (*fs.wp).options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;

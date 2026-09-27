@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::bytes::format_message_with;
@@ -83,7 +84,7 @@ unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     tv.tv_usec = 0 as __suseconds_t;
     tv.tv_sec = tv.tv_usec as __time_t;
     tv.tv_sec = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status-interval\0" as *const u8 as *const ::core::ffi::c_char,
     ) as __time_t;
     if tv.tv_sec != 0 as __time_t {
@@ -109,7 +110,7 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
     }
     if !s.is_null()
         && options_get_number(
-            (*s).options,
+            options_owner_ptr(&mut (*s).options),
             b"status\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
@@ -126,13 +127,13 @@ pub unsafe fn status_timer_start_all() {
 }
 pub unsafe fn status_update_cache(mut s: *mut session) {
     (*s).statuslines = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if (*s).statuslines == 0 as u_int {
         (*s).statusat = -(1 as ::core::ffi::c_int);
     } else if options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {
@@ -173,7 +174,7 @@ pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
         return 0 as u_int;
     }
     line = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"message-line\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if line >= lines {
@@ -318,19 +319,19 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     style_apply(
         &raw mut gc,
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
     fg = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status-fg\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
     }
     bg = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status-bg\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
@@ -351,7 +352,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     }
     screen_write_start(&mut ctx, &raw mut (*sl).screen);
     o = options_get(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"status-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if o.is_null() {
@@ -490,7 +491,7 @@ pub unsafe fn status_message_set(
     });
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
-            (*(*c).session).options,
+            options_owner_ptr(&mut (*(*c).session).options),
             b"display-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
     }
@@ -532,7 +533,7 @@ pub unsafe fn status_message_clear(mut c: *mut client) {
 }
 unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
     let sy = options_string_to_style(
-        (*c.session).options,
+        options_owner_ptr(&mut (*c.session).options),
         c"message-style".as_ptr(),
         std::ptr::null_mut(),
     )
@@ -612,7 +613,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     style_apply(
         &raw mut gc,
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
@@ -643,7 +644,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
     msgfmt = options_get_string(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_time_cstring(ft, msgfmt);
@@ -704,7 +705,7 @@ pub unsafe fn status_prompt_set(
     status_message_clear(c);
     status_prompt_clear(c);
     status_push_screen(c);
-    prompt_set_options(&mut pd, ((*c).session).as_ref());
+    prompt_set_options(&mut pd, ((*c).session).as_mut());
     pd.fs = fs.as_ref();
     pd.prompt = CStr::from_ptr(msg);
     pd.input = if input.is_null() {
@@ -768,7 +769,7 @@ unsafe fn status_prompt_screen_line(c: &client) -> u_int {
     let tty = &c.tty;
     let mut n: u_int = 0;
     if options_get_number(
-        (*c.session).options,
+        options_owner_ptr(&mut (*c.session).options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {
@@ -910,12 +911,12 @@ mod status_screen_tests {
             ] {
                 let definition = (&*std::ptr::addr_of!(options_table))
                     .iter()
-                    .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == name)
+                    .find(|entry| entry.name == Some(name))
                     .unwrap();
                 options_default(oo, definition);
             }
             let mut session = session::empty();
-            session.options = oo;
+            session.options = Some(Box::from_raw(oo));
             let mut c = client::empty();
             c.session = &raw mut session;
             c.tty.sx = 80;
@@ -982,7 +983,7 @@ mod status_screen_tests {
             ] {
                 let definition = options_table
                     .iter()
-                    .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == name)
+                    .find(|entry| entry.name == Some(name))
                     .unwrap();
                 options_default(options, definition);
             }

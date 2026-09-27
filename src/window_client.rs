@@ -1,3 +1,5 @@
+use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::compat::imsg::*;
 use crate::src::ffi::libc::memcpy;
@@ -97,11 +99,7 @@ impl Drop for window_client_itemdata {
 pub const WINDOW_CLIENT_DEFAULT_COMMAND: [::core::ffi::c_char; 22] = unsafe {
     ::core::mem::transmute::<[u8; 22], [::core::ffi::c_char; 22]>(*b"detach-client -t '%%'\0")
 };
-pub const WINDOW_CLIENT_DEFAULT_FORMAT: [::core::ffi::c_char; 78] = unsafe {
-    ::core::mem::transmute::<[u8; 78], [::core::ffi::c_char; 78]>(
-        *b"#[fg=themelightgrey]#{t/p:client_activity}: session #[default]#{session_name}\0",
-    )
-};
+pub const WINDOW_CLIENT_DEFAULT_FORMAT: &CStr = c"#[fg=themelightgrey]#{t/p:client_activity}: session #[default]#{session_name}";
 pub const WINDOW_CLIENT_DEFAULT_KEY_FORMAT: [::core::ffi::c_char; 83] = unsafe {
     ::core::mem::transmute::<[u8; 83], [::core::ffi::c_char; 83]>(
         *b"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}\0",
@@ -197,10 +195,10 @@ static window_client_menu_items: [menu_item<'static>; 8] = [
         command: None,
     },
 ];
-pub static mut window_client_mode: window_mode = {
+pub static window_client_mode: window_mode = {
     window_mode {
         name: c"client-mode",
-        default_format: WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr(),
+        default_format: Some(WINDOW_CLIENT_DEFAULT_FORMAT),
         flags: 0,
         init: Some(
             window_client_init
@@ -444,7 +442,7 @@ unsafe fn window_client_draw_info(
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    if (*(*c).tty.term).flags & TERM_INVALIDMS != 0 {
+    if (*tty_term_owner_ptr(&(*c).tty.term)).flags & TERM_INVALIDMS != 0 {
         format_add(
             ft,
             b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
@@ -496,7 +494,7 @@ unsafe fn window_client_draw_info(
         );
         style_apply(
             &raw mut gc,
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
             ::core::ptr::null_mut::<format_tree>(),
         );
@@ -604,7 +602,7 @@ unsafe fn window_client_draw(
     );
     style_apply(
         &raw mut gc,
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );

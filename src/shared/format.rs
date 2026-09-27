@@ -131,11 +131,17 @@ pub struct format_tree {
     pub tree: format_entry_tree,
 }
 
+/// Sole owner of a format tree. Cleanup can reenter the tree through legacy
+/// pointers, so the owner moves the Box out before dropping callback captures.
+pub struct FormatTreeOwner {
+    pub(crate) tree: Option<Box<format_tree>>,
+}
+
 // Jobs live in stable Rust allocations because process callbacks retain their addresses.
 // Keys own the original command bytes, ordered exactly like tag followed by strcmp.
 #[derive(Default)]
 pub struct format_job_tree {
-    pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), *mut format_job>,
+    pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), Box<format_job>>,
 }
 
 /// Ordered owners for a format tree's heap-allocated entries.

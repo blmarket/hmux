@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_string_percentage_result;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::{strcmp, strlen, strncmp};
@@ -310,7 +311,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     n = n.wrapping_sub(1);
     sy = (*w).sy.wrapping_sub(1 as u_int);
     s = options_get_string(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"main-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainh = match args_string_percentage_result(
@@ -330,7 +331,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
         otherh = PANE_MINIMUM as u_int;
     } else {
         s = options_get_string(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"other-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherh = match args_string_percentage_result(
@@ -468,7 +469,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     n = n.wrapping_sub(1);
     sy = (*w).sy.wrapping_sub(1 as u_int);
     s = options_get_string(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"main-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainh = match args_string_percentage_result(
@@ -488,7 +489,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
         otherh = PANE_MINIMUM as u_int;
     } else {
         s = options_get_string(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"other-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherh = match args_string_percentage_result(
@@ -626,7 +627,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     n = n.wrapping_sub(1);
     sx = (*w).sx.wrapping_sub(1 as u_int);
     s = options_get_string(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"main-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainw = match args_string_percentage_result(
@@ -646,7 +647,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
         otherw = PANE_MINIMUM as u_int;
     } else {
         s = options_get_string(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"other-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherw = match args_string_percentage_result(
@@ -784,7 +785,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     n = n.wrapping_sub(1);
     sx = (*w).sx.wrapping_sub(1 as u_int);
     s = options_get_string(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"main-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainw = match args_string_percentage_result(
@@ -804,7 +805,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
         otherw = PANE_MINIMUM as u_int;
     } else {
         s = options_get_string(
-            (*w).options,
+            options_owner_ptr(&mut (*w).options),
             b"other-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherw = match args_string_percentage_result(
@@ -918,7 +919,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     server_redraw_window(w);
 }
 unsafe fn layout_set_tiled(mut w: *mut window) {
-    let mut oo: *mut options = (*w).options;
+    let mut oo: *mut options = options_owner_ptr(&mut (*w).options);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcrow: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();

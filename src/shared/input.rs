@@ -45,7 +45,7 @@ pub struct input_ctx {
     pub utf8started: ::core::ffi::c_int,
     pub ch: ::core::ffi::c_int,
     pub last: utf8_data,
-    pub state: *const input_state,
+    pub state: &'static input_state,
     pub flags: ::core::ffi::c_int,
     pub(crate) requests: VecDeque<Box<input_request>>,
     pub request_count: u_int,
@@ -74,7 +74,7 @@ pub struct input_state {
     pub name: &'static ::std::ffi::CStr,
     pub enter: Option<unsafe fn(*mut input_ctx)>,
     pub exit: Option<unsafe fn(*mut input_ctx)>,
-    pub transitions: *const input_transition,
+    pub transitions: &'static [input_transition],
 }
 
 #[derive(Copy, Clone)]
@@ -83,7 +83,7 @@ pub struct input_transition {
     pub first: ::core::ffi::c_int,
     pub last: ::core::ffi::c_int,
     pub handler: Option<unsafe fn(*mut input_ctx) -> ::core::ffi::c_int>,
-    pub state: *const input_state,
+    pub state: Option<&'static input_state>,
 }
 
 // Rust representation of tmux's tagged parameter union. Each string is owned

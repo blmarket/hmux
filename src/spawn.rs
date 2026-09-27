@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -108,10 +109,6 @@ impl spawn_editor_state {
             pid: 0,
             cb: cb,
         })
-    }
-
-    fn into_state_ptr(self: Box<Self>) -> *mut spawn_editor_state {
-        Box::into_raw(self) as *mut spawn_editor_state
     }
 }
 
@@ -346,7 +343,7 @@ pub unsafe fn spawn_window(
         if idx == -(1 as ::core::ffi::c_int) {
             idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
                 - options_get_number(
-                    (*s).options,
+                    options_owner_ptr(&mut (*s).options),
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
@@ -405,7 +402,7 @@ pub unsafe fn spawn_window(
                 CStr::from_ptr((*sc).name).to_owned(),
             ));
             options_set_number(
-                (*w).options,
+                options_owner_ptr(&mut (*w).options),
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_longlong,
             );
@@ -526,7 +523,7 @@ pub unsafe fn spawn_pane(
         cwd = Some(CStr::from_ptr(server_client_get_cwd(c, ts)).to_owned());
     }
     hlimit = options_get_number(
-        (*s).options,
+        options_owner_ptr(&mut (*s).options),
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if (*sc).flags & SPAWN_RESPAWN != 0 {
@@ -556,9 +553,8 @@ pub unsafe fn spawn_pane(
         }
         window_pane_reset_mode_all((*sc).wp0);
         screen_reinit(&mut (*(*sc).wp0).base, 0 as ::core::ffi::c_int);
-        if !(*(*sc).wp0).ictx.is_null() {
-            input_free((*(*sc).wp0).ictx);
-            (*(*sc).wp0).ictx = ::core::ptr::null_mut::<input_ctx>();
+        if let Some(ictx) = (*(*sc).wp0).ictx.take() {
+            input_free(ictx);
         }
         (*(*sc).wp0).offset.used = 0 as size_t;
         (*(*sc).wp0).base_offset = 0 as size_t;
@@ -602,7 +598,7 @@ pub unsafe fn spawn_pane(
     if (*sc).argv.is_empty() {
         if (*sc).flags & SPAWN_RESPAWN == 0 {
             cmd = options_get_string(
-                (*s).options,
+                options_owner_ptr(&mut (*s).options),
                 b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
@@ -660,7 +656,7 @@ pub unsafe fn spawn_pane(
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
         tmp = options_get_string(
-            (*s).options,
+            options_owner_ptr(&mut (*s).options),
             b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if checkshell(tmp) == 0 {
@@ -956,9 +952,12 @@ pub unsafe fn spawn_pane(
     }
     return new_wp;
 }
-unsafe fn spawn_editor_free(es: *mut spawn_editor_state) {
-    let owner = Box::from_raw(es as *mut spawn_editor_state);
-    unlink(owner.path.as_ptr());
+impl Drop for spawn_editor_state {
+    fn drop(&mut self) {
+        unsafe {
+            unlink(self.path.as_ptr());
+        }
+    }
 }
 pub unsafe fn spawn_cancel_editor(mut es: *mut spawn_editor_state) {
     if es.is_null() {
@@ -973,15 +972,14 @@ pub unsafe fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -> pid_t {
     return (*es).pid;
 }
 pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
-    let mut es: *mut spawn_editor_state = (*wp).editor as *mut spawn_editor_state;
+    let Some(mut owner) = (*wp).editor.take() else {
+        return;
+    };
+    let es = &raw mut *owner;
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut result: Option<Vec<u8>> = None;
     let mut len: off_t = 0 as off_t;
     let mut status: ::core::ffi::c_int = 128 as ::core::ffi::c_int + SIGHUP;
-    if es.is_null() {
-        return;
-    }
-    (*wp).editor = ::core::ptr::null_mut::<spawn_editor_state>();
     if (*wp).flags & PANE_STATUSREADY != 0 {
         if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
             status = ((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
@@ -994,12 +992,10 @@ pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
         }
     }
     if (*es).cb.is_none() {
-        spawn_editor_free(es);
         return;
     }
     if status != 0 as ::core::ffi::c_int {
         (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), None);
-        spawn_editor_free(es);
         return;
     }
     f = fopen(
@@ -1037,7 +1033,6 @@ pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
         drop(stream);
     }
     (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), result);
-    spawn_editor_free(es);
 }
 
 /// Open the editor's temporary descriptor as a C `FILE` while keeping its
@@ -1129,7 +1124,8 @@ pub(crate) unsafe fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     drop(stream);
-    es = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb).into_state_ptr();
+    let mut owner = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb);
+    es = &raw mut *owner;
     lg.sx = (*w).sx.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.sy = (*w).sy.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.xoff = (*w)
@@ -1144,7 +1140,6 @@ pub(crate) unsafe fn spawn_editor(
     lc = layout_floating_pane(w, ::core::ptr::null_mut::<window_pane>(), &raw mut lg);
     if lc.is_null() {
         window_pop_zoom(w);
-        spawn_editor_free(es);
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     let cmd = CString::new(
@@ -1169,17 +1164,16 @@ pub(crate) unsafe fn spawn_editor(
     wp = spawn_pane(&raw mut sc, &raw mut cause);
     if wp.is_null() {
         window_pop_zoom(w);
-        spawn_editor_free(es);
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     window_pop_zoom(w);
     options_set_number(
-        (*wp).options,
+        options_owner_ptr(&mut (*wp).options),
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
     (*es).pid = (*wp).pid;
-    (*wp).editor = es as *mut spawn_editor_state;
+    (*wp).editor = Some(owner);
     return es;
 }
 
@@ -1272,10 +1266,9 @@ mod tests {
                 let edited = b"edited by child\0\xff";
                 fs::write(path.to_str().unwrap(), edited).unwrap();
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
-                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result))
-                    .into_state_ptr();
+                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result));
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
-                (*wp).editor = state;
+                (*wp).editor = Some(state);
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 0;
                 spawn_editor_finish(wp);
@@ -1287,10 +1280,9 @@ mod tests {
                 drop(fd_owner);
                 fs::write(path.to_str().unwrap(), []).unwrap();
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
-                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result))
-                    .into_state_ptr();
+                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result));
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
-                (*wp).editor = state;
+                (*wp).editor = Some(state);
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 0;
                 spawn_editor_finish(wp);
@@ -1302,10 +1294,9 @@ mod tests {
                 drop(fd_owner);
                 fs::write(path.to_str().unwrap(), b"ignored after failure").unwrap();
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
-                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result))
-                    .into_state_ptr();
+                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result));
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
-                (*wp).editor = state;
+                (*wp).editor = Some(state);
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 1 << 8;
                 spawn_editor_finish(wp);

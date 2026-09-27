@@ -11,7 +11,6 @@ use hmux2::src::shared::display::{PROGRESS_BAR_HIDDEN, PROGRESS_BAR_PAUSED};
 use hmux2::src::shared::key::MODEKEY_VI;
 use hmux2::src::shared::screen::{screen, MODE_CRLF, MODE_CURSOR, MODE_WRAP};
 use hmux2::src::tmux::global_options;
-use std::ffi::CStr;
 
 #[test]
 fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
@@ -20,7 +19,7 @@ fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
         global_options = options_create(std::ptr::null_mut());
         let definition = options_table
             .iter()
-            .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys")
+            .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
         options_default(global_options, definition);
 

@@ -132,7 +132,8 @@ pub struct client {
     pub activity_time: timeval,
     pub last_activity_time: timeval,
     pub environ: Option<Box<environ>>,
-    pub jobs: *mut format_job_tree,
+    /// Sole owner of this client's lazily allocated format-job cache.
+    pub jobs: Option<Box<format_job_tree>>,
     pub title: Option<std::ffi::CString>,
     pub path: Option<std::ffi::CString>,
     pub cwd: Option<std::ffi::CString>,
@@ -164,7 +165,7 @@ pub struct client {
     pub exit_msgtype: msgtype,
     pub exit_session: Option<std::ffi::CString>,
     pub exit_message: Option<std::ffi::CString>,
-    pub keytable: *mut key_table,
+    pub keytable: Option<super::key::KeyTableOwner>,
     pub last_key: key_code,
     pub paste_time: time_t,
     pub message_ignore_keys: ::core::ffi::c_int,

@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::cmd_stringify_argv_cstring;
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen, strncmp,
@@ -58,7 +59,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         return;
     }
     if options_get_number(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -164,7 +165,7 @@ unsafe fn format_window_name(w: *mut window) -> CString {
     format_defaults_window(ft, w);
     format_defaults_pane(ft, (*w).active);
     fmt = options_get_string(
-        (*w).options,
+        options_owner_ptr(&mut (*w).options),
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let name = format_expand_cstring(ft, fmt);

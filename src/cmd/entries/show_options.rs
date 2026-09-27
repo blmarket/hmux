@@ -567,7 +567,7 @@ unsafe fn cmd_show_options_all(
     }
     let mut current_block_25: u64;
     oe = &raw const options_table as *const options_table_entry;
-    while !(*oe).name.is_null() {
+    while !(*oe).name_ptr().is_null() {
         if !(!(*oe).scope & scope != 0) {
             if !(!std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                 && args_has(args, 'H' as i32 as u_char) == 0
@@ -575,12 +575,12 @@ unsafe fn cmd_show_options_all(
                 || std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                     && !(*oe).flags & OPTIONS_TABLE_IS_HOOK != 0)
             {
-                o = options_get_only(oo, (*oe).name);
+                o = options_get_only(oo, (*oe).name_ptr());
                 if o.is_null() {
                     if args_has(args, 'A' as i32 as u_char) == 0 {
                         current_block_25 = 2370887241019905314;
                     } else {
-                        o = options_get(oo, (*oe).name);
+                        o = options_get(oo, (*oe).name_ptr());
                         if o.is_null() {
                             current_block_25 = 2370887241019905314;
                         } else {

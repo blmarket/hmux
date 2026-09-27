@@ -163,7 +163,7 @@ pub unsafe fn load_cfg(
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
-        cmd_list_free(pr.cmdlist);
+        drop(pr.cmdlist.take());
         return 0 as ::core::ffi::c_int;
     }
 
@@ -179,11 +179,11 @@ pub unsafe fn load_cfg(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist, state);
+    new_item0 = cmdq_get_command(pr.cmdlist_ptr(), state);
 
     new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
 
-    cmd_list_free(pr.cmdlist);
+    drop(pr.cmdlist.take());
     cmdq_free_state(state);
 
     return 0 as ::core::ffi::c_int;
@@ -241,7 +241,7 @@ pub unsafe fn load_cfg_from_buffer(
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
-        cmd_list_free(pr.cmdlist);
+        drop(pr.cmdlist.take());
         return 0 as ::core::ffi::c_int;
     }
     if !item.is_null() {
@@ -259,13 +259,13 @@ pub unsafe fn load_cfg_from_buffer(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist, state);
+    new_item0 = cmdq_get_command(pr.cmdlist_ptr(), state);
     if !item.is_null() {
         new_item0 = cmdq_insert_after(item, new_item0);
     } else {
         new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
     }
-    cmd_list_free(pr.cmdlist);
+    drop(pr.cmdlist.take());
     cmdq_free_state(state);
     if !new_item.is_null() {
         *new_item = new_item0;
@@ -333,11 +333,11 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
         }
         wp = (*(*(*s).curw).window).active;
         wme = (*wp).modes.active;
-        if wme.is_null() || (*wme).mode != &raw const window_view_mode {
+        if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
             window_pane_set_mode(
                 wp,
                 ::core::ptr::null_mut::<window_pane>(),
-                &raw const window_view_mode,
+                &window_view_mode,
                 ::core::ptr::null_mut::<cmdq_item>(),
                 ::core::ptr::null_mut::<cmd_find_state>(),
                 ::core::ptr::null_mut::<args>(),

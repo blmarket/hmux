@@ -36,7 +36,7 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
             let mut terminal = tty {
                 client: &raw mut client,
-                term: &raw mut term,
+                term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 cell: grid_default_cell,
                 last_cell: grid_default_cell,
@@ -86,7 +86,7 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
         term.codes[TTYC_SETAB as usize] = tty_code::String(c"B%p1%d".to_owned());
         let mut terminal = tty {
             client: &raw mut client,
-            term: &raw mut term,
+            term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             cell: grid_default_cell,
             last_cell: grid_default_cell,
@@ -138,7 +138,7 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
             let mut terminal = tty {
                 client: &raw mut client,
-                term: &raw mut term,
+                term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 cell: grid_default_cell,
                 last_cell: grid_default_cell,
@@ -211,7 +211,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         term.codes[TTYC_SS as usize] = tty_code::String(c"S%p1%d".to_owned());
         let mut terminal = tty {
             client: &raw mut client,
-            term: &raw mut term,
+            term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             ccolour: -1,
             ..Default::default()
@@ -260,7 +260,7 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
         term.codes[TTYC_SETULC1 as usize] = tty_code::String(c"U%p1%d".to_owned());
         let mut terminal = tty {
             client: &raw mut client,
-            term: &raw mut term,
+            term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             cell: grid_default_cell,
             last_cell: grid_default_cell,

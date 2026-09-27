@@ -720,9 +720,9 @@ mod ownership_tests {
                 state.pi.flags = CMD_PARSE_NOALIAS;
                 let text = c"display-message -p '%1'";
                 let source = if compiled {
-                    let parsed = cmd_parse_from_string(text, &mut state.pi);
+                    let mut parsed = cmd_parse_from_string(text, &mut state.pi);
                     assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
-                    let owner = rc::take(parsed.cmdlist);
+                    let owner = parsed.cmdlist.take().expect("successful command parse");
                     let weak = Rc::downgrade(&owner);
                     state.cmdlist = Some(owner);
                     Some(weak)
@@ -1061,11 +1061,11 @@ pub unsafe fn args_make_commands(
         "args_make_commands",
         log_bytes(cmd.as_bytes())
     ));
-    let pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut state.pi);
+    let mut pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut state.pi);
     drop(cmd);
     match pr.status as ::core::ffi::c_uint {
         0 => Err(pr.error),
-        1 => Ok(rc::take(pr.cmdlist)),
+        1 => Ok(pr.cmdlist.take().expect("successful command parse")),
         _ => fatalx(|out| out.write_all(b"invalid parse return state")),
     }
 }

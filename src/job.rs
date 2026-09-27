@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cfg::cfg_finished;
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -124,7 +125,7 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         if !s.is_null() {
-            oo = (*s).options;
+            oo = options_owner_ptr(&mut (*s).options);
         } else {
             oo = global_s_options;
         }

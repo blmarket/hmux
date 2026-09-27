@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_from_window};
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{cmdq_append, cmdq_free_state, cmdq_get_error, cmdq_new_state};
@@ -163,7 +164,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let Some(window) = md.w.upgrade() else {
         return;
     };
-    let options = (*crate::src::shared::rc::as_ptr(&window)).options;
+    let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options);
     let ft = format_create_defaults(
         std::ptr::null_mut(),
         std::ptr::null_mut(),
@@ -636,7 +637,7 @@ pub unsafe fn menu_display(
     (*w).menu_last_px = px;
     (*w).menu_last_py = py;
     if lines == BOX_LINES_DEFAULT {
-        lines = options_get_number((*w).options, c"menu-border-lines".as_ptr()) as box_lines;
+        lines = options_get_number(options_owner_ptr(&mut (*w).options), c"menu-border-lines".as_ptr()) as box_lines;
     }
     let owner = MenuOwner::new(menu_data {
         w: window.clone(),
@@ -973,7 +974,7 @@ mod tests {
             let definition = (&*std::ptr::addr_of!(options_table))
                 .iter()
                 .find(|entry| {
-                    !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys"
+                    entry.name == Some(c"extended-keys")
                 })
                 .unwrap();
             options_default(global_options, definition);

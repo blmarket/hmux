@@ -1,3 +1,4 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_string;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
@@ -52,7 +53,7 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     window_set_name((*wl).window, name.as_ptr(), 0 as ::core::ffi::c_int);
     options_set_number(
-        (*(*wl).window).options,
+        options_owner_ptr(&mut (*(*wl).window).options),
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
