@@ -21,10 +21,13 @@ pub use crate::src::shared::arguments::{
 use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
 use crate::src::shared::ctype::{_ISalnum, _ISalpha};
+use crate::src::shared::rc;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 pub const ARGS_ENTRY_OPTIONAL_VALUE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
@@ -710,13 +713,65 @@ mod ownership_tests {
                 b""
             );
             let returned = args_make_commands(&mut state, &Vec::new()).unwrap();
-            assert_eq!(returned, commands);
+            assert_eq!(rc::as_ptr(&returned), commands);
             assert_eq!(observer.strong_count(), 2);
             drop(state);
             assert_eq!(observer.strong_count(), 1);
-            assert!(cmd_list_print_cstring(&*returned, 0).as_bytes().is_empty());
-            cmd_list_free(returned);
+            assert!(cmd_list_print_cstring(&*rc::as_ptr(&returned), 0)
+                .as_bytes()
+                .is_empty());
+            drop(returned);
             assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn expanded_command_owners_survive_preparation_and_transfer_to_queue() {
+        use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_command};
+        use crate::src::shared::command::{CMD_PARSE_NOALIAS, CMD_PARSE_SUCCESS};
+        unsafe {
+            for compiled in [false, true] {
+                let mut state = Box::new(args_command_state::empty());
+                state.pi.flags = CMD_PARSE_NOALIAS;
+                let text = c"display-message -p '%1'";
+                let source = if compiled {
+                    let parsed = cmd_parse_from_string(text, &mut state.pi);
+                    assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
+                    let owner = rc::take(parsed.cmdlist);
+                    let weak = Rc::downgrade(&owner);
+                    state.cmdlist = Some(owner);
+                    Some(weak)
+                } else {
+                    state.cmd = Some(text.to_owned());
+                    None
+                };
+                let commands = args_make_commands(&mut state, &vec![c"expanded".to_owned()]).unwrap();
+                let result = Rc::downgrade(&commands);
+                if let Some(source) = &source {
+                    assert!(!Rc::ptr_eq(&source.upgrade().unwrap(), &commands));
+                }
+                drop(state);
+                if let Some(source) = source {
+                    assert!(source.upgrade().is_none());
+                }
+                assert_eq!(
+                    cmd_list_print_cstring(&*rc::as_ptr(&commands), 0).as_bytes(),
+                    b"display-message -p expanded"
+                );
+                let item = cmdq_get_command(rc::as_ptr(&commands), std::ptr::null_mut());
+                assert!(!item.is_null());
+                assert!((*item).next.is_null());
+                drop(commands);
+                assert_eq!(result.strong_count(), 1, "queue retains its commands");
+                cmdq_free_detached(item);
+                assert!(result.upgrade().is_none());
+            }
+            let mut state = Box::new(args_command_state::empty());
+            state.pi.flags = CMD_PARSE_NOALIAS;
+            state.cmd = Some(c"unknown-command-result-owner".to_owned());
+            assert!(args_make_commands(&mut state, &Vec::new()).is_err());
+            state.cmd = Some(c"display-message -p recovered".to_owned());
+            assert!(args_make_commands(&mut state, &Vec::new()).is_ok());
         }
     }
 
@@ -897,33 +952,26 @@ pub unsafe fn args_string(mut args: *mut args, mut idx: u_int) -> *const ::core:
     }
 }
 pub unsafe fn args_make_commands_now(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-    mut idx: u_int,
-    mut expand: ::core::ffi::c_int,
-) -> *mut cmd_list {
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut state = args_make_commands_prepare(
-        self_0,
-        item,
-        idx,
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        0 as ::core::ffi::c_int,
-        expand,
-    );
+    self_0: *mut cmd,
+    item: *mut cmdq_item,
+    idx: u_int,
+    expand: ::core::ffi::c_int,
+) -> Option<Rc<UnsafeCell<cmd_list>>> {
+    let mut state = args_make_commands_prepare(self_0, item, idx, std::ptr::null(), 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
-        Ok(commands) => cmdlist = commands,
-        Err(error) => cmdq_error(item, |out| {
-            write_cstr(
-                out,
-                error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            )
-        }),
+        Ok(commands) => Some(commands),
+        Err(error) => {
+            cmdq_error(item, |out| {
+                write_cstr(
+                    out,
+                    error
+                        .as_ref()
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                )
+            });
+            None
+        }
     }
-    drop(state);
-    return cmdlist;
 }
 pub unsafe fn args_make_commands_prepare(
     mut self_0: *mut cmd,
@@ -997,15 +1045,13 @@ pub unsafe fn args_make_commands_prepare(
 pub unsafe fn args_make_commands(
     state: &mut args_command_state,
     argv: &Vec<CString>,
-) -> Result<*mut cmd_list, Option<CString>> {
+) -> Result<Rc<UnsafeCell<cmd_list>>, Option<CString>> {
     let mut i: ::core::ffi::c_int = 0;
     if let Some(commands) = state.cmdlist.as_ref() {
-        let commands = crate::src::shared::rc::as_ptr(commands);
         if argv.is_empty() {
-            crate::src::shared::rc::retain(commands);
-            return Ok(commands);
+            return Ok(Rc::clone(commands));
         }
-        return Ok(cmd_list_copy(&*commands, argv));
+        return Ok(rc::take(cmd_list_copy(&*rc::as_ptr(commands), argv)));
     }
     let mut cmd = state.cmd.as_ref().expect("prepared command text").clone();
     log_debug(format_args!(
@@ -1040,7 +1086,7 @@ pub unsafe fn args_make_commands(
     drop(cmd);
     match pr.status as ::core::ffi::c_uint {
         0 => Err(pr.error),
-        1 => Ok(pr.cmdlist),
+        1 => Ok(rc::take(pr.cmdlist)),
         _ => fatalx(|out| out.write_all(b"invalid parse return state")),
     }
 }

@@ -2,12 +2,12 @@ use crate::src::arguments::{
     args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
     args_string,
 };
+use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
@@ -21,10 +21,11 @@ use crate::src::shared::client::client;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_state,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item, cmdq_state,
 };
 use crate::src::shared::environment::environ;
 use crate::src::shared::job::{JobCompletion, JobExitStatus};
+use crate::src::shared::rc;
 use crate::src::shared::session::session;
 use crate::src::status::status_message_set;
 
@@ -74,27 +75,26 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let shellcmd = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
+        let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
             && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {
-            cmdlist = args_make_commands_now(self_0, item, 1 as u_int, 0 as ::core::ffi::c_int);
+            args_make_commands_now(self_0, item, 1 as u_int, 0 as ::core::ffi::c_int)
         } else if count == 3 as u_int {
-            cmdlist = args_make_commands_now(self_0, item, 2 as u_int, 0 as ::core::ffi::c_int);
+            args_make_commands_now(self_0, item, 2 as u_int, 0 as ::core::ffi::c_int)
         } else {
             return CMD_RETURN_NORMAL;
-        }
-        if cmdlist.is_null() {
+        };
+        let Some(cmdlist) = cmdlist else {
             return CMD_RETURN_ERROR;
-        }
-        new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
+        };
+        new_item = cmdq_get_command(rc::as_ptr(&cmdlist), cmdq_get_state(item));
         cmdq_insert_after(item, new_item);
-        cmd_list_free(cmdlist);
+        drop(cmdlist);
         return CMD_RETURN_NORMAL;
     }
     let mut cdata = Box::new(cmd_if_shell_data {
@@ -195,14 +195,15 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                 }
             }
             Ok(commands) if item.is_null() => {
-                new_item = cmdq_get_command(commands, ::core::ptr::null_mut::<cmdq_state>());
+                new_item =
+                    cmdq_get_command(rc::as_ptr(&commands), ::core::ptr::null_mut::<cmdq_state>());
                 cmdq_append(c, new_item);
-                cmd_list_free(commands);
+                drop(commands);
             }
             Ok(commands) => {
-                new_item = cmdq_get_command(commands, cmdq_get_state(item));
+                new_item = cmdq_get_command(rc::as_ptr(&commands), cmdq_get_state(item));
                 cmdq_insert_after(item, new_item);
-                cmd_list_free(commands);
+                drop(commands);
             }
         }
     }

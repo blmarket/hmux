@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args};
 use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::prompt_type;
 use crate::src::shared::abi::*;
@@ -25,6 +25,7 @@ use crate::src::shared::prompt::{
     prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL,
     PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
 };
+use crate::src::shared::rc;
 use crate::src::status::{status_prompt_set, status_prompt_update};
 use crate::src::window::{
     window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt,
@@ -317,14 +318,17 @@ unsafe fn cmd_command_prompt_callback(
                         );
                     }
                     Ok(cmdlist) if item.is_null() => {
-                        new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+                        new_item = cmdq_get_command(
+                            rc::as_ptr(&cmdlist),
+                            ::core::ptr::null_mut::<cmdq_state>(),
+                        );
                         cmdq_append(c, new_item);
-                        cmd_list_free(cmdlist);
+                        drop(cmdlist);
                     }
                     Ok(cmdlist) => {
-                        new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
+                        new_item = cmdq_get_command(rc::as_ptr(&cmdlist), cmdq_get_state(item));
                         cmdq_insert_after(item, new_item);
-                        cmd_list_free(cmdlist);
+                        drop(cmdlist);
                     }
                 }
                 if cdata.flags & PROMPT_INCREMENTAL != 0 {

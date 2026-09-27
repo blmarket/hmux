@@ -1,13 +1,13 @@
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
+use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
-use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
@@ -16,8 +16,8 @@ use crate::src::format::{
 };
 use crate::src::job::job_run;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_readln, event_del, event_once_owned,
+    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln, event_del,
+    event_once_owned,
 };
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::session::{session_add_ref, session_remove_ref};
@@ -38,6 +38,7 @@ use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::src::shared::pane::window_pane;
+use crate::src::shared::rc;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
@@ -352,14 +353,15 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             }
         }
         Ok(commands) if item.is_null() => {
-            new_item = cmdq_get_command(commands, ::core::ptr::null_mut::<cmdq_state>());
+            new_item =
+                cmdq_get_command(rc::as_ptr(&commands), ::core::ptr::null_mut::<cmdq_state>());
             cmdq_append(c, new_item);
-            cmd_list_free(commands);
+            drop(commands);
         }
         Ok(commands) => {
-            new_item = cmdq_get_command(commands, cmdq_get_state(item));
+            new_item = cmdq_get_command(rc::as_ptr(&commands), cmdq_get_state(item));
             cmdq_insert_after(item, new_item);
-            cmd_list_free(commands);
+            drop(commands);
         }
     }
     if !cdata.item.is_null() {

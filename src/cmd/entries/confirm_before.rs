@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_list_first, cmd_list_free};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_list_first};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -16,12 +16,15 @@ use crate::src::shared::command::{
 };
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
+use crate::src::shared::rc;
 use crate::src::status::status_prompt_set;
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 pub struct cmd_confirm_before_data {
     pub item: *mut cmdq_item,
-    pub cmdlist: *mut cmd_list,
+    pub cmdlist: Rc<UnsafeCell<cmd_list>>,
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
 }
@@ -65,16 +68,15 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+    let Some(cmdlist) = args_make_commands_now(self_0, item, 0, 1) else {
+        return CMD_RETURN_ERROR;
+    };
     let mut cdata = Box::new(cmd_confirm_before_data {
         item: ::core::ptr::null_mut(),
-        cmdlist: ::core::ptr::null_mut(),
+        cmdlist,
         confirm_key: 0,
         default_yes: 0,
     });
-    cdata.cmdlist = args_make_commands_now(self_0, item, 0 as u_int, 1 as ::core::ffi::c_int);
-    if cdata.cmdlist.is_null() {
-        return CMD_RETURN_ERROR;
-    }
     if wait != 0 {
         cdata.item = item;
     }
@@ -102,7 +104,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = (*cmd_get_entry(cmd_list_first(cdata.cmdlist)))
+        cmd = (*cmd_get_entry(cmd_list_first(rc::as_ptr(&cdata.cmdlist))))
             .name
             .as_ptr();
         let mut bytes = b"Confirm '".to_vec();
@@ -145,11 +147,13 @@ unsafe fn cmd_confirm_before_callback(
             if confirmed {
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
-                    new_item =
-                        cmdq_get_command(cdata.cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+                    new_item = cmdq_get_command(
+                        rc::as_ptr(&cdata.cmdlist),
+                        ::core::ptr::null_mut::<cmdq_state>(),
+                    );
                     cmdq_append(c, new_item);
                 } else {
-                    new_item = cmdq_get_command(cdata.cmdlist, cmdq_get_state(item));
+                    new_item = cmdq_get_command(rc::as_ptr(&cdata.cmdlist), cmdq_get_state(item));
                     cmdq_insert_after(item, new_item);
                 }
             }
@@ -175,16 +179,6 @@ impl cmd_confirm_before_data {
     }
 }
 
-impl Drop for cmd_confirm_before_data {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.cmdlist.is_null() {
-                cmd_list_free(self.cmdlist);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +200,7 @@ mod tests {
                 let commands = rc::downgrade(cmdlist);
                 let data = Box::new(cmd_confirm_before_data {
                     item: &mut item,
-                    cmdlist,
+                    cmdlist: rc::take(cmdlist),
                     confirm_key: b'y',
                     default_yes: 0,
                 });

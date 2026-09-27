@@ -1,11 +1,11 @@
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
 };
+use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error, cmdq_get_source,
     cmdq_get_target,
 };
-use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
@@ -30,7 +30,7 @@ use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::borders::CELL_BORDERS;
 use crate::src::shared::client::client;
-use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item, cmdq_state};
+use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
@@ -42,6 +42,7 @@ use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
+use crate::src::shared::rc;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -1654,7 +1655,6 @@ unsafe fn window_panes_run_command(
     mut wp: *mut window_pane,
 ) {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let expanded = CString::new(format!("%{}", (*wp).id)).expect("pane ID contains NUL");
     match args_make_commands(
         (*data)
@@ -1674,10 +1674,11 @@ unsafe fn window_panes_run_command(
             );
         }
         Ok(commands) => {
-            cmdlist = commands;
-            new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+            let cmdlist = commands;
+            new_item =
+                cmdq_get_command(rc::as_ptr(&cmdlist), ::core::ptr::null_mut::<cmdq_state>());
             cmdq_append(c, new_item);
-            cmd_list_free(cmdlist);
+            drop(cmdlist);
         }
     }
 }
