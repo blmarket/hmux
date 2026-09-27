@@ -12,7 +12,15 @@ The three supporting workspace crates contain no such fields.
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
 fields, their disposition, and the lifecycle reason. **69 fields were migrated;
 176 remain in scope; 72 external ABI/resource fields are excluded; 3 fields were
-removed with the deleted integration test.** A skipped candidate is not a claim that its current raw API is
+removed with the deleted integration test.**
+
+The remaining 176 fields have been re-reviewed before further migration:
+**82 candidates, 42 requiring an access/teardown design, 4 removal candidates,
+and 48 retained raw for now.** These are pending decisions, not implemented changes.
+The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
+broad: inability to hold a reference does not rule out a weak handle.
+
+A skipped candidate is not a claim that its current raw API is
 safe, nor that migration is impossible. It means this review did not establish
 the ownership, aliasing, and callback guarantees needed for that substitution.
 
@@ -84,30 +92,48 @@ Prompt option setup now takes a mutable session borrow because style application
 updates the option cache. It previously hid that mutation behind a shared session
 reference and raw option pointer.
 
-## Why the other fields remain pointers
+## Re-review of the remaining fields
 
-The TSV gives a separate decision for every field. The main blockers are:
+The TSV now distinguishes four pending dispositions, all of which still identify
+raw fields in the source. The external report lists every field under its current
+review category, with a proposed representation, constraints and source evidence.
 
-- **Parent and cached model links:** layout parents, selected panes/winlinks,
-  active-mode pointers, cached redraw spans and command-find states span owner mutation,
-  reparenting or callback dispatch. Resolve stable identities before borrowing;
-  neither `&'static T` nor a long-lived `&mut T` is justified.
-- **Existing shared ownership:** clients, sessions, windows, panes
-  and mode trees have existing retain/release contracts. Typed retained handles
-  are candidates, but must preserve deferred release and last-window-close
-  notifications. A `Box` would claim sole ownership incorrectly.
-- **Erased or registry ownership:** mode payloads mix Box, RefBox and retained state with mode-specific callbacks. Intrusive job links combine registry membership and traversal. Those fields do not have an independent, uniformly typed owner that can simply replace each pointer.
-- **Non-dereferenced addresses:** formatting-only pointers and reserved slots
-  have no pointee lifetime or ownership to migrate.
+- **Candidate (82):** existing Rc or RefBox ownership supports weak observers or
+  weak index values. This includes the six mode pane back-pointers, cached redraw
+  fields, selected models, find-state model identities and model registries.
+  Two other candidates use an existing screen index or an address value.
+- **Design (42):** a specific typed replacement is plausible, but needs explicit
+  access/cleanup semantics: close-aware mode-tree owners, stream handles, mixed
+  owner/observer queue clients, screen/editor selectors, bounded input contexts,
+  snapshots and stable IDs.
+- **Remove (4):** unused bufferevent slots and reserved pane/winlink slots have
+  no actual pointee lifecycle. Deletion is proposed, not performed in this review.
+- **Skip (48):** there is no justified direct replacement under current ownership.
+  Most targets are Box-owned queue items, options, layout cells, peers, jobs or
+  intrusive links. Obtaining Weak would require changing that ownership; stable
+  IDs need a separate registry design. Inline test fields are called out separately.
 
-Libc/POSIX ABI layouts and handles, plus ncurses/systemd layouts and resources,
-are outside this migration scope. Their 72 fields retain external ABI and cleanup
-contracts and do not appear in the remaining-field report. The deleted
-`tests/events_sink_owner.rs` contributed three fields, now recorded as removed.
+Weak upgrades must be held through the accesses they protect; returning a raw
+pointer after immediately dropping its guard is not sufficient. RefBox borrows
+must end before reentrant callbacks. Allocation liveness is distinct from logical
+liveness: preserve CLIENT_DEAD/PANE_DESTROYED, session membership, mode identity,
+and cache generation checks. Revalidate or snapshot when callbacks can remove a
+mode or embedded child even while its parent's allocation remains alive.
+
+Final Drop is an additional boundary. In particular, window_destroy executes with
+zero strong references and destroys panes whose cleanup may still use that window;
+input_ctx::drop may access a pane during final pane destruction. A plain Weak
+upgrade cannot replace those accesses. The proposed changes need an explicit
+teardown context or earlier logical cleanup, without adding parent/child cycles.
+
+Libc/POSIX, ncurses and systemd ABI/resource fields remain excluded. No new
+application-field migration or test deletion was made during this re-review.
 
 ## Validation
 
-`cargo test --workspace`: **596 passed**. The inventory coverage check passes
+`cargo test --workspace`: **596 passed** in the last application validation.
+This documentation/scanner re-review did not change application behavior.
+The updated inventory coverage check passes
 for all **176** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
@@ -137,29 +163,21 @@ Remaining unsafe observer APIs are explicit limitations: storing owners in boxes
 does not make those APIs safe or certify arbitrary reentrant use of their raw
 pointers.
 
-## Completion review
+## Review status
 
-The final pass rechecked all remaining Box conversion boundaries outside compat.
-They either transfer into the typed owners above, are local/legacy API boundaries,
-or belong to the mixed mode-payload and intrusive job protocols documented in the
-inventory. No remaining field has a proven uniform Box transfer left unmigrated.
-The retained-model review also distinguishes actual retained references from
-indexes and observers: file, pane and window indexes acquire no independent
-reference; session index removal and rename are separate from session release.
-The follow-up review excludes test-only ownership inconsistencies: runtime
-winlinks consistently own retained windows and option entries use static metadata,
-so those fields are now migrated and the conflicting fixtures removed.
+The earlier conclusion that all eligible fields had been migrated is superseded.
+The current implementation still has 69 migrated fields; the weak-handle review
+has reopened 82 concrete candidates and 42 design-dependent possibilities. No
+candidate has been counted as migrated merely because its proposed type exists.
 
-Every original field has a migration, skip, exclusion or removal decision in the TSV. The generated
-external report contains a reason for each remaining in-scope field. The scanner checks
-that these decisions cover the current declarations exactly; it is a coverage
-check, not proof that raw observers are safe. The skips use the requested rule:
-leave the field raw where its existing ownership and callback behavior do not
-establish a valid replacement. `src/compat/` is unchanged.
+The scanner verifies all 176 remaining declarations, including pending candidates,
+against the TSV and checks the 72 explicit exclusions. It does not prove that a
+candidate implementation is safe. Follow-up work must verify the producer's real
+owner, guard lifetime, null/expiration behavior, reentrant invalidation, identity
+semantics, and logical/final teardown before claiming a field migrated.
 
-The test-only inconsistency follow-up removes the synthetic option-array descriptor
-regression, the stack-window viewport fixture, and the menu-dispatch fixture that
-installed an unretained window and destroyed it while a winlink still pointed to it.
-Session-index tests remain: the index's nonowning contract is also used by production
-rename and destruction, so their external ownership does not block a migration
-that would otherwise be justified.
+Test-only ownership inconsistencies are not production blockers. Remove offending
+fixtures when they are the sole mismatch, as requested. Existing inline test fields
+are distinguished from production fields; there are no remaining fields in tests/.
+The earlier removed integration tests and 72 external fields stay outside the
+remaining-field report. `src/compat/` remains unchanged.

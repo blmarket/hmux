@@ -117,7 +117,10 @@ fn main() {
         if fields[3].starts_with("Excluded;") {
             excluded.insert(key.clone());
             expected.insert(key);
-        } else if fields[3].starts_with("Skip;") {
+        } else if ["Skip;", "Candidate:", "Design:", "Remove:"]
+            .iter()
+            .any(|prefix| fields[3].starts_with(prefix))
+        {
             expected.insert(key);
         }
     }
