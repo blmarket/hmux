@@ -3,7 +3,7 @@
 use super::abi::{u_int, uint64_t};
 use super::client::client;
 use super::layout::pane_lines;
-use super::menu::menu_data;
+use super::menu::MenuWeak;
 use super::pane::window_pane;
 use super::window::window;
 
@@ -52,59 +52,107 @@ pub struct redraw_span {
     pub data: redraw_span_data,
 }
 
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct redraw_span_data {
-    pub type_0: redraw_span_type,
-    pub c2rust_unnamed: redraw_span_data_c2rust_unnamed,
+/// The active payload owns any lifetime handles stored in a cached span.
+#[derive(Clone)]
+pub enum redraw_span_data {
+    Pane(RedrawPaneSpan),
+    Outside,
+    Empty,
+    Status(RedrawStatusSpan),
+    Border(RedrawBorderSpan),
+    Scrollbar(RedrawScrollbarSpan),
+    Menu(RedrawMenuSpan),
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union redraw_span_data_c2rust_unnamed {
-    pub p: redraw_span_data_c2rust_unnamed_p,
-    pub b: redraw_span_data_c2rust_unnamed_b,
-    pub st: redraw_span_data_c2rust_unnamed_st,
-    pub sb: redraw_span_data_c2rust_unnamed_sb,
-    pub m: redraw_span_data_c2rust_unnamed_m,
-}
-
-impl Default for redraw_span_data_c2rust_unnamed {
+impl Default for redraw_span_data {
     fn default() -> Self {
-        Self {
-            p: redraw_span_data_c2rust_unnamed_p::default(),
-        }
+        Self::Pane(RedrawPaneSpan::default())
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct redraw_span_data_c2rust_unnamed_m {
-    pub md: *mut menu_data,
+impl redraw_span_data {
+    pub fn kind(&self) -> redraw_span_type {
+        match self {
+            Self::Pane(_) => 0,
+            Self::Outside => 1,
+            Self::Empty => 2,
+            Self::Status(_) => 3,
+            Self::Border(_) => 4,
+            Self::Scrollbar(_) => 5,
+            Self::Menu(_) => 6,
+        }
+    }
+    pub fn pane(&self) -> &RedrawPaneSpan {
+        let Self::Pane(data) = self else {
+            panic!("pane span expected")
+        };
+        data
+    }
+    pub fn pane_mut(&mut self) -> &mut RedrawPaneSpan {
+        let Self::Pane(data) = self else {
+            panic!("pane span expected")
+        };
+        data
+    }
+    pub fn border(&self) -> &RedrawBorderSpan {
+        let Self::Border(data) = self else {
+            panic!("border span expected")
+        };
+        data
+    }
+    pub fn border_mut(&mut self) -> &mut RedrawBorderSpan {
+        let Self::Border(data) = self else {
+            panic!("border span expected")
+        };
+        data
+    }
+    pub fn status(&self) -> &RedrawStatusSpan {
+        let Self::Status(data) = self else {
+            panic!("status span expected")
+        };
+        data
+    }
+    pub fn status_mut(&mut self) -> &mut RedrawStatusSpan {
+        let Self::Status(data) = self else {
+            panic!("status span expected")
+        };
+        data
+    }
+    pub fn scrollbar(&self) -> &RedrawScrollbarSpan {
+        let Self::Scrollbar(data) = self else {
+            panic!("scrollbar span expected")
+        };
+        data
+    }
+    pub fn scrollbar_mut(&mut self) -> &mut RedrawScrollbarSpan {
+        let Self::Scrollbar(data) = self else {
+            panic!("scrollbar span expected")
+        };
+        data
+    }
+    pub fn menu(&self) -> &RedrawMenuSpan {
+        let Self::Menu(data) = self else {
+            panic!("menu span expected")
+        };
+        data
+    }
+    pub fn menu_mut(&mut self) -> &mut RedrawMenuSpan {
+        let Self::Menu(data) = self else {
+            panic!("menu span expected")
+        };
+        data
+    }
+}
+
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
+pub struct RedrawPaneSpan {
+    pub wp: *mut window_pane,
     pub px: u_int,
     pub py: u_int,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct redraw_span_data_c2rust_unnamed_sb {
-    pub wp: *mut window_pane,
-    pub y: u_int,
-    pub height: u_int,
-    pub flags: ::core::ffi::c_int,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct redraw_span_data_c2rust_unnamed_st {
-    pub wp: *mut window_pane,
-    pub offset: u_int,
-    pub cell_type: ::core::ffi::c_int,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct redraw_span_data_c2rust_unnamed_b {
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
+pub struct RedrawBorderSpan {
     pub top_wp: *mut window_pane,
     pub bottom_wp: *mut window_pane,
     pub left_wp: *mut window_pane,
@@ -119,14 +167,27 @@ pub struct redraw_span_data_c2rust_unnamed_b {
     pub flags: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct redraw_span_data_c2rust_unnamed_p {
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
+pub struct RedrawStatusSpan {
     pub wp: *mut window_pane,
+    pub offset: u_int,
+    pub cell_type: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
+pub struct RedrawScrollbarSpan {
+    pub wp: *mut window_pane,
+    pub y: u_int,
+    pub height: u_int,
+    pub flags: ::core::ffi::c_int,
+}
+
+#[derive(Clone, Default)]
+pub struct RedrawMenuSpan {
+    pub md: MenuWeak,
     pub px: u_int,
     pub py: u_int,
 }
-
 pub type redraw_span_type = ::core::ffi::c_uint;
 
 #[cfg(test)]

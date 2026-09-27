@@ -8,7 +8,13 @@ use super::layout::box_lines;
 use super::mouse::mouse_event;
 use super::screen::screen;
 use super::window::window;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::CStr;
+use std::rc::{Rc, Weak};
+
+/// Windows own menus; redraw scenes only observe them.
+pub type MenuRef = Rc<RefCell<menu_data>>;
+pub type MenuWeak = Weak<RefCell<menu_data>>;
 
 /// A borrowed menu definition. An empty name denotes a separator.
 #[derive(Copy, Clone)]
@@ -47,7 +53,8 @@ pub const MENU_TAB: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 
 #[repr(C)]
 pub struct menu_data {
-    pub w: *mut window,
+    pub w: Weak<UnsafeCell<window>>,
+    pub closed: bool,
     pub flags: ::core::ffi::c_int,
     pub style: Option<std::ffi::CString>,
     pub border_style: Option<std::ffi::CString>,
@@ -70,7 +77,8 @@ pub struct menu_data {
 impl menu_data {
     pub fn new(menu: Box<menu>) -> Self {
         Self {
-            w: Default::default(),
+            w: Weak::new(),
+            closed: false,
             flags: Default::default(),
             style: Default::default(),
             border_style: Default::default(),

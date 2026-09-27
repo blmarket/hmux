@@ -25,7 +25,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::SIZE_MAX;
-use crate::src::shared::menu::menu_data;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
@@ -89,8 +88,7 @@ pub struct redraw_draw_ctx {
     pub default_gc: grid_cell,
     pub flags: ::core::ffi::c_int,
 }
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
+#[derive(Clone, Default)]
 pub struct redraw_build_cell {
     pub data: redraw_span_data,
 }
@@ -144,6 +142,7 @@ impl RedrawCellScratch {
 
 impl Drop for RedrawCellScratch {
     fn drop(&mut self) {
+        self.0.clear();
         REDRAW_CELLS.with(|cache| {
             let mut cached = cache.borrow_mut();
             if self.0.capacity() > cached.capacity() {
@@ -261,9 +260,9 @@ unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y
     let mut w: *mut window = (*bctx).w;
     (*bc).data = redraw_span_data::default();
     if (*bctx).ox.wrapping_add(x) < (*w).sx && (*bctx).oy.wrapping_add(y) < (*w).sy {
-        (*bc).data.type_0 = REDRAW_SPAN_EMPTY;
+        (*bc).data = redraw_span_data::Empty;
     } else {
-        (*bc).data.type_0 = REDRAW_SPAN_OUTSIDE;
+        (*bc).data = redraw_span_data::Outside;
     };
 }
 unsafe fn redraw_window_to_scene(
@@ -387,15 +386,10 @@ unsafe fn redraw_mark_pane_inside(mut bctx: *mut redraw_build_ctx, mut wp: *mut 
             ) == 0)
             {
                 bc = redraw_get_build_cell(bctx, x, y);
-                memset(
-                    bc as *mut ::core::ffi::c_void,
-                    0 as ::core::ffi::c_int,
-                    ::core::mem::size_of::<redraw_build_cell>() as size_t,
-                );
-                (*bc).data.type_0 = REDRAW_SPAN_PANE;
-                (*bc).data.c2rust_unnamed.p.wp = wp;
-                (*bc).data.c2rust_unnamed.p.px = px;
-                (*bc).data.c2rust_unnamed.p.py = py;
+                (*bc).data = redraw_span_data::Pane(Default::default());
+                (*bc).data.pane_mut().wp = wp;
+                (*bc).data.pane_mut().px = px;
+                (*bc).data.pane_mut().py = py;
             }
             px = px.wrapping_add(1);
         }
@@ -440,22 +434,17 @@ unsafe fn redraw_mark_pane_scrollbar(
         while wx <= ex {
             if !(redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) == 0) {
                 bc = redraw_get_build_cell(bctx, x, y);
-                memset(
-                    bc as *mut ::core::ffi::c_void,
-                    0 as ::core::ffi::c_int,
-                    ::core::mem::size_of::<redraw_build_cell>() as size_t,
-                );
-                (*bc).data.type_0 = REDRAW_SPAN_SCROLLBAR;
-                (*bc).data.c2rust_unnamed.sb.wp = wp;
-                (*bc).data.c2rust_unnamed.sb.y = sy;
-                (*bc).data.c2rust_unnamed.sb.height = (*wp).sy;
+                (*bc).data = redraw_span_data::Scrollbar(Default::default());
+                (*bc).data.scrollbar_mut().wp = wp;
+                (*bc).data.scrollbar_mut().y = sy;
+                (*bc).data.scrollbar_mut().height = (*wp).sy;
                 if sb_left != 0 {
-                    (*bc).data.c2rust_unnamed.sb.flags |= REDRAW_SCROLLBAR_LEFT;
+                    (*bc).data.scrollbar_mut().flags |= REDRAW_SCROLLBAR_LEFT;
                 } else {
-                    (*bc).data.c2rust_unnamed.sb.flags |= REDRAW_SCROLLBAR_RIGHT;
+                    (*bc).data.scrollbar_mut().flags |= REDRAW_SCROLLBAR_RIGHT;
                 }
                 if overlay != 0 {
-                    (*bc).data.c2rust_unnamed.sb.flags |= REDRAW_SCROLLBAR_OVERLAY;
+                    (*bc).data.scrollbar_mut().flags |= REDRAW_SCROLLBAR_OVERLAY;
                 }
             }
             wx += 1;
@@ -467,16 +456,16 @@ unsafe fn redraw_data_has_pane(
     mut data: *mut redraw_span_data,
     mut wp: *mut window_pane,
 ) -> ::core::ffi::c_int {
-    if (*data).c2rust_unnamed.b.top_wp == wp {
+    if (*data).border().top_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
-    if (*data).c2rust_unnamed.b.bottom_wp == wp {
+    if (*data).border().bottom_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
-    if (*data).c2rust_unnamed.b.left_wp == wp {
+    if (*data).border().left_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
-    if (*data).c2rust_unnamed.b.right_wp == wp {
+    if (*data).border().right_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
@@ -501,51 +490,46 @@ unsafe fn redraw_mark_border_cell(
     }
     bc = redraw_get_build_cell(bctx, x, y);
     if floating == 0 {
-        if (*bc).data.type_0 as ::core::ffi::c_uint
+        if (*bc).data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*bc).data.type_0 as ::core::ffi::c_uint
+            || (*bc).data.kind() as ::core::ffi::c_uint
                 == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             reset = 1 as ::core::ffi::c_int;
-        } else if (*bc).data.type_0 as ::core::ffi::c_uint
+        } else if (*bc).data.kind() as ::core::ffi::c_uint
             != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             return;
         }
-    } else if (*bc).data.type_0 as ::core::ffi::c_uint
+    } else if (*bc).data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
         || redraw_data_has_pane(&raw mut (*bc).data, wp) == 0
     {
         reset = 1 as ::core::ffi::c_int;
     }
     if reset != 0 {
-        memset(
-            bc as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<redraw_build_cell>() as size_t,
-        );
-        (*bc).data.type_0 = REDRAW_SPAN_BORDER;
+        (*bc).data = redraw_span_data::Border(Default::default());
     }
     if top_owner != 0 {
-        (*bc).data.c2rust_unnamed.b.top_wp = wp;
-        (*bc).data.c2rust_unnamed.b.top_lines = pane_lines;
+        (*bc).data.border_mut().top_wp = wp;
+        (*bc).data.border_mut().top_lines = pane_lines;
     }
     if bottom_owner != 0 {
-        (*bc).data.c2rust_unnamed.b.bottom_wp = wp;
-        (*bc).data.c2rust_unnamed.b.bottom_lines = pane_lines;
+        (*bc).data.border_mut().bottom_wp = wp;
+        (*bc).data.border_mut().bottom_lines = pane_lines;
     }
     if mask & (REDRAW_BORDER_U | REDRAW_BORDER_D) != 0 {
         if wx < (*wp).xoff {
-            (*bc).data.c2rust_unnamed.b.right_wp = wp;
-            (*bc).data.c2rust_unnamed.b.right_lines = pane_lines;
+            (*bc).data.border_mut().right_wp = wp;
+            (*bc).data.border_mut().right_lines = pane_lines;
         } else if wx >= (*wp).xoff + (*wp).sx as ::core::ffi::c_int {
-            (*bc).data.c2rust_unnamed.b.left_wp = wp;
-            (*bc).data.c2rust_unnamed.b.left_lines = pane_lines;
+            (*bc).data.border_mut().left_wp = wp;
+            (*bc).data.border_mut().left_lines = pane_lines;
         }
     }
-    mask |= (*bc).data.c2rust_unnamed.b.cell_mask;
-    (*bc).data.c2rust_unnamed.b.cell_mask = mask;
-    (*bc).data.c2rust_unnamed.b.cell_type = redraw_get_cell_type(mask);
+    mask |= (*bc).data.border().cell_mask;
+    (*bc).data.border_mut().cell_mask = mask;
+    (*bc).data.border_mut().cell_type = redraw_get_cell_type(mask);
 }
 unsafe fn redraw_mark_border_status(
     mut bctx: *mut redraw_build_ctx,
@@ -582,14 +566,14 @@ unsafe fn redraw_mark_border_status(
     while wx <= ex {
         if !(redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) == 0) {
             bc = redraw_get_build_cell(bctx, x, y);
-            if !((*bc).data.type_0 as ::core::ffi::c_uint
+            if !((*bc).data.kind() as ::core::ffi::c_uint
                 != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint)
             {
-                cell_type = (*bc).data.c2rust_unnamed.b.cell_type;
-                (*bc).data.type_0 = REDRAW_SPAN_STATUS;
-                (*bc).data.c2rust_unnamed.st.wp = wp;
-                (*bc).data.c2rust_unnamed.st.offset = off;
-                (*bc).data.c2rust_unnamed.st.cell_type = cell_type;
+                cell_type = (*bc).data.border().cell_type;
+                (*bc).data = redraw_span_data::Status(Default::default());
+                (*bc).data.status_mut().wp = wp;
+                (*bc).data.status_mut().offset = off;
+                (*bc).data.status_mut().cell_type = cell_type;
             }
         }
         wx += 1;
@@ -617,19 +601,19 @@ unsafe fn redraw_mark_border_arrows(
         wy = top;
         if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
             bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.type_0 as ::core::ffi::c_uint
+            if (*bc).data.kind() as ::core::ffi::c_uint
                 == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                (*bc).data.c2rust_unnamed.b.flags |= REDRAW_BORDER_IS_ARROW;
+                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
             }
         }
         wy = bottom;
         if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
             bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.type_0 as ::core::ffi::c_uint
+            if (*bc).data.kind() as ::core::ffi::c_uint
                 == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                (*bc).data.c2rust_unnamed.b.flags |= REDRAW_BORDER_IS_ARROW;
+                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
             }
         }
     }
@@ -638,19 +622,19 @@ unsafe fn redraw_mark_border_arrows(
         wx = left;
         if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
             bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.type_0 as ::core::ffi::c_uint
+            if (*bc).data.kind() as ::core::ffi::c_uint
                 == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                (*bc).data.c2rust_unnamed.b.flags |= REDRAW_BORDER_IS_ARROW;
+                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
             }
         }
         wx = right;
         if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
             bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.type_0 as ::core::ffi::c_uint
+            if (*bc).data.kind() as ::core::ffi::c_uint
                 == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                (*bc).data.c2rust_unnamed.b.flags |= REDRAW_BORDER_IS_ARROW;
+                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
             }
         }
     }
@@ -874,7 +858,7 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
         x = 0 as u_int;
         while x < (*bctx).sx {
             bc = redraw_get_build_cell(bctx, x, y);
-            if !((*bc).data.type_0 as ::core::ffi::c_uint
+            if !((*bc).data.kind() as ::core::ffi::c_uint
                 != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint)
             {
                 sd = &raw mut (*bc).data;
@@ -882,23 +866,23 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
                 wy = (*bctx).oy.wrapping_add(y);
                 if type_0 as ::core::ffi::c_uint
                     == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-                    && !(*sd).c2rust_unnamed.b.left_wp.is_null()
-                    && !(*sd).c2rust_unnamed.b.right_wp.is_null()
+                    && !(*sd).border().left_wp.is_null()
+                    && !(*sd).border().right_wp.is_null()
                 {
                     if wy <= (*(*bctx).w).sy.wrapping_div(2 as u_int) {
-                        (*sd).c2rust_unnamed.b.style_wp = (*sd).c2rust_unnamed.b.left_wp;
+                        (*sd).border_mut().style_wp = (*sd).border().left_wp;
                     } else {
-                        (*sd).c2rust_unnamed.b.style_wp = (*sd).c2rust_unnamed.b.right_wp;
+                        (*sd).border_mut().style_wp = (*sd).border().right_wp;
                     }
                 } else if type_0 as ::core::ffi::c_uint
                     == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-                    && !(*sd).c2rust_unnamed.b.top_wp.is_null()
-                    && !(*sd).c2rust_unnamed.b.bottom_wp.is_null()
+                    && !(*sd).border().top_wp.is_null()
+                    && !(*sd).border().bottom_wp.is_null()
                 {
                     if wx <= (*(*bctx).w).sx.wrapping_div(2 as u_int) {
-                        (*sd).c2rust_unnamed.b.style_wp = (*sd).c2rust_unnamed.b.top_wp;
+                        (*sd).border_mut().style_wp = (*sd).border().top_wp;
                     } else {
-                        (*sd).c2rust_unnamed.b.style_wp = (*sd).c2rust_unnamed.b.bottom_wp;
+                        (*sd).border_mut().style_wp = (*sd).border().bottom_wp;
                     }
                 }
             }
@@ -907,125 +891,46 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
         y = y.wrapping_add(1);
     }
 }
-unsafe fn redraw_mark_menu(mut bctx: *mut redraw_build_ctx) {
-    let mut md: *mut menu_data = (*(*bctx).w).menu;
-    let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
-    let mut px: u_int = 0;
-    let mut py: u_int = 0;
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if md.is_null() {
+unsafe fn redraw_mark_menu(bctx: *mut redraw_build_ctx) {
+    let Some(owner) = (*(*bctx).w).menu.clone() else {
         return;
-    }
-    sx = menu_width(&*md);
-    sy = menu_height(&*md);
-    py = 0 as u_int;
-    while py < sy {
-        px = 0 as u_int;
-        while px < sx {
-            if !(redraw_window_to_scene(
+    };
+    let md = owner.borrow();
+    let observer = std::rc::Rc::downgrade(&owner);
+    for py in 0..menu_height(&md) {
+        for px in 0..menu_width(&md) {
+            let (mut x, mut y) = (0, 0);
+            if redraw_window_to_scene(
                 bctx,
-                menu_x(&*md).wrapping_add(px) as ::core::ffi::c_int,
-                menu_y(&*md).wrapping_add(py) as ::core::ffi::c_int,
-                &raw mut x,
-                &raw mut y,
-            ) == 0)
+                menu_x(&md).wrapping_add(px) as ::core::ffi::c_int,
+                menu_y(&md).wrapping_add(py) as ::core::ffi::c_int,
+                &mut x,
+                &mut y,
+            ) != 0
             {
-                bc = redraw_get_build_cell(bctx, x, y);
-                memset(
-                    bc as *mut ::core::ffi::c_void,
-                    0 as ::core::ffi::c_int,
-                    ::core::mem::size_of::<redraw_build_cell>() as size_t,
-                );
-                (*bc).data.type_0 = REDRAW_SPAN_MENU;
-                (*bc).data.c2rust_unnamed.m.md = md;
-                (*bc).data.c2rust_unnamed.m.px = px;
-                (*bc).data.c2rust_unnamed.m.py = py;
+                let cell = &mut *redraw_get_build_cell(bctx, x, y);
+                cell.data = redraw_span_data::Menu(crate::src::shared::redraw::RedrawMenuSpan {
+                    md: observer.clone(),
+                    px,
+                    py,
+                });
             }
-            px = px.wrapping_add(1);
         }
-        py = py.wrapping_add(1);
     }
 }
-unsafe fn redraw_compare_data(
-    mut a: *mut redraw_build_cell,
-    mut b: *mut redraw_build_cell,
-) -> ::core::ffi::c_int {
-    let mut ad: *mut redraw_span_data = &raw mut (*a).data;
-    let mut bd: *mut redraw_span_data = &raw mut (*b).data;
-    if (*ad).type_0 as ::core::ffi::c_uint != (*bd).type_0 as ::core::ffi::c_uint {
-        return 0 as ::core::ffi::c_int;
+fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
+    use redraw_span_data::*;
+    match (&a.data, &b.data) {
+        (Pane(a), Pane(b)) => a.wp == b.wp && a.py == b.py && a.px.wrapping_add(1) == b.px,
+        (Border(a), Border(b)) => a == b && a.flags & REDRAW_BORDER_IS_ARROW == 0,
+        (Status(a), Status(b)) => {
+            a.wp == b.wp && a.offset.wrapping_add(1) == b.offset && a.cell_type == b.cell_type
+        }
+        (Scrollbar(a), Scrollbar(b)) => a == b,
+        (Menu(a), Menu(b)) => a.md.ptr_eq(&b.md) && a.py == b.py && a.px.wrapping_add(1) == b.px,
+        (Outside, Outside) | (Empty, Empty) => true,
+        _ => false,
     }
-    match (*ad).type_0 as ::core::ffi::c_uint {
-        0 => {
-            if (*ad).c2rust_unnamed.p.wp != (*bd).c2rust_unnamed.p.wp
-                || (*ad).c2rust_unnamed.p.py != (*bd).c2rust_unnamed.p.py
-                || (*ad).c2rust_unnamed.p.px.wrapping_add(1 as u_int) != (*bd).c2rust_unnamed.p.px
-            {
-                return 0 as ::core::ffi::c_int;
-            }
-            return 1 as ::core::ffi::c_int;
-        }
-        4 => {
-            if (*ad).c2rust_unnamed.b.top_wp != (*bd).c2rust_unnamed.b.top_wp
-                || (*ad).c2rust_unnamed.b.bottom_wp != (*bd).c2rust_unnamed.b.bottom_wp
-                || (*ad).c2rust_unnamed.b.left_wp != (*bd).c2rust_unnamed.b.left_wp
-                || (*ad).c2rust_unnamed.b.right_wp != (*bd).c2rust_unnamed.b.right_wp
-                || (*ad).c2rust_unnamed.b.style_wp != (*bd).c2rust_unnamed.b.style_wp
-                || (*ad).c2rust_unnamed.b.top_lines as ::core::ffi::c_uint
-                    != (*bd).c2rust_unnamed.b.top_lines as ::core::ffi::c_uint
-                || (*ad).c2rust_unnamed.b.bottom_lines as ::core::ffi::c_uint
-                    != (*bd).c2rust_unnamed.b.bottom_lines as ::core::ffi::c_uint
-                || (*ad).c2rust_unnamed.b.left_lines as ::core::ffi::c_uint
-                    != (*bd).c2rust_unnamed.b.left_lines as ::core::ffi::c_uint
-                || (*ad).c2rust_unnamed.b.right_lines as ::core::ffi::c_uint
-                    != (*bd).c2rust_unnamed.b.right_lines as ::core::ffi::c_uint
-                || (*ad).c2rust_unnamed.b.cell_type != (*bd).c2rust_unnamed.b.cell_type
-                || (*ad).c2rust_unnamed.b.cell_mask != (*bd).c2rust_unnamed.b.cell_mask
-                || (*ad).c2rust_unnamed.b.flags != (*bd).c2rust_unnamed.b.flags
-            {
-                return 0 as ::core::ffi::c_int;
-            }
-            if (*ad).c2rust_unnamed.b.flags & REDRAW_BORDER_IS_ARROW != 0 {
-                return 0 as ::core::ffi::c_int;
-            }
-            return 1 as ::core::ffi::c_int;
-        }
-        3 => {
-            if (*ad).c2rust_unnamed.st.wp != (*bd).c2rust_unnamed.st.wp
-                || (*ad).c2rust_unnamed.st.offset.wrapping_add(1 as u_int)
-                    != (*bd).c2rust_unnamed.st.offset
-                || (*ad).c2rust_unnamed.st.cell_type != (*bd).c2rust_unnamed.st.cell_type
-            {
-                return 0 as ::core::ffi::c_int;
-            }
-            return 1 as ::core::ffi::c_int;
-        }
-        5 => {
-            if (*ad).c2rust_unnamed.sb.wp != (*bd).c2rust_unnamed.sb.wp
-                || (*ad).c2rust_unnamed.sb.y != (*bd).c2rust_unnamed.sb.y
-                || (*ad).c2rust_unnamed.sb.height != (*bd).c2rust_unnamed.sb.height
-                || (*ad).c2rust_unnamed.sb.flags != (*bd).c2rust_unnamed.sb.flags
-            {
-                return 0 as ::core::ffi::c_int;
-            }
-            return 1 as ::core::ffi::c_int;
-        }
-        6 => {
-            if (*ad).c2rust_unnamed.m.md != (*bd).c2rust_unnamed.m.md
-                || (*ad).c2rust_unnamed.m.py != (*bd).c2rust_unnamed.m.py
-                || (*ad).c2rust_unnamed.m.px.wrapping_add(1 as u_int) != (*bd).c2rust_unnamed.m.px
-            {
-                return 0 as ::core::ffi::c_int;
-            }
-            return 1 as ::core::ffi::c_int;
-        }
-        1 | 2 => return 1 as ::core::ffi::c_int,
-        _ => {}
-    }
-    return 0 as ::core::ffi::c_int;
 }
 unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<redraw_build_cell>) {
     let mut w: *mut window = (*bctx).w;
@@ -1149,19 +1054,19 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
             x = x.wrapping_add(1);
             while x < bctx.sx {
                 bc = redraw_get_build_cell(&raw mut bctx, x, y);
-                if redraw_compare_data(last, bc) == 0 {
+                if !redraw_compare_data(&*last, &*bc) {
                     break;
                 }
                 last = bc;
                 x = x.wrapping_add(1);
             }
             bc = redraw_get_build_cell(&raw mut bctx, x0, y);
-            type_0 = (*bc).data.type_0;
+            type_0 = (*bc).data.kind();
             // The scene owns each stable span until its row collection is dropped.
             (*line).spans[type_0 as usize].push(redraw_span {
                 x: x0,
                 width: x.wrapping_sub(x0),
-                data: (*bc).data,
+                data: (*bc).data.clone(),
             });
         }
         y = y.wrapping_add(1);
@@ -1240,7 +1145,7 @@ unsafe fn redraw_draw_pane_span(
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut c: *mut client = (*scene).c;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut wp: *mut window_pane = (*span).data.c2rust_unnamed.p.wp;
+    let mut wp: *mut window_pane = (*span).data.pane().wp;
     let mut s: *mut screen = (*wp).screen;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
@@ -1270,11 +1175,10 @@ unsafe fn redraw_draw_pane_span(
     style_ctx.hyperlinks = (*s).hyperlinks.clone();
     px = (*span)
         .data
-        .c2rust_unnamed
-        .p
+        .pane()
         .px
         .wrapping_add(x.wrapping_sub((*span).x));
-    py = (*span).data.c2rust_unnamed.p.py;
+    py = (*span).data.pane().py;
     tty_draw_line(tty, &*s, px, py, n, x, y, Some(&style_ctx));
 }
 unsafe fn redraw_get_default_border_style(
@@ -1326,28 +1230,28 @@ unsafe fn redraw_get_pane_for_border_style(
     mut span: *mut redraw_span,
 ) -> *mut window_pane {
     let mut active: *mut window_pane = (*dctx).active;
-    if (*span).data.type_0 as ::core::ffi::c_uint
+    if (*span).data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    if !(*span).data.c2rust_unnamed.b.style_wp.is_null() {
-        return (*span).data.c2rust_unnamed.b.style_wp;
+    if !(*span).data.border().style_wp.is_null() {
+        return (*span).data.border().style_wp;
     }
     if !active.is_null() && redraw_data_has_pane(&raw mut (*span).data, active) != 0 {
         return active;
     }
-    if !(*span).data.c2rust_unnamed.b.top_wp.is_null() {
-        return (*span).data.c2rust_unnamed.b.top_wp;
+    if !(*span).data.border().top_wp.is_null() {
+        return (*span).data.border().top_wp;
     }
-    if !(*span).data.c2rust_unnamed.b.bottom_wp.is_null() {
-        return (*span).data.c2rust_unnamed.b.bottom_wp;
+    if !(*span).data.border().bottom_wp.is_null() {
+        return (*span).data.border().bottom_wp;
     }
-    if !(*span).data.c2rust_unnamed.b.left_wp.is_null() {
-        return (*span).data.c2rust_unnamed.b.left_wp;
+    if !(*span).data.border().left_wp.is_null() {
+        return (*span).data.border().left_wp;
     }
-    if !(*span).data.c2rust_unnamed.b.right_wp.is_null() {
-        return (*span).data.c2rust_unnamed.b.right_wp;
+    if !(*span).data.border().right_wp.is_null() {
+        return (*span).data.border().right_wp;
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
@@ -1358,22 +1262,22 @@ unsafe fn redraw_draw_border_arrow(
 ) {
     let mut active: *mut window_pane = (*dctx).active;
     let mut ch: ::core::ffi::c_char = 0;
-    if (*span).data.type_0 as ::core::ffi::c_uint
+    if (*span).data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
         || active.is_null()
     {
         return;
     }
-    if !(*span).data.c2rust_unnamed.b.flags & REDRAW_BORDER_IS_ARROW != 0 {
+    if !(*span).data.border().flags & REDRAW_BORDER_IS_ARROW != 0 {
         return;
     }
-    if (*span).data.c2rust_unnamed.b.left_wp == active {
+    if (*span).data.border().left_wp == active {
         ch = ',' as i32 as ::core::ffi::c_char;
-    } else if (*span).data.c2rust_unnamed.b.right_wp == active {
+    } else if (*span).data.border().right_wp == active {
         ch = '+' as i32 as ::core::ffi::c_char;
-    } else if (*span).data.c2rust_unnamed.b.top_wp == active {
+    } else if (*span).data.border().top_wp == active {
         ch = '-' as i32 as ::core::ffi::c_char;
-    } else if (*span).data.c2rust_unnamed.b.bottom_wp == active {
+    } else if (*span).data.border().bottom_wp == active {
         ch = '.' as i32 as ::core::ffi::c_char;
     } else {
         return;
@@ -1411,26 +1315,26 @@ unsafe fn redraw_draw_border_span(
     let mut i: u_int = 0;
     let mut cell_type: u_int = 0;
     let mut isolates: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*span).data.type_0 as ::core::ffi::c_uint
+    if (*span).data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         cell_type = CELL_NONE as u_int;
     } else {
         wp = redraw_get_pane_for_border_style(dctx, span);
-        cell_type = (*span).data.c2rust_unnamed.b.cell_type as u_int;
+        cell_type = (*span).data.border().cell_type as u_int;
     }
     if wp.is_null() {
         redraw_get_default_border_style(dctx, &raw mut gc, &raw mut pane_lines);
-        if (*span).data.type_0 as ::core::ffi::c_uint
+        if (*span).data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             window_get_fill_cell(w, 0 as ::core::ffi::c_int, &raw mut gc);
-        } else if (*span).data.type_0 as ::core::ffi::c_uint
+        } else if (*span).data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             window_get_fill_cell(w, 1 as ::core::ffi::c_int, &raw mut gc);
         } else {
-            if (*span).data.type_0 as ::core::ffi::c_uint
+            if (*span).data.kind() as ::core::ffi::c_uint
                 != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 pane_lines = PANE_LINES_SINGLE;
@@ -1446,7 +1350,7 @@ unsafe fn redraw_draw_border_span(
         window_pane_get_border_style(wp, c, &raw mut gc);
         window_pane_get_border_cell(wp, cell_type as ::core::ffi::c_int, &mut gc);
     }
-    if (*span).data.type_0 as ::core::ffi::c_uint
+    if (*span).data.kind() as ::core::ffi::c_uint
         == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
         && !(*dctx).marked.is_null()
         && redraw_data_has_pane(&raw mut (*span).data, (*dctx).marked) != 0
@@ -1480,14 +1384,13 @@ unsafe fn redraw_draw_status_span(
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut c: *mut client = (*scene).c;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut wp: *mut window_pane = (*span).data.c2rust_unnamed.st.wp;
+    let mut wp: *mut window_pane = (*span).data.status().wp;
     let mut s: *mut screen = &raw mut (*wp).status_screen;
     let mut px: u_int = 0;
     let mut sx: u_int = (*s).grid().sx;
     px = (*span)
         .data
-        .c2rust_unnamed
-        .st
+        .status()
         .offset
         .wrapping_add(x.wrapping_sub((*span).x));
     if px < sx {
@@ -1505,7 +1408,7 @@ unsafe fn redraw_draw_scrollbar_span(
     mut n: u_int,
 ) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut wp: *mut window_pane = (*span).data.c2rust_unnamed.sb.wp;
+    let mut wp: *mut window_pane = (*span).data.scrollbar().wp;
     let mut s: *mut screen = (*wp).screen;
     let mut tty: *mut tty = &raw mut (*(*scene).c).tty;
     let mut sb_style: *mut style = &raw mut (*wp).scrollbar_style;
@@ -1556,8 +1459,8 @@ unsafe fn redraw_draw_scrollbar_span(
     let mut total_height: u_int = 0;
     let mut slider_h: u_int = 0;
     let mut slider_y: u_int = 0;
-    let mut sb_h: u_int = (*span).data.c2rust_unnamed.sb.height;
-    let mut sb_y: u_int = (*span).data.c2rust_unnamed.sb.y;
+    let mut sb_h: u_int = (*span).data.scrollbar().height;
+    let mut sb_y: u_int = (*span).data.scrollbar().y;
     let mut i: u_int = 0;
     let mut off: u_int = 0;
     let mut sb_w: u_int = 0;
@@ -1618,7 +1521,7 @@ unsafe fn redraw_draw_scrollbar_span(
     let mut current_block_40: u64;
     i = 0 as u_int;
     while i < n {
-        if (*span).data.c2rust_unnamed.sb.flags & REDRAW_SCROLLBAR_LEFT != 0 {
+        if (*span).data.scrollbar().flags & REDRAW_SCROLLBAR_LEFT != 0 {
             if off.wrapping_add(i) >= sb_w && off.wrapping_add(i) < sb_w.wrapping_add(sb_pad) {
                 tty_cell(tty, &pad_gc, None);
                 current_block_40 = 3437258052017859086;
@@ -1646,32 +1549,24 @@ unsafe fn redraw_draw_scrollbar_span(
     }
 }
 unsafe fn redraw_draw_menu_span(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
-    mut x: u_int,
-    mut y: u_int,
-    mut n: u_int,
+    dctx: *mut redraw_draw_ctx,
+    span: *mut redraw_span,
+    x: u_int,
+    y: u_int,
+    n: u_int,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut tty: *mut tty = &raw mut (*(*scene).c).tty;
-    let s = menu_screen(&*(*span).data.c2rust_unnamed.m.md);
-    let mut px: u_int = 0;
-    px = (*span)
-        .data
-        .c2rust_unnamed
-        .m
-        .px
-        .wrapping_add(x.wrapping_sub((*span).x));
-    tty_draw_line(
-        tty,
-        s,
-        px,
-        (*span).data.c2rust_unnamed.m.py,
-        n,
-        x,
-        y,
-        None,
-    );
+    let data = (*span).data.menu();
+    let Some(owner) = data.md.upgrade() else {
+        return;
+    };
+    let md = owner.borrow();
+    if md.closed {
+        return;
+    }
+    let scene = (*dctx).scene;
+    let tty = &raw mut (*(*scene).c).tty;
+    let px = data.px.wrapping_add(x.wrapping_sub((*span).x));
+    tty_draw_line(tty, menu_screen(&md), px, data.py, n, x, y, None);
 }
 unsafe fn redraw_draw_span(
     mut dctx: *mut redraw_draw_ctx,
@@ -1680,7 +1575,7 @@ unsafe fn redraw_draw_span(
 ) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut data: *mut redraw_span_data = &raw mut (*span).data;
-    let mut type_0: redraw_span_type = (*data).type_0;
+    let mut type_0: redraw_span_type = (*data).kind();
     let mut c: *mut client = (*scene).c;
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
@@ -1690,7 +1585,7 @@ unsafe fn redraw_draw_span(
     let mut n: u_int = 0;
     if type_0 as ::core::ffi::c_uint
         == REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint
-        && !(*(*data).c2rust_unnamed.st.wp).flags & PANE_NEWSTATUS != 0
+        && !(*(*data).status().wp).flags & PANE_NEWSTATUS != 0
     {
         return;
     }
@@ -1701,7 +1596,7 @@ unsafe fn redraw_draw_span(
         if !((*rr).nx == 0 as u_int) {
             x = (*rr).px;
             n = (*rr).nx;
-            match (*span).data.type_0 as ::core::ffi::c_uint {
+            match (*span).data.kind() as ::core::ffi::c_uint {
                 0 => {
                     redraw_draw_pane_span(dctx, span, x, y, n);
                 }
@@ -1757,7 +1652,7 @@ unsafe fn redraw_draw_pane_lines(
         if flags & REDRAW_PANE != 0 {
             spans = &raw mut (*line).spans[REDRAW_SPAN_PANE as usize];
             for span in (*spans).iter_mut_ptr() {
-                if (*span).data.c2rust_unnamed.p.wp == wp {
+                if (*span).data.pane().wp == wp {
                     redraw_draw_span(dctx, span, cy);
                 }
             }
@@ -1765,7 +1660,7 @@ unsafe fn redraw_draw_pane_lines(
         if flags & REDRAW_PANE_SCROLLBAR != 0 {
             spans = &raw mut (*line).spans[REDRAW_SPAN_SCROLLBAR as usize];
             for span in (*spans).iter_mut_ptr() {
-                if (*span).data.c2rust_unnamed.sb.wp == wp {
+                if (*span).data.scrollbar().wp == wp {
                     redraw_draw_span(dctx, span, cy);
                 }
             }
@@ -2255,11 +2150,11 @@ unsafe fn redraw_pane_status_width(
     *spans_out = spans;
     *first_index = spans.entries.len();
     for (index, span) in spans.entries.iter().enumerate() {
-        if span.data.c2rust_unnamed.st.wp == wp {
+        if span.data.status().wp == wp {
             if *first_index == spans.entries.len() {
                 *first_index = index;
             }
-            end = span.data.c2rust_unnamed.st.offset.wrapping_add(span.width);
+            end = span.data.status().offset.wrapping_add(span.width);
             if end > width {
                 width = end;
             }
@@ -2451,8 +2346,8 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
         return;
     }
     redraw_set_draw_context(&raw mut dctx, scene);
-    if !(*w).menu.is_null() {
-        menu_update(&mut *(*w).menu);
+    if let Some(menu) = (*w).menu.clone() {
+        menu_update(&mut menu.borrow_mut());
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
         loop_0 = window_pane_first((*scene).w);
@@ -2531,7 +2426,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
             }
         }
     }
-    if !(*w).menu.is_null() && flags & REDRAW_MENU != 0 {
+    if (*w).menu.is_some() && flags & REDRAW_MENU != 0 {
         redraw_draw_menu_lines(&raw mut dctx);
     }
     if flags & REDRAW_STATUS != 0 {
@@ -2606,23 +2501,23 @@ pub unsafe fn redraw_get_status_border_cell_type(
     let entries = &(*spans).entries;
     let mut index = *span_index;
     if index >= entries.len()
-        || entries[index].data.type_0 as ::core::ffi::c_uint
+        || entries[index].data.kind() as ::core::ffi::c_uint
             != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 2 as ::core::ffi::c_int;
     }
-    wp = entries[index].data.c2rust_unnamed.st.wp;
+    wp = entries[index].data.status().wp;
     while index < entries.len() {
         let span = entries[index].as_ref();
-        if !(span.data.type_0 as ::core::ffi::c_uint
+        if !(span.data.kind() as ::core::ffi::c_uint
             != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint)
         {
-            if span.data.c2rust_unnamed.st.wp == wp {
-                start = span.data.c2rust_unnamed.st.offset;
+            if span.data.status().wp == wp {
+                start = span.data.status().offset;
                 end = start.wrapping_add(span.width);
                 if x >= start && x < end {
                     *span_index = index;
-                    return span.data.c2rust_unnamed.st.cell_type;
+                    return span.data.status().cell_type;
                 }
                 if start > x {
                     *span_index = index;
@@ -2662,7 +2557,7 @@ pub unsafe fn redraw_screen(mut c: *mut client) {
         if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if !(*(*(*(*c).session).curw).window).menu.is_null() {
+        if (*(*(*(*c).session).curw).window).menu.is_some() {
             flags |= REDRAW_MENU;
         }
         if flags != 0 as ::core::ffi::c_int {
@@ -2672,10 +2567,65 @@ pub unsafe fn redraw_screen(mut c: *mut client) {
 }
 pub unsafe fn redraw_pane(mut c: *mut client, mut wp: *mut window_pane) {
     redraw_draw(c, wp, REDRAW_PANE | REDRAW_PANE_SCROLLBAR);
-    if !(*(*(*(*c).session).curw).window).menu.is_null() {
+    if (*(*(*(*c).session).curw).window).menu.is_some() {
         redraw_draw(c, ::core::ptr::null_mut::<window_pane>(), REDRAW_MENU);
     }
 }
 pub unsafe fn redraw_pane_scrollbar(mut c: *mut client, mut wp: *mut window_pane) {
     redraw_draw(c, wp, REDRAW_PANE_SCROLLBAR);
+}
+
+#[cfg(test)]
+mod menu_observer_tests {
+    use super::*;
+    use crate::src::shared::menu::{menu, menu_data};
+    use crate::src::shared::redraw::RedrawMenuSpan;
+    use std::rc::Rc;
+
+    #[test]
+    fn cached_spans_observe_menu_lifetimes_and_scratch_releases_observers() {
+        let owner = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+            title: c"Observed".to_owned(),
+            items: Vec::new(),
+            count: 0,
+            width: 10,
+        }))));
+        let mut cell = redraw_build_cell {
+            data: redraw_span_data::Menu(RedrawMenuSpan {
+                md: Rc::downgrade(&owner),
+                px: 0,
+                py: 0,
+            }),
+        };
+        let mut next = cell.clone();
+        next.data.menu_mut().px = 1;
+        assert!(redraw_compare_data(&cell, &next));
+        let mut span = redraw_span {
+            x: 0,
+            width: 2,
+            data: cell.data.clone(),
+        };
+        assert_eq!(Rc::strong_count(&owner), 1);
+        let weak_count = Rc::weak_count(&owner);
+        {
+            let mut scratch = RedrawCellScratch::take();
+            scratch.0.extend([cell.clone(), next.clone()]);
+            assert_eq!(Rc::weak_count(&owner), weak_count + 2);
+        }
+        assert_eq!(Rc::weak_count(&owner), weak_count);
+        REDRAW_CELLS.with(|cache| assert!(cache.borrow().is_empty()));
+        owner.borrow_mut().closed = true;
+        // Closed and expired spans return before accessing the drawing context.
+        unsafe {
+            redraw_draw_menu_span(std::ptr::null_mut(), &mut span, 0, 0, 2);
+        }
+        drop(owner);
+        assert!(span.data.menu().md.upgrade().is_none());
+        unsafe {
+            redraw_draw_menu_span(std::ptr::null_mut(), &mut span, 0, 0, 2);
+        }
+        assert!(redraw_compare_data(&cell, &next));
+        cell.data = redraw_span_data::Empty;
+        assert!(!redraw_compare_data(&cell, &next));
+    }
 }

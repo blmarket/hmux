@@ -3059,9 +3059,10 @@ unsafe fn server_client_handle_menu_key(
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut new_event = (*event).metadata_snapshot();
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
-    if (*w).menu.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
+    let Some(menu) = (*w).menu.clone() else {
+        return 0;
+    };
+    let window = crate::src::shared::rc::downgrade(w);
     if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
         || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -3090,8 +3091,8 @@ unsafe fn server_client_handle_menu_key(
             (*m).y = (*m).y.wrapping_add(oy);
         }
     }
-    if menu_key(c, (*w).menu, &new_event) == 1 as ::core::ffi::c_int {
-        menu_close(w);
+    if menu_key(c, &menu, &new_event) == 1 {
+        menu_close(&window, Some(&menu));
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -3692,6 +3693,8 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     }
     flags = (*tty).flags & TTY_BLOCK;
     (*tty).flags &= !TTY_BLOCK;
+    let menu_owner = (*w).menu.clone();
+    let mut menu_borrow = None;
     if (*c).overlay_draw.is_some() {
         if let Some(mut overlay_mode) = (*c).overlay_mode.take() {
             let result = overlay_mode(&mut *c);
@@ -3704,9 +3707,11 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                 cy = overlay_cy;
             }
         }
-    } else if !(*w).menu.is_null() {
-        (cx, cy) = menu_get_cursor(&*(*w).menu);
-        s = menu_screen(&*(*w).menu);
+    } else if let Some(menu) = menu_owner.as_ref() {
+        menu_borrow = Some(menu.borrow());
+        let md = menu_borrow.as_deref().unwrap();
+        (cx, cy) = menu_get_cursor(md);
+        s = menu_screen(md);
     } else if !wp.is_null() && (*c).prompt.is_none() {
         s = (*wp).screen;
     } else {
@@ -3734,7 +3739,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
         prompt = 1 as u_int;
         (cx, cy) = status_prompt_cursor(&*c);
     } else if !wp.is_null() && (*c).overlay_draw.is_none() {
-        if !(*w).menu.is_null() {
+        if (*w).menu.is_some() {
             let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
             if cx < ox || cx >= ox.wrapping_add(sx) || cy < oy || cy >= oy.wrapping_add(sy) {
                 mode &= !MODE_CURSOR;
@@ -3818,7 +3823,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
         s = std::ptr::null();
     }
     if options_get_number(oo, b"mouse\0" as *const u8 as *const ::core::ffi::c_char) != 0 {
-        if (*c).overlay_draw.is_none() && (*w).menu.is_null() {
+        if (*c).overlay_draw.is_none() && (*w).menu.is_none() {
             mode &= !ALL_MOUSE_MODES;
             loop_0 = window_pane_first(w);
             while !loop_0.is_null() {
@@ -5347,5 +5352,96 @@ mod key_event_owner_tests {
 impl Drop for client {
     fn drop(&mut self) {
         unsafe { server_client_free(self) }
+    }
+}
+
+#[cfg(test)]
+mod menu_lifetime_tests {
+    use super::*;
+    use crate::src::shared::menu::{menu, menu_data, MenuRef, MenuRow, MenuSelection};
+    use crate::src::shared::rc;
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    fn menu_owner() -> MenuRef {
+        Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+            title: c"Callback".to_owned(),
+            items: vec![MenuRow {
+                name: Some(c"select".to_owned()),
+                key: b'a' as key_code,
+                command: None,
+            }],
+            count: 1,
+            width: 10,
+        }))))
+    }
+
+    #[test]
+    fn key_dispatch_keeps_callback_replacements_and_handles_window_teardown() {
+        for destroy_window in [false, true] {
+            unsafe {
+                let window = rc::take(rc::new(window::default()));
+                let weak_window = Rc::downgrade(&window);
+                let w = rc::as_ptr(&window);
+                let window_slot = Rc::new(RefCell::new(Some(window)));
+                let callback_slot = Rc::clone(&window_slot);
+                let first = menu_owner();
+                first.borrow_mut().w = weak_window.clone();
+                let first_observer = Rc::downgrade(&first);
+                let replacement = menu_owner();
+                replacement.borrow_mut().w = weak_window.clone();
+                let replacement_observer = Rc::downgrade(&replacement);
+                let cancelled = Rc::new(Cell::new(0));
+                let callback_cancelled = Rc::clone(&cancelled);
+                replacement.borrow_mut().cb = Some(Box::new(move |_| {
+                    callback_cancelled.set(callback_cancelled.get() + 1);
+                }));
+                first.borrow_mut().cb = Some(Box::new(move |selection| {
+                    assert_eq!(
+                        selection,
+                        MenuSelection::Selected {
+                            index: 0,
+                            key: b'a' as key_code
+                        }
+                    );
+                    let window = callback_slot.borrow_mut().take().unwrap();
+                    let w = rc::as_ptr(&window);
+                    assert_eq!(Rc::strong_count(&window), 1);
+                    if !destroy_window {
+                        menu_close(&Rc::downgrade(&window), None);
+                        (*w).menu = Some(replacement);
+                        *callback_slot.borrow_mut() = Some(window);
+                    }
+                }));
+                (*w).menu = Some(first);
+                let mut c = client::empty();
+                let mut session = session::empty();
+                let mut link = winlink::default();
+                link.window = w;
+                session.curw = &mut link;
+                c.session = &mut session;
+                let mut event = key_event {
+                    client: std::ptr::null_mut(),
+                    key: b'a' as key_code,
+                    m: Default::default(),
+                    bytes: None,
+                };
+                assert_eq!(server_client_handle_menu_key(&mut c, &mut event), 1);
+                assert!(first_observer.upgrade().is_none());
+                if !destroy_window {
+                    assert!(Rc::ptr_eq(
+                        (*w).menu.as_ref().unwrap(),
+                        &replacement_observer.upgrade().unwrap()
+                    ));
+                    assert_eq!(cancelled.get(), 0);
+                    drop(window_slot.borrow_mut().take());
+                    assert_eq!(cancelled.get(), 1);
+                }
+                assert!(weak_window.upgrade().is_none());
+                assert!(replacement_observer.upgrade().is_none());
+                c.session = std::ptr::null_mut();
+                session.curw = std::ptr::null_mut();
+            }
+        }
     }
 }

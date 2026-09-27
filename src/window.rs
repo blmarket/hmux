@@ -91,7 +91,6 @@ use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, UINT_MAX};
-use crate::src::shared::menu::menu_data;
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
@@ -1091,7 +1090,7 @@ unsafe fn window_destroy(mut w: *mut window) {
     layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
     layout_free_cell((*w).saved_layout_root, 0 as ::core::ffi::c_int);
     drop(window_replace_old_layout(w, None));
-    menu_destroy(w);
+    menu_destroy((*w).menu.take());
     window_destroy_panes(w);
     if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
@@ -1208,8 +1207,8 @@ pub unsafe fn window_resize(
     ));
     (*w).sx = sx;
     (*w).sy = sy;
-    if !(*w).menu.is_null() {
-        menu_resize(&mut *(*w).menu, sx, sy);
+    if let Some(menu) = (*w).menu.clone() {
+        menu_resize(&mut menu.borrow_mut(), sx, sy);
         server_redraw_window(w);
     }
     if xpixel != -(1 as ::core::ffi::c_int) {
@@ -1335,7 +1334,7 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
                     && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
                     && (*(*(*c).session).curw).window == (*wp).window
                     && (*c).overlay_draw.is_none()
-                    && (*(*wp).window).menu.is_null()
+                    && (*(*wp).window).menu.is_none()
                 {
                     focused = 1 as ::core::ffi::c_int;
                     break;
