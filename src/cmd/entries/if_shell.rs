@@ -28,7 +28,6 @@ use crate::src::shared::job::{JobCompletion, JobExitStatus};
 use crate::src::shared::session::session;
 use crate::src::status::status_message_set;
 
-#[repr(C)]
 pub struct cmd_if_shell_data {
     pub cmd_if: *mut args_command_state,
     pub cmd_else: *mut args_command_state,
@@ -131,10 +130,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     if !cdata.client.is_null() {
         crate::src::shared::rc::retain(cdata.client);
     }
-    // The job owns this pointer on success; its free callback drops the box.
-    // job_run leaves data untouched on failure, so reclaim it below.
-    let cdata = Box::into_raw(cdata);
-    if job_run(
+    let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),
         ::core::ptr::null_mut::<environ>(),
@@ -144,48 +140,49 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
             (!cwd.is_null()).then(|| std::ffi::CStr::from_ptr(cwd))
         },
         None,
-        Some(Box::new(move |completion| unsafe {
-            cmd_if_shell_callback(completion, cdata)
-        })),
-        Some(Box::new(move || unsafe { cmd_if_shell_free(cdata) })),
+        None,
+        None,
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
         -(1 as ::core::ffi::c_int),
-    )
-    .is_null()
-    {
+    );
+    if job.is_null() {
         cmdq_error(item, |out| {
             out.write_all(b"failed to run command: ")?;
             write_cstr(out, shellcmd.as_ptr())
         });
-        cmd_if_shell_free(cdata);
         return CMD_RETURN_ERROR;
     }
+    // The job takes ownership only after startup succeeds. The record also
+    // drops when the completion callback is cancelled without being invoked.
+    (*job).completecb = Some(Box::new(move |completion| unsafe {
+        cmd_if_shell_callback(completion, &cdata);
+    }));
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
     return CMD_RETURN_WAIT;
 }
-unsafe fn cmd_if_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_if_shell_data) {
-    let mut c: *mut client = (*cdata).client;
-    let mut item: *mut cmdq_item = (*cdata).item;
+unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &cmd_if_shell_data) {
+    let mut c: *mut client = cdata.client;
+    let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
     if completion.status == JobExitStatus::Exited(0) {
-        state = (*cdata).cmd_if;
+        state = cdata.cmd_if;
     } else {
-        state = (*cdata).cmd_else;
+        state = cdata.cmd_else;
     }
     if !state.is_null() {
         match args_make_commands(state, &Vec::new()) {
             Err(mut error) => {
-                if (*cdata).item.is_null() {
+                if cdata.item.is_null() {
                     cmd_parse_error_uppercase_first(&mut error);
                 }
                 let error_ptr = error
                     .as_ref()
                     .map_or(::core::ptr::null(), |cause| cause.as_ptr());
-                if (*cdata).item.is_null() {
+                if cdata.item.is_null() {
                     status_message_set(
                         c,
                         -(1 as ::core::ffi::c_int),
@@ -195,7 +192,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_i
                         |out| write_cstr(out, error_ptr),
                     );
                 } else {
-                    cmdq_error((*cdata).item, |out| write_cstr(out, error_ptr));
+                    cmdq_error(cdata.item, |out| write_cstr(out, error_ptr));
                 }
             }
             Ok(commands) if item.is_null() => {
@@ -210,17 +207,22 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_i
             }
         }
     }
-    if !(*cdata).item.is_null() {
-        cmdq_continue((*cdata).item);
+    if !cdata.item.is_null() {
+        cmdq_continue(cdata.item);
     }
 }
-unsafe fn cmd_if_shell_free(data: *mut cmd_if_shell_data) {
-    let cdata = Box::from_raw(data);
-    if !cdata.client.is_null() {
-        server_client_unref(cdata.client);
+impl Drop for cmd_if_shell_data {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.client.is_null() {
+                server_client_unref(self.client);
+            }
+            if !self.cmd_else.is_null() {
+                args_make_commands_free(self.cmd_else);
+            }
+            if !self.cmd_if.is_null() {
+                args_make_commands_free(self.cmd_if);
+            }
+        }
     }
-    if !cdata.cmd_else.is_null() {
-        args_make_commands_free(cdata.cmd_else);
-    }
-    args_make_commands_free(cdata.cmd_if);
 }
