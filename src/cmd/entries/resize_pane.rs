@@ -487,7 +487,7 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(mut c: *mut client, mut m: *mut mou
             .wrapping_div(::core::mem::size_of::<*mut layout_cell>() as usize)
     {
         lc = layout_search_by_border(
-            (*w).layout_root_ptr(),
+            (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
             lx.wrapping_add(offsets[i as usize][0 as ::core::ffi::c_int as usize] as u_int),
             ly.wrapping_add(offsets[i as usize][1 as ::core::ffi::c_int as usize] as u_int),
         );

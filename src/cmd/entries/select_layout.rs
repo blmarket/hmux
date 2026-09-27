@@ -127,7 +127,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    let new_layout = layout_dump_owned((*w).layout_root_ptr(), flags);
+    let new_layout = layout_dump_owned((*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), flags);
     let mut oldlayout = window_replace_old_layout(w, new_layout);
     let oldlayout_ptr = oldlayout
         .as_ref()

@@ -188,7 +188,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_even\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -217,7 +217,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
     }
     let mut leaves = layout_take_leaves((*w).layout_root.take());
     (*w).layout_root = Some(layout_create_cell());
-    lcroot = (*w).layout_root_ptr();
+    lcroot = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lcroot,
         sx,
@@ -242,7 +242,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
     layout_fix_offsets(w);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_even\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -300,7 +300,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     let mut sy: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_h\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -356,7 +356,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     }
     let mut leaves = layout_take_leaves((*w).layout_root.take());
     (*w).layout_root = Some(layout_create_cell());
-    lcroot = (*w).layout_root_ptr();
+    lcroot = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lcroot,
         sx,
@@ -427,7 +427,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     layout_fix_offsets(w);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_h\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -458,7 +458,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     let mut sy: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_h_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -514,7 +514,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     }
     let mut leaves = layout_take_leaves((*w).layout_root.take());
     (*w).layout_root = Some(layout_create_cell());
-    lcroot = (*w).layout_root_ptr();
+    lcroot = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lcroot,
         sx,
@@ -585,7 +585,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     layout_fix_offsets(w);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_h_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -616,7 +616,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     let mut sy: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_v\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -672,7 +672,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     }
     let mut leaves = layout_take_leaves((*w).layout_root.take());
     (*w).layout_root = Some(layout_create_cell());
-    lcroot = (*w).layout_root_ptr();
+    lcroot = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lcroot,
         mainw.wrapping_add(otherw).wrapping_add(1 as u_int),
@@ -743,7 +743,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     layout_fix_offsets(w);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_v\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -774,7 +774,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     let mut sy: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_v_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -830,7 +830,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     }
     let mut leaves = layout_take_leaves((*w).layout_root.take());
     (*w).layout_root = Some(layout_create_cell());
-    lcroot = (*w).layout_root_ptr();
+    lcroot = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lcroot,
         mainw.wrapping_add(otherw).wrapping_add(1 as u_int),
@@ -901,7 +901,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     layout_fix_offsets(w);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_v_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -936,7 +936,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
     let mut rows: u_int = 0;
     let mut max_columns: u_int = 0;
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_tiled\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
@@ -986,7 +986,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
     }
     let mut leaves = layout_take_leaves((*w).layout_root.take());
     (*w).layout_root = Some(layout_create_cell());
-    lcroot = (*w).layout_root_ptr();
+    lcroot = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lcroot,
         sx,
@@ -1088,7 +1088,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
     layout_fix_offsets(w);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     layout_print_cell(
-        (*w).layout_root_ptr(),
+        (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_tiled\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );

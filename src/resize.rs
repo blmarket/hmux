@@ -111,11 +111,11 @@ pub unsafe fn resize_window(
         window_unzoom(w, 1 as ::core::ffi::c_int);
     }
     layout_resize(w, sx, sy);
-    if sx < (*(*w).layout_root_ptr()).g.sx {
-        sx = (*(*w).layout_root_ptr()).g.sx;
+    if sx < (*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sx {
+        sx = (*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sx;
     }
-    if sy < (*(*w).layout_root_ptr()).g.sy {
-        sy = (*(*w).layout_root_ptr()).g.sy;
+    if sy < (*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sy {
+        sy = (*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sy;
     }
     window_resize(w, sx, sy, xpixel, ypixel);
     log_debug(format_args!(
@@ -124,8 +124,8 @@ pub unsafe fn resize_window(
         ((*w).id) as u32,
         (sx) as u32,
         (sy) as u32,
-        ((*(*w).layout_root_ptr()).g.sx) as u32,
-        ((*(*w).layout_root_ptr()).g.sy) as u32
+        ((*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sx) as u32,
+        ((*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sy) as u32
     ));
     if !zwp.is_null() && window_has_pane(w, zwp) != 0 {
         window_zoom(zwp);

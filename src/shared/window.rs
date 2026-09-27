@@ -236,16 +236,12 @@ impl window {
         })
     }
 
-    pub fn layout_root_ptr(&mut self) -> *mut layout_cell {
-        self.layout_root
-            .as_deref_mut()
-            .map_or(std::ptr::null_mut(), |root| root)
+    pub fn layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
+        self.layout_root.as_deref_mut()
     }
 
-    pub fn saved_layout_root_ptr(&mut self) -> *mut layout_cell {
-        self.saved_layout_root
-            .as_deref_mut()
-            .map_or(std::ptr::null_mut(), |root| root)
+    pub fn saved_layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
+        self.saved_layout_root.as_deref_mut()
     }
 }
 

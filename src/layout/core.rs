@@ -338,7 +338,7 @@ unsafe fn layout_fix_offsets1(mut lc: *mut layout_cell) {
     };
 }
 pub unsafe fn layout_fix_offsets(mut w: *mut window) {
-    let mut lc: *mut layout_cell = (*w).layout_root_ptr();
+    let mut lc: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
         return;
     }
@@ -417,7 +417,7 @@ pub unsafe fn layout_add_horizontal_border(
 pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut root: *mut layout_cell = (*w).layout_root_ptr();
+    let mut root: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut status: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
     let mut sb_pad: ::core::ffi::c_int = 0;
@@ -522,7 +522,7 @@ unsafe fn layout_resize_check(
     mut type_0: layout_type,
 ) -> u_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut root: *mut layout_cell = (*w).layout_root_ptr();
+    let mut root: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut sb_style: *mut style = &raw mut (*(*w).active).scrollbar_style;
     let mut available: u_int = 0;
     let mut minimum: u_int = 0;
@@ -730,7 +730,7 @@ pub unsafe fn layout_destroy_cell(
 pub unsafe fn layout_init(mut w: *mut window, mut wp: *mut window_pane) {
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     (*w).layout_root = Some(layout_create_cell());
-    lc = (*w).layout_root_ptr();
+    lc = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     layout_set_size(
         lc,
         (*w).sx,
@@ -820,7 +820,7 @@ unsafe fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_int, mut sy:
     }
 }
 pub unsafe fn layout_resize(mut w: *mut window, mut sx: u_int, mut sy: u_int) {
-    let mut lc: *mut layout_cell = (*w).layout_root_ptr();
+    let mut lc: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut xlimit: ::core::ffi::c_int = 0;
     let mut ylimit: ::core::ffi::c_int = 0;
     let mut xchange: ::core::ffi::c_int = 0;
@@ -1493,7 +1493,7 @@ pub unsafe fn layout_split_check_space(
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
 ) -> ::core::ffi::c_int {
-    let mut root: *mut layout_cell = (*(*wp).window).layout_root_ptr();
+    let mut root: *mut layout_cell = (*(*wp).window).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut sb_style: *mut style = &raw mut (*wp).scrollbar_style;
     let mut minimum: u_int = 0;
     let mut sx: u_int = (*lc).g.sx;
@@ -1599,7 +1599,7 @@ pub unsafe fn layout_split_pane(
     let mut full_size: ::core::ffi::c_int = flags & SPAWN_FULLSIZE;
     let mut before: ::core::ffi::c_int = flags & SPAWN_BEFORE;
     if full_size != 0 {
-        lc = (*(*wp).window).layout_root_ptr();
+        lc = (*(*wp).window).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     } else {
         lc = (*wp).layout_cell as *mut layout_cell;
     }
@@ -1765,7 +1765,7 @@ pub unsafe fn layout_floating_pane(
     let mut lcnew: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcparent: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if wp.is_null() {
-        lc = (*w).layout_root_ptr();
+        lc = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     } else {
         lc = (*wp).layout_cell as *mut layout_cell;
     }
@@ -1791,7 +1791,7 @@ pub unsafe fn layout_close_pane(mut wp: *mut window_pane) {
         &mut (*w).layout_root,
     );
     (*wp).layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    if !(*w).layout_root_ptr().is_null() {
+    if !(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root).is_null() {
         layout_fix_offsets(w);
         layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     }
@@ -1805,7 +1805,7 @@ pub unsafe fn layout_spread_cell(
     mut parent: *mut layout_cell,
 ) -> ::core::ffi::c_int {
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut root: *mut layout_cell = (*w).layout_root_ptr();
+    let mut root: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut number: u_int = 0;
     let mut each: u_int = 0;
     let mut size: u_int = 0;

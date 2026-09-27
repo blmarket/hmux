@@ -635,7 +635,7 @@ unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx, flo
     if !(*pctx).cctxs.is_empty() {
         layout_assign_from_ctx(w, pctx);
     } else {
-        layout_assign_fallback(w, (*w).layout_root_ptr(), floating);
+        layout_assign_fallback(w, (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), floating);
     };
 }
 unsafe fn layout_construct_cell(

@@ -1565,9 +1565,9 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         }
         return;
     }
-    root = (*w).saved_layout_root_ptr();
+    root = (*w).saved_layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     if root.is_null() {
-        root = (*w).layout_root_ptr();
+        root = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     }
     if root.is_null() {
         if let Some(owner) = source_session_owner {

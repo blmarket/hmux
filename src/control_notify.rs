@@ -79,7 +79,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     }
     template = b"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}\0"
         as *const u8 as *const ::core::ffi::c_char;
-    if window_winlinks_first(w).is_null() || (*w).layout_root_ptr().is_null() {
+    if window_winlinks_first(w).is_null() || (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root).is_null() {
         return;
     }
     c = clients.first();
