@@ -186,7 +186,7 @@ unsafe fn options_value_to_cstring(
         && (*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return cmd_list_print_cstring(&*ov.cmdlist(), 0);
+        return cmd_list_print_cstring(&*ov.commands().expect("command option").get(), 0);
     }
     if !tableentry.is_null()
         && ((*tableentry).type_0 as ::core::ffi::c_uint

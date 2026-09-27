@@ -128,16 +128,7 @@ impl options_value {
         }
     }
 
-    pub fn cmdlist(&self) -> *mut cmd_list {
-        match self {
-            Self::Command(value) => value
-                .0
-                .as_ref()
-                .map_or(std::ptr::null_mut(), super::rc::as_ptr),
-            Self::Empty => ::core::ptr::null_mut(),
-            _ => panic!("option value is not a command"),
-        }
-    }
+
 
     pub fn array_storage(&mut self) -> &mut options_array_storage {
         match self {
