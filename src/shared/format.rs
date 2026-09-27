@@ -138,28 +138,39 @@ pub struct format_job_tree {
     pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), *mut format_job>,
 }
 
-/// Ordered index for a format tree's separately Box-owned entries.
+/// Ordered owners for a format tree's heap-allocated entries.
 /// Keys retain the original C string bytes so ordering matches `strcmp`.
 #[derive(Default)]
 pub struct format_entry_tree {
-    pub(crate) entries: BTreeMap<Vec<u8>, *mut format_entry>,
+    pub(crate) entries: BTreeMap<Vec<u8>, Box<format_entry>>,
 }
 
 pub struct format_entry {
     pub key: std::ffi::CString,
-    pub value: Option<std::ffi::CString>,
-    pub time: time_t,
-    pub(crate) owned_cb:
-        Option<Box<dyn FnMut(std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString>>>,
+    pub(crate) state: FormatEntryState,
 }
 
-impl format_entry {
-    pub fn empty() -> Self {
-        Self {
-            key: Default::default(),
-            value: Default::default(),
-            time: Default::default(),
-            owned_cb: Default::default(),
+pub(crate) type FormatEntryCallback =
+    Box<dyn FnMut(std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString>>;
+
+pub(crate) enum FormatEntryState {
+    Text(std::ffi::CString),
+    Time(time_t),
+    Lazy(FormatEntryCallback),
+    /// The callback owns its capture while running without an entry borrow.
+    Evaluating(u64),
+    Cached {
+        value: std::ffi::CString,
+        // Keep the capture alive until this entry is replaced or dropped.
+        callback: FormatEntryCallback,
+    },
+}
+
+impl FormatEntryState {
+    pub(crate) fn text(&self) -> Option<&std::ffi::CStr> {
+        match self {
+            Self::Text(value) | Self::Cached { value, .. } => Some(value),
+            _ => None,
         }
     }
 }

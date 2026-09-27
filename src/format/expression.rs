@@ -188,13 +188,6 @@ pub(super) unsafe fn format_find(
     mut time_format: *const ::core::ffi::c_char,
 ) -> Option<CString> {
     let mut current_block: u64;
-    let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut fe_find: format_entry = format_entry {
-        owned_cb: None,
-        key: Default::default(),
-        value: Default::default(),
-        time: 0,
-    };
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut found: Option<CString> = None;
@@ -248,21 +241,12 @@ pub(super) unsafe fn format_find(
                 None => {}
             }
         } else {
-            fe_find.key = ::std::ffi::CStr::from_ptr(key as *mut ::core::ffi::c_char).to_owned();
-            fe = format_entry_tree_find(&raw mut (*ft).tree, &raw mut fe_find);
-            if !fe.is_null() {
-                if (*fe).time != 0 as time_t {
-                    t = (*fe).time;
-                } else {
-                    format_entry_ensure_value(ft, fe);
-                    found = Some(
-                        CStr::from_ptr(
-                            ((*fe).value)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        )
-                        .to_owned(),
-                    );
+            let entry_key = CStr::from_ptr(key).to_owned();
+            if format_entry_tree_find(&(*ft).tree, &entry_key).is_some() {
+                match format_entry_get_value(ft, &entry_key) {
+                    Some(FormatValue::String(value)) => found = Some(value),
+                    Some(FormatValue::Time(value)) => t = value,
+                    None => {}
                 }
             } else {
                 if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {

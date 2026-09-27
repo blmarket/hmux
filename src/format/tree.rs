@@ -1,6 +1,5 @@
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::log::log_cstr;
+use crate::src::shared::format::FormatEntryState;
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
 // Shared C-layout types, allocator/FFI helpers, and callback-table symbols
@@ -8,158 +7,96 @@ use crate::src::log::log_cstr;
 use super::*;
 use std::ffi::{CStr, CString};
 
-fn format_entry_new(key: &CStr) -> *mut format_entry {
-    let key = key.to_owned();
-    let entry = format_entry {
-        owned_cb: None,
-        key: key.clone(),
-        value: Default::default(),
-        time: 0,
-    };
-    let owner = Box::new(format_entry {
-        key: key,
-        value: None,
-        owned_cb: None,
-        ..entry
-    });
-    Box::into_raw(owner) as *mut format_entry
+pub(super) fn format_entry_tree_find<'a>(
+    tree: &'a format_entry_tree,
+    key: &CStr,
+) -> Option<&'a format_entry> {
+    tree.entries.get(key.to_bytes()).map(Box::as_ref)
 }
 
-fn format_entry_set_value(fe: &mut format_entry, value: Option<CString>) {
-    fe.value = value;
-}
-
-/// Evaluate without retaining an owner borrow: callbacks may add or replace
+/// Evaluate without retaining an entry borrow: callbacks may replace or remove
 /// entries in this tree. As with the C API, callbacks must not destroy the tree.
-pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut format_entry) {
-    if !(*fe).value.is_none() {
-        return;
-    }
-    let key = (*fe).key.clone();
-    let Some(mut callback) = (*fe).owned_cb.take() else {
-        return;
+unsafe fn format_entry_ensure_value(ft: *mut format_tree, key: &CStr) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_EVALUATION: AtomicU64 = AtomicU64::new(0);
+    let (evaluation, callback) = {
+        let Some(entry) = (*ft).tree.entries.get_mut(key.to_bytes()) else {
+            return;
+        };
+        if !matches!(entry.state, FormatEntryState::Lazy(_)) {
+            return;
+        }
+        let evaluation = NEXT_EVALUATION
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("format evaluation identity exhausted");
+        (
+            evaluation,
+            std::mem::replace(&mut entry.state, FormatEntryState::Evaluating(evaluation)),
+        )
+    };
+    let FormatEntryState::Lazy(mut callback) = callback else {
+        unreachable!()
     };
     let value =
         callback(std::ptr::NonNull::new(ft).expect("format tree is non-null")).unwrap_or_default();
-    let current = format_entry_tree_find_key(&mut (*ft).tree, key.as_c_str());
-    if current == fe
-        && !current.is_null()
-        && (*current).value.is_none()
-        && (*current).owned_cb.is_none()
-    {
-        format_entry_set_value(&mut *current, Some(value));
-        if (*current).owned_cb.is_none() {
-            (*current).owned_cb = Some(callback);
+
+    // Resolve both the key and evaluation identity after the callback. Even a
+    // removed/reinserted entry at the same address must not receive this result.
+    if let Some(entry) = (*ft).tree.entries.get_mut(key.to_bytes()) {
+        if matches!(entry.state, FormatEntryState::Evaluating(id) if id == evaluation) {
+            entry.state = FormatEntryState::Cached { value, callback };
         }
     }
 }
 
-fn format_entry_tree_key(elm: &format_entry) -> Vec<u8> {
-    elm.key.as_bytes().to_vec()
-}
-
-unsafe fn format_entry_tree_find_key(
-    head: *mut format_entry_tree,
+/// Copy the resolved value after any lazy callback has finished mutating the tree.
+pub(super) unsafe fn format_entry_get_value(
+    ft: *mut format_tree,
     key: &CStr,
-) -> *mut format_entry {
-    if head.is_null() {
-        return ::core::ptr::null_mut();
+) -> Option<FormatValue> {
+    let key = key.to_owned();
+    format_entry_ensure_value(ft, &key);
+    let entry = format_entry_tree_find(&(*ft).tree, &key)?;
+    match &entry.state {
+        FormatEntryState::Time(time) if *time != 0 => Some(FormatValue::Time(*time)),
+        state => state
+            .text()
+            .map(|value| FormatValue::String(value.to_owned())),
     }
-    (*head)
-        .entries
-        .get(key.to_bytes())
-        .copied()
-        .unwrap_or(::core::ptr::null_mut())
 }
 
-pub(super) unsafe fn format_entry_tree_find(
-    head: *mut format_entry_tree,
-    elm: *mut format_entry,
-) -> *mut format_entry {
-    if head.is_null() || elm.is_null() {
-        return ::core::ptr::null_mut::<format_entry>();
-    }
-    (*head)
-        .entries
-        .get(&format_entry_tree_key(&*elm))
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<format_entry>())
-}
+unsafe fn format_entry_set(ft: *mut format_tree, key: &CStr, state: FormatEntryState) {
+    use std::collections::btree_map::Entry;
 
-unsafe fn format_entry_tree_insert(
-    head: *mut format_entry_tree,
-    elm: *mut format_entry,
-) -> *mut format_entry {
-    if head.is_null() || elm.is_null() {
-        return ::core::ptr::null_mut::<format_entry>();
-    }
-    match (*head).entries.entry(format_entry_tree_key(&*elm)) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            ::core::ptr::null_mut::<format_entry>()
+    let key = key.to_owned();
+    let old = match (*ft).tree.entries.entry(key.as_bytes().to_vec()) {
+        Entry::Occupied(mut entry) => Some(std::mem::replace(&mut entry.get_mut().state, state)),
+        Entry::Vacant(entry) => {
+            entry.insert(Box::new(format_entry { key, state }));
+            None
         }
-    }
+    };
+    // A callback capture may have its own cleanup. Release it only after the
+    // map and entry borrows have ended, just as when invoking a lazy callback.
+    drop(old);
 }
 
-unsafe fn format_entry_tree_remove(
-    head: *mut format_entry_tree,
-    elm: *mut format_entry,
-) -> *mut format_entry {
-    if head.is_null() || elm.is_null() {
-        return ::core::ptr::null_mut::<format_entry>();
-    }
-    let key = format_entry_tree_key(&*elm);
-    if (*head).entries.get(&key).copied() != Some(elm) {
-        return ::core::ptr::null_mut::<format_entry>();
-    }
-    (*head)
+pub unsafe fn format_merge(ft: *mut format_tree, from: *mut format_tree) {
+    // Copy before changing the destination: the trees may be identical, and
+    // replacing callback captures may in turn modify the source tree.
+    let values: Vec<_> = (*from)
+        .tree
         .entries
-        .remove(&key)
-        .unwrap_or(::core::ptr::null_mut::<format_entry>())
-}
-
-unsafe fn format_entry_tree_minmax(head: *mut format_entry_tree) -> *mut format_entry {
-    if head.is_null() {
-        return ::core::ptr::null_mut::<format_entry>();
-    }
-    let item = (*head).entries.values().next();
-    item.copied()
-        .unwrap_or(::core::ptr::null_mut::<format_entry>())
-}
-
-unsafe fn format_entry_tree_next(
-    head: *mut format_entry_tree,
-    elm: *mut format_entry,
-) -> *mut format_entry {
-    if head.is_null() || elm.is_null() {
-        return ::core::ptr::null_mut::<format_entry>();
-    }
-    (*head)
-        .entries
-        .range((
-            std::ops::Bound::Excluded(format_entry_tree_key(&*elm)),
-            std::ops::Bound::Unbounded,
-        ))
-        .next()
-        .map(|(_, item)| *item)
-        .unwrap_or(::core::ptr::null_mut::<format_entry>())
-}
-pub unsafe fn format_merge(mut ft: *mut format_tree, mut from: *mut format_tree) {
-    let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_tree_minmax(&raw mut (*from).tree);
-    while !fe.is_null() {
-        if !(*fe).value.is_none() {
-            format_add(ft, ((*fe).key).as_ptr().cast_mut(), |out| {
-                write_cstr(
-                    out,
-                    ((*fe).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
-            });
-        }
-        fe = format_entry_tree_next(&raw mut (*from).tree, fe);
+        .values()
+        .filter_map(|entry| {
+            entry
+                .state
+                .text()
+                .map(|value| (entry.key.clone(), value.to_owned()))
+        })
+        .collect();
+    for (key, value) in values {
+        format_add_value(ft, &key, value);
     }
 }
 pub unsafe fn format_get_pane(mut ft: *mut format_tree) -> *mut window_pane {
@@ -195,17 +132,11 @@ pub unsafe fn format_create(
     }
     return ft;
 }
-pub unsafe fn format_free(mut ft: *mut format_tree) {
-    let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut fe1: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_tree_minmax(&raw mut (*ft).tree);
-    while !fe.is_null() && {
-        fe1 = format_entry_tree_next(&raw mut (*ft).tree, fe);
-        1 as ::core::ffi::c_int != 0
-    } {
-        format_entry_tree_remove(&raw mut (*ft).tree, fe);
-        drop(Box::from_raw(fe as *mut format_entry));
-        fe = fe1;
+pub unsafe fn format_free(ft: *mut format_tree) {
+    // Preserve tmux's key order and finish each entry's cleanup outside a map
+    // borrow, before releasing the tree's retained client.
+    while let Some((_, entry)) = (*ft).tree.entries.pop_first() {
+        drop(entry);
     }
     if !(*ft).client.is_null() {
         server_client_unref((*ft).client);
@@ -226,8 +157,6 @@ pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::co
     });
 }
 pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)) {
-    let mut fe: *mut format_entry;
-    let mut s: [::core::ffi::c_char; 64] = [0; 64];
     for entry in &FORMAT_TABLE {
         let Some(value) = entry.get(ft) else { continue };
         let value = match value {
@@ -238,36 +167,27 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         };
         cb(entry.key, value.as_c_str());
     }
+    let keys: Vec<_> = (*ft)
+        .tree
+        .entries
+        .values()
+        .map(|entry| entry.key.clone())
+        .collect();
     let mut values = Vec::new();
-    fe = format_entry_tree_minmax(&raw mut (*ft).tree);
-    let mut keys = Vec::new();
-    while !fe.is_null() {
-        keys.push((*fe).key.clone());
-        fe = format_entry_tree_next(&raw mut (*ft).tree, fe);
-    }
     for key in keys {
-        fe = format_entry_tree_find_key(&raw mut (*ft).tree, key.as_c_str());
-        if fe.is_null() {
+        let Some(value) = format_entry_get_value(ft, &key) else {
             continue;
-        }
-        if (*fe).time != 0 as time_t {
-            xformat(
-                &mut s,
-                format_args!("{}", ((*fe).time as ::core::ffi::c_longlong) as i64),
-            );
-            values.push((key, CStr::from_ptr((&raw const s).cast()).to_owned()));
-        } else {
-            format_entry_ensure_value(ft, fe);
-            fe = format_entry_tree_find_key(&raw mut (*ft).tree, key.as_c_str());
-            if !fe.is_null() {
-                if let Some(value) = (*fe).value.as_ref() {
-                    values.push(((*fe).key.clone(), value.clone()));
-                }
+        };
+        let value = match value {
+            FormatValue::String(value) => value,
+            FormatValue::Time(value) => {
+                CString::new(value.to_string()).expect("timestamp contains no NUL")
             }
-        }
+        };
+        values.push((key, value));
     }
     for (key, value) in values {
-        cb(key.as_c_str(), value.as_c_str());
+        cb(&key, &value);
     }
 }
 pub unsafe fn format_add(
@@ -285,248 +205,317 @@ pub unsafe fn format_add_cstr(ft: *mut format_tree, key: &CStr, value: &CStr) {
 }
 
 unsafe fn format_add_value(ft: *mut format_tree, key: &CStr, value: CString) {
-    let mut fe = format_entry_new(key);
-    let fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
-    if !fe_now.is_null() {
-        drop(Box::from_raw(fe));
-        fe = fe_now;
-    }
-    (*fe).owned_cb = None;
-    (*fe).time = 0;
-    format_entry_set_value(&mut *fe, Some(value));
+    format_entry_set(ft, key, FormatEntryState::Text(value));
 }
+
 pub unsafe fn format_add_tv(
-    mut ft: *mut format_tree,
-    mut key: *const ::core::ffi::c_char,
-    mut tv: *mut timeval,
+    ft: *mut format_tree,
+    key: *const ::core::ffi::c_char,
+    tv: *mut timeval,
 ) {
-    let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_new(CStr::from_ptr(key));
-    fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
-    if !fe_now.is_null() {
-        drop(Box::from_raw(fe as *mut format_entry));
-        fe = fe_now;
-    }
-    (*(fe as *mut format_entry)).owned_cb = None;
-    (*fe).time = (*tv).tv_sec as time_t;
-    format_entry_set_value(&mut *fe, None);
+    format_entry_set(
+        ft,
+        CStr::from_ptr(key),
+        FormatEntryState::Time((*tv).tv_sec as time_t),
+    );
 }
+
 /// Registers a lazy Rust callback that returns an owned cache value.
 pub unsafe fn format_add_owned_cb(
     ft: *mut format_tree,
     key: &CStr,
     cb: impl FnMut(std::ptr::NonNull<format_tree>) -> Option<CString> + 'static,
 ) {
-    let new = format_entry_new(key);
-    let existing = format_entry_tree_insert(&raw mut (*ft).tree, new);
-    let fe = if existing.is_null() {
-        new
-    } else {
-        drop(Box::from_raw(new as *mut format_entry));
-        existing
-    };
-    (*(fe as *mut format_entry)).owned_cb = Some(Box::new(cb));
-    (*fe).time = 0;
-    format_entry_set_value(&mut *fe, None);
+    format_entry_set(ft, key, FormatEntryState::Lazy(Box::new(cb)));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::{CStr, CString};
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
 
-    fn cached_test_value(_ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
-        Some(CString::new(b"cached\xff".to_vec()).unwrap())
+    unsafe fn tree() -> *mut format_tree {
+        format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0)
+    }
+
+    unsafe fn text_value(ft: *mut format_tree, key: &CStr) -> Option<CString> {
+        match format_entry_get_value(ft, key) {
+            Some(FormatValue::String(value)) => Some(value),
+            _ => None,
+        }
     }
 
     #[test]
-    fn owned_callbacks_cache_absence_and_allow_reentrant_replacement() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static CALLS: AtomicUsize = AtomicUsize::new(0);
-        fn replace_during_callback(ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
-            CALLS.fetch_add(1, Ordering::Relaxed);
-            unsafe {
-                format_add(ft.as_ptr(), c"owned".as_ptr(), |out| {
-                    out.write_all(b"temporary")
-                })
-            };
-            Some(CString::new(b"owned\xff".to_vec()).unwrap())
-        }
-        fn absent(_ft: std::ptr::NonNull<format_tree>) -> Option<CString> {
-            CALLS.fetch_add(1, Ordering::Relaxed);
-            None
-        }
+    fn owned_callbacks_cache_values_and_absence_until_replaced() {
         unsafe {
-            CALLS.store(0, Ordering::Relaxed);
-            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
-            let mut probe: format_entry = format_entry::empty();
-            probe.key = ::std::ffi::CStr::from_ptr(c"owned".as_ptr().cast_mut()).to_owned();
-            format_add_owned_cb(ft, c"owned", replace_during_callback);
-            let entry = format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe);
-            assert!((*entry).value.is_none());
-            assert_eq!(CALLS.load(Ordering::Relaxed), 0);
-            format_entry_ensure_value(ft, entry);
-            format_entry_ensure_value(ft, entry);
-            assert_eq!(CALLS.load(Ordering::Relaxed), 1);
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"temporary"
-            );
-            assert!((*entry).owned_cb.is_none());
-
-            format_add_owned_cb(ft, c"owned", absent);
-            format_entry_ensure_value(ft, entry);
-            format_entry_ensure_value(ft, entry);
-            assert_eq!(CALLS.load(Ordering::Relaxed), 2);
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                ),
-                c""
-            );
-
-            format_add_owned_cb(ft, c"owned", replace_during_callback);
-            format_add(ft, c"owned".as_ptr(), |out| out.write_all(b"literal"));
-            format_entry_ensure_value(ft, entry);
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                ),
-                c"literal"
-            );
-            assert!((*(entry as *mut format_entry)).owned_cb.is_none());
-
-            format_add_owned_cb(ft, c"owned", replace_during_callback);
+            let ft = tree();
+            let calls = Rc::new(Cell::new(0));
+            let observed = calls.clone();
+            format_add_owned_cb(ft, c"owned", move |_| {
+                observed.set(observed.get() + 1);
+                Some(CString::new(b"cached\xff".to_vec()).unwrap())
+            });
+            for _ in 0..2 {
+                assert_eq!(text_value(ft, c"owned").unwrap().as_bytes(), b"cached\xff");
+            }
+            assert_eq!(calls.get(), 1);
+            let observed = calls.clone();
+            format_add_owned_cb(ft, c"owned", move |_| {
+                observed.set(observed.get() + 1);
+                None
+            });
+            for _ in 0..2 {
+                assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"");
+            }
+            assert_eq!(calls.get(), 2);
+            format_add_cstr(ft, c"owned", c"literal");
+            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"literal");
             let mut tv = timeval {
                 tv_sec: 123,
                 tv_usec: 0,
             };
-            format_add_tv(ft, c"owned".as_ptr(), &raw mut tv);
-            assert_eq!((*entry).time, 123);
-            assert!((*(entry as *mut format_entry)).owned_cb.is_none());
-
-            format_add_owned_cb(ft, c"owned", replace_during_callback);
-            format_add_owned_cb(ft, c"owned", cached_test_value);
-            format_entry_ensure_value(ft, entry);
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"cached\xff"
-            );
-            assert_eq!(CALLS.load(Ordering::Relaxed), 2);
+            format_add_tv(ft, c"owned".as_ptr(), &mut tv);
+            assert!(matches!(
+                format_entry_get_value(ft, c"owned"),
+                Some(FormatValue::Time(123))
+            ));
+            assert_eq!(calls.get(), 2);
             format_free(ft);
         }
     }
 
     #[test]
-    fn format_entry_owns_replacements_and_cached_callback_values() {
+    fn boxed_entries_preserve_identity_and_borrow_values_during_replacement() {
         unsafe {
-            let ft = format_create(::core::ptr::null_mut(), ::core::ptr::null_mut(), 0, 0);
-            let key = b"custom\xff\0".as_ptr() as *const ::core::ffi::c_char;
-            let first = b"first\xff\0".as_ptr() as *const ::core::ffi::c_char;
-            format_add(ft, key, |out| write_cstr(out, first));
-            let mut probe = format_entry {
-                owned_cb: None,
-                key: ::std::ffi::CStr::from_ptr(key as *mut _).to_owned(),
-                value: Default::default(),
-                time: 0,
-            };
-            let entry = format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe);
-            assert!(!entry.is_null());
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"first\xff"
-            );
-
-            // The old value remains alive while the formatter reads its bytes.
-            format_add(ft, key, |out| {
-                write_cstr(
-                    out,
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )?;
+            let ft = tree();
+            let key = CString::new(b"custom\xff".to_vec()).unwrap();
+            let first = CString::new(b"first\xff".to_vec()).unwrap();
+            format_add_cstr(ft, &key, &first);
+            let address = format_entry_tree_find(&(*ft).tree, &key).unwrap() as *const _ as usize;
+            for i in 0..128 {
+                let key = CString::new(format!("extra-{i}")).unwrap();
+                format_add_cstr(ft, &key, c"extra");
+            }
+            let entry = format_entry_tree_find(&(*ft).tree, &key).unwrap();
+            // The writer finishes borrowing the old bytes before replacement.
+            format_add(ft, key.as_ptr(), |out| {
+                out.write_all(entry.state.text().unwrap().to_bytes())?;
                 out.write_all(b"-next")
             });
+            assert_eq!(text_value(ft, &key).unwrap().as_bytes(), b"first\xff-next");
             assert_eq!(
-                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
-                entry
+                format_entry_tree_find(&(*ft).tree, &key).unwrap() as *const _ as usize,
+                address
             );
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"first\xff-next"
-            );
+            let entry = (*ft).tree.entries.remove(key.as_bytes()).unwrap();
+            format_free(ft);
+            assert_eq!(entry.key, key);
+            assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
+        }
+    }
 
-            format_add_owned_cb(ft, CStr::from_ptr(key), cached_test_value);
-            assert_eq!(
-                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
-                entry
-            );
-            assert!((*entry).value.is_none());
-            format_entry_ensure_value(ft, entry);
-            assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"cached\xff"
-            );
+    #[test]
+    fn lazy_callbacks_can_replace_remove_and_reinsert_their_own_entry() {
+        unsafe {
+            let ft = tree();
+            format_add_owned_cb(ft, c"owned", |ft| {
+                format_add_cstr(ft.as_ptr(), c"owned", c"replacement");
+                Some(c"stale".to_owned())
+            });
+            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"replacement");
 
+            format_add_owned_cb(ft, c"owned", |ft| {
+                let removed = (*ft.as_ptr()).tree.entries.remove(b"owned".as_slice());
+                drop(removed);
+                Some(c"stale".to_owned())
+            });
+            assert!(text_value(ft, c"owned").is_none());
+            assert!(format_entry_tree_find(&(*ft).tree, c"owned").is_none());
+
+            let replacement_calls = Rc::new(Cell::new(0));
+            let observed = replacement_calls.clone();
+            format_add_owned_cb(ft, c"owned", move |ft| {
+                let removed = (*ft.as_ptr()).tree.entries.remove(b"owned".as_slice());
+                drop(removed);
+                let observed = observed.clone();
+                format_add_owned_cb(ft.as_ptr(), c"owned", move |_| {
+                    observed.set(observed.get() + 1);
+                    Some(c"new callback".to_owned())
+                });
+                Some(c"stale".to_owned())
+            });
+            // Replacement callbacks run on the next lookup, never as the old callback.
+            assert!(text_value(ft, c"owned").is_none());
+            assert_eq!(replacement_calls.get(), 0);
+            assert_eq!(
+                text_value(ft, c"owned").unwrap().as_c_str(),
+                c"new callback"
+            );
+            assert_eq!(replacement_calls.get(), 1);
+
+            format_add_owned_cb(ft, c"owned", |ft| {
+                assert!(text_value(ft.as_ptr(), c"owned").is_none());
+                for i in 0..128 {
+                    let key = CString::new(format!("extra-{i}")).unwrap();
+                    format_add_cstr(ft.as_ptr(), &key, c"extra");
+                }
+                Some(c"recursive".to_owned())
+            });
+            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recursive");
+            format_free(ft);
+        }
+    }
+
+    #[test]
+    fn stale_evaluation_cannot_cache_into_a_reinserted_entry_after_unwind() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        unsafe {
+            let ft = tree();
+            format_add_owned_cb(ft, c"owned", |ft| {
+                drop((*ft.as_ptr()).tree.entries.remove(b"owned".as_slice()));
+                format_add_owned_cb(ft.as_ptr(), c"owned", |_| panic!("replacement callback"));
+                assert!(catch_unwind(AssertUnwindSafe(|| text_value(ft.as_ptr(), c"owned"))).is_err());
+                Some(c"stale".to_owned())
+            });
+            assert!(text_value(ft, c"owned").is_none());
+            assert!(matches!(
+                format_entry_tree_find(&(*ft).tree, c"owned").unwrap().state,
+                FormatEntryState::Evaluating(_)
+            ));
+            format_add_cstr(ft, c"owned", c"recovered");
+            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recovered");
+            format_free(ft);
+        }
+    }
+
+    #[test]
+    fn expansion_resolves_the_entry_again_after_a_callback_removes_it() {
+        use crate::src::options::{options_create, options_free};
+        unsafe {
+            let saved = (global_options, global_w_options, global_s_options);
+            global_options = options_create(std::ptr::null_mut());
+            global_w_options = options_create(std::ptr::null_mut());
+            global_s_options = options_create(std::ptr::null_mut());
+            let ft = tree();
+            format_add_owned_cb(ft, c"custom_removed_entry", |ft| {
+                drop(
+                    (*ft.as_ptr())
+                        .tree
+                        .entries
+                        .remove(b"custom_removed_entry".as_slice()),
+                );
+                Some(c"stale".to_owned())
+            });
+            assert_eq!(
+                format_expand_cstring(ft, c"before#{custom_removed_entry}after".as_ptr()).as_c_str(),
+                c"beforeafter"
+            );
+            format_free(ft);
+            options_free(global_options);
+            options_free(global_w_options);
+            options_free(global_s_options);
+            (global_options, global_w_options, global_s_options) = saved;
+        }
+    }
+
+    struct RecordDrop(u8, Rc<RefCell<Vec<u8>>>);
+    impl Drop for RecordDrop {
+        fn drop(&mut self) {
+            self.1.borrow_mut().push(self.0);
+        }
+    }
+
+    #[test]
+    fn cached_captures_drop_on_replacement_and_remaining_entries_drop_in_key_order() {
+        unsafe {
+            let ft = tree();
+            let drops = Rc::new(RefCell::new(Vec::new()));
+            for (key, id) in [(c"beta", 2), (c"alpha", 1), (c"replace", 3)] {
+                let record = RecordDrop(id, drops.clone());
+                format_add_owned_cb(ft, key, move |_| {
+                    let _keep_capture = &record;
+                    Some(c"cached".to_owned())
+                });
+                assert_eq!(text_value(ft, key).unwrap().as_c_str(), c"cached");
+            }
+            assert!(drops.borrow().is_empty());
+            format_add_cstr(ft, c"replace", c"literal");
+            assert_eq!(*drops.borrow(), [3]);
+            format_free(ft);
+            assert_eq!(*drops.borrow(), [3, 1, 2]);
+        }
+    }
+
+    #[test]
+    fn callback_capture_cleanup_can_add_entries_during_replacement_and_free() {
+        struct Reenter {
+            ft: std::ptr::NonNull<format_tree>,
+            calls: Rc<Cell<usize>>,
+        }
+        impl Drop for Reenter {
+            fn drop(&mut self) {
+                self.calls.set(self.calls.get() + 1);
+                unsafe { format_add_cstr(self.ft.as_ptr(), c"from-drop", c"created") };
+            }
+        }
+        unsafe {
+            let ft = tree();
+            let calls = Rc::new(Cell::new(0));
+            for replace in [true, false] {
+                let capture = Reenter {
+                    ft: std::ptr::NonNull::new(ft).unwrap(),
+                    calls: calls.clone(),
+                };
+                format_add_owned_cb(ft, c"capture", move |_| {
+                    let _keep_capture = &capture;
+                    None
+                });
+                if replace {
+                    format_add_cstr(ft, c"capture", c"replacement");
+                    assert_eq!(calls.get(), 1);
+                    assert_eq!(text_value(ft, c"from-drop").unwrap().as_c_str(), c"created");
+                }
+            }
+            format_free(ft);
+            assert_eq!(calls.get(), 2);
+        }
+    }
+
+    #[test]
+    fn merge_copies_only_materialized_values_and_supports_the_same_tree() {
+        unsafe {
+            let source = tree();
+            let destination = tree();
+            format_add_cstr(source, c"literal", c"text");
+            format_add_owned_cb(source, c"cached", |_| Some(c"value".to_owned()));
+            assert_eq!(text_value(source, c"cached").unwrap().as_c_str(), c"value");
+            format_add_owned_cb(source, c"lazy", |_| {
+                panic!("merge must not evaluate callbacks")
+            });
             let mut tv = timeval {
                 tv_sec: 123,
                 tv_usec: 0,
             };
-            format_add_tv(ft, key, &raw mut tv);
+            format_add_tv(source, c"time".as_ptr(), &mut tv);
+            format_merge(destination, source);
             assert_eq!(
-                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
-                entry
-            );
-            assert!((*entry).value.is_none());
-            assert_eq!((*entry).time, 123);
-
-            format_add(ft, key, |out| {
-                write_cstr(out, b"final\0".as_ptr() as *const ::core::ffi::c_char)
-            });
-            assert_eq!(
-                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
-                entry
+                text_value(destination, c"literal").unwrap().as_c_str(),
+                c"text"
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*entry).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
-                b"final"
+                text_value(destination, c"cached").unwrap().as_c_str(),
+                c"value"
             );
-            format_free(ft);
+            assert!(format_entry_tree_find(&(*destination).tree, c"lazy").is_none());
+            assert!(format_entry_tree_find(&(*destination).tree, c"time").is_none());
+            format_merge(destination, destination);
+            assert_eq!(
+                text_value(destination, c"cached").unwrap().as_c_str(),
+                c"value"
+            );
+            format_free(source);
+            format_free(destination);
         }
     }
 }
