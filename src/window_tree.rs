@@ -1729,7 +1729,7 @@ unsafe fn window_tree_init(
         each: 0,
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
-    (*wme).data_owner = Some(Box::new(owner));
+    (*wme).data_owner = Some(owner);
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = window_pane_weak(wp);
     if args_has(args, 's' as i32 as u_char) != 0 {

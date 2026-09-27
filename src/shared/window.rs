@@ -144,7 +144,7 @@ pub struct window_mode_entry {
     pub mode: &'static window_mode,
     pub data: *mut ::core::ffi::c_void,
     /// Typed owner for mode data; `data` is only a borrowed callback view.
-    pub data_owner: Option<Box<dyn std::any::Any>>,
+    pub data_owner: Option<std::rc::Rc<dyn std::any::Any>>,
     pub screen: *mut screen,
     pub prefix: u_int,
     pub kill: ::core::ffi::c_int,
