@@ -120,7 +120,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
     let mut groupwith: *mut session = ::core::ptr::null_mut::<session>();
     let mut env: Option<Box<environ>> = None;
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
+    let mut oo: Option<Box<options>> = None;
     let mut tio: termios = termios {
         c_iflag: 0,
         c_oflag: 0,
@@ -500,7 +500,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         if sy == 0 as u_int {
                                                             sy = 1 as u_int;
                                                         }
-                                                        oo = options_create(global_s_options);
+                                                        oo = Some(crate::src::options::options_create_owned(global_s_options));
                                                         if args_has(args, 'x' as i32 as u_char) != 0
                                                             || args_has(args, 'y' as i32 as u_char)
                                                                 != 0
@@ -516,7 +516,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 dsy = sy;
                                                             }
                                                             options_set_string(
-                                                                oo,
+                                                                &mut **oo.as_mut().expect("new session options"),
                                                                 b"default-size\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                                 0 as ::core::ffi::c_int,
@@ -564,7 +564,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             cwd,
                                                             env.take()
                                                                 .expect("new session environment"),
-                                                            oo,
+                                                            oo.take(),
                                                             tiop,
                                                         );
                                                         s = session_owner.get();

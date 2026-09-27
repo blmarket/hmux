@@ -304,7 +304,7 @@ pub unsafe fn session_create(
     mut name: *const ::core::ffi::c_char,
     mut cwd: *const ::core::ffi::c_char,
     env: Box<environ>,
-    mut oo: *mut options,
+    oo: Option<Box<options>>,
     mut tio: *mut termios,
 ) -> Rc<UnsafeCell<session>> {
     let owner = session::new();
@@ -320,12 +320,7 @@ pub unsafe fn session_create(
     (*s).lastw.storage = None;
     (*s).windows.storage = None;
     (*s).environ = Some(env);
-    // session_create consumes the caller's option-root allocation.
-    (*s).options = if oo.is_null() {
-        None
-    } else {
-        Some(Box::from_raw(oo))
-    };
+    (*s).options = oo;
     status_update_cache(s);
     if !name.is_null() {
         drop(session_replace_name(
