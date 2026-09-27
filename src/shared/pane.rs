@@ -161,8 +161,8 @@ pub struct window_pane {
     pub xoff: ::core::ffi::c_int,
     pub yoff: ::core::ffi::c_int,
     pub flags: ::core::ffi::c_int,
-    /// Pane-owned boxed bitmap; `sync_dirty_size` records rows for its byte length.
-    pub sync_dirty: *mut bitstr_t,
+    /// Owns the bitmap for synchronized output; readers borrow its bytes.
+    pub sync_dirty: Option<Box<[bitstr_t]>>,
     pub sync_dirty_size: u_int,
     pub sb_slider_y: u_int,
     pub sb_slider_h: u_int,

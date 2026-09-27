@@ -271,18 +271,16 @@ unsafe fn screen_write_should_draw_lines(
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     let mut s: *mut screen = ctx.s;
     let mut sy: u_int = (*s).grid().sy;
-    let mut bs: *mut bitstr_t = ::core::ptr::null_mut::<bitstr_t>();
     if !wp.is_null() && (*wp).flags & (PANE_REDRAW | PANE_DROP) != 0 {
         return 0 as ::core::ffi::c_int;
     }
     if (*s).mode & MODE_SYNC != 0 {
         if !wp.is_null() && y < sy && ny != 0 as u_int {
-            bs = (*wp).sync_dirty;
             if ny > sy.wrapping_sub(y) {
                 ny = sy.wrapping_sub(y);
             }
-            if bs.is_null() || (*wp).sync_dirty_size != sy {
-                if !bs.is_null() && (*wp).sync_dirty_size != sy {
+            if (*wp).sync_dirty.is_none() || (*wp).sync_dirty_size != sy {
+                if (*wp).sync_dirty.is_some() && (*wp).sync_dirty_size != sy {
                     y = 0 as u_int;
                     ny = sy;
                 }
@@ -293,20 +291,12 @@ unsafe fn screen_write_should_draw_lines(
                     fatal(|out| out.write_all(b"bit_alloc failed"));
                 }
                 dirty.resize(bytes, 0);
-                (*wp).sync_dirty = Box::into_raw(dirty.into_boxed_slice()) as *mut bitstr_t;
-                bs = (*wp).sync_dirty;
+                (*wp).sync_dirty = Some(dirty.into_boxed_slice());
                 (*wp).sync_dirty_size = sy;
             }
-            let mut _name: *mut bitstr_t = bs;
-            let mut _start: ::core::ffi::c_int = y as ::core::ffi::c_int;
-            let mut _stop: ::core::ffi::c_int =
-                y.wrapping_add(ny).wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-            while _start <= _stop {
-                let ref mut fresh2 = *_name.offset((_start >> 3 as ::core::ffi::c_int) as isize);
-                *fresh2 = (*fresh2 as ::core::ffi::c_int
-                    | (1 as ::core::ffi::c_int) << (_start & 0x7 as ::core::ffi::c_int))
-                    as bitstr_t;
-                _start += 1;
+            let dirty = (*wp).sync_dirty.as_mut().expect("dirty bitmap allocated");
+            for row in y..y + ny {
+                dirty[(row >> 3) as usize] |= 1 << (row & 7);
             }
         }
         return 0 as ::core::ffi::c_int;
@@ -1372,7 +1362,7 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
     let mut y: u_int = 0;
     let mut sy: u_int = (*s).grid().sy;
     let mut lines: u_int = 0 as u_int;
-    if (*wp).sync_dirty.is_null() {
+    if (*wp).sync_dirty.is_none() {
         return;
     }
     screen_write_start_pane(&mut ctx, wp, s);
@@ -1384,12 +1374,8 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
     );
     y = 0 as u_int;
     while y < sy {
-        if *(*wp)
-            .sync_dirty
-            .offset((y >> 3 as ::core::ffi::c_int) as isize) as ::core::ffi::c_int
-            & (1 as ::core::ffi::c_int) << (y & 0x7 as u_int)
-            != 0
-        {
+        let dirty = (*wp).sync_dirty.as_ref().expect("dirty bitmap present");
+        if dirty[(y >> 3) as usize] & (1 << (y & 7)) != 0 {
             screen_write_redraw_line(&mut ctx, &mut ttyctx, y, &mut r);
             lines = lines.wrapping_add(1);
         }
@@ -1404,16 +1390,13 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
     screen_write_stop(&mut ctx);
     screen_write_clear_dirty(wp);
 }
-pub unsafe fn screen_write_clear_dirty(mut wp: *mut window_pane) {
-    if !wp.is_null() && !(*wp).sync_dirty.is_null() {
-        let bytes =
-            ((*wp).sync_dirty_size.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize;
-        let dirty = ::core::ptr::slice_from_raw_parts_mut((*wp).sync_dirty, bytes);
-        drop(Box::from_raw(dirty));
-        (*wp).sync_dirty = ::core::ptr::null_mut::<bitstr_t>();
-        (*wp).sync_dirty_size = 0 as u_int;
+pub unsafe fn screen_write_clear_dirty(wp: *mut window_pane) {
+    if let Some(wp) = wp.as_mut() {
+        wp.sync_dirty = None;
+        wp.sync_dirty_size = 0;
     }
 }
+
 unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_ctx) {
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
@@ -3492,6 +3475,45 @@ mod write_ctx_tests {
     impl Drop for DropCounter {
         fn drop(&mut self) {
             self.0.set(self.0.get() + 1);
+        }
+    }
+
+    #[test]
+    fn synchronized_dirty_rows_reallocate_on_resize_and_clear_on_release() {
+        unsafe {
+            let mut pane = Box::new(window_pane::empty());
+            pane.base.grid = Some(crate::src::grid::grid_create(8, 10, 0));
+            pane.base.mode |= MODE_SYNC;
+            let mut ctx = screen_write_ctx {
+                wp: &raw mut *pane,
+                s: &raw mut pane.base,
+                ..Default::default()
+            };
+
+            assert_eq!(screen_write_should_draw_lines(&mut ctx, 10, 1), 0);
+            assert!(pane.sync_dirty.is_none());
+            assert_eq!(screen_write_should_draw_lines(&mut ctx, 7, 100), 0);
+            assert_eq!(pane.sync_dirty.as_deref(), Some([0x80, 0x03].as_slice()));
+            let address = pane.sync_dirty.as_ref().unwrap().as_ptr() as usize;
+            screen_write_should_draw_lines(&mut ctx, 1, 2);
+            assert_eq!(pane.sync_dirty.as_ref().unwrap().as_ptr() as usize, address);
+            assert_eq!(pane.sync_dirty.as_deref(), Some([0x86, 0x03].as_slice()));
+
+            // Changing dimensions marks every row, including previously clean rows.
+            pane.base.grid = Some(crate::src::grid::grid_create(8, 17, 0));
+            screen_write_should_draw_lines(&mut ctx, 16, 1);
+            assert_eq!(pane.sync_dirty_size, 17);
+            assert_eq!(pane.sync_dirty.as_deref(), Some([0xff, 0xff, 1].as_slice()));
+            screen_write_clear_dirty(&mut *pane);
+            assert!(pane.sync_dirty.is_none());
+            assert_eq!(pane.sync_dirty_size, 0);
+            screen_write_clear_dirty(&mut *pane);
+            screen_write_clear_dirty(std::ptr::null_mut());
+
+            screen_write_should_draw_lines(&mut ctx, 0, 1);
+            assert_eq!(pane.sync_dirty.as_deref(), Some([1, 0, 0].as_slice()));
+            // The pane owner also releases a populated bitmap without explicit cleanup.
+            drop(pane);
         }
     }
 

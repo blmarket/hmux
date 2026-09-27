@@ -2228,7 +2228,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         xoff: 0,
         yoff: 0,
         flags: 0,
-        sync_dirty: ::core::ptr::null_mut::<bitstr_t>(),
+        sync_dirty: None,
         sync_dirty_size: 0,
         sb_slider_y: 0,
         sb_slider_h: 0,
