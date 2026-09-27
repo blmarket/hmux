@@ -7,8 +7,7 @@ use crate::src::cmd::find::{
     cmd_find_target, cmd_find_valid_state,
 };
 use crate::src::cmd::{
-    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_first, cmd_list_free,
-    cmd_list_next, cmd_print_cstring,
+    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_free, cmd_print_cstring,
 };
 use crate::src::control::{control_write, control_write_guard};
 use crate::src::events::events_fire;
@@ -503,11 +502,9 @@ pub unsafe fn cmdq_get_command(
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut first: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut last: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut created: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    cmd = cmd_list_first(cmdlist);
-    if cmd.is_null() {
+    if (*cmdlist).list.is_empty() {
         return cmdq_get_callback_owned(
             b"cmdq_empty_command\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| CMD_RETURN_NORMAL)),
@@ -521,7 +518,8 @@ pub unsafe fn cmdq_get_command(
         );
         created = 1 as ::core::ffi::c_int;
     }
-    while !cmd.is_null() {
+    for command in &mut (*cmdlist).list {
+        let cmd = &mut **command as *mut cmd;
         entry = cmd_get_entry(cmd);
         item = cmdq_new_named_item(Some((*entry).name));
         (*item).type_0 = CMDQ_COMMAND;
@@ -548,7 +546,6 @@ pub unsafe fn cmdq_get_command(
             (*last).next = item;
         }
         last = item;
-        cmd = cmd_list_next(cmd);
     }
     if created != 0 {
         cmdq_free_state(state);

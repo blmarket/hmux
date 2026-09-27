@@ -1,9 +1,9 @@
 use std::ffi::CStr;
 
-use hmux2::src::cmd::{cmd_copy, cmd_free, cmd_parse};
+use hmux2::src::cmd::{cmd_copy, cmd_parse};
 use hmux2::src::shared::arguments::args_value;
 
-unsafe fn parse_display_message(file: Option<&CStr>) -> *mut hmux2::src::cmd::cmd {
+unsafe fn parse_display_message(file: Option<&CStr>) -> Box<hmux2::src::cmd::cmd> {
     let command_name = c"display-message";
     let mut value = args_value::borrowed_string(command_name.as_ptr());
     cmd_parse(&mut value, 1, file, 37, 0).expect("command parse reported an error")
@@ -16,7 +16,6 @@ fn filename_survives_input_mutation_and_original_command_free() {
         let command = parse_display_message(Some(CStr::from_bytes_with_nul(&filename).unwrap()));
         let copied = cmd_copy(&*command, &Vec::new());
 
-        assert!(!copied.is_null());
         assert_ne!(
             (*command).file.as_ref().unwrap().as_ptr(),
             filename.as_ptr().cast()
@@ -48,7 +47,7 @@ fn filename_survives_input_mutation_and_original_command_free() {
         );
         assert_eq!((*copied).line, 37);
 
-        cmd_free(command);
+        drop(command);
         assert_eq!(
             CStr::from_ptr(
                 ((*copied).file)
@@ -58,7 +57,7 @@ fn filename_survives_input_mutation_and_original_command_free() {
             .to_bytes(),
             b"source-\xff.conf"
         );
-        cmd_free(copied);
+        drop(copied);
     }
 }
 
@@ -69,7 +68,7 @@ fn absent_filename_stays_null_in_copy() {
         let copied = cmd_copy(&*command, &Vec::new());
         assert!((*command).file.is_none());
         assert!((*copied).file.is_none());
-        cmd_free(command);
-        cmd_free(copied);
+        drop(command);
+        drop(copied);
     }
 }

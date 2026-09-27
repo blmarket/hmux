@@ -223,8 +223,8 @@ pub struct cmd_find_state {
 #[derive(Default)]
 pub struct cmd_list {
     pub group: u_int,
-    /// Owned command pointer array, released with the final `cmd_list_free` reference.
-    pub list: Vec<*mut cmd>,
+    /// Box-owned commands, released with the final command-list reference.
+    pub list: Vec<Box<cmd>>,
 }
 
 #[repr(C)]

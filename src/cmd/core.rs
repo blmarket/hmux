@@ -104,16 +104,7 @@ use crate::src::tmux::global_options;
 use crate::src::window::{
     window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
 };
-use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::sync::{Mutex, OnceLock};
-
-// `cmd_list_next` receives only an element pointer, so keep its owner and index
-// in a side table rather than putting neighbor links back in `cmd`.
-fn cmd_list_memberships() -> &'static Mutex<HashMap<usize, (usize, usize)>> {
-    static MEMBERSHIPS: OnceLock<Mutex<HashMap<usize, (usize, usize)>>> = OnceLock::new();
-    MEMBERSHIPS.get_or_init(|| Mutex::new(HashMap::new()))
-}
 
 pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
@@ -406,13 +397,11 @@ pub unsafe fn cmd_find(name: &CStr) -> Result<*const cmd_entry, CString> {
     };
 }
 
-unsafe fn cmd_new_owned(file: Option<&CStr>) -> *mut cmd {
-    let mut owner = Box::new(cmd {
+fn cmd_new_owned(file: Option<&CStr>) -> Box<cmd> {
+    Box::new(cmd {
         file: file.map(CStr::to_owned),
         ..cmd::empty()
-    });
-
-    Box::into_raw(owner).cast::<cmd>()
+    })
 }
 
 pub unsafe fn cmd_parse(
@@ -421,9 +410,8 @@ pub unsafe fn cmd_parse(
     file: Option<&CStr>,
     mut line: u_int,
     mut parse_flags: ::core::ffi::c_int,
-) -> Result<*mut cmd, CString> {
+) -> Result<Box<cmd>, CString> {
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     if count == 0 as u_int
         || (*values.offset(0 as ::core::ffi::c_int as isize)).type_0() as ::core::ffi::c_uint
             != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -450,26 +438,21 @@ pub unsafe fn cmd_parse(
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
     };
-    cmd = cmd_new_owned(file);
-    (*cmd).entry = entry;
-    (*cmd).args = Some(args);
-    (*cmd).parse_flags = parse_flags;
-    (*cmd).line = line;
+    let mut cmd = cmd_new_owned(file);
+    cmd.entry = entry;
+    cmd.args = Some(args);
+    cmd.parse_flags = parse_flags;
+    cmd.line = line;
     return Ok(cmd);
 }
-pub unsafe fn cmd_free(mut cmd: *mut cmd) {
-    drop((*cmd).args.take());
-    drop(Box::from_raw(cmd));
-}
-pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> *mut cmd {
-    let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    new_cmd = cmd_new_owned(cmd.file.as_deref());
-    (*new_cmd).entry = cmd.entry;
-    (*new_cmd).args = Some(args_copy(
+pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> Box<cmd> {
+    let mut new_cmd = cmd_new_owned(cmd.file.as_deref());
+    new_cmd.entry = cmd.entry;
+    new_cmd.args = Some(args_copy(
         cmd.args.as_deref().expect("parsed command arguments"),
         argv,
     ));
-    (*new_cmd).line = cmd.line;
+    new_cmd.line = cmd.line;
     return new_cmd;
 }
 pub unsafe fn cmd_print(cmd: &cmd) -> CString {
@@ -503,68 +486,33 @@ pub unsafe fn cmd_list_new() -> *mut cmd_list {
     (*cmdlist).group = fresh6;
     return cmdlist;
 }
-pub unsafe fn cmd_list_append(mut cmdlist: *mut cmd_list, mut cmd: *mut cmd) {
-    (*cmd).group = (*cmdlist).group;
-    let commands = &mut (*cmdlist).list;
-    let mut memberships = cmd_list_memberships()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    memberships.insert(cmd as usize, (cmdlist as usize, commands.len()));
-    commands.push(cmd);
+pub unsafe fn cmd_list_append(cmdlist: *mut cmd_list, mut command: Box<cmd>) {
+    command.group = (*cmdlist).group;
+    (*cmdlist).list.push(command);
 }
-pub unsafe fn cmd_list_append_all(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
+pub unsafe fn cmd_list_append_all(cmdlist: *mut cmd_list, from: *mut cmd_list) {
     if cmdlist == from {
         return;
     }
-    let destination = &mut (*cmdlist).list;
-    let source = &mut (*from).list;
-    let mut memberships = cmd_list_memberships()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let offset = destination.len();
-    for (index, &cmd) in source.iter().enumerate() {
-        (*cmd).group = (*cmdlist).group;
-        memberships.insert(cmd as usize, (cmdlist as usize, offset + index));
+    let group = (*cmdlist).group;
+    for command in &mut (*from).list {
+        command.group = group;
     }
-    destination.append(source);
+    (*cmdlist).list.append(&mut (*from).list);
 }
-pub unsafe fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
+pub unsafe fn cmd_list_move(cmdlist: *mut cmd_list, from: *mut cmd_list) {
     if cmdlist != from {
-        let destination = &mut (*cmdlist).list;
-        let source = &mut (*from).list;
-        let mut memberships = cmd_list_memberships()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let offset = destination.len();
-        for (index, &cmd) in source.iter().enumerate() {
-            memberships.insert(cmd as usize, (cmdlist as usize, offset + index));
-        }
-        destination.append(source);
+        (*cmdlist).list.append(&mut (*from).list);
     }
-    let fresh8 = cmd_list_next_group;
+    let group = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
-    (*cmdlist).group = fresh8;
+    (*cmdlist).group = group;
 }
 pub unsafe fn cmd_list_free(cmdlist: *mut cmd_list) {
     crate::src::shared::rc::release(cmdlist);
 }
-unsafe fn cmd_list_destroy(cmdlist: *mut cmd_list) {
-    let commands = std::mem::take(&mut (*cmdlist).list);
-    {
-        let mut memberships = cmd_list_memberships()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for &cmd in &commands {
-            memberships.remove(&(cmd as usize));
-        }
-    }
-    for cmd in commands {
-        cmd_free(cmd);
-    }
-}
 pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd_list {
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(format_args!(
@@ -573,14 +521,14 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
         log_bytes(s.as_bytes())
     ));
     new_cmdlist = cmd_list_new();
-    for &cmd in &cmdlist.list {
+    for cmd in &cmdlist.list {
         if (*cmd).group != group {
             let fresh7 = cmd_list_next_group;
             cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
             (*new_cmdlist).group = fresh7;
             group = (*cmd).group;
         }
-        new_cmd = cmd_copy(&*cmd, argv);
+        let new_cmd = cmd_copy(cmd, argv);
         cmd_list_append(new_cmdlist, new_cmd);
     }
     let s = cmd_list_print_cstring(&*new_cmdlist, 0);
@@ -594,11 +542,11 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
 pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();
     let commands = &cmdlist.list;
-    for (index, &cmd) in commands.iter().enumerate() {
+    for (index, cmd) in commands.iter().enumerate() {
         let this = cmd_print_cstring(&*cmd);
         buf.extend_from_slice(this.as_bytes());
 
-        if let Some(&next) = commands.get(index + 1) {
+        if let Some(next) = commands.get(index + 1) {
             let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && (*cmd).group != (*next).group;
             let separator: &[u8] = match (flags & CMD_LIST_PRINT_ESCAPED != 0, grouped) {
                 (false, false) => b" ; ",
@@ -616,32 +564,12 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
 pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: ::core::ffi::c_int) -> CString {
     cmd_list_print_cstring(cmdlist, flags)
 }
-pub unsafe fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {
-    return (*cmdlist)
-        .list
-        .first()
-        .copied()
-        .unwrap_or(::core::ptr::null_mut());
-}
-pub unsafe fn cmd_list_next(mut cmd: *mut cmd) -> *mut cmd {
-    if cmd.is_null() {
-        return ::core::ptr::null_mut();
-    }
-    let memberships = cmd_list_memberships()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(&(cmdlist, index)) = memberships.get(&(cmd as usize)) {
-        let commands = &(*(cmdlist as *mut cmd_list)).list;
-        return commands
-            .get(index + 1)
-            .copied()
-            .unwrap_or(::core::ptr::null_mut());
-    }
-    return ::core::ptr::null_mut();
+pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<&cmd> {
+    cmdlist.list.first().map(Box::as_ref)
 }
 pub unsafe fn cmd_list_all_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
-    for &cmd in &(*cmdlist).list {
+    for cmd in &(*cmdlist).list {
         if !(*(*cmd).entry).flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -650,7 +578,7 @@ pub unsafe fn cmd_list_all_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_in
 }
 pub unsafe fn cmd_list_any_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
-    for &cmd in &(*cmdlist).list {
+    for cmd in &(*cmdlist).list {
         if (*(*cmd).entry).flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -874,11 +802,5 @@ mod template_replace_tests {
             )
         };
         assert_eq!(owned.as_bytes(), b"x");
-    }
-}
-
-impl Drop for cmd_list {
-    fn drop(&mut self) {
-        unsafe { cmd_list_destroy(self) }
     }
 }

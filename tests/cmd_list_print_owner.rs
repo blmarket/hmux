@@ -1,11 +1,11 @@
 use hmux2::src::arguments::{
-    args_create, args_print, args_push_positional_commands, args_set_flag,
-    args_set_owned_commands, args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
+    args_create, args_print, args_push_positional_commands, args_set_flag, args_set_owned_commands,
+    args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
 };
 use hmux2::src::cmd::{
-    cmd, cmd_free, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_first,
-    cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print, cmd_parse,
-    cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
+    cmd, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_free, cmd_list_move,
+    cmd_list_new, cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED,
+    CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::args_value;
 use std::ffi::CString;
@@ -49,7 +49,7 @@ fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
     }
 }
 
-unsafe fn display_message_command() -> *mut cmd {
+unsafe fn display_message_command() -> Box<cmd> {
     let mut value = args_value::borrowed_string(c"display-message".as_ptr());
     cmd_parse(&mut value, 1, None, 0, 0).expect("command parse reported an error")
 }
@@ -60,7 +60,7 @@ fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
         let command = display_message_command();
         let printed = cmd_print(&*command);
         assert_eq!(printed.as_bytes(), b"display-message");
-        cmd_free(command);
+        drop(command);
     }
 }
 
@@ -75,10 +75,8 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             let item = display_message_command();
             cmd_list_append(list, item);
         }
-        let first = cmd_list_first(list);
-        let second = cmd_list_next(first);
-        let third = cmd_list_next(second);
-        (*third).group = (*second).group.wrapping_add(1);
+        let commands = &mut (*list).list;
+        commands[2].group = commands[1].group.wrapping_add(1);
 
         let name = b"display-message";
         for (flags, separator1, separator2) in [
@@ -128,50 +126,98 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
 }
 
 #[test]
-fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
+fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
+    fn addresses(list: &hmux2::src::shared::command::cmd_list) -> Vec<usize> {
+        list.list
+            .iter()
+            .map(|command| command.as_ref() as *const cmd as usize)
+            .collect()
+    }
     unsafe {
         let destination = cmd_list_new();
         let first = display_message_command();
+        let first_address = first.as_ref() as *const cmd as usize;
         cmd_list_append(destination, first);
-
         let source = cmd_list_new();
         let second = display_message_command();
+        let second_address = second.as_ref() as *const cmd as usize;
         cmd_list_append(source, second);
         cmd_list_append_all(destination, source);
-        assert!(cmd_list_first(source).is_null());
-        assert_eq!(cmd_list_first(destination), first);
-        assert_eq!(cmd_list_next(first), second);
+        assert!((*source).list.is_empty());
+        assert_eq!(addresses(&*destination), [first_address, second_address]);
 
         let tail = cmd_list_new();
         let third = display_message_command();
+        let third_address = third.as_ref() as *const cmd as usize;
         cmd_list_append(tail, third);
         cmd_list_move(destination, tail);
-        assert!(cmd_list_first(tail).is_null());
-        assert_eq!(cmd_list_next(second), third);
-        assert!(cmd_list_next(third).is_null());
+        assert!((*tail).list.is_empty());
+        let original = vec![first_address, second_address, third_address];
+        assert_eq!(addresses(&*destination), original);
+        // Self append/move remain valid no-ops for storage ownership.
+        cmd_list_append_all(destination, destination);
+        cmd_list_move(destination, destination);
+        assert_eq!(addresses(&*destination), original);
 
         let copied = cmd_list_copy(&*destination, &Vec::new());
-        let copied_first = cmd_list_first(copied);
-        let copied_second = cmd_list_next(copied_first);
-        let copied_third = cmd_list_next(copied_second);
-        assert!(!copied_first.is_null());
-        assert_ne!(copied_first, first);
-        assert_ne!(copied_second, second);
-        assert_ne!(copied_third, third);
-        assert!(cmd_list_next(copied_third).is_null());
-        let printed = cmd_list_print(&*copied, 0);
+        let copied_addresses = addresses(&*copied);
+        assert_eq!(copied_addresses.len(), original.len());
+        for address in &copied_addresses {
+            assert!(!original.contains(address));
+        }
         assert_eq!(
-            printed.as_bytes(),
+            cmd_list_print(&*copied, 0).as_bytes(),
             b"display-message ; display-message ;; display-message"
         );
 
         hmux2::src::shared::rc::retain(destination);
         cmd_list_free(destination);
-        assert_eq!(cmd_list_first(destination), first);
-        assert_eq!(cmd_list_next(second), third);
+        assert_eq!(addresses(&*destination), original);
         cmd_list_free(destination);
         cmd_list_free(source);
         cmd_list_free(tail);
         cmd_list_free(copied);
+    }
+}
+
+#[test]
+fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
+    use hmux2::src::cmd::queue::{cmdq_free_detached, cmdq_get_command};
+    use hmux2::src::shared::rc;
+    unsafe {
+        let nested = cmd_list_new();
+        let nested_observer = rc::downgrade(nested);
+        let mut values = vec![
+            args_value::string(c"if-shell".to_owned()),
+            args_value::string(c"-F".to_owned()),
+            args_value::string(c"1".to_owned()),
+            args_value::commands(nested),
+        ];
+        let command = cmd_parse(values.as_mut_ptr(), values.len() as u32, None, 0, 0).unwrap();
+        let address = command.as_ref() as *const cmd as usize;
+        drop(values);
+        assert_eq!(nested_observer.strong_count(), 1);
+        let list = cmd_list_new();
+        let list_observer = rc::downgrade(list);
+        cmd_list_append(list, command);
+        // Grow the owning vector after insertion; pointee addresses stay stable.
+        for _ in 0..32 {
+            cmd_list_append(list, display_message_command());
+        }
+        let mut item = cmdq_get_command(list, std::ptr::null_mut());
+        assert_eq!((*item).cmd as usize, address);
+        cmd_list_free(list);
+        let mut count = 0;
+        while !item.is_null() {
+            let next = (*item).next;
+            assert!(nested_observer.upgrade().is_some());
+            assert!(!cmd_print(&*(*item).cmd).as_bytes().is_empty());
+            cmdq_free_detached(item);
+            item = next;
+            count += 1;
+        }
+        assert_eq!(count, 33);
+        assert!(list_observer.upgrade().is_none());
+        assert!(nested_observer.upgrade().is_none());
     }
 }

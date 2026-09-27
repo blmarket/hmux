@@ -2,7 +2,7 @@ use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{
-    cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_list_free,
+    cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_list_free,
     cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
@@ -1126,11 +1126,10 @@ impl Drop for args_command_state {
 
 pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command_state) -> CString {
     if let Some(commands) = state.cmdlist.as_ref() {
-        let first = cmd_list_first(crate::src::shared::rc::as_ptr(commands));
-        if first.is_null() {
+        let Some(first) = cmd_list_first(&*rc::as_ptr(commands)) else {
             return CString::new(Vec::new()).expect("empty command name has no NUL");
-        }
-        return (*cmd_get_entry(first)).name.to_owned();
+        };
+        return (*first.entry).name.to_owned();
     }
     let command = state
         .cmd

@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_list_first};
+use crate::src::cmd::{cmd_get_args, cmd_list_first};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -104,7 +104,9 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = (*cmd_get_entry(cmd_list_first(rc::as_ptr(&cdata.cmdlist))))
+        cmd = (*cmd_list_first(&*rc::as_ptr(&cdata.cmdlist))
+            .expect("confirmation command")
+            .entry)
             .name
             .as_ptr();
         let mut bytes = b"Confirm '".to_vec();
