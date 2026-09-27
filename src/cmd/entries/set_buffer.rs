@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
@@ -64,7 +64,7 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let tc = cmdq_get_target_client(item);
     let name = args_get(args, b'b');
     let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());

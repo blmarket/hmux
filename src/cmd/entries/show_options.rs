@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
@@ -123,7 +123,7 @@ pub static cmd_show_hooks_entry: cmd_entry = {
 };
 unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let argument;
@@ -261,7 +261,7 @@ unsafe fn cmd_show_options_print(
     mut array_key: *const ::core::ffi::c_char,
     mut parent: ::core::ffi::c_int,
 ) {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = options_name(o);
@@ -401,7 +401,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     mut item: *mut cmdq_item,
     mut o: *mut options_entry,
 ) {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut type_0: monitor_type = MONITOR_SESSION;
     let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
@@ -527,7 +527,7 @@ unsafe fn cmd_show_options_all(
     mut scope: ::core::ffi::c_int,
     mut oo: *mut options,
 ) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

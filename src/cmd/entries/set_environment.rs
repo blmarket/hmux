@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::environ::{environ_clear, environ_set, environ_unset};
 use crate::src::ffi::libc::strchr;
@@ -40,7 +40,7 @@ pub static cmd_set_environment_entry: cmd_entry = {
 };
 unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let env: &mut environ;
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);

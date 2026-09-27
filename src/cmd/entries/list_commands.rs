@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::src::cmd::{cmd_find, cmd_get_args, cmd_table};
+use crate::src::cmd::{cmd_find, cmd_get_args_mut, cmd_table};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
@@ -78,7 +78,7 @@ unsafe fn cmd_list_single_command(
     }
 }
 unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

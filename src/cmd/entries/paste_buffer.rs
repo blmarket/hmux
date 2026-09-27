@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
@@ -46,7 +46,7 @@ unsafe fn cmd_paste_buffer_paste(wp: &window_pane, buf: &[u8]) {
     bufferevent_write(wp.event, escaped.as_ptr().cast(), escaped.len());
 }
 unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
     let pb;

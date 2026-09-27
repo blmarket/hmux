@@ -1,6 +1,6 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -70,7 +70,7 @@ pub static cmd_clock_mode_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut source: *mut cmd_find_state = cmdq_get_source(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

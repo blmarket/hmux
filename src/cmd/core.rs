@@ -267,11 +267,11 @@ pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<C
 pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
     cmd.entry
 }
-pub unsafe fn cmd_get_args(mut cmd: *mut cmd) -> *mut args {
-    return (*cmd)
-        .args
-        .as_deref_mut()
-        .map_or(std::ptr::null_mut(), |args| args);
+pub fn cmd_get_args(cmd: &cmd) -> Option<&args> {
+    cmd.args.as_deref()
+}
+pub fn cmd_get_args_mut(cmd: &mut cmd) -> Option<&mut args> {
+    cmd.args.as_deref_mut()
 }
 pub unsafe fn cmd_get_group(mut cmd: *mut cmd) -> u_int {
     return (*cmd).group;

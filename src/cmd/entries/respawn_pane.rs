@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_flag_values, args_get, args_has, args_to_vector};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::format::bytes::write_cstr;
@@ -47,7 +47,7 @@ pub static cmd_respawn_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),

@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::control::{
@@ -79,7 +79,7 @@ unsafe fn cmd_refresh_client_control_client_size(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut size: *const ::core::ffi::c_char = args_get(args, 'C' as i32 as u_char);
     let mut w: u_int = 0;
@@ -233,7 +233,7 @@ unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
 }
 
 unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();

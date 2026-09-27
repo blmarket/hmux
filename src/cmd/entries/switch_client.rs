@@ -1,6 +1,6 @@
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_target};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target_client,
@@ -62,7 +62,7 @@ pub static cmd_switch_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,

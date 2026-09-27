@@ -4,7 +4,7 @@ use crate::src::arguments::{
     args_strtonum_result, args_to_vector,
 };
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
-use crate::src::cmd::{cmd_append_argv, cmd_get_args};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::ffi::libc::{strcmp, strtol};
 use crate::src::format::bytes::write_cstr;
@@ -915,7 +915,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let target = cmdq_get_target(item);
     let event = cmdq_get_event(item);
     let tc = cmdq_get_target_client(item);
@@ -1028,7 +1028,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
 }
 unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut s: *mut session = (*target).s;
     let mut tc: *mut client = cmdq_get_target_client(item);

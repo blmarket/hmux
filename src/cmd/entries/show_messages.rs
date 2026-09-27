@@ -1,6 +1,6 @@
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::arguments::args_has;
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_get_target_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -55,7 +55,7 @@ unsafe fn cmd_show_messages_terminals(
     mut item: *mut cmdq_item,
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
     let mut i: u_int = 0;
@@ -96,7 +96,7 @@ unsafe fn cmd_show_messages_terminals(
     return (n != 0 as u_int) as ::core::ffi::c_int;
 }
 unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();

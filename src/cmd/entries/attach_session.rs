@@ -1,7 +1,7 @@
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
 use crate::src::compat::imsg::*;
@@ -228,7 +228,7 @@ pub unsafe fn cmd_attach_session(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_attach_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     return cmd_attach_session(
         item,
         args_get(args, 't' as i32 as u_char),

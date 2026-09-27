@@ -3,7 +3,7 @@ use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
@@ -157,7 +157,7 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 }
 
 unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut c: *mut client = cmdq_get_client(item);
     let mut tc: *mut client = cmdq_get_target_client(item);

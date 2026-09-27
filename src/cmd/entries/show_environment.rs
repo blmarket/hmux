@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::format::bytes::write_cstr;
@@ -60,7 +60,7 @@ unsafe fn cmd_show_environment_print(
     mut item: *mut cmdq_item,
     envent: &environ_entry,
 ) {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
         return;
     }
@@ -106,7 +106,7 @@ unsafe fn cmd_show_environment_print(
     };
 }
 unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let env: &environ;
     let mut envent: Option<&environ_entry> = None;

@@ -1,7 +1,7 @@
 use crate::src::arguments::{
     args_create, args_has, args_set_flag, args_set_owned_string, args_string,
 };
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_get_target;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -37,7 +37,7 @@ pub static cmd_find_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut s: *const ::core::ffi::c_char = args_string(args, 0 as u_int);

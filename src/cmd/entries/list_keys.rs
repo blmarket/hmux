@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
-use crate::src::cmd::{cmd_get_args, cmd_list_print_cstring};
+use crate::src::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
@@ -204,7 +204,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     );
 }
 unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut table = None;

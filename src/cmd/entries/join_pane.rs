@@ -4,7 +4,7 @@ use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event, cmdq_get_source, cmdq_get_target,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::strcmp;
@@ -631,7 +631,7 @@ unsafe fn cmd_join_pane_tile(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut source: *mut cmd_find_state = cmdq_get_source(item);

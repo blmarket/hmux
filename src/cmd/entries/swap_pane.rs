@@ -1,6 +1,6 @@
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_has;
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
 use crate::src::events::events_fire_window;
 use crate::src::layout::{layout_cell_is_tiled, layout_fix_panes};
@@ -62,7 +62,7 @@ unsafe fn cmd_swap_pane_prev_tiled_pane(mut wp: *mut window_pane) -> *mut window
     return wp;
 }
 unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = cmdq_get_source(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut src_w: *mut window = ::core::ptr::null_mut::<window>();

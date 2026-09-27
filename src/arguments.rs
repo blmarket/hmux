@@ -2,7 +2,7 @@ use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{
-    cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first,
+    cmd_get_args_mut, cmd_get_source, cmd_list_copy, cmd_list_first,
     cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
@@ -668,10 +668,10 @@ mod ownership_tests {
             assert_eq!(observer.strong_count(), 2);
             let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
             command.args = Some(parsed);
-            assert_eq!(cmd_get_args(&mut command).cast_const(), address);
+            assert_eq!(cmd_get_args_mut(&mut command).map_or(std::ptr::null_mut(), |args| args).cast_const(), address);
             drop(values);
             assert_eq!(observer.strong_count(), 1);
-            assert_eq!(args_count(cmd_get_args(&mut command)), 2);
+            assert_eq!(args_count(cmd_get_args_mut(&mut command).map_or(std::ptr::null_mut(), |args| args)), 2);
             drop(command);
             assert!(observer.upgrade().is_none());
         }
@@ -963,7 +963,7 @@ pub unsafe fn args_make_commands_prepare(
     mut wait: ::core::ffi::c_int,
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();

@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::control::control_write;
 use crate::src::ffi::libc::{memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
@@ -571,7 +571,7 @@ unsafe fn cmd_capture_pane_history(
     Some(buf)
 }
 unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut c: *mut client = cmdq_get_client(item);
     let mut wp: *mut window_pane = (*cmdq_get_target(item)).wp;
     let mut buf: Vec<u8>;

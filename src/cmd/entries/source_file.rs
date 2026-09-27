@@ -4,7 +4,7 @@ use crate::src::cmd::queue::{
     cmdq_continue, cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_get_target,
     cmdq_insert_after,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
 use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
@@ -236,7 +236,7 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     CString::new(quoted).expect("C string path has no interior NUL")
 }
 unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut c: *mut client = cmdq_get_client(item);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

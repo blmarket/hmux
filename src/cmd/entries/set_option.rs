@@ -2,7 +2,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_client, event_payload_set_int, event_payload_set_pane,
@@ -125,7 +125,7 @@ fn cmd_set_option_args_parse(
     Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if args_count(args) == 0 as u_int {
@@ -297,7 +297,7 @@ unsafe fn cmd_set_hook_monitor_exec(
 }
 unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut append: ::core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();

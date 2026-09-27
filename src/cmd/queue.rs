@@ -7,7 +7,7 @@ use crate::src::cmd::find::{
     cmd_find_target, cmd_find_valid_state,
 };
 use crate::src::cmd::{
-    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
+    cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
 };
 use crate::src::control::{control_write, control_write_guard};
 use crate::src::events::events_fire;
@@ -387,7 +387,7 @@ pub unsafe fn cmdq_insert_hook(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut cmd: *mut cmd = (*item).cmd;
-    let mut args_0: *mut args = cmd_get_args(cmd);
+    let mut args_0: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -542,7 +542,7 @@ unsafe fn cmdq_find_flag(
         cmd_find_from_client(fs, (*item).target_client, 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    value = args_get(cmd_get_args((*item).cmd), flag.flag as u_char);
+    value = args_get(cmd_get_args_mut(&mut *(*item).cmd).map_or(std::ptr::null_mut(), |args| args), flag.flag as u_char);
     if cmd_find_target(fs, item, value, flag.type_0, flag.flags) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
@@ -614,7 +614,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let name = cmdq_name((*item).client);
     let mut state: *mut cmdq_state = cmdq_get_state(&*item).expect("command queue state").get();
     let mut cmd: *mut cmd = (*item).cmd;
-    let mut args: *mut args = cmd_get_args(cmd);
+    let mut args: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
     let entry = cmd_get_entry(&*cmd);
     let mut tc: *mut client = ::core::ptr::null_mut::<client>();
     let mut saved: *mut client = (*item).client;

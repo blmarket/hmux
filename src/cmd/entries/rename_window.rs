@@ -1,6 +1,6 @@
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_string;
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
@@ -40,7 +40,7 @@ pub static cmd_rename_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wl: *mut winlink = (*target).wl;
     let name = format_single_from_target_cstring(item, args_string(args, 0 as u_int));

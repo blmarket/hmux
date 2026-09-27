@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target,
     cmdq_insert_hook, cmdq_print,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::imsg::*;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
@@ -112,7 +112,7 @@ pub static cmd_has_session_entry: cmd_entry = {
 };
 unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut c: *mut client = cmdq_get_client(item);

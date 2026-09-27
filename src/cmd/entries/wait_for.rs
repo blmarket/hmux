@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::events::{events_add_sink, events_remove_sink};
 use crate::src::events_payload::{
@@ -236,7 +236,7 @@ unsafe fn cmd_wait_for_client_name(mut wei: *mut wait_event_item) -> *const ::co
     return cmd_wait_for_item_client_name((*wei).item);
 }
 unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
     if args_has(args, 'E' as i32 as u_char) != 0 {

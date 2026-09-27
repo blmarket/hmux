@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::format::bytes::write_cstr;
@@ -46,7 +46,7 @@ fn cmd_bind_key_args_parse(
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut note: *const ::core::ffi::c_char = args_get(args, 'N' as i32 as u_char);

@@ -1,7 +1,7 @@
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_winlink;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_get_target_client,
@@ -71,7 +71,7 @@ pub static cmd_new_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut c: *mut client = cmdq_get_client(item);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

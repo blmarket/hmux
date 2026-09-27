@@ -7,7 +7,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_current, cmdq_get_event, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
@@ -123,7 +123,7 @@ pub static cmd_split_window_entry: cmd_entry = {
 };
 unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut sc: spawn_context = spawn_context {

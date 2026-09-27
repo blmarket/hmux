@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire_window;
 use crate::src::format::bytes::write_cstr;
 use crate::src::layout::custom::{layout_dump_owned, layout_parse};
@@ -99,7 +99,7 @@ pub static cmd_previous_layout_entry: cmd_entry = {
 };
 unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut c: *mut client = cmdq_get_target_client(item);
     let mut wl: *mut winlink = (*target).wl;

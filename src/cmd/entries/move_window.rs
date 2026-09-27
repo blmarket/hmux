@@ -2,7 +2,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_get_number;
 use crate::src::resize::recalculate_sizes;
@@ -68,7 +68,7 @@ pub static cmd_link_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = cmdq_get_source(item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,

@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_count, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::ffi::libc::{getgrnam, getpwnam, getuid};
 use crate::src::format::bytes::write_cstr;
@@ -65,7 +65,7 @@ unsafe fn cmd_server_access_deny(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_server_access_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut c: *mut client = cmdq_get_target_client(item);
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

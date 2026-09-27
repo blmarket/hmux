@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_percentage_result, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_target};
-use crate::src::cmd::{cmd_get_args, cmd_mouse_pane, cmd_mouse_window};
+use crate::src::cmd::{cmd_get_args_mut, cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
 use crate::src::format::bytes::write_cstr;
@@ -66,7 +66,7 @@ pub static cmd_resize_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut wl: *mut winlink = (*target).wl;

@@ -1,6 +1,6 @@
 use crate::src::arguments::args_get;
 use crate::src::cmd::queue::{cmdq_error, cmdq_print};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::{prompt_type, prompt_type_string};
 use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
@@ -70,7 +70,7 @@ unsafe fn cmd_show_prompt_history_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let typestr: *const ::core::ffi::c_char = args_get(args, 'T' as i32 as u_char);
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;

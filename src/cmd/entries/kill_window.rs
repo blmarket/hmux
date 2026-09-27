@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
@@ -70,7 +70,7 @@ pub static cmd_unlink_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wl: *mut winlink = (*target).wl;
     let mut w: *mut window = (*wl).window_ptr();

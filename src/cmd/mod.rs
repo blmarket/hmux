@@ -13,7 +13,7 @@ pub mod queue;
 
 // Preserve the established family API without glob exports.
 pub use self::core::{
-    cmd, cmd_copy, cmd_find, cmd_get_alias, cmd_get_args, cmd_get_entry, cmd_get_group,
+    cmd, cmd_copy, cmd_find, cmd_get_alias, cmd_get_args_mut, cmd_get_entry, cmd_get_group,
     cmd_get_parse_flags, cmd_get_source, cmd_list_all_have, cmd_list_any_have, cmd_list_append,
     cmd_list_append_all, cmd_list_copy, cmd_list_first, cmd_list_move, cmd_list_new,
     cmd_list_print, cmd_log_argv, cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window,

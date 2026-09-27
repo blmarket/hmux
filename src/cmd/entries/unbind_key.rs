@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::{
@@ -38,7 +38,7 @@ pub static cmd_unbind_key_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keystr: *const ::core::ffi::c_char = args_string(args, 0 as u_int);

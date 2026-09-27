@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::cmd::{cmd_get_args, cmd_list_first};
+use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -60,7 +60,7 @@ fn cmd_confirm_before_args_parse(
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

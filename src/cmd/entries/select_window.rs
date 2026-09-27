@@ -3,7 +3,7 @@ use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_insert_hook,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::server_redraw_session;
 use crate::src::session::{session_last, session_next, session_previous, session_select};
@@ -116,7 +116,7 @@ pub static cmd_last_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut c: *mut client = cmdq_get_client(item);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

@@ -6,7 +6,7 @@ use crate::src::cmd::find::{
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_current, cmdq_get_target, cmdq_insert_hook, cmdq_print,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
@@ -117,7 +117,7 @@ unsafe fn cmd_select_pane_marked_pane(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -226,7 +226,7 @@ unsafe fn cmd_select_pane_marked_pane(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let entry = cmd_get_entry(&*self_0);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

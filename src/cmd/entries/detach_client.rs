@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_source, cmdq_get_target_client,
 };
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::imsg::*;
 use crate::src::server::clients;
 use crate::src::server_client::{server_client_detach, server_client_exec, server_client_suspend};
@@ -67,7 +67,7 @@ pub static cmd_suspend_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = cmdq_get_source(item);
     let mut c: *mut client = cmdq_get_client(item);
     let mut tc: *mut client = cmdq_get_target_client(item);

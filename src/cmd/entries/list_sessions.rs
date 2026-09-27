@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::cmd_get_args;
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -53,7 +53,7 @@ pub static cmd_list_sessions_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args(self_0);
+    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut c: *mut client = cmdq_get_client(item);
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
