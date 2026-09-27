@@ -2881,8 +2881,11 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
         kill(getpid(), SIGCHLD);
-        bufferevent_free((*wp).event);
-        (*wp).event = ::core::ptr::null_mut::<bufferevent>();
+    }
+    // Empty panes have stream buffers and an input parser without a PTY.
+    bufferevent_free((*wp).event);
+    (*wp).event = ::core::ptr::null_mut::<bufferevent>();
+    if (*wp).fd != -(1 as ::core::ffi::c_int) {
         close((*wp).fd);
         (*wp).fd = -(1 as ::core::ffi::c_int);
     }
@@ -4816,6 +4819,33 @@ mod pane_input_owner_tests {
                 assert!(client_observer.upgrade().is_none());
                 shutdown_runtime();
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod pane_stream_lifecycle_tests {
+    use super::*;
+    use crate::src::reactor::shutdown_runtime;
+    use crate::src::shared::rc;
+
+    #[test]
+    fn destroying_an_empty_pane_releases_its_stream_callbacks() {
+        unsafe {
+            let pane = rc::new(window_pane::empty());
+            let observer = window_pane_weak(pane);
+            (*pane).fd = -1;
+            (*pane).pipe_fd = -1;
+            (*pane).flags = PANE_EMPTY;
+            window_pane_set_event(pane);
+            assert!(!(*pane).ictx.is_null());
+            let callback = Rc::downgrade((*(*pane).event).readcb.as_ref().unwrap());
+
+            window_pane_destroy(pane);
+
+            assert!(observer.upgrade().is_none());
+            assert!(callback.upgrade().is_none());
+            shutdown_runtime();
         }
     }
 }
