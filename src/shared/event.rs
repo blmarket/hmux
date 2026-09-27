@@ -34,8 +34,6 @@ impl event {
 #[derive(Default)]
 #[repr(C)]
 pub struct bufferevent {
-    pub ev_base: *mut event_base,
-    pub be_ops: *const bufferevent_ops,
     pub ev_read: event,
     pub ev_write: event,
     // Keep buffer addresses stable for reactor registrations and borrowed pointers.

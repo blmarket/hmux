@@ -10,10 +10,7 @@ use refbox::BorrowError;
 fn visit_order_uses_weak_links_and_survives_index_change() {
     unsafe {
         let mut links = winlinks { storage: None };
-        let mut stack = winlink_stack {
-            storage: None,
-            reserved: std::ptr::null_mut(),
-        };
+        let mut stack = winlink_stack { storage: None };
         let first = winlink_add(&raw mut links, 1);
         let second = winlink_add(&raw mut links, 2);
         let old_second = links
@@ -55,10 +52,7 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
 fn history_entry_is_removed_before_its_owner() {
     unsafe {
         let mut links = winlinks { storage: None };
-        let mut stack = winlink_stack {
-            storage: None,
-            reserved: std::ptr::null_mut(),
-        };
+        let mut stack = winlink_stack { storage: None };
         let link = winlink_add(&raw mut links, 7);
         winlink_stack_push(&raw mut stack, link);
         winlink_stack_remove(&raw mut stack, link);
@@ -97,10 +91,7 @@ fn boxed_session_drops_its_winlink_owner() {
 fn expired_history_observer_is_an_invariant_violation() {
     unsafe {
         let mut links = winlinks { storage: None };
-        let mut stack = winlink_stack {
-            storage: None,
-            reserved: std::ptr::null_mut(),
-        };
+        let mut stack = winlink_stack { storage: None };
         let link = winlink_add(&raw mut links, 1);
         winlink_stack_push(&raw mut stack, link);
         // Deliberately violate teardown order without dereferencing the dead pointer.

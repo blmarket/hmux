@@ -42,10 +42,7 @@ impl session {
             last_activity_time: Default::default(),
             lock_timer: Default::default(),
             curw: Default::default(),
-            lastw: winlink_stack {
-                storage: None,
-                reserved: std::ptr::null_mut(),
-            },
+            lastw: winlink_stack { storage: None },
             windows: winlinks { storage: None },
             statusat: Default::default(),
             statuslines: Default::default(),

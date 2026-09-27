@@ -288,10 +288,7 @@ pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session
         },
         lock_timer: event::default(),
         curw: ::core::ptr::null_mut::<winlink>(),
-        lastw: winlink_stack {
-            storage: None,
-            reserved: std::ptr::null_mut(),
-        },
+        lastw: winlink_stack { storage: None },
         windows: winlinks { storage: None },
         statusat: 0,
         statuslines: 0,
@@ -353,7 +350,6 @@ pub unsafe fn session_create(
     s = crate::src::shared::rc::new(owner);
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.storage = None;
-    (*s).lastw.reserved = std::ptr::null_mut();
     (*s).windows.storage = None;
     (*s).environ = Some(env);
     // session_create consumes the caller's option-root allocation.
@@ -1008,10 +1004,7 @@ unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut sessi
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
-        winlink_stack {
-            storage: None,
-            reserved: std::ptr::null_mut(),
-        },
+        winlink_stack { storage: None },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
         wl2 = winlink_find_by_index(&raw mut (*s).windows, old_idx);
@@ -1066,10 +1059,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
-        winlink_stack {
-            storage: None,
-            reserved: std::ptr::null_mut(),
-        },
+        winlink_stack { storage: None },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
         wl = winlink_find_by_index(&raw mut old_wins, old_idx);

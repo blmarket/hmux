@@ -10,12 +10,12 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields, their disposition, and the lifecycle reason. **76 fields were migrated;
-168 remain in scope; 72 external ABI/resource fields are excluded; 4 fields were
-removed (three with the deleted integration test and one unused mode field).**
+fields, their disposition, and the lifecycle reason. **78 fields were migrated;
+162 remain in scope; 72 external ABI/resource fields are excluded; 8 fields were
+removed (three with the deleted integration test and five unused application fields).**
 
-The remaining 168 fields have been re-reviewed:
-**74 candidates, 42 requiring an access/teardown design, 4 removal candidates,
+The remaining 162 fields have been re-reviewed:
+**72 candidates, 42 requiring an access/teardown design, no removal candidates,
 and 48 retained raw for now.** These are pending decisions, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -98,16 +98,15 @@ The TSV now distinguishes four pending dispositions, all of which still identify
 raw fields in the source. The external report lists every field under its current
 review category, with a proposed representation, constraints and source evidence.
 
-- **Candidate (74):** existing Rc or RefBox ownership supports weak observers or
+- **Candidate (72):** existing Rc or RefBox ownership supports weak observers or
   weak index values. This includes mode-entry pane back-pointers and cached redraw
   fields, selected models, find-state model identities and model registries.
-  Two other candidates use an existing screen index or an address value.
 - **Design (42):** a specific typed replacement is plausible, but needs explicit
   access/cleanup semantics: close-aware mode-tree owners, stream handles, mixed
   owner/observer queue clients, screen/editor selectors, bounded input contexts,
   snapshots and stable IDs.
-- **Remove (4):** unused bufferevent slots and reserved pane/winlink slots have
-  no actual pointee lifecycle. Deletion is proposed, not performed in this review.
+- **Remove (0):** the unused bufferevent slots and reserved pane/winlink slots
+  have now been deleted. They had no pointee lifecycle or external ABI users.
 - **Skip (48):** there is no justified direct replacement under current ownership.
   Most targets are Box-owned queue items, options, layout cells, peers, jobs or
   intrusive links. Obtaining Weak would require changing that ownership; stable
@@ -145,9 +144,14 @@ the inline input-dispatch test with no owning pane; other row/menu tests no long
 install unused stack panes. New checks cover parent expiration, rejected-prompt
 cleanup, and unzoom during logical destruction.
 
+Value-only follow-up: `format_range.s` now uses the existing segment index for
+range transformations, and `log_pointer` stores only an address value. Removed
+the unused `bufferevent.ev_base/be_ops`, `window_pane_resizes.reserved`, and
+`winlink_stack.reserved` slots and their constructor scaffolding.
+
 ## Validation
 
-`cargo test --workspace`: **598 passed** after the mode-tree and prompt observer migration.
+`cargo test --workspace`: **599 passed** after the value/index and unused-field follow-up.
 The lifecycle checks include pane logical destruction while an operation guard
 retains its allocation, and queued tree refresh dispatch/cancellation with an
 expired parent or closed mode.
@@ -156,8 +160,10 @@ queued refresh and customize callback ownership), with no memory-access errors o
 definite/indirect leaks.
 The shared mode-tree/prompt follow-up passes 23 focused Valgrind tests, including
 expired-pane cleanup and unzoom during destruction, with the same result.
+The end-to-end range rendering regression also passes under Valgrind, covering
+normal alignment and clipped ranges after the index substitution.
 The updated inventory coverage check passes
-for all **168** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
+for all **162** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -189,11 +195,11 @@ pointers.
 ## Review status
 
 The earlier conclusion that all eligible fields had been migrated is superseded.
-The current implementation has 76 migrated fields and four deleted fields.
-The weak-handle review still has 74 concrete candidates and 42 design-dependent possibilities. No
+The current implementation has 78 migrated fields and eight deleted fields.
+The weak-handle review still has 72 concrete candidates and 42 design-dependent possibilities. No
 candidate has been counted as migrated merely because its proposed type exists.
 
-The scanner verifies all 168 remaining declarations, including pending candidates,
+The scanner verifies all 162 remaining declarations, including pending candidates,
 against the TSV and checks the 72 explicit exclusions. It does not prove that a
 candidate implementation is safe. Follow-up work must verify the producer's real
 owner, guard lifetime, null/expiration behavior, reentrant invalidation, identity

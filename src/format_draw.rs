@@ -24,7 +24,6 @@ pub const TOTAL: C2RustUnnamed_39 = 8;
 #[repr(C)]
 pub struct format_range {
     pub index: u_int,
-    pub s: *mut screen,
     pub start: u_int,
     pub end: u_int,
     pub type_0: style_range_type,
@@ -32,6 +31,7 @@ pub struct format_range {
     pub string: [::core::ffi::c_char; 16],
 }
 type format_ranges = Vec<format_range>;
+
 pub const AFTER: C2RustUnnamed_39 = 7;
 pub const LIST_RIGHT: C2RustUnnamed_39 = 6;
 pub const LIST_LEFT: C2RustUnnamed_39 = 5;
@@ -62,7 +62,7 @@ unsafe fn format_is_type(mut fr: *mut format_range, mut sy: *mut style) -> ::cor
 }
 unsafe fn format_update_ranges(
     mut frs: *mut format_ranges,
-    mut s: *mut screen,
+    index: u_int,
     mut offset: u_int,
     mut start: u_int,
     mut width: u_int,
@@ -71,7 +71,7 @@ unsafe fn format_update_ranges(
         return;
     }
     (*frs).retain_mut(|fr| {
-        if fr.s != s {
+        if fr.index != index {
             return true;
         }
         if fr.end <= start || fr.start >= start.wrapping_add(width) {
@@ -96,6 +96,7 @@ unsafe fn format_draw_put(
     mut ocx: u_int,
     mut ocy: u_int,
     mut s: *mut screen,
+    index: u_int,
     mut frs: *mut format_ranges,
     mut offset: u_int,
     mut start: u_int,
@@ -108,7 +109,7 @@ unsafe fn format_draw_put(
         0 as ::core::ffi::c_int,
     );
     screen_write_fast_copy(&mut *octx, &*s, start, 0 as u_int, width, 1 as u_int);
-    format_update_ranges(frs, s, offset, start, width);
+    format_update_ranges(frs, index, offset, start, width);
 }
 unsafe fn format_draw_put_list(
     mut octx: *mut screen_write_ctx,
@@ -126,7 +127,7 @@ unsafe fn format_draw_put_list(
     let mut start: u_int = 0;
     let mut focus_centre: u_int = 0;
     if width >= (*list).cx {
-        format_draw_put(octx, ocx, ocy, list, frs, offset, 0 as u_int, width);
+        format_draw_put(octx, ocx, ocy, list, LIST, frs, offset, 0 as u_int, width);
         return;
     }
     focus_centre = (focus_start + (focus_end - focus_start) / 2 as ::core::ffi::c_int) as u_int;
@@ -176,7 +177,7 @@ unsafe fn format_draw_put_list(
         );
         width = width.wrapping_sub((*list_right).cx);
     }
-    format_draw_put(octx, ocx, ocy, list, frs, offset, start, width);
+    format_draw_put(octx, ocx, ocy, list, LIST, frs, offset, start, width);
 }
 unsafe fn format_draw_none(
     mut octx: *mut screen_write_ctx,
@@ -211,13 +212,14 @@ unsafe fn format_draw_none(
         }
     }
     format_draw_put(
-        octx, ocx, ocy, left, frs, 0 as u_int, 0 as u_int, width_left,
+        octx, ocx, ocy, left, LEFT, frs, 0 as u_int, 0 as u_int, width_left,
     );
     format_draw_put(
         octx,
         ocx,
         ocy,
         right,
+        RIGHT,
         frs,
         available.wrapping_sub(width_right),
         (*right).cx.wrapping_sub(width_right),
@@ -228,6 +230,7 @@ unsafe fn format_draw_none(
         ocx,
         ocy,
         centre,
+        CENTRE,
         frs,
         width_left
             .wrapping_add(
@@ -251,6 +254,7 @@ unsafe fn format_draw_none(
         ocx,
         ocy,
         abs_centre,
+        ABSOLUTE_CENTRE,
         frs,
         available
             .wrapping_sub(width_abs_centre)
@@ -333,13 +337,14 @@ unsafe fn format_draw_left(
         return;
     }
     format_draw_put(
-        octx, ocx, ocy, left, frs, 0 as u_int, 0 as u_int, width_left,
+        octx, ocx, ocy, left, LEFT, frs, 0 as u_int, 0 as u_int, width_left,
     );
     format_draw_put(
         octx,
         ocx,
         ocy,
         right,
+        RIGHT,
         frs,
         available.wrapping_sub(width_right),
         (*right).cx.wrapping_sub(width_right),
@@ -350,6 +355,7 @@ unsafe fn format_draw_left(
         ocx,
         ocy,
         after,
+        AFTER,
         frs,
         width_left.wrapping_add(width_list),
         0 as u_int,
@@ -360,6 +366,7 @@ unsafe fn format_draw_left(
         ocx,
         ocy,
         centre,
+        CENTRE,
         frs,
         width_left
             .wrapping_add(width_list)
@@ -406,6 +413,7 @@ unsafe fn format_draw_left(
         ocx,
         ocy,
         abs_centre,
+        ABSOLUTE_CENTRE,
         frs,
         available
             .wrapping_sub(width_abs_centre)
@@ -489,13 +497,14 @@ unsafe fn format_draw_centre(
         return;
     }
     format_draw_put(
-        octx, ocx, ocy, left, frs, 0 as u_int, 0 as u_int, width_left,
+        octx, ocx, ocy, left, LEFT, frs, 0 as u_int, 0 as u_int, width_left,
     );
     format_draw_put(
         octx,
         ocx,
         ocy,
         right,
+        RIGHT,
         frs,
         available.wrapping_sub(width_right),
         (*right).cx.wrapping_sub(width_right),
@@ -512,6 +521,7 @@ unsafe fn format_draw_centre(
         ocx,
         ocy,
         centre,
+        CENTRE,
         frs,
         middle
             .wrapping_sub(width_list.wrapping_div(2 as u_int))
@@ -524,6 +534,7 @@ unsafe fn format_draw_centre(
         ocx,
         ocy,
         after,
+        AFTER,
         frs,
         middle
             .wrapping_sub(width_list.wrapping_div(2 as u_int))
@@ -556,6 +567,7 @@ unsafe fn format_draw_centre(
         ocx,
         ocy,
         abs_centre,
+        ABSOLUTE_CENTRE,
         frs,
         available
             .wrapping_sub(width_abs_centre)
@@ -638,13 +650,14 @@ unsafe fn format_draw_right(
         return;
     }
     format_draw_put(
-        octx, ocx, ocy, left, frs, 0 as u_int, 0 as u_int, width_left,
+        octx, ocx, ocy, left, LEFT, frs, 0 as u_int, 0 as u_int, width_left,
     );
     format_draw_put(
         octx,
         ocx,
         ocy,
         after,
+        AFTER,
         frs,
         available.wrapping_sub(width_after),
         (*after).cx.wrapping_sub(width_after),
@@ -655,6 +668,7 @@ unsafe fn format_draw_right(
         ocx,
         ocy,
         right,
+        RIGHT,
         frs,
         available
             .wrapping_sub(width_right)
@@ -668,6 +682,7 @@ unsafe fn format_draw_right(
         ocx,
         ocy,
         centre,
+        CENTRE,
         frs,
         width_left
             .wrapping_add(
@@ -710,6 +725,7 @@ unsafe fn format_draw_right(
         ocx,
         ocy,
         abs_centre,
+        ABSOLUTE_CENTRE,
         frs,
         available
             .wrapping_sub(width_abs_centre)
@@ -776,13 +792,14 @@ unsafe fn format_draw_absolute_centre(
         }
     }
     format_draw_put(
-        octx, ocx, ocy, left, frs, 0 as u_int, 0 as u_int, width_left,
+        octx, ocx, ocy, left, LEFT, frs, 0 as u_int, 0 as u_int, width_left,
     );
     format_draw_put(
         octx,
         ocx,
         ocy,
         right,
+        RIGHT,
         frs,
         available.wrapping_sub(width_right),
         (*right).cx.wrapping_sub(width_right),
@@ -799,6 +816,7 @@ unsafe fn format_draw_absolute_centre(
         ocx,
         ocy,
         centre,
+        CENTRE,
         frs,
         middle.wrapping_sub(width_centre),
         0 as u_int,
@@ -817,6 +835,7 @@ unsafe fn format_draw_absolute_centre(
         ocx,
         ocy,
         abs_centre,
+        ABSOLUTE_CENTRE,
         frs,
         abs_centre_offset,
         0 as u_int,
@@ -842,6 +861,7 @@ unsafe fn format_draw_absolute_centre(
         ocx,
         ocy,
         after,
+        AFTER,
         frs,
         abs_centre_offset,
         0 as u_int,
@@ -1355,7 +1375,6 @@ pub unsafe fn format_draw(
                         {
                             let mut pending = format_range {
                                 index: current as u_int,
-                                s: (&raw mut s as *mut screen).offset(current as isize),
                                 start: s[current as usize].cx,
                                 end: 0,
                                 type_0: sy.range_type,
@@ -1886,4 +1905,64 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
         }
     }
     out
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+    use crate::src::options::{options_create_owned, options_default};
+    use crate::src::options_table::options_table;
+    use crate::src::tmux::global_options;
+
+    #[test]
+    fn rendered_ranges_follow_their_alignment_and_clipping() {
+        unsafe {
+            for (width, expected) in [
+                (
+                    20,
+                    vec![("left", 0, 2), ("centre", 9, 11), ("right", 18, 20)],
+                ),
+                (3, vec![("left", 0, 2), ("right", 2, 3)]),
+            ] {
+                let saved_options = global_options;
+                let mut options = options_create_owned(std::ptr::null_mut());
+                options_default(
+                    &mut *options,
+                    options_table
+                        .iter()
+                        .find(|entry| entry.name == Some(c"extended-keys"))
+                        .unwrap(),
+                );
+                global_options = &mut *options;
+                let mut output = screen::default();
+                screen_init(&mut output, width, 1, 0);
+                let mut ctx = screen_write_ctx::default();
+                let mut ranges = style_ranges::default();
+                screen_write_start(&mut ctx, &mut output);
+                format_draw(
+                    &mut ctx,
+                    &raw const grid_default_cell,
+                    width,
+                    c"#[align=left,range=user|left]LL#[norange]#[align=centre,range=user|centre]CC#[norange]#[align=right,range=user|right]RR#[norange]".as_ptr(),
+                    &mut ranges,
+                    0,
+                );
+                screen_write_stop(&mut ctx);
+                let actual: Vec<_> = ranges
+                    .ranges
+                    .iter()
+                    .map(|range| {
+                        (
+                            CStr::from_ptr(range.string.as_ptr()).to_str().unwrap(),
+                            range.start,
+                            range.end,
+                        )
+                    })
+                    .collect();
+                screen_free(&mut output);
+                global_options = saved_options;
+                assert_eq!(actual, expected, "available width {width}");
+            }
+        }
+    }
 }

@@ -139,17 +139,17 @@ pub fn log_byte(byte: u8) -> impl fmt::Display {
 
 /// Preserve libc's `(nil)` spelling for a null pointer.
 pub fn log_pointer(ptr: *const c_void) -> impl fmt::Display {
-    struct Pointer(*const c_void);
+    struct Pointer(usize);
     impl fmt::Display for Pointer {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            if self.0.is_null() {
+            if self.0 == 0 {
                 f.write_str("(nil)")
             } else {
-                write!(f, "{:p}", self.0)
+                write!(f, "{:#x}", self.0)
             }
         }
     }
-    Pointer(ptr)
+    Pointer(ptr.addr())
 }
 
 /// Preserve printf's `%#x`/`%#llx` spelling: zero has no `0x` prefix.

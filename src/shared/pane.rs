@@ -28,9 +28,7 @@ pub struct window_pane_offset {
 #[repr(C)]
 pub struct window_pane_resizes {
     /// The queue owner is optional so an empty queue has no heap allocation.
-    /// Keep the reserved ABI slot until the containing pane is fully migrated.
     pub storage: Option<Box<window_pane_resize_storage>>,
-    pub reserved: *mut ::core::ffi::c_void,
 }
 
 /// Each entry remains separately boxed so pointers used by cancellation keep
@@ -39,10 +37,7 @@ pub type window_pane_resize_storage = VecDeque<Box<window_pane_resize>>;
 
 impl Default for window_pane_resizes {
     fn default() -> Self {
-        Self {
-            storage: None,
-            reserved: ::core::ptr::null_mut(),
-        }
+        Self { storage: None }
     }
 }
 

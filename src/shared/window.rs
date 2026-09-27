@@ -215,8 +215,6 @@ pub struct winlink_stack {
     /// Weak visit history; the session owns the deque and the ordered index
     /// owns each link.
     pub storage: Option<Box<std::collections::VecDeque<refbox::Weak<winlink>>>>,
-    /// Reserved ABI slot for the translated layout.
-    pub reserved: *mut ::core::ffi::c_void,
 }
 
 #[repr(C)]
