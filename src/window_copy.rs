@@ -4,9 +4,10 @@ use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, regcomp, regexec, strcasecmp, strchr, strcmp,
-    strcspn, strlen, strncmp,
+    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, strcasecmp, strchr, strcmp, strcspn, strlen,
+    strncmp,
 };
+use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -69,9 +70,7 @@ use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES};
 use crate::src::shared::paste::paste_buffer;
-use crate::src::shared::regex::{
-    re_dfa_t, re_pattern_buffer, regex_t, regmatch_t, REG_EXTENDED, REG_ICASE,
-};
+use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -5462,7 +5461,7 @@ unsafe fn window_copy_search_lr_regex(
     mut py: u_int,
     mut first: u_int,
     mut last: u_int,
-    mut reg: *mut regex_t,
+    reg: &CompiledRegex<'_>,
 ) -> ::core::ffi::c_int {
     let mut eflags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut endline: u_int = 0;
@@ -5470,7 +5469,7 @@ unsafe fn window_copy_search_lr_regex(
     let mut foundy: u_int = 0;
     let mut len: u_int = 0;
     let mut pywrap: u_int = 0;
-    let mut regmatch: regmatch_t = regmatch_t { rm_so: 0, rm_eo: 0 };
+    let mut regmatch: RegexMatch = RegexMatch { rm_so: 0, rm_eo: 0 };
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     if first >= last {
         return 0 as ::core::ffi::c_int;
@@ -5492,14 +5491,12 @@ unsafe fn window_copy_search_lr_regex(
         window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, &mut buf);
         len = len.wrapping_add((*gd).sx);
     }
-    if regexec(
-        reg,
-        buf.as_ptr().cast(),
-        1 as size_t,
-        &raw mut regmatch,
+    if reg.execute_at(
+        CStr::from_bytes_until_nul(&buf).expect("search line is terminated"),
+        0,
+        std::slice::from_mut(&mut regmatch),
         eflags,
-    ) == 0 as ::core::ffi::c_int
-        && regmatch.rm_so != regmatch.rm_eo
+    ) && regmatch.rm_so != regmatch.rm_eo
     {
         foundx = first;
         foundy = py;
@@ -5543,7 +5540,7 @@ unsafe fn window_copy_search_rl_regex(
     mut psx: *mut u_int,
     mut py: u_int,
     mut last: u_int,
-    mut reg: *mut regex_t,
+    reg: &CompiledRegex<'_>,
 ) -> ::core::ffi::c_int {
     let mut first: u_int = 0 as u_int;
     let mut eflags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -5574,7 +5571,7 @@ unsafe fn window_copy_search_rl_regex(
         len,
         ppx,
         psx,
-        buf.as_ptr().cast(),
+        CStr::from_bytes_until_nul(&buf).expect("search line is terminated"),
         reg,
         eflags,
     ) != 0
@@ -5625,8 +5622,8 @@ unsafe fn window_copy_last_regex(
     mut len: u_int,
     mut ppx: *mut u_int,
     mut psx: *mut u_int,
-    mut buf: *const ::core::ffi::c_char,
-    mut preg: *const regex_t,
+    buf: &CStr,
+    preg: &CompiledRegex<'_>,
     mut eflags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut foundx: u_int = 0;
@@ -5635,18 +5632,16 @@ unsafe fn window_copy_last_regex(
     let mut px: u_int = 0 as u_int;
     let mut savepx: u_int = 0;
     let mut savesx: u_int = 0 as u_int;
-    let mut regmatch: regmatch_t = regmatch_t { rm_so: 0, rm_eo: 0 };
+    let mut regmatch: RegexMatch = RegexMatch { rm_so: 0, rm_eo: 0 };
     foundx = first;
     foundy = py;
     oldx = first;
-    while regexec(
-        preg,
-        buf.offset(px as isize),
-        1 as size_t,
-        &raw mut regmatch,
+    while preg.execute_at(
+        buf,
+        px as usize,
+        std::slice::from_mut(&mut regmatch),
         eflags,
-    ) == 0 as ::core::ffi::c_int
-    {
+    ) {
         if regmatch.rm_so == regmatch.rm_eo {
             break;
         }
@@ -5655,7 +5650,9 @@ unsafe fn window_copy_last_regex(
             len,
             &raw mut foundx,
             &raw mut foundy,
-            buf.offset(px as isize).offset(regmatch.rm_so as isize),
+            buf.as_ptr()
+                .offset(px as isize)
+                .offset(regmatch.rm_so as isize),
         );
         if foundy > py || foundx >= last {
             break;
@@ -5667,7 +5664,9 @@ unsafe fn window_copy_last_regex(
             len,
             &raw mut foundx,
             &raw mut foundy,
-            buf.offset(px as isize).offset(regmatch.rm_eo as isize),
+            buf.as_ptr()
+                .offset(px as isize)
+                .offset(regmatch.rm_eo as isize),
         );
         if foundy > py || foundx >= last {
             *ppx = savepx;
@@ -5889,7 +5888,7 @@ unsafe fn window_copy_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::cor
 }
 unsafe fn window_copy_search_back_overlap(
     mut gd: *mut grid,
-    mut preg: *mut regex_t,
+    preg: &CompiledRegex<'_>,
     mut ppx: *mut u_int,
     mut psx: *mut u_int,
     mut ppy: *mut u_int,
@@ -5962,29 +5961,20 @@ unsafe fn window_copy_search_jump(
     let mut sx: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cflags: ::core::ffi::c_int = REG_EXTENDED;
-    let mut reg: regex_t = re_pattern_buffer {
-        buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-        allocated: 0,
-        used: 0,
-        syntax: 0,
-        fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        re_nsub: 0,
-        can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
-        c2rust_padding: [0; 7],
-    };
-    if regex != 0 {
+    let mut regex_storage = RegexStorage::default();
+    let regex_owner = if regex != 0 {
         let mut sbuf = vec![0u8];
         window_copy_stringify(sgd, 0 as u_int, 0 as u_int, (*sgd).sx, &mut sbuf);
         if cis != 0 {
             cflags |= REG_ICASE;
         }
-        if regcomp(&raw mut reg, sbuf.as_ptr().cast(), cflags) != 0 as ::core::ffi::c_int {
+        let Ok(compiled) = regex_storage.compile(
+            CStr::from_bytes_until_nul(&sbuf).expect("search pattern is terminated"),
+            cflags,
+        ) else {
             return 0 as ::core::ffi::c_int;
-        }
-    }
-    let regex_owner = if regex != 0 {
-        Some(crate::src::regsub::CompiledRegex::new(&raw mut reg))
+        };
+        Some(compiled)
     } else {
         None
     };
@@ -5999,7 +5989,9 @@ unsafe fn window_copy_search_jump(
                     i,
                     fx,
                     (*gd).sx,
-                    &raw mut reg,
+                    regex_owner
+                        .as_ref()
+                        .expect("regex search has a compiled pattern"),
                 );
             } else {
                 found = window_copy_search_lr(gd, sgd, &raw mut px, i, fx, (*gd).sx, cis);
@@ -6020,12 +6012,16 @@ unsafe fn window_copy_search_jump(
                     &raw mut sx,
                     i.wrapping_sub(1 as u_int),
                     fx.wrapping_add(1 as u_int),
-                    &raw mut reg,
+                    regex_owner
+                        .as_ref()
+                        .expect("regex search has a compiled pattern"),
                 );
                 if found != 0 {
                     window_copy_search_back_overlap(
                         gd,
-                        &raw mut reg,
+                        regex_owner
+                            .as_ref()
+                            .expect("regex search has a compiled pattern"),
                         &raw mut px,
                         &raw mut sx,
                         &raw mut i,
@@ -6451,17 +6447,7 @@ unsafe fn window_copy_search_marks(
     let mut end: u_int = 0;
     let mut sx: u_int = (*gd).sx;
     let mut sy: u_int = (*gd).sy;
-    let mut reg: regex_t = re_pattern_buffer {
-        buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-        allocated: 0,
-        used: 0,
-        syntax: 0,
-        fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        re_nsub: 0,
-        can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
-        c2rust_padding: [0; 7],
-    };
+    let mut regex_storage = RegexStorage::default();
     let mut stop: uint64_t = 0 as uint64_t;
     let mut tstart: uint64_t = 0;
     let mut t: uint64_t = 0;
@@ -6482,7 +6468,7 @@ unsafe fn window_copy_search_marks(
         width = (*(*ssp).grid).sx;
     }
     cis = window_copy_is_lowercase(window_copy_searchstr(&*data));
-    if regex != 0 {
+    let regex_owner = if regex != 0 {
         let mut sbuf = vec![0u8];
         window_copy_stringify(
             (*ssp).grid,
@@ -6494,13 +6480,14 @@ unsafe fn window_copy_search_marks(
         if cis != 0 {
             cflags |= REG_ICASE;
         }
-        if regcomp(&raw mut reg, sbuf.as_ptr().cast(), cflags) != 0 as ::core::ffi::c_int {
+        let Ok(compiled) = regex_storage.compile(
+            CStr::from_bytes_until_nul(&sbuf).expect("search pattern is terminated"),
+            cflags,
+        ) else {
             window_copy_clear_searchmark(&mut *data);
             return 0 as ::core::ffi::c_int;
-        }
-    }
-    let regex_owner = if regex != 0 {
-        Some(crate::src::regsub::CompiledRegex::new(&raw mut reg))
+        };
+        Some(compiled)
     } else {
         None
     };
@@ -6527,7 +6514,9 @@ unsafe fn window_copy_search_marks(
                         py,
                         px,
                         sx,
-                        &raw mut reg,
+                        regex_owner
+                            .as_ref()
+                            .expect("regex search has a compiled pattern"),
                     );
                     grid_get_cell(
                         gd,

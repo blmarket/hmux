@@ -770,106 +770,59 @@ pub(super) unsafe fn format_match_fuzzy(
     CString::new(indexes.join(",")).expect("fuzzy positions contain no NUL")
 }
 
-pub(super) unsafe fn format_match(
-    mut fm: *mut format_modifier,
-    mut pattern: *const ::core::ffi::c_char,
-    mut text: *const ::core::ffi::c_char,
-) -> CString {
-    let mut s: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut r: regex_t = re_pattern_buffer {
-        buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-        allocated: 0,
-        used: 0,
-        syntax: 0,
-        fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        re_nsub: 0,
-        can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
-        c2rust_padding: [0; 7],
-    };
-    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*fm).argc() >= 1 as ::core::ffi::c_int {
-        s = (*fm).arg(0);
+pub(super) unsafe fn format_match(fm: &format_modifier, pattern: &CStr, text: &CStr) -> CString {
+    let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
+    if options.contains(&b'p') {
+        return format_match_fuzzy(pattern, text, 1);
     }
-    if !strchr(s, 'p' as i32).is_null() {
-        return format_match_fuzzy(
-            CStr::from_ptr(pattern),
-            CStr::from_ptr(text),
-            1 as ::core::ffi::c_int,
-        );
+    if options.contains(&b'z') {
+        return format_match_fuzzy(pattern, text, 0);
     }
-    if !strchr(s, 'z' as i32).is_null() {
-        return format_match_fuzzy(
-            CStr::from_ptr(pattern),
-            CStr::from_ptr(text),
-            0 as ::core::ffi::c_int,
-        );
-    }
-    if strchr(s, 'r' as i32).is_null() {
-        if !strchr(s, 'i' as i32).is_null() {
-            flags |= FNM_CASEFOLD;
-        }
-        if fnmatch(pattern, text, flags) != 0 as ::core::ffi::c_int {
-            return c"0".to_owned();
-        }
-    } else {
-        flags = REG_EXTENDED | REG_NOSUB;
-        if !strchr(s, 'i' as i32).is_null() {
+    let matched = if options.contains(&b'r') {
+        let mut flags = REG_EXTENDED | REG_NOSUB;
+        if options.contains(&b'i') {
             flags |= REG_ICASE;
         }
-        if regcomp(&raw mut r, pattern, flags) != 0 as ::core::ffi::c_int {
+        let mut storage = RegexStorage::default();
+        let Ok(regex) = storage.compile(pattern, flags) else {
             return c"0".to_owned();
-        }
-        let regex_owner = crate::src::regsub::CompiledRegex::new(&raw mut r);
-        if regexec(
-            &raw mut r,
-            text,
-            0 as size_t,
-            ::core::ptr::null_mut::<regmatch_t>(),
-            0 as ::core::ffi::c_int,
-        ) != 0 as ::core::ffi::c_int
-        {
-            drop(regex_owner);
-            return c"0".to_owned();
-        }
-        drop(regex_owner);
+        };
+        regex.is_match(text)
+    } else {
+        let flags = if options.contains(&b'i') {
+            FNM_CASEFOLD
+        } else {
+            0
+        };
+        fnmatch(pattern.as_ptr(), text.as_ptr(), flags) == 0
+    };
+    if matched {
+        c"1".to_owned()
+    } else {
+        c"0".to_owned()
     }
-    return c"1".to_owned();
 }
-pub(super) unsafe fn format_sub(
-    mut fm: *mut format_modifier,
-    mut text: *const ::core::ffi::c_char,
-    mut pattern: *const ::core::ffi::c_char,
-    mut with: *const ::core::ffi::c_char,
+pub(super) fn format_sub(
+    fm: &format_modifier,
+    text: &CStr,
+    pattern: &CStr,
+    with: &CStr,
 ) -> CString {
-    let mut flags: ::core::ffi::c_int = REG_EXTENDED;
-    if (*fm).argc() >= 3 as ::core::ffi::c_int && !strchr((*fm).arg(2), 'i' as i32).is_null() {
+    let mut flags = REG_EXTENDED;
+    if fm.argv.get(2).is_some_and(|s| s.as_bytes().contains(&b'i')) {
         flags |= REG_ICASE;
     }
-    regsub_cstring(
-        CStr::from_ptr(pattern),
-        CStr::from_ptr(with),
-        CStr::from_ptr(text),
-        flags,
-    )
-    .unwrap_or_else(|| CStr::from_ptr(text).to_owned())
+    regsub_cstring(pattern, with, text, flags).unwrap_or_else(|| text.to_owned())
 }
 
 pub(super) unsafe fn format_search(
-    mut fm: *mut format_modifier,
-    mut wp: *mut window_pane,
-    mut s: *const ::core::ffi::c_char,
+    fm: &format_modifier,
+    wp: *mut window_pane,
+    s: &CStr,
 ) -> CString {
-    let mut ignore: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut regex: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*fm).argc() >= 1 as ::core::ffi::c_int {
-        if !strchr((*fm).arg(0), 'i' as i32).is_null() {
-            ignore = 1 as ::core::ffi::c_int;
-        }
-        if !strchr((*fm).arg(0), 'r' as i32).is_null() {
-            regex = 1 as ::core::ffi::c_int;
-        }
-    }
+    let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
+    let ignore = options.contains(&b'i') as i32;
+    let regex = options.contains(&b'r') as i32;
     CString::new(window_pane_search(wp, s, regex, ignore).to_string())
         .expect("search count contains no NUL")
 }
@@ -2876,7 +2829,7 @@ pub(super) unsafe fn format_replace(
                         write!(out, "' pane %{}", ((*wp).id) as u32)
                     },
                 );
-                value = format_search(search, wp, new.as_ptr());
+                value = format_search(&*search, wp, &new);
             }
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_REPEAT as uint64_t != 0 {
@@ -3037,7 +2990,7 @@ pub(super) unsafe fn format_replace(
                     b"m\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    value = format_match(cmp, left.as_ptr(), right.as_ptr());
+                    value = format_match(&*cmp, &left, &right);
                 }
                 current_block = 1803726662341650892;
             }
@@ -3237,7 +3190,7 @@ pub(super) unsafe fn format_replace(
     for &modifier in &sub {
         let left = format_expand1_cstring(es, (*modifier).arg(0));
         let right = format_expand1_cstring(es, (*modifier).arg(1));
-        value = format_sub(modifier, value.as_ptr(), left.as_ptr(), right.as_ptr());
+        value = format_sub(&*modifier, &value, &left, &right);
         format_log1(es, c"format_replace".as_ptr(), |out| {
             out.write_all(b"substitute '")?;
             write_cstr(out, left.as_ptr())?;

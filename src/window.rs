@@ -12,8 +12,9 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{
     __ctype_b_loc, close, fnmatch, gethostname, getpid, gettimeofday, ioctl, kill, memcpy, memset,
-    regcomp, regexec, strcasecmp,
+    strcasecmp,
 };
+use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait};
 use crate::src::format::bytes::write_cstr;
@@ -108,9 +109,7 @@ use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_CLOSE};
-use crate::src::shared::regex::{
-    re_dfa_t, re_pattern_buffer, regex_t, regmatch_t, REG_EXTENDED, REG_ICASE,
-};
+use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;
@@ -3528,22 +3527,12 @@ pub unsafe fn window_pane_exited(mut wp: *mut window_pane) -> ::core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
     mut wp: *mut window_pane,
-    mut term: *const ::core::ffi::c_char,
+    term: &CStr,
     mut regex: ::core::ffi::c_int,
     mut ignore: ::core::ffi::c_int,
 ) -> u_int {
     let mut s: *mut screen = &raw mut (*wp).base;
-    let mut r: regex_t = re_pattern_buffer {
-        buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-        allocated: 0,
-        used: 0,
-        syntax: 0,
-        fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        re_nsub: 0,
-        can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
-        c2rust_padding: [0; 7],
-    };
+    let mut regex_storage = RegexStorage::default();
     let mut i: u_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut found: ::core::ffi::c_int = 0;
@@ -3551,7 +3540,7 @@ pub unsafe fn window_pane_search(
         if ignore != 0 {
             flags |= FNM_CASEFOLD;
         }
-        let term = CStr::from_ptr(term).to_bytes();
+        let term = term.to_bytes();
         let mut pattern = Vec::with_capacity(term.len() + 2);
         pattern.push(b'*');
         pattern.extend_from_slice(term);
@@ -3561,13 +3550,13 @@ pub unsafe fn window_pane_search(
         if ignore != 0 {
             flags |= REG_ICASE;
         }
-        if regcomp(&raw mut r, term, flags | REG_EXTENDED) != 0 as ::core::ffi::c_int {
-            return 0 as u_int;
-        }
         None
     };
     let regex_owner = if regex != 0 {
-        Some(crate::src::regsub::CompiledRegex::new(&raw mut r))
+        let Ok(regex) = regex_storage.compile(term, flags | REG_EXTENDED) else {
+            return 0;
+        };
+        Some(regex)
     } else {
         None
     };
@@ -3601,13 +3590,10 @@ pub unsafe fn window_pane_search(
                 flags,
             ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
         } else {
-            found = (regexec(
-                &raw mut r,
-                line.as_ptr().cast::<::core::ffi::c_char>(),
-                0 as size_t,
-                ::core::ptr::null_mut::<regmatch_t>(),
-                0 as ::core::ffi::c_int,
-            ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+            found = regex_owner
+                .as_ref()
+                .unwrap()
+                .is_match(CStr::from_bytes_with_nul(&line).unwrap()) as i32;
         }
         if found != 0 {
             break;

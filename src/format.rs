@@ -9,10 +9,11 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, free, gethostname, getpid, getpwuid,
-    getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, strcasecmp, strchr, strcmp,
-    strcspn, strftime, strlcat, strlen, strstr, strtod, time,
+    getuid, localtime_r, memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime,
+    strlcat, strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
+use crate::src::ffi::regex::RegexStorage;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
@@ -133,9 +134,7 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
-use crate::src::shared::regex::{
-    re_dfa_t, re_pattern_buffer, regex_t, regmatch_t, REG_EXTENDED, REG_ICASE,
-};
+use crate::src::shared::regex::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{
     screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,

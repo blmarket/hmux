@@ -1,26 +1,12 @@
-use crate::src::ffi::libc::{regcomp, regexec, regfree};
-use crate::src::shared::abi::*;
-use crate::src::shared::regex::{re_dfa_t, re_pattern_buffer, regex_t, regmatch_t};
+#![forbid(unsafe_code)]
+
+use crate::src::ffi::regex::{RegexMatch, RegexStorage};
 use std::ffi::{CStr, CString};
-
-pub(crate) struct CompiledRegex(*mut regex_t);
-
-impl CompiledRegex {
-    pub(crate) unsafe fn new(regex: *mut regex_t) -> Self {
-        Self(regex)
-    }
-}
-
-impl Drop for CompiledRegex {
-    fn drop(&mut self) {
-        unsafe { regfree(self.0) }
-    }
-}
 
 fn regsub_copy(buf: &mut Vec<u8>, text: &[u8], start: usize, end: usize) {
     buf.extend_from_slice(&text[start..end]);
 }
-fn regsub_expand(buf: &mut Vec<u8>, with: &[u8], text: &[u8], matches: &[regmatch_t]) {
+fn regsub_expand(buf: &mut Vec<u8>, with: &[u8], text: &[u8], matches: &[RegexMatch]) {
     let mut index = 0;
     while index < with.len() {
         if with[index] == b'\\' && index + 1 < with.len() {
@@ -53,27 +39,7 @@ pub fn regsub_cstring(
     text: &CStr,
     flags: ::core::ffi::c_int,
 ) -> Option<CString> {
-    unsafe { regsub_raw(pattern, with, text, flags) }
-}
-
-unsafe fn regsub_raw(
-    pattern: &CStr,
-    with: &CStr,
-    text: &CStr,
-    flags: ::core::ffi::c_int,
-) -> Option<CString> {
-    let mut r: regex_t = re_pattern_buffer {
-        buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-        allocated: 0,
-        used: 0,
-        syntax: 0,
-        fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        re_nsub: 0,
-        can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
-        c2rust_padding: [0; 7],
-    };
-    let mut m: [regmatch_t; 10] = [regmatch_t { rm_so: 0, rm_eo: 0 }; 10];
+    let mut m: [RegexMatch; 10] = [RegexMatch { rm_so: 0, rm_eo: 0 }; 10];
     let text_bytes = text.to_bytes();
     let pattern_bytes = pattern.to_bytes();
     let replacement_bytes = with.to_bytes();
@@ -87,20 +53,11 @@ unsafe fn regsub_raw(
     if pattern_bytes.is_empty() {
         return Some(text.to_owned());
     }
-    if regcomp(&raw mut r, pattern.as_ptr(), flags) != 0 as ::core::ffi::c_int {
-        return None;
-    }
-    let regex_owner = CompiledRegex::new(&raw mut r);
+    let mut storage = RegexStorage::default();
+    let regex = storage.compile(pattern, flags).ok()?;
     let end = text_bytes.len();
     while start <= end {
-        if regexec(
-            &raw mut r,
-            text.as_ptr().add(start),
-            m.len() as size_t,
-            &raw mut m as *mut regmatch_t,
-            0 as ::core::ffi::c_int,
-        ) != 0 as ::core::ffi::c_int
-        {
+        if !regex.execute_at(text, start, &mut m, 0) {
             regsub_copy(&mut buf, text_bytes, start, end);
             break;
         } else {
@@ -127,6 +84,5 @@ unsafe fn regsub_raw(
             }
         }
     }
-    drop(regex_owner);
     Some(CString::new(buf).expect("regex substitution contains no NUL"))
 }

@@ -69,7 +69,7 @@ impl Drop for Server {
 }
 
 #[test]
-fn regex_search_maps_multibyte_and_wide_cells_in_both_directions() {
+fn regex_search_and_formats_preserve_multibyte_cells_and_invalid_patterns() {
     let server = Server::new();
     server.command(&[
         "new-session",
@@ -91,6 +91,30 @@ fn regex_search_maps_multibyte_and_wide_cells_in_both_directions() {
         }
         assert!(Instant::now() < deadline, "pane output missing: {output:?}");
         thread::sleep(Duration::from_millis(20));
+    }
+
+    server.command(&["set-option", "-g", "@regex_text", "zABzAB"]);
+    // Expected values also checked against the pinned tmux revision.
+    for (format, expected) in [
+        ("#{m/r:^ab$,ab}", "1\n"),
+        ("#{m/r:^ab$,aB}", "0\n"),
+        ("#{m/ri:^ab$,aB}", "1\n"),
+        ("#{m/r:[,ab}", "0\n"),
+        ("#{m/i:A*,abc}", "1\n"),
+        ("#{C/r:^alpha}", "1\n"),
+        ("#{C/r:^beta.*gamma$}", "2\n"),
+        ("#{C/r:^BETA}", "0\n"),
+        ("#{C/ri:^BETA}", "2\n"),
+        ("#{C/r:[}", "0\n"),
+        ("#{C:émega}", "1\n"),
+        (r"#{s/(a)(b)/\2\1/i:@regex_text}", "zBAzBA\n"),
+        ("#{s/[/x/:@regex_text}", "zABzAB\n"),
+    ] {
+        assert_eq!(
+            server.command(&["display-message", "-p", format]),
+            expected.as_bytes(),
+            "{format}"
+        );
     }
 
     server.command(&["copy-mode"]);
