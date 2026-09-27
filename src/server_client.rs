@@ -1450,7 +1450,9 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     if event_initialized(&(*c).message_timer) != 0 {
         event_del(&raw mut (*c).message_timer);
     }
-    prompt_free((*c).prompt);
+    if let Some(prompt) = (*c).prompt.take() {
+        prompt_free(&prompt);
+    }
     format_lost_client(c);
     environ_free((*c).environ);
     proc_remove_peer((*c).peer);
@@ -3170,7 +3172,7 @@ unsafe fn server_client_handle_key0(
         if server_client_handle_menu_key(c, event) != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if !(*c).prompt.is_null() {
+        if (*c).prompt.is_some() {
             match status_prompt_key(c, (*event).key, &raw mut (*event).m) as ::core::ffi::c_uint {
                 1 | 2 => return 0 as ::core::ffi::c_int,
                 0 | 3 | _ => {}
@@ -3636,7 +3638,7 @@ mod prompt_cursor_tests {
                 let mut window = window::default();
                 window.sx = 100;
                 window.sy = 40;
-                let mut prompt = prompt::default();
+                let prompt = std::rc::Rc::new(std::cell::RefCell::new(prompt::default()));
                 let base = rc::take(rc::new(window_pane::empty()));
                 let wp = rc::as_ptr(&base);
                 (*wp).window = &raw mut window;
@@ -3645,7 +3647,7 @@ mod prompt_cursor_tests {
                 (*wp).sy = 4;
                 (*wp).prompt_cx = 2;
                 if has_prompt {
-                    (*wp).prompt = &raw mut prompt;
+                    (*wp).prompt = Some(prompt.clone());
                 }
                 window.z_index.push_front(std::rc::Rc::downgrade(&base));
                 let blocker = rc::take(rc::new(window_pane::empty()));
@@ -3705,7 +3707,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     } else if !(*w).menu.is_null() {
         menu_get_cursor((*w).menu, &raw mut cx, &raw mut cy);
         s = menu_screen((*w).menu);
-    } else if !wp.is_null() && (*c).prompt.is_null() {
+    } else if !wp.is_null() && (*c).prompt.is_none() {
         s = (*wp).screen;
     } else {
         s = (*c).status.active_screen();
@@ -3728,7 +3730,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     }
     tty_region_off(tty);
     tty_margin_off(tty);
-    if !(*c).prompt.is_null() {
+    if (*c).prompt.is_some() {
         prompt = 1 as u_int;
         (cx, cy) = status_prompt_cursor(&*c);
     } else if !wp.is_null() && (*c).overlay_draw.is_none() {

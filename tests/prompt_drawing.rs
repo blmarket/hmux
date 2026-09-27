@@ -165,7 +165,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 34,
             ),
         ] {
-            let mut prompt = prompt_create(prompt_create_data {
+            let prompt = prompt_create(prompt_create_data {
                 prompt: label,
                 input: Some(input),
                 flags: flags | PROMPT_NOFORMAT,
@@ -182,14 +182,14 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 command_ccolour: 2,
                 ..Default::default()
             });
-            prompt.index = index;
-            prompt.completion.display = completion.map(CStr::to_owned);
+            prompt.borrow_mut().index = index;
+            prompt.borrow_mut().completion.display = completion.map(CStr::to_owned);
             let mut s = screen::empty();
             screen_init(&mut s, 80, 1, 0);
             let mut ctx = screen_write_ctx::default();
             screen_write_start(&mut ctx, &mut s);
             let cursor_x = prompt_draw(
-                &prompt,
+                &prompt.borrow(),
                 &mut ctx,
                 prompt_draw_data {
                     area_x: 3,
@@ -224,7 +224,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 assert_ne!(cell.attr as i32 & GRID_ATTR_UNDERSCORE, 0);
             }
             screen_free(&mut s);
-            prompt_free(Box::into_raw(prompt));
+            prompt_free(&prompt);
         }
         (
             global_environ,

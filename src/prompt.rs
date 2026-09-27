@@ -1,6 +1,6 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{memset, strlen};
+use crate::src::ffi::libc::strlen;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -52,6 +52,7 @@ use crate::src::text::utf8::{
 };
 use crate::src::tmux::{global_options, global_s_options};
 use std::ffi::{CStr, CString};
+use std::{cell::RefCell, rc::Rc};
 
 const PROMPT_CALLBACK_ACTIVE: ::core::ffi::c_int = 0x2000;
 const PROMPT_FREE_PENDING: ::core::ffi::c_int = 0x4000;
@@ -182,8 +183,9 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&ses
     ))
     .to_owned();
 }
-pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> Box<prompt> {
-    let mut pr = Box::new(prompt::default());
+pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> PromptRef {
+    let owner = Rc::new(RefCell::new(prompt::default()));
+    let mut pr = owner.borrow_mut();
     let ft = if let Some(fs) = pd.fs {
         // Copy the selected target, matching cmd_find_copy_state rather than
         // inheriting the source's search flags or current-state pointer.
@@ -244,25 +246,32 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> Box<prompt> {
     pr.keys = pd.keys;
     pr.word_separators = pd.word_separators;
     format_free(ft);
-    pr
+    drop(pr);
+    owner
 }
-pub unsafe fn prompt_free(mut pr: *mut prompt) {
-    if pr.is_null() {
-        return;
-    }
-    if (*pr).flags & PROMPT_FREEING != 0 {
-        return;
-    }
-    if (*pr).flags & PROMPT_CALLBACK_ACTIVE != 0 {
-        (*pr).flags |= PROMPT_FREE_PENDING;
-        return;
-    }
-    (*pr).flags |= PROMPT_FREEING;
-    if let Some(callback) = (*pr).freecb.take() {
+pub fn prompt_free(owner: &PromptRef) {
+    let callback = {
+        let mut pr = owner.borrow_mut();
+        if pr.flags & PROMPT_FREEING != 0 {
+            return;
+        }
+        if pr.flags & PROMPT_CALLBACK_ACTIVE != 0 {
+            pr.flags |= PROMPT_FREE_PENDING;
+            return;
+        }
+        pr.flags |= PROMPT_FREEING;
+        pr.closed = 1;
+        pr.freecb.take()
+    };
+    if let Some(callback) = callback {
         callback();
     }
-    prompt_clear_complete(&mut *pr);
-    drop(Box::from_raw(pr));
+    let inputcb = {
+        let mut pr = owner.borrow_mut();
+        prompt_clear_complete(&mut pr);
+        pr.inputcb.take()
+    };
+    drop(inputcb);
 }
 fn prompt_last(pr: &prompt) -> &CStr {
     pr.last
@@ -286,26 +295,39 @@ impl PromptCallbackResult {
     }
 }
 
-unsafe fn prompt_fire_callback(
-    pr: *mut prompt,
+fn prompt_fire_callback(
+    owner: &PromptRef,
     text: Option<&CStr>,
     kind: prompt_key_result,
     redraw: Option<&mut ::core::ffi::c_int>,
 ) -> PromptCallbackResult {
-    let mut callback = (*pr).inputcb.take().expect("non-null prompt callback");
-    (*pr).flags |= PROMPT_CALLBACK_ACTIVE;
+    let mut callback = {
+        let mut pr = owner.borrow_mut();
+        if pr.flags & PROMPT_FREEING != 0 {
+            return PromptCallbackResult::Freed;
+        }
+        let callback = pr.inputcb.take().expect("non-null prompt callback");
+        pr.flags |= PROMPT_CALLBACK_ACTIVE;
+        callback
+    };
+    // The owner may be cleared or replaced by this callback. No state borrow
+    // spans it, and the caller's handle keeps the allocation alive.
     let result = callback(text, kind);
-    let free_pending = (*pr).flags & PROMPT_FREE_PENDING != 0;
-    (*pr).flags &= !PROMPT_CALLBACK_ACTIVE;
+    let free_pending = {
+        let mut pr = owner.borrow_mut();
+        pr.flags &= !PROMPT_CALLBACK_ACTIVE;
+        pr.flags & PROMPT_FREE_PENDING != 0
+    };
     if free_pending {
-        prompt_free(pr);
+        prompt_free(owner);
         return PromptCallbackResult::Freed;
     }
-    if (*pr).inputcb.is_none() {
-        (*pr).inputcb = Some(callback);
+    let mut pr = owner.borrow_mut();
+    if pr.inputcb.is_none() {
+        pr.inputcb = Some(callback);
     }
     if result == PROMPT_CLOSE {
-        (*pr).closed = 1;
+        pr.closed = 1;
         return PromptCallbackResult::Close;
     }
     if let Some(redraw) = redraw {
@@ -314,62 +336,52 @@ unsafe fn prompt_fire_callback(
     PromptCallbackResult::Continue
 }
 
-pub unsafe fn prompt_incremental_start(mut pr: *mut prompt) {
-    if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        let input = utf8_tocstr_cstring(&(*pr).buffer);
-        let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
-        bytes.push(b'=');
-        bytes.extend_from_slice(input.as_bytes());
-        let callback_input = CString::new(bytes).expect("the first NUL ends the prompt input");
-        prompt_fire_callback(pr, Some(&callback_input), PROMPT_KEY_HANDLED, None);
-    }
+pub fn prompt_incremental_start(owner: &PromptRef) {
+    let callback_input = {
+        let pr = owner.borrow();
+        if pr.flags & PROMPT_INCREMENTAL == 0 || pr.flags & PROMPT_FREEING != 0 {
+            return;
+        }
+        prompt_incremental_input(&pr, b'=')
+    };
+    prompt_fire_callback(owner, Some(&callback_input), PROMPT_KEY_HANDLED, None);
 }
-pub unsafe fn prompt_update(
-    mut pr: *mut prompt,
-    mut msg: *const ::core::ffi::c_char,
-    mut input: *const ::core::ffi::c_char,
-) {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    if cmd_find_valid_state(&(*pr).state) != 0 {
-        ft = format_create_from_state(
-            ::core::ptr::null_mut::<cmdq_item>(),
-            ::core::ptr::null_mut::<client>(),
-            &(*pr).state,
-        );
+
+fn prompt_incremental_input(pr: &prompt, prefix: u8) -> CString {
+    let input = utf8_tocstr_cstring(&pr.buffer);
+    let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
+    bytes.push(prefix);
+    bytes.extend_from_slice(input.as_bytes());
+    CString::new(bytes).expect("the first NUL ends the prompt input")
+}
+pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
+    let ft = if cmd_find_valid_state(&pr.state) != 0 {
+        format_create_from_state(std::ptr::null_mut(), std::ptr::null_mut(), &pr.state)
     } else {
-        ft = format_create_defaults(
-            ::core::ptr::null_mut::<cmdq_item>(),
-            ::core::ptr::null_mut::<client>(),
-            ::core::ptr::null_mut::<session>(),
-            ::core::ptr::null_mut::<winlink>(),
-            ::core::ptr::null_mut::<window_pane>(),
-        );
-    }
-    (*pr).string = CStr::from_ptr(msg).to_owned();
-    if input.is_null() {
-        input = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    let expanded = if (*pr).flags & PROMPT_NOFORMAT != 0 {
+        format_create_defaults(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    pr.string = msg.to_owned();
+    let input = input.unwrap_or(c"");
+    let expanded = if pr.flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
-        Some(format_expand_time_cstring(ft, input))
+        Some(format_expand_time_cstring(ft, input.as_ptr()))
     };
-    let tmp = expanded.as_ref().map_or(input, |value| value.as_ptr());
-    // Decode first because input may point into the current buffer.
-    let replacement = utf8_fromcstr_vec(CStr::from_ptr(tmp));
-    (*pr).buffer = replacement;
-    (*pr).index = utf8_strlen(&(*pr).buffer);
-    memset(
-        &raw mut (*pr).hindex as *mut u_int as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<[u_int; 2]>() as size_t,
-    );
-    (*pr).closed = 0 as ::core::ffi::c_int;
-    prompt_clear_complete(&mut *pr);
+    pr.buffer = utf8_fromcstr_vec(expanded.as_deref().unwrap_or(input));
+    pr.index = utf8_strlen(&pr.buffer);
+    pr.hindex.fill(0);
+    pr.closed = 0;
+    prompt_clear_complete(pr);
     format_free(ft);
 }
-pub unsafe fn prompt_closed(mut pr: *mut prompt) -> ::core::ffi::c_int {
-    return (*pr).closed;
+pub fn prompt_closed(pr: &prompt) -> ::core::ffi::c_int {
+    pr.closed
 }
 unsafe fn prompt_redraw_character(
     ctx: &mut screen_write_ctx,
@@ -1245,34 +1257,40 @@ fn prompt_backward_word(pr: &prompt, separators: &CStr) -> usize {
     }
     index
 }
-unsafe fn prompt_done(
-    pr: *mut prompt,
+fn prompt_done(
+    pr: &PromptRef,
     text: Option<&CStr>,
     redraw: &mut ::core::ffi::c_int,
 ) -> PromptCallbackResult {
     prompt_fire_callback(pr, text, PROMPT_KEY_CLOSE, Some(redraw))
 }
 unsafe fn prompt_done_with_history(
-    pr: *mut prompt,
+    pr: &PromptRef,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
-    let input = utf8_tocstr_cstring(&(*pr).buffer);
+    let (input, kind) = {
+        let pr = pr.borrow();
+        (utf8_tocstr_cstring(&pr.buffer), pr.type_0)
+    };
     if !input.is_empty() {
-        prompt_add_history(&input, (*pr).type_0);
+        prompt_add_history(&input, kind);
     }
     prompt_done(pr, Some(&input), redraw).key_result()
 }
-unsafe fn prompt_check_move(pr: *mut prompt, key: key_code) -> prompt_key_result {
-    if (*pr).flags & PROMPT_INCREMENTAL == 0 {
-        return PROMPT_KEY_NOT_HANDLED;
-    }
-    match key {
-        KEYC_UP | KEYC_DOWN | KEYC_PPAGE | KEYC_NPAGE => {}
-        KEYC_LEFT | KEYC_RIGHT if (*pr).flags & PROMPT_EDITARROWS == 0 => {}
-        _ => return PROMPT_KEY_NOT_HANDLED,
-    }
-    let input = utf8_tocstr_cstring(&(*pr).buffer);
-    match prompt_fire_callback(pr, Some(&input), PROMPT_KEY_MOVE, None) {
+fn prompt_check_move(owner: &PromptRef, key: key_code) -> prompt_key_result {
+    let input = {
+        let pr = owner.borrow();
+        if pr.flags & PROMPT_INCREMENTAL == 0 {
+            return PROMPT_KEY_NOT_HANDLED;
+        }
+        match key {
+            KEYC_UP | KEYC_DOWN | KEYC_PPAGE | KEYC_NPAGE => {}
+            KEYC_LEFT | KEYC_RIGHT if pr.flags & PROMPT_EDITARROWS == 0 => {}
+            _ => return PROMPT_KEY_NOT_HANDLED,
+        }
+        utf8_tocstr_cstring(&pr.buffer)
+    };
+    match prompt_fire_callback(owner, Some(&input), PROMPT_KEY_MOVE, None) {
         PromptCallbackResult::Continue => PROMPT_KEY_MOVE,
         PromptCallbackResult::Close | PromptCallbackResult::Freed => PROMPT_KEY_CLOSE,
     }
@@ -1457,34 +1475,41 @@ unsafe fn prompt_append_key(pr: &mut prompt, key: key_code) -> bool {
 }
 
 pub unsafe fn prompt_key(
-    pr: *mut prompt,
+    pr: &PromptRef,
     mut key: key_code,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
-    (*pr).closed = 0;
-    prompt_clear_complete(&mut *pr);
-    if (*pr).flags & PROMPT_KEY != 0 {
+    let (flags, keys) = {
+        let mut state = pr.borrow_mut();
+        if state.flags & PROMPT_FREEING != 0 {
+            return PROMPT_KEY_CLOSE;
+        }
+        state.closed = 0;
+        prompt_clear_complete(&mut state);
+        (state.flags, state.keys)
+    };
+    if flags & PROMPT_KEY != 0 {
         let key_string = key_string_format(key, false);
         if prompt_fire_callback(pr, Some(&key_string), PROMPT_KEY_CLOSE, None)
             == PromptCallbackResult::Continue
         {
-            (*pr).closed = 1;
+            pr.borrow_mut().closed = 1;
         }
         return PROMPT_KEY_CLOSE;
     }
     key = prompt_keypad_key(key & !KEYC_MASK_FLAGS);
-    let translated = if (*pr).flags & PROMPT_NUMERIC != 0 {
+    let translated = if flags & PROMPT_NUMERIC != 0 {
         if !(b'0' as key_code..=b'9' as key_code).contains(&key) {
-            let input = utf8_tocstr_cstring(&(*pr).buffer);
+            let input = utf8_tocstr_cstring(&pr.borrow().buffer);
             if prompt_fire_callback(pr, Some(&input), PROMPT_KEY_CLOSE, None)
                 == PromptCallbackResult::Continue
             {
-                (*pr).closed = 1;
+                pr.borrow_mut().closed = 1;
             }
             return PROMPT_KEY_NOT_HANDLED;
         }
         PromptTranslatedKey::Append(key)
-    } else if (*pr).flags & (PROMPT_SINGLE | PROMPT_QUOTENEXT) != 0 {
+    } else if flags & (PROMPT_SINGLE | PROMPT_QUOTENEXT) != 0 {
         if key & KEYC_MASK_KEY == KEYC_BSPACE {
             key = 0x7f;
         } else if key & KEYC_MASK_KEY > 0x7f {
@@ -1499,10 +1524,10 @@ pub unsafe fn prompt_key(
                 KEYC_MASK_KEY
             };
         }
-        (*pr).flags &= !PROMPT_QUOTENEXT;
+        pr.borrow_mut().flags &= !PROMPT_QUOTENEXT;
         PromptTranslatedKey::Append(key)
-    } else if (*pr).keys == MODEKEY_VI {
-        prompt_translate_key(&mut *pr, key, redraw)
+    } else if keys == MODEKEY_VI {
+        prompt_translate_key(&mut pr.borrow_mut(), key, redraw)
     } else {
         PromptTranslatedKey::Process(key)
     };
@@ -1514,7 +1539,7 @@ pub unsafe fn prompt_key(
             if result != PROMPT_KEY_NOT_HANDLED {
                 return result;
             }
-            prompt_edit_key(&mut *pr, key)
+            prompt_edit_key(&mut pr.borrow_mut(), key)
         }
     };
     let mut result = PROMPT_KEY_HANDLED;
@@ -1527,15 +1552,15 @@ pub unsafe fn prompt_key(
         PromptEditAction::Cancel => return prompt_done(pr, None, redraw).key_result(),
         PromptEditAction::Changed(prefix) => prefix,
         PromptEditAction::Append(key) => {
-            if !prompt_append_key(&mut *pr, key) {
+            if !prompt_append_key(&mut pr.borrow_mut(), key) {
                 return PROMPT_KEY_HANDLED;
             }
-            if (*pr).flags & PROMPT_SINGLE != 0 {
-                if utf8_strlen(&(*pr).buffer) != 1 {
-                    (*pr).closed = 1;
+            if flags & PROMPT_SINGLE != 0 {
+                if utf8_strlen(&pr.borrow().buffer) != 1 {
+                    pr.borrow_mut().closed = 1;
                     result = PROMPT_KEY_CLOSE;
                 } else {
-                    let input = utf8_tocstr_cstring(&(*pr).buffer);
+                    let input = utf8_tocstr_cstring(&pr.borrow().buffer);
                     let outcome = prompt_done(pr, Some(&input), redraw);
                     if outcome == PromptCallbackResult::Freed {
                         // Closing callbacks may replace the owner or destroy it.
@@ -1551,15 +1576,14 @@ pub unsafe fn prompt_key(
     };
     // Deletions move the sentinel in place. Keep only the visible cells and
     // that sentinel so subsequent Vec insertions do not retain deleted cells.
-    prompt_trim_buffer(&mut *pr);
+    prompt_trim_buffer(&mut pr.borrow_mut());
     *redraw = 1;
-    if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        let input = utf8_tocstr_cstring(&(*pr).buffer);
-        let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
-        bytes.push(prefix);
-        bytes.extend_from_slice(input.as_bytes());
-        let callback_input = CString::new(bytes).expect("the first NUL ends the prompt input");
-        prompt_fire_callback(pr, Some(&callback_input), PROMPT_KEY_HANDLED, None);
+    let callback_input = {
+        let state = pr.borrow();
+        (state.flags & PROMPT_INCREMENTAL != 0).then(|| prompt_incremental_input(&state, prefix))
+    };
+    if let Some(input) = callback_input {
+        prompt_fire_callback(pr, Some(&input), PROMPT_KEY_HANDLED, None);
     }
     result
 }
@@ -1698,6 +1722,14 @@ mod prompt_buffer_tests {
             index,
             ..Default::default()
         })
+    }
+
+    fn make_prompt_owner(input: &CStr, index: usize) -> PromptRef {
+        Rc::new(RefCell::new(prompt {
+            buffer: utf8_fromcstr_vec(input),
+            index,
+            ..Default::default()
+        }))
     }
 
     fn cell(byte: u8) -> utf8_data {
@@ -1861,8 +1893,8 @@ mod prompt_buffer_tests {
 
     #[test]
     fn vi_translation_preserves_mode_switches_and_multibyte_cursor_edits() {
-        let mut pr = make_prompt(c"é漢Z", 3, None);
-        pr.keys = MODEKEY_VI;
+        let pr = make_prompt_owner(c"é漢Z", 3);
+        pr.borrow_mut().keys = MODEKEY_VI;
         // Expected text and cursor positions follow the pinned tmux vi
         // insert/command transitions, including backspace as a movement.
         for (key, expected, index, command) in [
@@ -1878,13 +1910,19 @@ mod prompt_buffer_tests {
         ] {
             let mut redraw = 0;
             unsafe {
-                assert_eq!(prompt_key(&mut *pr, key, &mut redraw), PROMPT_KEY_HANDLED);
-                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
+                assert_eq!(prompt_key(&pr, key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(
+                    utf8_tocstr_cstring(&pr.borrow().buffer).as_c_str(),
+                    expected
+                );
             }
             assert_eq!(redraw, 1);
-            assert_eq!(pr.index, index);
-            assert_eq!(pr.flags & PROMPT_COMMANDMODE != 0, command);
-            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+            assert_eq!(pr.borrow().index, index);
+            assert_eq!(pr.borrow().flags & PROMPT_COMMANDMODE != 0, command);
+            assert_eq!(
+                pr.borrow().buffer.len(),
+                utf8_strlen(&pr.borrow().buffer) + 1
+            );
         }
 
         // A translated key must preserve an already pending redraw. Only
@@ -1893,38 +1931,41 @@ mod prompt_buffer_tests {
         let modified_keypad = KEYC_KP_PLUS | KEYC_CTRL;
         assert_eq!(prompt_keypad_key(modified_keypad), modified_keypad);
         assert_eq!(
-            prompt_translate_key(&mut pr, modified_keypad, &mut redraw),
+            prompt_translate_key(&mut pr.borrow_mut(), modified_keypad, &mut redraw),
             PromptTranslatedKey::Append(modified_keypad)
         );
         assert_eq!(redraw, 7);
         assert_eq!(
-            prompt_translate_key(&mut pr, 27, &mut redraw),
+            prompt_translate_key(&mut pr.borrow_mut(), 27, &mut redraw),
             PromptTranslatedKey::Handled
         );
-        assert_eq!((pr.index, redraw), (0, 1));
+        assert_eq!((pr.borrow().index, redraw), (0, 1));
         redraw = 7;
         assert_eq!(
-            prompt_translate_key(&mut pr, 27, &mut redraw),
+            prompt_translate_key(&mut pr.borrow_mut(), 27, &mut redraw),
             PromptTranslatedKey::Handled
         );
-        assert_eq!((pr.index, redraw), (0, 7));
+        assert_eq!((pr.borrow().index, redraw), (0, 7));
     }
 
     #[test]
     fn transpose_keeps_multibyte_cells_and_the_logical_sentinel() {
         for (index, expected, next) in [(0, c"é漢Z", 0), (1, c"漢éZ", 2), (3, c"éZ漢", 3)] {
-            let mut pr = make_prompt(c"é漢Z", index, None);
+            let pr = make_prompt_owner(c"é漢Z", index);
             let mut redraw = 0;
             unsafe {
                 assert_eq!(
-                    prompt_key(&mut *pr, KEYC_CTRL | b't' as key_code, &mut redraw),
+                    prompt_key(&pr, KEYC_CTRL | b't' as key_code, &mut redraw),
                     PROMPT_KEY_HANDLED
                 );
-                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
+                assert_eq!(
+                    utf8_tocstr_cstring(&pr.borrow().buffer).as_c_str(),
+                    expected
+                );
             }
-            assert_eq!(pr.index, next);
-            assert_eq!(pr.buffer.len(), 4);
-            assert_eq!(pr.buffer[3].size, 0);
+            assert_eq!(pr.borrow().index, next);
+            assert_eq!(pr.borrow().buffer.len(), 4);
+            assert_eq!(pr.borrow().buffer[3].size, 0);
         }
     }
 
@@ -1942,30 +1983,43 @@ mod prompt_buffer_tests {
             (KEYC_CTRL | b'w' as key_code, 3, c"abé漢 Z", 2, Some(c",")),
             (KEYC_CTRL | b'w' as key_code, 6, c"ab,Z", 3, Some(c"é漢 ")),
         ] {
-            let mut pr = make_prompt(c"ab,é漢 Z", index, None);
-            pr.word_separators = c",".to_owned();
+            let pr = make_prompt_owner(c"ab,é漢 Z", index);
+            pr.borrow_mut().word_separators = c",".to_owned();
             let mut redraw = 0;
             unsafe {
-                assert_eq!(prompt_key(&mut *pr, key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(prompt_key(&pr, key, &mut redraw), PROMPT_KEY_HANDLED);
             }
-            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
-            assert_eq!(pr.index, next);
-            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
-            assert_eq!(pr.buffer.last().unwrap().size, 0);
             assert_eq!(
-                pr.copied.as_deref().map(utf8_tocstr_cstring).as_deref(),
+                utf8_tocstr_cstring(&pr.borrow().buffer).as_c_str(),
+                expected
+            );
+            assert_eq!(pr.borrow().index, next);
+            assert_eq!(
+                pr.borrow().buffer.len(),
+                utf8_strlen(&pr.borrow().buffer) + 1
+            );
+            assert_eq!(pr.borrow().buffer.last().unwrap().size, 0);
+            assert_eq!(
+                pr.borrow()
+                    .copied
+                    .as_deref()
+                    .map(utf8_tocstr_cstring)
+                    .as_deref(),
                 copied
             );
             if let Some(copied) = copied {
                 assert_eq!(
-                    pr.copied.as_ref().unwrap().len(),
+                    pr.borrow().copied.as_ref().unwrap().len(),
                     copied.to_str().unwrap().chars().count() + 1
                 );
                 unsafe {
-                    prompt_key(&mut *pr, KEYC_CTRL | b'y' as key_code, &mut redraw);
+                    prompt_key(&pr, KEYC_CTRL | b'y' as key_code, &mut redraw);
                 }
-                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), c"ab,é漢 Z");
-                assert_eq!(pr.buffer.len(), 8);
+                assert_eq!(
+                    utf8_tocstr_cstring(&pr.borrow().buffer).as_c_str(),
+                    c"ab,é漢 Z"
+                );
+                assert_eq!(pr.borrow().buffer.len(), 8);
             }
         }
     }
@@ -1975,10 +2029,10 @@ mod prompt_buffer_tests {
         use std::{cell::RefCell, rc::Rc};
         let events = Rc::new(RefCell::new(Vec::new()));
         let inputs = events.clone();
-        let mut pr = make_prompt(c"ab", 2, None);
-        pr.flags = PROMPT_INCREMENTAL | PROMPT_EDITARROWS;
-        pr.last = Some(c"é漢".to_owned());
-        pr.inputcb = Some(Box::new(move |input, kind| {
+        let pr = make_prompt_owner(c"ab", 2);
+        pr.borrow_mut().flags = PROMPT_INCREMENTAL | PROMPT_EDITARROWS;
+        pr.borrow_mut().last = Some(c"é漢".to_owned());
+        pr.borrow_mut().inputcb = Some(Box::new(move |input, kind| {
             inputs.borrow_mut().push((input.unwrap().to_owned(), kind));
             PROMPT_CONTINUE
         }));
@@ -2005,12 +2059,18 @@ mod prompt_buffer_tests {
         ] {
             let mut redraw = 0;
             unsafe {
-                assert_eq!(prompt_key(&mut *pr, key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(prompt_key(&pr, key, &mut redraw), PROMPT_KEY_HANDLED);
             }
-            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
-            assert_eq!(pr.index, index);
+            assert_eq!(
+                utf8_tocstr_cstring(&pr.borrow().buffer).as_c_str(),
+                expected
+            );
+            assert_eq!(pr.borrow().index, index);
             assert_eq!(redraw, redraw_expected);
-            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+            assert_eq!(
+                pr.borrow().buffer.len(),
+                utf8_strlen(&pr.borrow().buffer) + 1
+            );
             assert_eq!(
                 &*events.borrow(),
                 &event
@@ -2020,8 +2080,8 @@ mod prompt_buffer_tests {
             );
             events.borrow_mut().clear();
         }
-        assert_eq!(pr.flags & PROMPT_QUOTENEXT, 0);
-        assert_eq!(pr.buffer[2].width, 2);
+        assert_eq!(pr.borrow().flags & PROMPT_QUOTENEXT, 0);
+        assert_eq!(pr.borrow().buffer[2].width, 2);
     }
 
     #[test]
@@ -2083,28 +2143,35 @@ mod prompt_buffer_tests {
                 let events = Rc::new(RefCell::new(Vec::new()));
                 let callback_events = events.clone();
                 let free_events = events.clone();
-                let pr = Box::into_raw(make_prompt(c"", 0, None));
+                let pr = make_prompt_owner(c"", 0);
+                let weak = Rc::downgrade(&pr);
                 unsafe {
-                    (*pr).flags = flags;
-                    (*pr).freecb = Some(Box::new(move || {
+                    pr.borrow_mut().flags = flags;
+                    let free_prompt = weak.clone();
+                    pr.borrow_mut().freecb = Some(Box::new(move || {
+                        let pr = free_prompt.upgrade().unwrap();
                         free_events.borrow_mut().push("freed");
                         // Recursive cleanup cannot run this callback twice.
-                        prompt_free(pr);
+                        prompt_free(&pr);
                     }));
-                    (*pr).inputcb = Some(Box::new(move |input, result| {
+                    let input_prompt = weak.clone();
+                    pr.borrow_mut().inputcb = Some(Box::new(move |input, result| {
+                        let pr = input_prompt.upgrade().unwrap();
                         assert_eq!(input, text);
                         assert_eq!(result, kind);
                         callback_events.borrow_mut().push("start");
-                        prompt_free(pr);
+                        prompt_free(&pr);
                         assert_eq!(&*callback_events.borrow(), &["start"]);
-                        assert_ne!((*pr).flags & PROMPT_FREE_PENDING, 0);
+                        assert_ne!(pr.borrow().flags & PROMPT_FREE_PENDING, 0);
                         callback_events.borrow_mut().push("end");
                         callback_result
                     }));
-                    assert_eq!(prompt_key(pr, key, &mut 0), expected);
+                    assert_eq!(prompt_key(&pr, key, &mut 0), expected);
                 }
-                // The callback destroyed pr. Neither this test nor the key
-                // dispatcher may read its cells or flags after returning.
+                assert_ne!(pr.borrow().flags & PROMPT_FREEING, 0);
+                assert!(pr.borrow().inputcb.is_none());
+                drop(pr);
+                assert!(weak.upgrade().is_none());
                 assert_eq!(&*events.borrow(), &["start", "end", "freed"]);
                 assert_eq!(Rc::strong_count(&events), 1);
             }
@@ -2117,18 +2184,21 @@ mod prompt_buffer_tests {
         for callback_result in [PROMPT_CONTINUE, PROMPT_CLOSE] {
             let events = Rc::new(RefCell::new(Vec::new()));
             let callback_events = events.clone();
-            let pr = Box::into_raw(make_prompt(c"", 0, None));
+            let pr = make_prompt_owner(c"", 0);
+            let weak = Rc::downgrade(&pr);
             unsafe {
-                (*pr).flags = PROMPT_SINGLE | PROMPT_INCREMENTAL;
-                (*pr).inputcb = Some(Box::new(move |input, kind| {
+                pr.borrow_mut().flags = PROMPT_SINGLE | PROMPT_INCREMENTAL;
+                let input_prompt = weak.clone();
+                pr.borrow_mut().inputcb = Some(Box::new(move |input, kind| {
+                    let pr = input_prompt.upgrade().unwrap();
                     callback_events
                         .borrow_mut()
                         .push((input.unwrap().to_owned(), kind));
                     if kind == PROMPT_KEY_CLOSE {
                         // Model a callback updating this prompt for its next
                         // question while the previous input stays borrowed.
-                        (*pr).buffer = utf8_fromcstr_vec(c"é漢");
-                        (*pr).index = 2;
+                        pr.borrow_mut().buffer = utf8_fromcstr_vec(c"é漢");
+                        pr.borrow_mut().index = 2;
                     }
                     callback_result
                 }));
@@ -2138,9 +2208,9 @@ mod prompt_buffer_tests {
                 } else {
                     PROMPT_KEY_HANDLED
                 };
-                assert_eq!(prompt_key(pr, b'a' as key_code, &mut redraw), expected);
+                assert_eq!(prompt_key(&pr, b'a' as key_code, &mut redraw), expected);
                 assert_eq!(redraw, 1);
-                assert_eq!(utf8_tocstr_cstring(&(*pr).buffer).as_c_str(), c"é漢");
+                assert_eq!(utf8_tocstr_cstring(&pr.borrow().buffer).as_c_str(), c"é漢");
                 assert_eq!(
                     &*events.borrow(),
                     &[
@@ -2148,10 +2218,60 @@ mod prompt_buffer_tests {
                         (c"=é漢".to_owned(), PROMPT_KEY_HANDLED)
                     ]
                 );
-                prompt_free(pr);
+                prompt_free(&pr);
             }
+            drop(pr);
+            assert!(weak.upgrade().is_none());
             assert_eq!(Rc::strong_count(&events), 1);
         }
+    }
+
+    #[test]
+    fn callbacks_replace_owners_without_retaining_closed_prompts() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let owner = Rc::new(RefCell::new(None::<PromptRef>));
+        let pr = make_prompt_owner(c"", 0);
+        pr.borrow_mut().flags = PROMPT_SINGLE;
+        *owner.borrow_mut() = Some(pr.clone());
+        let weak = Rc::downgrade(&pr);
+        let weak_owner = Rc::downgrade(&owner);
+        let callback_events = events.clone();
+        pr.borrow_mut().inputcb = Some(Box::new(move |input, _| {
+            assert_eq!(input, Some(c"x"));
+            let owner = weak_owner.upgrade().unwrap();
+            let old = owner.borrow_mut().take().unwrap();
+            prompt_free(&old);
+            callback_events.borrow_mut().push("replacing");
+            let replacement = make_prompt_owner(c"new", 3);
+            *owner.borrow_mut() = Some(replacement);
+            assert_ne!(old.borrow().flags & PROMPT_FREE_PENDING, 0);
+            PROMPT_CLOSE
+        }));
+        let weak_owner = Rc::downgrade(&owner);
+        let free_events = events.clone();
+        pr.borrow_mut().freecb = Some(Box::new(move || {
+            let owner = weak_owner.upgrade().unwrap();
+            let current = owner.borrow().as_ref().unwrap().clone();
+            assert_eq!(
+                utf8_tocstr_cstring(&current.borrow().buffer).as_c_str(),
+                c"new"
+            );
+            free_events.borrow_mut().push("freed");
+        }));
+        unsafe {
+            assert_eq!(prompt_key(&pr, b'x' as key_code, &mut 0), PROMPT_KEY_CLOSE);
+            // A retained closed handle cannot dispatch another callback.
+            assert_eq!(prompt_key(&pr, b'y' as key_code, &mut 0), PROMPT_KEY_CLOSE);
+        }
+        assert_eq!(&*events.borrow(), &["replacing", "freed"]);
+        let replacement = owner.borrow_mut().take().unwrap();
+        assert!(!Rc::ptr_eq(&replacement, &pr));
+        assert_eq!(prompt_closed(&replacement.borrow()), 0);
+        prompt_free(&pr);
+        drop(pr);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(Rc::strong_count(&events), 1);
+        prompt_free(&replacement);
     }
 
     #[test]

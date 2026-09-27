@@ -65,7 +65,7 @@ pub struct window_switch_modedata {
     pub command: CString,
     pub type_0: window_switch_type,
     pub filter: CString,
-    pub prompt: *mut prompt,
+    pub prompt: Option<PromptRef>,
     pub prompt_cx: u_int,
     // Matches only borrow rows; boxes keep their addresses stable as the list grows.
     item_list: Vec<Box<window_switch_itemdata>>,
@@ -438,14 +438,18 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         }
         i = i.wrapping_add(1);
     }
-    if !(*data).prompt.is_null() {
+    if (*data).prompt.is_some() {
         let pdd = prompt_draw_data {
             area_x: 0 as u_int,
             area_width: sx,
             prompt_line: sy.wrapping_sub(1 as u_int),
         };
         (*s).mode |= MODE_CURSOR;
-        (*data).prompt_cx = prompt_draw(&*(*data).prompt, &mut ctx, pdd);
+        (*data).prompt_cx = prompt_draw(
+            &(*data).prompt.as_ref().expect("active prompt").borrow(),
+            &mut ctx,
+            pdd,
+        );
         screen_write_cursormove(
             &mut ctx,
             (*data).prompt_cx as ::core::ffi::c_int,
@@ -483,7 +487,7 @@ unsafe fn window_switch_init(
         command: CStr::from_ptr(command).to_owned(),
         type_0: WINDOW_SWITCH_TYPE_SESSION,
         filter: CString::default(),
-        prompt: ::core::ptr::null_mut(),
+        prompt: None,
         prompt_cx: 0,
         item_list: Vec::new(),
         matches: Vec::new(),
@@ -506,11 +510,12 @@ unsafe fn window_switch_init(
     pd.inputcb = Some(Box::new(move |s, key| unsafe {
         window_switch_prompt_callback(data, s, key)
     }));
-    (*data).prompt = Box::into_raw(prompt_create(pd));
+    let prompt = prompt_create(pd);
+    (*data).prompt = Some(prompt.clone());
     prompt_update(
-        (*data).prompt,
-        b"(search) \0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).filter.as_ptr(),
+        &mut prompt.borrow_mut(),
+        c"(search) ",
+        Some(&(*data).filter),
     );
     s = &raw mut (*data).screen;
     screen_init(
@@ -528,7 +533,7 @@ unsafe fn window_switch_init(
         }
     }
     window_switch_build(data);
-    prompt_incremental_start((*data).prompt);
+    prompt_incremental_start(&prompt);
     window_switch_draw_screen(wme);
     return s;
 }
@@ -539,7 +544,9 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     }
     (*data).item_list.clear();
     (*data).matches.clear();
-    prompt_free((*data).prompt);
+    if let Some(prompt) = (*data).prompt.take() {
+        prompt_free(&prompt);
+    }
     screen_free(&mut (*data).screen);
     drop(Box::from_raw(data));
 }
@@ -694,7 +701,7 @@ unsafe fn window_switch_key(
         {
             return;
         }
-        if !(*data).prompt.is_null()
+        if (*data).prompt.is_some()
             && (*data).screen.grid().sy != 0 as u_int
             && y == (*data).screen.grid().sy.wrapping_sub(1 as u_int)
             && (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int
@@ -702,7 +709,7 @@ unsafe fn window_switch_key(
             && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
         {
             result = prompt_mouse(
-                &mut *(*data).prompt,
+                &mut (*data).prompt.as_ref().expect("active prompt").borrow_mut(),
                 x,
                 0 as u_int,
                 (*data).screen.grid().sx,
@@ -765,8 +772,8 @@ unsafe fn window_switch_key(
             }
             _ => {}
         }
-        if !(*data).prompt.is_null() {
-            result = prompt_key((*data).prompt, key, &mut redraw);
+        if let Some(prompt) = (*data).prompt.clone() {
+            result = prompt_key(&prompt, key, &mut redraw);
             if redraw != 0 {
                 window_switch_draw_screen(wme);
                 (*wp).flags |= PANE_REDRAW;

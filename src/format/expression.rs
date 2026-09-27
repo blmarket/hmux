@@ -2195,7 +2195,7 @@ pub(super) unsafe fn format_replace_expression(
 }
 pub(super) unsafe fn format_cycle_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut c: *mut client = arg as *mut client;
-    if (*c).message_string.is_none() && (*c).prompt.is_null() {
+    if (*c).message_string.is_none() && (*c).prompt.is_none() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
 }

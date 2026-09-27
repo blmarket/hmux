@@ -2320,7 +2320,7 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
     let mut offset: ::core::ffi::c_int = 0;
     let mut width: ::core::ffi::c_int = 0;
     let mut wy: ::core::ffi::c_int = 0;
-    if (*wp).prompt.is_null() || (*wp).sx == 0 as u_int || (*wp).sy == 0 as u_int {
+    if (*wp).prompt.is_none() || (*wp).sx == 0 as u_int || (*wp).sy == 0 as u_int {
         return;
     }
     if !(*dctx).flags & REDRAW_STATUS_TOP != 0 {
@@ -2358,7 +2358,11 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
         area_width: (*wp).sx,
         prompt_line: 0 as u_int,
     };
-    (*wp).prompt_cx = prompt_draw(&*(*wp).prompt, &mut ctx, pdd);
+    (*wp).prompt_cx = prompt_draw(
+        &(*wp).prompt.as_ref().expect("active prompt").borrow(),
+        &mut ctx,
+        pdd,
+    );
     screen_write_stop(&mut ctx);
     tty_draw_line(
         tty,
@@ -2417,7 +2421,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
     if flags & REDRAW_STATUS != 0 {
         if !(*c).message_string.is_none() {
             redraw = status_message_redraw(c);
-        } else if !(*c).prompt.is_null() {
+        } else if (*c).prompt.is_some() {
             redraw = status_prompt_redraw(c);
         } else {
             redraw = status_redraw(c);
@@ -2532,7 +2536,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
     }
     if flags & REDRAW_STATUS != 0 {
         lines = dctx.status_lines;
-        if !(*c).message_string.is_none() || !(*c).prompt.is_null() {
+        if !(*c).message_string.is_none() || (*c).prompt.is_some() {
             lines = if lines == 0 as u_int {
                 1 as u_int
             } else {

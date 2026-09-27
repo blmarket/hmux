@@ -2311,7 +2311,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         modes: window_pane_modes::default(),
         searchstr: None,
         searchregex: 0,
-        prompt: ::core::ptr::null_mut::<prompt>(),
+        prompt: None,
         prompt_data: ::core::ptr::null_mut::<window_pane_prompt>(),
         prompt_cx: 0,
         border_gc_set: 0,
@@ -3251,10 +3251,11 @@ pub unsafe fn window_pane_set_prompt(
     pd.freecb = Some(Box::new(move || unsafe {
         window_pane_prompt_free_callback(wpp)
     }));
-    (*wp).prompt = Box::into_raw(prompt_create(pd));
+    let prompt = prompt_create(pd);
+    (*wp).prompt = Some(prompt.clone());
     (*wp).prompt_data = wpp;
     (*wp).flags |= PANE_REDRAW;
-    prompt_incremental_start((*wp).prompt);
+    prompt_incremental_start(&prompt);
     window_fire_pane_prompt(
         b"pane-prompt-opened\0" as *const u8 as *const ::core::ffi::c_char,
         wp,
@@ -3262,15 +3263,14 @@ pub unsafe fn window_pane_set_prompt(
     );
 }
 pub unsafe fn window_pane_clear_prompt(mut wp: *mut window_pane) {
-    let mut prompt: *mut prompt = (*wp).prompt;
+    let prompt = (*wp).prompt.take();
     let mut wpp: *mut window_pane_prompt = (*wp).prompt_data;
     let mut type_0: prompt_type = PROMPT_TYPE_INVALID;
-    if !prompt.is_null() {
+    if let Some(prompt) = prompt {
         if !wpp.is_null() {
             type_0 = (*wpp).type_0;
         }
-        (*wp).prompt = ::core::ptr::null_mut::<prompt>();
-        prompt_free(prompt);
+        prompt_free(&prompt);
         (*wp).flags |= PANE_REDRAW;
         if !(*wp).flags & PANE_DESTROYED != 0 {
             window_fire_pane_prompt(
@@ -3282,15 +3282,19 @@ pub unsafe fn window_pane_clear_prompt(mut wp: *mut window_pane) {
     }
 }
 pub unsafe fn window_pane_has_prompt(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    return ((*wp).prompt != NULL as *mut prompt) as ::core::ffi::c_int;
+    return (*wp).prompt.is_some() as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_update_prompt(
     mut wp: *mut window_pane,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
 ) {
-    if !(*wp).prompt.is_null() {
-        prompt_update((*wp).prompt, msg, input);
+    if (*wp).prompt.is_some() {
+        prompt_update(
+            &mut (*wp).prompt.as_ref().expect("active prompt").borrow_mut(),
+            CStr::from_ptr(msg),
+            (!input.is_null()).then(|| CStr::from_ptr(input)),
+        );
         (*wp).flags |= PANE_REDRAW;
     }
 }
@@ -3300,7 +3304,7 @@ pub unsafe fn window_pane_prompt_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
-    let mut prompt: *mut prompt = (*wp).prompt;
+    let prompt = (*wp).prompt.clone();
     let mut wpp: *mut window_pane_prompt = (*wp).prompt_data;
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut wp_id: u_int = (*wp).id;
@@ -3308,9 +3312,9 @@ pub unsafe fn window_pane_prompt_key(
     let mut y: u_int = 0;
     let mut py: u_int = 0;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if prompt.is_null() {
+    let Some(prompt) = prompt else {
         return PROMPT_KEY_NOT_HANDLED;
-    }
+    };
     if !wpp.is_null() {
         (*wpp).c = c;
     }
@@ -3338,13 +3342,19 @@ pub unsafe fn window_pane_prompt_key(
                 py = (*wp).sy.wrapping_sub(1 as u_int);
             }
             if y == py {
-                result = prompt_mouse(&mut *prompt, x, 0 as u_int, (*wp).sx, Some(&mut redraw));
+                result = prompt_mouse(
+                    &mut prompt.borrow_mut(),
+                    x,
+                    0 as u_int,
+                    (*wp).sx,
+                    Some(&mut redraw),
+                );
             } else {
                 result = PROMPT_KEY_NOT_HANDLED;
             }
         }
     } else {
-        result = prompt_key(prompt, key, &mut redraw);
+        result = prompt_key(&prompt, key, &mut redraw);
     }
     wp = window_pane_find_by_id(wp_id);
     if wp.is_null() {
@@ -3353,14 +3363,22 @@ pub unsafe fn window_pane_prompt_key(
     if !wpp.is_null() && (*wp).prompt_data == wpp {
         (*wpp).c = ::core::ptr::null_mut::<client>();
     }
-    if (*wp).prompt == prompt
+    if (*wp)
+        .prompt
+        .as_ref()
+        .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
         && (result as ::core::ffi::c_uint
             == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
-            || prompt_closed(prompt) != 0)
+            || prompt_closed(&prompt.borrow()) != 0)
     {
         window_pane_clear_prompt(wp);
     }
-    if redraw != 0 || (*wp).prompt != prompt {
+    if redraw != 0
+        || !(*wp)
+            .prompt
+            .as_ref()
+            .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+    {
         (*wp).flags |= PANE_REDRAW;
     }
     return result;

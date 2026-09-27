@@ -2,7 +2,7 @@ use hmux2::src::environ::{environ_create, environ_free};
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
 use hmux2::src::prompt::{
-    prompt_create, prompt_free, prompt_incremental_start, prompt_set_options,
+    prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };
 use hmux2::src::shared::command::cmd_find_state;
 use hmux2::src::shared::prompt::*;
@@ -95,19 +95,19 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             pd.freecb = Some(Box::new(move || {
                 freed.borrow_mut().push(c"freed".to_owned())
             }));
-            let mut prompt = prompt_create(pd);
+            let prompt = prompt_create(pd);
             drop(label);
             drop(input);
-            assert_eq!(prompt.string.as_c_str(), c"label: ");
-            assert_eq!(prompt.state.idx, 9);
-            assert_eq!(prompt.state.flags, 0);
-            assert!(prompt.state.current.is_null());
+            assert_eq!(prompt.borrow().string.as_c_str(), c"label: ");
+            assert_eq!(prompt.borrow().state.idx, 9);
+            assert_eq!(prompt.borrow().state.flags, 0);
+            assert!(prompt.borrow().state.current.is_null());
             assert_eq!(
                 (
-                    prompt.style_str.as_ptr(),
-                    prompt.command_style_str.as_ptr(),
-                    prompt.message_format.as_ptr(),
-                    prompt.word_separators.as_ptr()
+                    prompt.borrow().style_str.as_ptr(),
+                    prompt.borrow().command_style_str.as_ptr(),
+                    prompt.borrow().message_format.as_ptr(),
+                    prompt.borrow().word_separators.as_ptr()
                 ),
                 option_addresses
             );
@@ -117,23 +117,50 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
                 c"1漢"
             };
             if flags & PROMPT_INCREMENTAL != 0 {
-                assert_eq!(prompt.last.as_deref(), Some(expected));
-                assert_eq!(prompt.index, 0);
-                assert_eq!(input_bytes(&prompt), b"");
+                assert_eq!(prompt.borrow().last.as_deref(), Some(expected));
+                assert_eq!(prompt.borrow().index, 0);
+                assert_eq!(input_bytes(&prompt.borrow()), b"");
             } else {
-                assert!(prompt.last.is_none());
-                assert_eq!(prompt.index, expected.to_str().unwrap().chars().count());
-                assert_eq!(input_bytes(&prompt), expected.to_bytes());
+                assert!(prompt.borrow().last.is_none());
+                assert_eq!(
+                    prompt.borrow().index,
+                    expected.to_str().unwrap().chars().count()
+                );
+                assert_eq!(input_bytes(&prompt.borrow()), expected.to_bytes());
             }
             assert!(events.borrow().is_empty());
-            prompt_incremental_start(&mut *prompt);
+            prompt_incremental_start(&prompt);
             let expected_events = if flags & PROMPT_INCREMENTAL != 0 {
                 vec![c"=".to_owned()]
             } else {
                 vec![]
             };
             assert_eq!(*events.borrow(), expected_events);
-            prompt_free(Box::into_raw(prompt));
+            {
+                let mut state = prompt.borrow_mut();
+                state.closed = 1;
+                state.hindex = [2, 3];
+                state.completion.names.push(c"stale".to_owned());
+                state.completion.display = Some(c"stale".to_owned());
+                prompt_update(&mut state, c"updated: ", Some(c"#{==:b,b}é"));
+                let expected = if flags & PROMPT_NOFORMAT != 0 {
+                    c"#{==:b,b}é"
+                } else {
+                    c"1é"
+                };
+                assert_eq!(input_bytes(&state), expected.to_bytes());
+                assert_eq!(state.index, expected.to_str().unwrap().chars().count());
+                assert_eq!(state.string.as_c_str(), c"updated: ");
+                assert_eq!(state.hindex, [0, 0]);
+                assert_eq!(state.closed, 0);
+                assert!(state.completion.names.is_empty());
+                assert!(state.completion.display.is_none());
+                prompt_update(&mut state, c"empty: ", None);
+                assert_eq!(input_bytes(&state), b"");
+                assert_eq!(state.index, 0);
+            }
+            assert_eq!(*events.borrow(), expected_events);
+            prompt_free(&prompt);
             let mut expected_events = expected_events;
             expected_events.push(c"freed".to_owned());
             assert_eq!(*events.borrow(), expected_events);
@@ -143,10 +170,10 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             flags: PROMPT_NOFORMAT,
             ..Default::default()
         });
-        assert_eq!(prompt.state.idx, -1);
-        assert_eq!(prompt.index, 0);
-        assert_eq!(input_bytes(&prompt), b"");
-        prompt_free(Box::into_raw(prompt));
+        assert_eq!(prompt.borrow().state.idx, -1);
+        assert_eq!(prompt.borrow().index, 0);
+        assert_eq!(input_bytes(&prompt.borrow()), b"");
+        prompt_free(&prompt);
         (
             global_environ,
             global_options,

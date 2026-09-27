@@ -77,7 +77,7 @@ unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     if s.is_null() {
         return;
     }
-    if (*c).message_string.is_none() && (*c).prompt.is_null() {
+    if (*c).message_string.is_none() && (*c).prompt.is_none() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
     tv.tv_usec = 0 as __suseconds_t;
@@ -524,7 +524,7 @@ pub unsafe fn status_message_clear(mut c: *mut client) {
         return;
     }
     server_client_set_message(&mut *c, None);
-    if (*c).prompt.is_null() {
+    if (*c).prompt.is_none() {
         (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     }
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
@@ -680,7 +680,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
-    if !(*c).prompt.is_null() {
+    if (*c).prompt.is_some() {
         status_prompt_key(
             c,
             'y' as i32 as key_code,
@@ -720,12 +720,13 @@ pub unsafe fn status_prompt_set(
         }));
     }
     pd.freecb = freecb.take();
-    (*c).prompt = Box::into_raw(prompt_create(pd));
+    let prompt = prompt_create(pd);
+    (*c).prompt = Some(prompt.clone());
     if !flags & PROMPT_INCREMENTAL != 0 && !flags & PROMPT_NOFREEZE != 0 {
         (*c).tty.flags |= TTY_FREEZE;
     }
     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
-    prompt_incremental_start((*c).prompt);
+    prompt_incremental_start(&prompt);
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 {
         cmdq_append(
             c,
@@ -737,11 +738,20 @@ pub unsafe fn status_prompt_set(
     }
 }
 pub unsafe fn status_prompt_clear(mut c: *mut client) {
-    if (*c).prompt.is_null() {
+    let Some(prompt) = (*c).prompt.clone() else {
+        return;
+    };
+    prompt_free(&prompt);
+    if !(*c)
+        .prompt
+        .as_ref()
+        .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+    {
+        // Recursive cleanup may already have popped this prompt's screen,
+        // or installed another prompt with its own screen and tty flags.
         return;
     }
-    prompt_free((*c).prompt);
-    (*c).prompt = ::core::ptr::null_mut::<prompt>();
+    (*c).prompt = None;
     (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
     status_pop_screen(c);
@@ -751,10 +761,14 @@ pub unsafe fn status_prompt_update(
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
 ) {
-    if (*c).prompt.is_null() {
+    if (*c).prompt.is_none() {
         return;
     }
-    prompt_update((*c).prompt, msg, input);
+    prompt_update(
+        &mut (*c).prompt.as_ref().expect("active prompt").borrow_mut(),
+        CStr::from_ptr(msg),
+        (!input.is_null()).then(|| CStr::from_ptr(input)),
+    );
     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
 unsafe fn status_prompt_screen_line(c: &client) -> u_int {
@@ -815,7 +829,11 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         area_width: aw,
         prompt_line: promptline,
     };
-    (*sl).prompt_cx = prompt_draw(&*(*c).prompt, &mut ctx, pdd);
+    (*sl).prompt_cx = prompt_draw(
+        &(*c).prompt.as_ref().expect("active prompt").borrow(),
+        &mut ctx,
+        pdd,
+    );
     screen_write_stop(&mut ctx);
     if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&mut old_screen);
@@ -833,6 +851,9 @@ pub unsafe fn status_prompt_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
+    let Some(prompt) = (*c).prompt.clone() else {
+        return PROMPT_KEY_NOT_HANDLED;
+    };
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -853,14 +874,22 @@ pub unsafe fn status_prompt_key(
             return PROMPT_KEY_NOT_HANDLED;
         }
         let (ax, aw) = status_message_area(&*c);
-        result = prompt_mouse(&mut *(*c).prompt, (*m).x, ax, aw, Some(&mut redraw));
+        result = prompt_mouse(
+            &mut (*c).prompt.as_ref().expect("active prompt").borrow_mut(),
+            (*m).x,
+            ax,
+            aw,
+            Some(&mut redraw),
+        );
     } else {
-        result = prompt_key((*c).prompt, key, &mut redraw);
+        result = prompt_key(&prompt, key, &mut redraw);
     }
-    if redraw != 0 && !(*c).prompt.is_null() {
+    if redraw != 0 && (*c).prompt.is_some() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
-    if !(*c).prompt.is_null() && prompt_closed((*c).prompt) != 0 {
+    if (*c).prompt.is_some()
+        && prompt_closed(&(*c).prompt.as_ref().expect("active prompt").borrow()) != 0
+    {
         status_prompt_clear(c);
     }
     return result;
@@ -1011,6 +1040,35 @@ mod status_screen_tests {
             status_free(&mut *c);
             assert!(c.status.active.is_none());
             assert!(c.status.screen.grid.is_none());
+
+            // A cleanup callback may clear the old prompt recursively and
+            // install a replacement. The outer clear must leave its screen.
+            let mut c = Box::new(client::empty());
+            c.tty.sx = 80;
+            c.tty.sy = 24;
+            status_init(&mut *c);
+            status_push_screen(&mut *c);
+            let old = std::rc::Rc::new(std::cell::RefCell::new(prompt::default()));
+            let replacement = std::rc::Rc::new(std::cell::RefCell::new(prompt::default()));
+            let next = replacement.clone();
+            let client = &raw mut *c;
+            old.borrow_mut().freecb = Some(Box::new(move || {
+                status_prompt_clear(client);
+                status_push_screen(client);
+                (*client).prompt = Some(next);
+                (*client).tty.flags |= TTY_FREEZE;
+            }));
+            c.prompt = Some(old.clone());
+            status_prompt_clear(&mut *c);
+            assert!(std::rc::Rc::ptr_eq(c.prompt.as_ref().unwrap(), &replacement));
+            assert_eq!(c.status.screen_users, 1);
+            assert!(c.status.active.is_some());
+            assert_ne!(c.tty.flags & TTY_FREEZE, 0);
+            status_prompt_clear(&mut *c);
+            assert!(c.prompt.is_none());
+            assert_eq!(c.status.screen_users, 0);
+            assert!(c.status.active.is_none());
+            status_free(&mut *c);
 
             options_free(global_options);
             options_free(global_s_options);

@@ -5,7 +5,7 @@ use super::client::client;
 use super::key::key_code;
 use super::menu::menu_item;
 use super::pane::window_pane;
-use super::prompt::{prompt, prompt_free_cb, prompt_key_result, prompt_result};
+use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result, PromptRef};
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
@@ -43,7 +43,7 @@ pub struct mode_tree_data {
     pub offset: u_int,
     pub current: u_int,
     pub screen: screen,
-    pub prompt: *mut prompt,
+    pub prompt: Option<PromptRef>,
     pub prompt_data: *mut mode_tree_prompt,
     pub prompt_cx: u_int,
     pub prompt_top: ::core::ffi::c_int,
@@ -88,7 +88,7 @@ impl Default for mode_tree_data {
             offset: 0,
             current: 0,
             screen: screen::empty(),
-            prompt: std::ptr::null_mut(),
+            prompt: None,
             prompt_data: std::ptr::null_mut(),
             prompt_cx: 0,
             prompt_top: 0,

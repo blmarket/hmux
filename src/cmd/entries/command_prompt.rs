@@ -136,7 +136,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         if wp.is_null() || window_pane_has_prompt(wp) != 0 {
             return CMD_RETURN_NORMAL;
         }
-    } else if !(*tc).prompt.is_null() {
+    } else if (*tc).prompt.is_some() {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'i' as i32 as u_char) != 0 {

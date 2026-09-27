@@ -1296,7 +1296,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     if (*mtd).help != 0 {
         mode_tree_draw_help(mtd, &raw mut ctx);
     }
-    if !(*mtd).prompt.is_null() {
+    if (*mtd).prompt.is_some() {
         mode_tree_draw_prompt(mtd, &mut ctx);
     } else {
         (*s).mode &= !MODE_CURSOR;
@@ -1328,7 +1328,11 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_w
         prompt_line: py,
     };
     (*s).mode |= MODE_CURSOR;
-    (*mtd).prompt_cx = prompt_draw(&*(*mtd).prompt, ctx, pdd);
+    (*mtd).prompt_cx = prompt_draw(
+        &(*mtd).prompt.as_ref().expect("active prompt").borrow(),
+        ctx,
+        pdd,
+    );
     screen_write_cursormove(
         ctx,
         (*mtd).prompt_cx as ::core::ffi::c_int,
@@ -1337,10 +1341,8 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_w
     );
 }
 pub unsafe fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
-    let mut prompt: *mut prompt = (*mtd).prompt;
-    if !(*mtd).prompt.is_null() {
-        (*mtd).prompt = ::core::ptr::null_mut::<prompt>();
-        prompt_free(prompt);
+    if let Some(prompt) = (*mtd).prompt.take() {
+        prompt_free(&prompt);
         (*mtd).screen.mode &= !MODE_CURSOR;
     }
 }
@@ -1350,7 +1352,7 @@ unsafe fn mode_tree_prompt_accept(
 ) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
     let mut key: key_code = 'y' as i32 as key_code;
-    if !(*mtd).prompt.is_null() && !c.is_null() {
+    if (*mtd).prompt.is_some() && !c.is_null() {
         mode_tree_key(
             mtd,
             c,
@@ -1434,7 +1436,8 @@ pub unsafe fn mode_tree_set_prompt(
     pd.freecb = Some(Box::new(move || unsafe {
         mode_tree_prompt_free_callback(mtp)
     }));
-    (*mtd).prompt = Box::into_raw(prompt_create(pd));
+    let prompt = prompt_create(pd);
+    (*mtd).prompt = Some(prompt.clone());
     (*mtd).prompt_data = mtp;
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
@@ -1880,15 +1883,13 @@ pub unsafe fn mode_tree_key(
     let mut preview: ::core::ffi::c_int = 0;
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut redraw: ::core::ffi::c_int = 0;
-    let mut prompt: *mut prompt = ::core::ptr::null_mut::<prompt>();
     let mut mtp: *mut mode_tree_prompt = ::core::ptr::null_mut::<mode_tree_prompt>();
     if mode_tree_line_count(&*mtd) == 0 as u_int {
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 1 as ::core::ffi::c_int;
     }
-    if !(*mtd).prompt.is_null() {
+    if let Some(prompt) = (*mtd).prompt.clone() {
         redraw = 0 as ::core::ffi::c_int;
-        prompt = (*mtd).prompt;
         mtp = (*mtd).prompt_data;
         if !mtp.is_null() {
             (*mtp).c = c;
@@ -1922,25 +1923,39 @@ pub unsafe fn mode_tree_key(
                     py = (*mtd).screen.grid().sy.wrapping_sub(1 as u_int);
                 }
                 if y == py {
-                    result = prompt_mouse(&mut *prompt, x, 0 as u_int, sx, Some(&mut redraw));
+                    result = prompt_mouse(
+                        &mut prompt.borrow_mut(),
+                        x,
+                        0 as u_int,
+                        sx,
+                        Some(&mut redraw),
+                    );
                 } else {
                     result = PROMPT_KEY_NOT_HANDLED;
                 }
             }
         } else {
-            result = prompt_key(prompt, *key, &mut redraw);
+            result = prompt_key(&prompt, *key, &mut redraw);
         }
         if (*mtd).prompt_data == mtp && !mtp.is_null() {
             (*mtp).c = ::core::ptr::null_mut::<client>();
         }
-        if (*mtd).prompt == prompt
+        if (*mtd)
+            .prompt
+            .as_ref()
+            .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
             && (result as ::core::ffi::c_uint
                 == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
-                || prompt_closed(prompt) != 0)
+                || prompt_closed(&prompt.borrow()) != 0)
         {
             mode_tree_clear_prompt(mtd);
         }
-        if redraw != 0 || (*mtd).prompt != prompt {
+        if redraw != 0
+            || !(*mtd)
+                .prompt
+                .as_ref()
+                .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+        {
             mode_tree_draw(mtd);
             (*(*mtd).wp).flags |= PANE_REDRAW;
         }
