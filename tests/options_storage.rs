@@ -179,7 +179,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         }
         let first = options_array_first(array);
         let two = options_array_next(first);
-        assert_eq!(CStr::from_ptr(options_array_item_key(two)), c"2");
+        assert_eq!(CStr::from_ptr(options_array_item_key(&*(two)).as_ptr()), c"2");
         assert_eq!(
             options_array_set(array, c"0002".as_ptr(), c"updated".as_ptr(), 0, null_mut()),
             0
@@ -236,7 +236,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         for key in expected {
             assert!(!item.is_null());
             assert_eq!(
-                CStr::from_ptr(options_array_item_key(item)).to_bytes(),
+                CStr::from_ptr(options_array_item_key(&*(item)).as_ptr()).to_bytes(),
                 *key
             );
             let next = options_array_next(item);

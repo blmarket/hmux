@@ -1462,7 +1462,7 @@ pub(super) unsafe fn format_loop_add_array_item(
     let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    array_key = options_array_item_key(a);
+    array_key = options_array_item_key(&*(a)).as_ptr();
     format_log1(
         es,
         b"format_loop_add_array_item\0" as *const u8 as *const ::core::ffi::c_char,

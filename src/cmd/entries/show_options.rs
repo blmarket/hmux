@@ -283,7 +283,7 @@ unsafe fn cmd_show_options_print(
         a = options_array_first(o);
         if !a.is_null() {
             while !a.is_null() {
-                array_key = options_array_item_key(a);
+                array_key = options_array_item_key(&*(a)).as_ptr();
                 cmd_show_options_print(self_0, item, o, array_key, parent);
                 a = options_array_next(a);
             }

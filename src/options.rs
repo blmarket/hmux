@@ -734,8 +734,8 @@ pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options
         .next()
         .map_or(::core::ptr::null_mut(), |(_, item)| &mut **item)
 }
-pub unsafe fn options_array_item_key(mut a: *mut options_array_item) -> *const ::core::ffi::c_char {
-    return (*a).key.as_ptr();
+pub fn options_array_item_key(a: &options_array_item) -> &CStr {
+    &a.key
 }
 pub unsafe fn options_array_item_value(mut a: *mut options_array_item) -> *mut options_value {
     return &raw mut (*a).value;

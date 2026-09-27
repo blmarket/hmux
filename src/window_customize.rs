@@ -998,7 +998,7 @@ unsafe fn window_customize_build_array(
     let mut count: u_int = 0 as u_int;
     ai = options_array_first(o);
     while !ai.is_null() {
-        array_key = options_array_item_key(ai);
+        array_key = options_array_item_key(&*(ai)).as_ptr();
         if (*data).hide_default != 0 && window_customize_option_is_changed(o, array_key) == 0 {
             ai = options_array_next(ai);
         } else {
