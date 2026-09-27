@@ -3017,7 +3017,7 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
         &raw mut (*wp).base,
         sx,
         sy,
-        ((*wp).base.saved_grid == NULL as *mut grid) as ::core::ffi::c_int,
+        (*wp).base.saved_grid.is_none() as ::core::ffi::c_int,
     );
     wme = (*wp).modes.active;
     if !wme.is_null() && (*(*wme).mode).resize.is_some() {
@@ -4047,7 +4047,7 @@ pub unsafe fn window_pane_mode(mut wp: *mut window_pane) -> ::core::ffi::c_int {
 pub unsafe fn window_pane_show_scrollbar(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    if !(*wp).base.saved_grid.is_null() {
+    if (*wp).base.saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active.is_null() {

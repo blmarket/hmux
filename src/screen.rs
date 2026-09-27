@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{memcpy, snprintf, strlcat, strlen};
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
-    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_destroy,
+    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_create_box, grid_destroy,
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::hyperlinks::{hyperlinks_free, hyperlinks_init, hyperlinks_reset};
@@ -37,7 +37,7 @@ unsafe fn screen_free_titles(mut s: *mut screen) {
 }
 pub unsafe fn screen_init(mut s: *mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
     (*s).grid = grid_create(sx, sy, hlimit);
-    (*s).saved_grid = ::core::ptr::null_mut::<grid>();
+    (*s).saved_grid = None;
     (*s).title = CString::default();
     (*s).titles = VecDeque::new();
     (*s).path = None;
@@ -66,7 +66,7 @@ pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
     {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
-    if !(*s).saved_grid.is_null() {
+    if (*s).saved_grid.is_some() {
         screen_alternate_off(
             s,
             ::core::ptr::null_mut::<grid_cell>(),
@@ -102,16 +102,13 @@ pub unsafe fn screen_free(mut s: *mut screen) {
     if !(*s).write_list.is_null() {
         screen_write_free_list(s);
     }
-    if !(*s).saved_grid.is_null() {
-        grid_destroy((*s).saved_grid);
-    }
+    drop((*s).saved_grid.take());
     grid_destroy((*s).grid);
     if !(*s).hyperlinks.is_null() {
         hyperlinks_free((*s).hyperlinks);
     }
     screen_free_titles(s);
     (*s).grid = std::ptr::null_mut();
-    (*s).saved_grid = std::ptr::null_mut();
     (*s).hyperlinks = std::ptr::null_mut();
 }
 pub unsafe fn screen_reset_tabs(mut s: *mut screen) {
@@ -648,14 +645,16 @@ pub unsafe fn screen_alternate_on(
 ) -> ::core::ffi::c_int {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    if !(*s).saved_grid.is_null() {
+    if (*s).saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
     sx = (*(*s).grid).sx;
     sy = (*(*s).grid).sy;
-    (*s).saved_grid = grid_create(sx, sy, 0);
+    (*s).saved_grid = Some(grid_create_box(sx, sy, 0));
     grid_duplicate_lines(
-        &mut *(*s).saved_grid,
+        (*s).saved_grid
+            .as_deref_mut()
+            .expect("saved grid was just created"),
         0 as u_int,
         &*(*s).grid,
         (*(*s).grid).hsize,
@@ -682,13 +681,9 @@ pub unsafe fn screen_alternate_off(
 ) -> ::core::ffi::c_int {
     let mut sx: u_int = (*(*s).grid).sx;
     let mut sy: u_int = (*(*s).grid).sy;
-    if !(*s).saved_grid.is_null() {
-        screen_resize(
-            s,
-            (*(*s).saved_grid).sx,
-            (*(*s).saved_grid).sy,
-            0 as ::core::ffi::c_int,
-        );
+    if let Some(saved) = (*s).saved_grid.as_deref() {
+        let (width, height) = (saved.sx, saved.sy);
+        screen_resize(s, width, height, 0);
     }
     if cursor != 0 && (*s).saved_cx != UINT_MAX && (*s).saved_cy != UINT_MAX {
         (*s).cx = (*s).saved_cx;
@@ -701,7 +696,7 @@ pub unsafe fn screen_alternate_off(
             );
         }
     }
-    if (*s).saved_grid.is_null() {
+    if (*s).saved_grid.is_none() {
         if (*s).cx > (*(*s).grid).sx.wrapping_sub(1 as u_int) {
             (*s).cx = (*(*s).grid).sx.wrapping_sub(1 as u_int);
         }
@@ -711,19 +706,16 @@ pub unsafe fn screen_alternate_off(
         return 0 as ::core::ffi::c_int;
     }
     let history = (*(*s).grid).hsize;
-    grid_duplicate_lines(
-        &mut *(*s).grid,
-        history,
-        &*(*s).saved_grid,
-        0 as u_int,
-        (*(*s).saved_grid).sy,
-    );
+    let saved = (*s)
+        .saved_grid
+        .as_deref()
+        .expect("alternate screen has a saved grid");
+    grid_duplicate_lines(&mut *(*s).grid, history, saved, 0 as u_int, saved.sy);
     if (*s).saved_flags & GRID_HISTORY != 0 {
         (*(*s).grid).flags |= GRID_HISTORY;
     }
     screen_resize(s, sx, sy, 1 as ::core::ffi::c_int);
-    grid_destroy((*s).saved_grid);
-    (*s).saved_grid = ::core::ptr::null_mut::<grid>();
+    drop((*s).saved_grid.take());
     if (*s).cx > (*(*s).grid).sx.wrapping_sub(1 as u_int) {
         (*s).cx = (*(*s).grid).sx.wrapping_sub(1 as u_int);
     }

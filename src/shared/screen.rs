@@ -41,7 +41,7 @@ pub struct screen {
     pub default_mode: ::core::ffi::c_int,
     pub saved_cx: u_int,
     pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
+    pub saved_grid: Option<Box<grid>>,
     pub saved_cell: grid_cell,
     pub saved_flags: ::core::ffi::c_int,
     pub tabs: Vec<bitstr_t>,

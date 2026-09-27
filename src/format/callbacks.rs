@@ -951,7 +951,7 @@ unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CStri
 }
 unsafe fn format_cb_alternate_on(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        if !(*(*ft).wp).base.saved_grid.is_null() {
+        if (*(*ft).wp).base.saved_grid.is_some() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2225,7 +2225,7 @@ unsafe fn format_cb_pane_unzoomed_width(mut ft: *mut format_tree) -> Option<CStr
         return None;
     }
     sx = (*lc).g.sx;
-    if saved != 0 && (*wp).base.saved_grid.is_null() && (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS
+    if saved != 0 && (*wp).base.saved_grid.is_none() && (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS
         || saved == 0 && window_pane_scrollbar_reserve(wp) != 0
     {
         sb_w = (*wp).scrollbar_style.width;

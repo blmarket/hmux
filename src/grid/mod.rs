@@ -4,7 +4,6 @@ mod core;
 pub mod reader;
 pub mod view;
 
-#[cfg(test)]
 pub(crate) use self::core::grid_create_box;
 
 // Preserve the established family API without glob exports.

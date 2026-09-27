@@ -291,12 +291,12 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &window_pane) -> Vec<u8>
     buf
 }
 unsafe fn cmd_capture_pane_hyperlinks(
-    mut gd: *mut grid,
-    mut s: *mut screen,
+    gd: &grid,
+    s: &screen,
     mut py: u_int,
     links: &mut Vec<u_int>,
 ) -> Vec<u8> {
-    let gl = grid_peek_line(&*gd, py).expect("capture line is in the grid");
+    let gl = grid_peek_line(gd, py).expect("capture line is in the grid");
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -313,17 +313,17 @@ unsafe fn cmd_capture_pane_hyperlinks(
     };
     let mut line = Vec::new();
     let mut i: u_int = 0;
-    if (*s).hyperlinks.is_null() || !(gl.flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
+    if s.hyperlinks.is_null() || !(gl.flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
     {
         return line;
     }
     i = 0 as u_int;
     while i < gl.cellused as u_int {
-        grid_get_cell(&*gd, i, py, &mut gc);
+        grid_get_cell(gd, i, py, &mut gc);
         if !(gc.link == 0 as u_int) {
             if !links.contains(&gc.link) {
-                if let Some(link) = hyperlinks_get(&*(*s).hyperlinks, gc.link) {
-                    if links.len() == (*gd).sx as usize {
+                if let Some(link) = hyperlinks_get(&*s.hyperlinks, gc.link) {
+                    if links.len() == gd.sx as usize {
                         break;
                     }
                     links.push(gc.link);
@@ -341,12 +341,9 @@ unsafe fn cmd_capture_pane_hyperlinks(
 unsafe fn cmd_capture_pane_history(
     mut args: *mut args,
     mut item: *mut cmdq_item,
-    wp: &mut window_pane,
+    wp: &window_pane,
 ) -> Option<Vec<u8>> {
-    let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut gc = grid_default_cell;
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut n: ::core::ffi::c_int = 0;
     let mut join_lines: ::core::ffi::c_int = 0;
     let mut number_lines: ::core::ffi::c_int = 0;
@@ -366,31 +363,27 @@ unsafe fn cmd_capture_pane_history(
     let mut Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     sx = (*wp.base.grid).sx;
-    if args_has(args, 'a' as i32 as u_char) != 0 {
-        gd = wp.base.saved_grid;
-        if gd.is_null() {
-            if args_has(args, 'q' as i32 as u_char) == 0 {
+    let (gd, s) = if args_has(args, b'a') != 0 {
+        let Some(saved) = wp.base.saved_grid.as_deref() else {
+            if args_has(args, b'q') == 0 {
                 cmdq_error(item, |out| out.write_all(b"no alternate screen"));
                 return None;
             }
             return Some(buf);
-        }
-        s = &raw mut wp.base;
-    } else if args_has(args, 'M' as i32 as u_char) != 0 {
-        wme = wp.modes.active;
-        if !wme.is_null() && (*(*wme).mode).get_screen.is_some() {
-            s = (*(*wme).mode)
-                .get_screen
-                .expect("non-null function pointer")(wme);
-            gd = (*s).grid;
-        } else {
-            s = &raw mut wp.base;
-            gd = wp.base.grid;
-        }
+        };
+        (saved, &wp.base)
     } else {
-        s = &raw mut wp.base;
-        gd = wp.base.grid;
-    }
+        let active = wp.modes.active;
+        let s = if args_has(args, b'M') != 0 && !active.is_null() {
+            match (*(*active).mode).get_screen {
+                Some(get_screen) => &*get_screen(active),
+                None => &wp.base,
+            }
+        } else {
+            &wp.base
+        };
+        (&*s.grid, s)
+    };
     Sflag = args_get(args, 'S' as i32 as u_char);
     if !Sflag.is_null()
         && strcmp(Sflag, b"-\0" as *const u8 as *const ::core::ffi::c_char)
@@ -407,18 +400,18 @@ unsafe fn cmd_capture_pane_history(
         ) {
             Ok(value) => {
                 n = value as ::core::ffi::c_int;
-                if n < 0 as ::core::ffi::c_int && n.unsigned_abs() > (*gd).hsize {
+                if n < 0 as ::core::ffi::c_int && n.unsigned_abs() > gd.hsize {
                     top = 0 as u_int;
                 } else {
-                    top = (*gd).hsize.wrapping_add(n as u_int);
+                    top = gd.hsize.wrapping_add(n as u_int);
                 }
             }
             Err(_) => {
-                top = (*gd).hsize;
+                top = gd.hsize;
             }
         }
-        if top > (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
-            top = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+        if top > gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
+            top = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
         }
     }
     Eflag = args_get(args, 'E' as i32 as u_char);
@@ -426,7 +419,7 @@ unsafe fn cmd_capture_pane_history(
         && strcmp(Eflag, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
     {
-        bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+        bottom = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
     } else {
         match args_strtonum_and_expand_result(
             args,
@@ -437,18 +430,18 @@ unsafe fn cmd_capture_pane_history(
         ) {
             Ok(value) => {
                 n = value as ::core::ffi::c_int;
-                if n < 0 as ::core::ffi::c_int && n.unsigned_abs() > (*gd).hsize {
+                if n < 0 as ::core::ffi::c_int && n.unsigned_abs() > gd.hsize {
                     bottom = 0 as u_int;
                 } else {
-                    bottom = (*gd).hsize.wrapping_add(n as u_int);
+                    bottom = gd.hsize.wrapping_add(n as u_int);
                 }
             }
             Err(_) => {
-                bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+                bottom = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
             }
         }
-        if bottom > (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
-            bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+        if bottom > gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
+            bottom = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
         }
     }
     if bottom < top {
@@ -474,26 +467,27 @@ unsafe fn cmd_capture_pane_history(
     show_time = args_has(args, 'I' as i32 as u_char);
     hyperlinks = args_has(args, 'H' as i32 as u_char);
     if hyperlinks != 0 {
-        links = Vec::with_capacity((*gd).sx as usize);
+        links = Vec::with_capacity(gd.sx as usize);
     }
     i = top;
     while i <= bottom {
         let line = if hyperlinks != 0 {
             cmd_capture_pane_hyperlinks(gd, s, i, &mut links)
         } else {
-            let mut line = grid_string_cells_bytes(&*gd, 0 as u_int, i, sx, Some(&mut gc), flags, s.as_ref());
+            let mut line =
+                grid_string_cells_bytes(gd, 0 as u_int, i, sx, Some(&mut gc), flags, Some(s));
             if let Some(nul) = line.iter().position(|&byte| byte == 0) {
                 line.truncate(nul);
             }
             line
         };
         if hyperlinks == 0 || !line.is_empty() {
-            let gl = grid_peek_line(&*gd, i).expect("capture range is in the grid");
+            let gl = grid_peek_line(gd, i).expect("capture range is in the grid");
             if number_lines != 0 {
-                if i >= (*gd).hsize {
-                    n = i.wrapping_sub((*gd).hsize) as ::core::ffi::c_int;
+                if i >= gd.hsize {
+                    n = i.wrapping_sub(gd.hsize) as ::core::ffi::c_int;
                 } else {
-                    n = i as ::core::ffi::c_int - (*gd).hsize as ::core::ffi::c_int;
+                    n = i as ::core::ffi::c_int - gd.hsize as ::core::ffi::c_int;
                 }
                 n = snprintf(
                     &raw mut b as *mut ::core::ffi::c_char,
@@ -597,7 +591,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     {
         buf = cmd_capture_pane_pending(args, &*wp);
     } else {
-        match cmd_capture_pane_history(args, item, &mut *wp) {
+        match cmd_capture_pane_history(args, item, &*wp) {
             Some(history) => buf = history,
             None => return CMD_RETURN_ERROR,
         }

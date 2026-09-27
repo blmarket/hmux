@@ -3166,7 +3166,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     };
                 }
                 47 | 1047 | 1049 => {
-                    n = if !(*s).saved_grid.is_null() {
+                    n = if (*s).saved_grid.is_some() {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
