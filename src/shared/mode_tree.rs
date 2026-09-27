@@ -139,14 +139,14 @@ pub type mode_tree_prompt_input_cb = Option<
 pub enum ModeTreeItemData {
     #[default]
     None,
-    Buffer(Rc<UnsafeCell<window_buffer_itemdata>>),
+    Buffer(Rc<window_buffer_itemdata>),
     Client(Rc<UnsafeCell<window_client_itemdata>>),
     Customize(Rc<UnsafeCell<window_customize_itemdata>>),
     Tree(Rc<window_tree_itemdata>),
 }
 
 impl ModeTreeItemData {
-    pub fn as_buffer(&self) -> Option<&Rc<UnsafeCell<window_buffer_itemdata>>> {
+    pub fn as_buffer(&self) -> Option<&Rc<window_buffer_itemdata>> {
         match self {
             Self::Buffer(item) => Some(item),
             _ => None,

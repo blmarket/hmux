@@ -54,7 +54,6 @@ use crate::src::spawn::{
 };
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -68,7 +67,7 @@ pub struct window_buffer_modedata {
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
-    item_list: Vec<Rc<UnsafeCell<window_buffer_itemdata>>>,
+    item_list: Vec<Rc<window_buffer_itemdata>>,
 }
 #[repr(C)]
 pub struct window_buffer_itemdata {
@@ -192,22 +191,22 @@ pub static mut window_buffer_mode: window_mode = {
 };
 static window_buffer_order_seq: [sort_order; 3] = [SORT_CREATION, SORT_NAME, SORT_SIZE];
 fn window_buffer_add_item(
-    items: &mut Vec<Rc<UnsafeCell<window_buffer_itemdata>>>,
+    items: &mut Vec<Rc<window_buffer_itemdata>>,
     name: &CStr,
-) -> Rc<UnsafeCell<window_buffer_itemdata>> {
-    let item = Rc::new(UnsafeCell::new(window_buffer_itemdata {
+    order: u_int,
+    size: size_t,
+) -> Rc<window_buffer_itemdata> {
+    let item = Rc::new(window_buffer_itemdata {
         name: name.to_owned(),
-        order: 0,
-        size: 0,
-    }));
+        order,
+        size,
+    });
     items.push(Rc::clone(&item));
     item
 }
 
-fn window_buffer_clear_items(items: &mut Vec<Rc<UnsafeCell<window_buffer_itemdata>>>) {
-    for item in items.drain(..) {
-        drop(item);
-    }
+fn window_buffer_clear_items(items: &mut Vec<Rc<window_buffer_itemdata>>) {
+    items.clear();
 }
 unsafe fn window_buffer_build(
     mut modedata: *mut ::core::ffi::c_void,
@@ -215,7 +214,6 @@ unsafe fn window_buffer_build(
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
-    let mut item: *mut window_buffer_itemdata = ::core::ptr::null_mut::<window_buffer_itemdata>();
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -226,10 +224,12 @@ unsafe fn window_buffer_build(
     for pb in buffers {
         let buffer = pb.borrow();
         let name = paste_buffer_name(&buffer);
-        let item_owner = window_buffer_add_item(&mut (*data).item_list, name);
-        item = item_owner.get();
-        (*item).size = buffer.size;
-        (*item).order = paste_buffer_order(&buffer);
+        window_buffer_add_item(
+            &mut (*data).item_list,
+            name,
+            paste_buffer_order(&buffer),
+            buffer.size,
+        );
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.s;
@@ -239,9 +239,8 @@ unsafe fn window_buffer_build(
     let mut current_block_32: u64;
     i = 0 as u_int;
     while (i as usize) < (*data).item_list.len() {
-        let item_owner = Rc::clone(&(&(*data).item_list)[i as usize]);
-        item = item_owner.get();
-        if let Some(pb) = paste_get_name(&(*item).name) {
+        let item = Rc::clone(&(&(*data).item_list)[i as usize]);
+        if let Some(pb) = paste_get_name(&item.name) {
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
                 ::core::ptr::null_mut::<cmdq_item>(),
@@ -268,9 +267,9 @@ unsafe fn window_buffer_build(
                     mode_tree_add(
                         (*data).data,
                         None,
-                        ModeTreeItemData::Buffer(Rc::clone(&item_owner)),
-                        (*item).order as uint64_t,
-                        &(*item).name,
+                        ModeTreeItemData::Buffer(Rc::clone(&item)),
+                        item.order as uint64_t,
+                        &item.name,
                         Some(&text),
                         -(1 as ::core::ffi::c_int),
                     );
@@ -388,7 +387,7 @@ unsafe fn window_buffer_get_key(
         wl = (*data).fs.wl;
         wp = (*data).fs.wp;
     }
-    let Some(pb) = paste_get_name(&(*item).name) else {
+    let Some(pb) = paste_get_name(&item.name) else {
         return KEYC_NONE;
     };
     ft = format_create(
@@ -494,13 +493,11 @@ unsafe fn window_buffer_init(
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
-            let item_owner = itemdata.as_buffer().expect("buffer row payload");
-            let item = &*item_owner.get();
+            let item = itemdata.as_buffer().expect("buffer row payload");
             window_buffer_draw(item, ctx, sx, sy)
         })),
         Some(Box::new(move |itemdata, search, icase| {
-            let item_owner = itemdata.as_buffer().expect("buffer row payload");
-            let item = &*item_owner.get();
+            let item = itemdata.as_buffer().expect("buffer row payload");
             window_buffer_search(item, search, icase)
         })),
         Some(Box::new(move |client, key| {
@@ -508,8 +505,7 @@ unsafe fn window_buffer_init(
         })),
         None,
         Some(Box::new(move |itemdata, line| {
-            let item_owner = itemdata.as_buffer().expect("buffer row payload");
-            let item = &*item_owner.get();
+            let item = itemdata.as_buffer().expect("buffer row payload");
             window_buffer_get_key(data_handle.as_ptr().cast(), item, line)
         })),
         None,
@@ -549,32 +545,26 @@ unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
-    mut item: *mut window_buffer_itemdata,
+    item: &Rc<window_buffer_itemdata>,
 ) {
-    if item
-        == mode_tree_get_current(&*(*data).data)
-            .as_buffer()
-            .map_or(std::ptr::null_mut(), |item| item.get())
+    if mode_tree_get_current(&*(*data).data)
+        .as_buffer()
+        .is_some_and(|current| Rc::ptr_eq(item, current))
         && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
-    if let Some(pb) = paste_get_name(&(*item).name) {
+    if let Some(pb) = paste_get_name(&item.name) {
         paste_free(&pb);
     }
 }
 unsafe fn window_buffer_do_paste(
     mut data: *mut window_buffer_modedata,
-    mut item: *mut window_buffer_itemdata,
+    item: &window_buffer_itemdata,
     mut c: *mut client,
 ) {
-    if paste_get_name(&(*item).name).is_some() {
-        mode_tree_run_command(
-            c,
-            None,
-            &(*data).command,
-            &(*item).name,
-        );
+    if paste_get_name(&item.name).is_some() {
+        mode_tree_run_command(c, None, &(*data).command, &item.name);
     }
 }
 unsafe fn window_buffer_finish_edit(ed: *mut window_buffer_editdata) {
@@ -751,14 +741,14 @@ unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_
 }
 unsafe fn window_buffer_start_edit(
     mut data: *mut window_buffer_modedata,
-    mut item: *mut window_buffer_itemdata,
+    item: &window_buffer_itemdata,
     mut c: *mut client,
 ) {
     let mut ed: *mut window_buffer_editdata = ::core::ptr::null_mut::<window_buffer_editdata>();
     if !(*data).editor.is_null() {
         return;
     }
-    let Some(pb) = paste_get_name(&(*item).name) else {
+    let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
     let name = paste_buffer_name(&pb.borrow()).to_owned();
@@ -793,7 +783,6 @@ unsafe fn window_buffer_key(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data;
-    let mut item: *mut window_buffer_itemdata = ::core::ptr::null_mut::<window_buffer_itemdata>();
     let mut finished: ::core::ffi::c_int = 0;
     if paste_is_empty() != 0 {
         finished = 1 as ::core::ffi::c_int;
@@ -818,17 +807,15 @@ unsafe fn window_buffer_key(
         match key {
             101 => {
                 let item_owner = mode_tree_get_current(&*mtd);
-                item = item_owner
-                    .as_buffer()
-                    .map_or(std::ptr::null_mut(), |item| item.get());
-                window_buffer_start_edit(data, item, c);
+                if let Some(item) = item_owner.as_buffer() {
+                    window_buffer_start_edit(data, item, c);
+                }
             }
             100 => {
                 let item_owner = mode_tree_get_current(&*mtd);
-                item = item_owner
-                    .as_buffer()
-                    .map_or(std::ptr::null_mut(), |item| item.get());
-                window_buffer_do_delete(data, item);
+                if let Some(item) = item_owner.as_buffer() {
+                    window_buffer_do_delete(data, item);
+                }
                 mode_tree_build(mtd);
             }
             68 => {
@@ -838,9 +825,7 @@ unsafe fn window_buffer_key(
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_delete(
                             data,
-                            itemdata
-                                .as_buffer()
-                                .map_or(std::ptr::null_mut(), |item| item.get()),
+                            itemdata.as_buffer().expect("buffer row payload"),
                         )
                     },
                     c,
@@ -856,9 +841,7 @@ unsafe fn window_buffer_key(
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_paste(
                             data,
-                            itemdata
-                                .as_buffer()
-                                .map_or(std::ptr::null_mut(), |item| item.get()),
+                            itemdata.as_buffer().expect("buffer row payload"),
                             c,
                         )
                     },
@@ -870,10 +853,9 @@ unsafe fn window_buffer_key(
             }
             112 | 13 => {
                 let item_owner = mode_tree_get_current(&*mtd);
-                item = item_owner
-                    .as_buffer()
-                    .map_or(std::ptr::null_mut(), |item| item.get());
-                window_buffer_do_paste(data, item, c);
+                if let Some(item) = item_owner.as_buffer() {
+                    window_buffer_do_paste(data, item, c);
+                }
                 finished = 1 as ::core::ffi::c_int;
             }
             _ => {}
@@ -927,15 +909,15 @@ mod tests {
     fn buffer_items_own_names_and_keep_callback_addresses_stable() {
         let mut items = Vec::new();
         let source = CString::new(b"\xffbuffer".to_vec()).unwrap();
-        let first = window_buffer_add_item(&mut items, &source);
-        let first_name = unsafe { (*first.get()).name.as_ptr() };
+        let first = window_buffer_add_item(&mut items, &source, 7, 42);
+        let first_name = first.name.as_ptr();
         let observer = Rc::downgrade(&first);
         drop(source);
 
         let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
-        let empty_item = window_buffer_add_item(&mut items, empty);
+        let empty_item = window_buffer_add_item(&mut items, empty, 0, 0);
         for _ in 0..512 {
-            window_buffer_add_item(&mut items, empty);
+            window_buffer_add_item(&mut items, empty, 0, 0);
         }
 
         assert!(Rc::ptr_eq(&first, &items[0]));
@@ -943,12 +925,13 @@ mod tests {
             unsafe { CStr::from_ptr(first_name).to_bytes() },
             b"\xffbuffer"
         );
-        assert_eq!(unsafe { (*first.get()).name.as_ptr() }, first_name);
-        assert_eq!(unsafe { (*empty_item.get()).name.as_bytes() }, b"");
+        assert_eq!(first.name.as_ptr(), first_name);
+        assert_eq!(empty_item.name.as_bytes(), b"");
 
         window_buffer_clear_items(&mut items);
         assert!(items.is_empty());
-        assert_eq!(unsafe { (*first.get()).name.as_bytes() }, b"\xffbuffer");
+        assert_eq!(first.name.as_bytes(), b"\xffbuffer");
+        assert_eq!((first.order, first.size), (7, 42));
         assert!(observer.upgrade().is_some());
         drop(first);
         assert!(observer.upgrade().is_none());

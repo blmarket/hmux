@@ -2839,11 +2839,11 @@ mod payload_owner_tests {
     use crate::src::window_buffer::window_buffer_itemdata;
 
     fn payload(name: &CStr) -> ModeTreeItemData {
-        ModeTreeItemData::Buffer(Rc::new(UnsafeCell::new(window_buffer_itemdata {
+        ModeTreeItemData::Buffer(Rc::new(window_buffer_itemdata {
             name: name.to_owned(),
             order: 0,
             size: 0,
-        })))
+        }))
     }
 
     #[test]
@@ -2886,10 +2886,7 @@ mod payload_owner_tests {
             drop(replacement);
             mode_tree_free(tree);
             assert!(replacement_observer.upgrade().is_none());
-            assert_eq!(
-                (*selected.as_buffer().unwrap().get()).name.as_c_str(),
-                c"original"
-            );
+            assert_eq!(selected.as_buffer().unwrap().name.as_c_str(), c"original");
             drop(selected);
             assert!(observer.upgrade().is_some());
             drop(detail);
@@ -2909,7 +2906,7 @@ mod payload_owner_tests {
             (*tree).keycb = Some(Box::new(move |item, _| {
                 callback_row.borrow_mut().itemdata = ModeTreeItemData::None;
                 assert_eq!(
-                    (*item.as_buffer().unwrap().get()).name.as_c_str(),
+                    item.as_buffer().unwrap().name.as_c_str(),
                     c"callback snapshot"
                 );
                 b'x' as key_code
