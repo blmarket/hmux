@@ -46,7 +46,7 @@ use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
     mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
-    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
+    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreePromptRef,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -71,7 +71,9 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
+use std::rc::{Rc, Weak};
 
 pub const MODE_TREE_SEARCH_BACKWARD: mode_tree_search_dir = 1;
 pub const MODE_TREE_SEARCH_FORWARD: mode_tree_search_dir = 0;
@@ -1368,25 +1370,46 @@ unsafe fn mode_tree_prompt_accept(
 unsafe fn mode_tree_cancel_prompt_accept(mtd: *mut mode_tree_data) {
     mode_tree_remove_ref(mtd);
 }
-unsafe fn mode_tree_prompt_input_callback(
-    mut mtp: *mut mode_tree_prompt,
-    s: Option<&CStr>,
-    mut key: prompt_key_result,
+fn mode_tree_prompt_input_callback(
+    data: &ModeTreePromptRef,
+    input: Option<&CStr>,
+    key: prompt_key_result,
 ) -> prompt_result {
-    if let Some(inputcb) = (*mtp).inputcb.as_mut() {
-        return inputcb(std::ptr::NonNull::new((*mtp).c), s, key);
-    }
-    return PROMPT_CLOSE;
+    let (client, callback) = {
+        let mut state = data.borrow_mut();
+        (state.c.upgrade(), state.inputcb.take())
+    };
+    let Some(mut callback) = callback else {
+        return PROMPT_CLOSE;
+    };
+    let result = callback(
+        client
+            .as_ref()
+            .and_then(|client| std::ptr::NonNull::new(crate::src::shared::rc::as_ptr(client))),
+        input,
+        key,
+    );
+    data.borrow_mut().inputcb = Some(callback);
+    result
 }
-unsafe fn mode_tree_prompt_free_callback(mtp_ptr: *mut mode_tree_prompt) {
-    let mut mtp = Box::from_raw(mtp_ptr);
-    if (*mtp.mtd).prompt_data == mtp_ptr {
-        (*mtp.mtd).prompt_data = ::core::ptr::null_mut::<mode_tree_prompt>();
+unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptRef) {
+    let (mtd, callback, inputcb) = {
+        let mut state = data.borrow_mut();
+        (state.mtd.take(), state.freecb.take(), state.inputcb.take())
+    };
+    if let Some(mtd) = &mtd {
+        let mtd = crate::src::shared::rc::as_ptr(mtd);
+        if (*mtd).prompt_data.ptr_eq(&Rc::downgrade(data)) {
+            (*mtd).prompt_data = Weak::new();
+        }
     }
-    if let Some(freecb) = mtp.freecb.take() {
-        freecb();
+    if let Some(callback) = callback {
+        callback();
     }
-    mode_tree_remove_ref(mtp.mtd);
+    // Match tmux's reference release after the user cleanup callback. Cached
+    // callback records must not extend the mode tree's lifetime beyond it.
+    drop(mtd);
+    drop(inputcb);
 }
 pub unsafe fn mode_tree_set_prompt(
     mut mtd: *mut mode_tree_data,
@@ -1401,7 +1424,6 @@ pub unsafe fn mode_tree_set_prompt(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut pd = prompt_create_data::default();
-    let mut mtp: *mut mode_tree_prompt = ::core::ptr::null_mut::<mode_tree_prompt>();
     if !c.is_null() && !(*c).session.is_null() {
         s = (*c).session;
         oo = (*s).options;
@@ -1410,13 +1432,17 @@ pub unsafe fn mode_tree_set_prompt(
         oo = global_s_options;
     }
     mode_tree_clear_prompt(mtd);
-    mtp = Box::into_raw(Box::new(mode_tree_prompt {
-        mtd,
-        c,
+    crate::src::shared::rc::retain(mtd);
+    let mtp = Rc::new(RefCell::new(mode_tree_prompt {
+        mtd: Some(crate::src::shared::rc::take(mtd)),
+        c: if c.is_null() {
+            Weak::new()
+        } else {
+            crate::src::shared::rc::downgrade(c)
+        },
         inputcb,
         freecb,
     }));
-    crate::src::shared::rc::retain(mtd);
     (*mtd).prompt_top = (options_get_number(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1430,15 +1456,17 @@ pub unsafe fn mode_tree_set_prompt(
     };
     pd.type_0 = type_0;
     pd.flags = flags | PROMPT_ISMODE;
-    pd.inputcb = Some(Box::new(move |s, key| unsafe {
-        mode_tree_prompt_input_callback(mtp, s, key)
+    let input_data = mtp.clone();
+    pd.inputcb = Some(Box::new(move |s, key| {
+        mode_tree_prompt_input_callback(&input_data, s, key)
     }));
+    let free_data = mtp.clone();
     pd.freecb = Some(Box::new(move || unsafe {
-        mode_tree_prompt_free_callback(mtp)
+        mode_tree_prompt_free_callback(&free_data)
     }));
     let prompt = prompt_create(pd);
     (*mtd).prompt = Some(prompt.clone());
-    (*mtd).prompt_data = mtp;
+    (*mtd).prompt_data = Rc::downgrade(&mtp);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
@@ -1883,16 +1911,20 @@ pub unsafe fn mode_tree_key(
     let mut preview: ::core::ffi::c_int = 0;
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut redraw: ::core::ffi::c_int = 0;
-    let mut mtp: *mut mode_tree_prompt = ::core::ptr::null_mut::<mode_tree_prompt>();
     if mode_tree_line_count(&*mtd) == 0 as u_int {
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 1 as ::core::ffi::c_int;
     }
     if let Some(prompt) = (*mtd).prompt.clone() {
+        let tree = crate::src::shared::rc::downgrade(mtd);
         redraw = 0 as ::core::ffi::c_int;
-        mtp = (*mtd).prompt_data;
-        if !mtp.is_null() {
-            (*mtp).c = c;
+        let mtp = (*mtd).prompt_data.upgrade();
+        if let Some(mtp) = &mtp {
+            mtp.borrow_mut().c = if c.is_null() {
+                Weak::new()
+            } else {
+                crate::src::shared::rc::downgrade(c)
+            };
         }
         if *key & KEYC_MASK_KEY == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || *key & KEYC_MASK_TYPE
@@ -1937,8 +1969,19 @@ pub unsafe fn mode_tree_key(
         } else {
             result = prompt_key(&prompt, *key, &mut redraw);
         }
-        if (*mtd).prompt_data == mtp && !mtp.is_null() {
-            (*mtp).c = ::core::ptr::null_mut::<client>();
+        // A prompt can destroy its pane and release the tree during dispatch.
+        let Some(_tree_owner) = tree.upgrade() else {
+            *key = KEYC_NONE;
+            return 0;
+        };
+        if (*mtd).dead != 0 {
+            *key = KEYC_NONE;
+            return 0;
+        }
+        if let Some(mtp) = &mtp {
+            if (*mtd).prompt_data.ptr_eq(&Rc::downgrade(mtp)) {
+                mtp.borrow_mut().c = Weak::new();
+            }
         }
         if (*mtd)
             .prompt
@@ -1949,6 +1992,10 @@ pub unsafe fn mode_tree_key(
                 || prompt_closed(&prompt.borrow()) != 0)
         {
             mode_tree_clear_prompt(mtd);
+        }
+        if (*mtd).dead != 0 {
+            *key = KEYC_NONE;
+            return 0;
         }
         if redraw != 0
             || !(*mtd)
@@ -2533,6 +2580,147 @@ mod mode_tree_tests {
             mode_tree_free_items(&raw mut (*mtd).children);
             mode_tree_free_items(&raw mut (*mtd).saved);
             mode_tree_remove_ref(mtd);
+        }
+    }
+}
+
+#[cfg(test)]
+mod mode_prompt_data_tests {
+    use super::*;
+    use crate::src::shared::rc;
+    use crate::src::text::utf8::utf8_fromcstr_vec;
+    use std::cell::{Cell, UnsafeCell};
+
+    fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> ModeTreePromptRef {
+        Rc::new(RefCell::new(mode_tree_prompt {
+            mtd: Some(tree.clone()),
+            c: Weak::new(),
+            inputcb: None,
+            freecb: None,
+        }))
+    }
+
+    #[test]
+    fn cleanup_releases_tree_ownership_without_clearing_replacement_data() {
+        unsafe {
+            let tree = rc::take(mode_tree_alloc_data());
+            let mtd = rc::as_ptr(&tree);
+            let weak_tree = Rc::downgrade(&tree);
+            let old = data(&tree);
+            let replacement = data(&tree);
+            (*mtd).prompt_data = Rc::downgrade(&replacement);
+            let frees = Rc::new(Cell::new(0));
+            let count = frees.clone();
+            let weak_old = Rc::downgrade(&old);
+            let observed = weak_old.clone();
+            old.borrow_mut().freecb = Some(Box::new(move || {
+                // No record borrow may span the user cleanup callback.
+                assert!(observed.upgrade().unwrap().borrow_mut().mtd.is_none());
+                count.set(count.get() + 1);
+            }));
+            assert_eq!(Rc::strong_count(&tree), 3);
+            mode_tree_prompt_free_callback(&old);
+            assert_eq!(Rc::strong_count(&tree), 2);
+            assert!(old.borrow().mtd.is_none());
+            assert!((*mtd).prompt_data.ptr_eq(&Rc::downgrade(&replacement)));
+            mode_tree_prompt_free_callback(&old);
+            assert_eq!(frees.get(), 1);
+            assert_eq!(Rc::strong_count(&tree), 2);
+            mode_tree_prompt_free_callback(&replacement);
+            assert!((*mtd).prompt_data.upgrade().is_none());
+            assert_eq!(Rc::strong_count(&tree), 1);
+            drop(tree);
+            // Retaining the closed callback records does not retain the tree.
+            assert!(weak_tree.upgrade().is_none());
+            drop(old);
+            assert!(weak_old.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn active_callback_retains_tree_until_deferred_prompt_cleanup() {
+        for (dispatch, retain_tree) in [(false, false), (true, false), (true, true)] {
+            unsafe {
+                let tree = rc::take(mode_tree_alloc_data());
+                let weak_tree = Rc::downgrade(&tree);
+                let retained_tree = retain_tree.then(|| tree.clone());
+                let mtd = rc::as_ptr(&tree);
+                let data = data(&tree);
+                let weak_data = Rc::downgrade(&data);
+                let tree_slot = Rc::new(RefCell::new(Some(tree)));
+                let pr = Rc::new(RefCell::new(prompt {
+                    buffer: utf8_fromcstr_vec(c""),
+                    flags: PROMPT_SINGLE,
+                    ..Default::default()
+                }));
+                let input_data = data.clone();
+                pr.borrow_mut().inputcb = Some(Box::new(move |text, key| {
+                    mode_tree_prompt_input_callback(&input_data, text, key)
+                }));
+                let free_data = data.clone();
+                pr.borrow_mut().freecb =
+                    Some(Box::new(move || mode_tree_prompt_free_callback(&free_data)));
+                (*mtd).prompt = Some(pr.clone());
+                (*mtd).prompt_data = Rc::downgrade(&data);
+                (*mtd).lines.push(mode_tree_line {
+                    item: std::ptr::null_mut(),
+                    depth: 0,
+                    last: 0,
+                    flat: 0,
+                });
+                let events = Rc::new(RefCell::new(Vec::new()));
+                let input_events = events.clone();
+                let slot = tree_slot.clone();
+                let observed = weak_tree.clone();
+                data.borrow_mut().inputcb = Some(Box::new(move |client, input, key| {
+                    assert!(client.is_none());
+                    assert_eq!(input, Some(c"x"));
+                    assert_eq!(key, PROMPT_KEY_CLOSE);
+                    input_events.borrow_mut().push("start");
+                    let tree = slot.borrow_mut().take().unwrap();
+                    let mtd = rc::as_ptr(&tree);
+                    mode_tree_clear_prompt(mtd);
+                    (*mtd).dead = 1;
+                    (*mtd).lines.clear();
+                    drop(tree);
+                    assert!(observed.upgrade().is_some());
+                    input_events.borrow_mut().push("end");
+                    PROMPT_CLOSE
+                }));
+                let free_events = events.clone();
+                let observed = weak_tree.clone();
+                data.borrow_mut().freecb = Some(Box::new(move || {
+                    assert!(observed.upgrade().is_some());
+                    free_events.borrow_mut().push("freed");
+                }));
+                if dispatch {
+                    let mut key = b'x' as key_code;
+                    assert_eq!(
+                        mode_tree_key(
+                            mtd,
+                            std::ptr::null_mut(),
+                            &mut key,
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut()
+                        ),
+                        0
+                    );
+                    assert_eq!(key, KEYC_NONE);
+                } else {
+                    assert_eq!(prompt_key(&pr, b'x' as key_code, &mut 0), PROMPT_KEY_CLOSE);
+                }
+                assert_eq!(&*events.borrow(), &["start", "end", "freed"]);
+                assert!(tree_slot.borrow().is_none());
+                drop(retained_tree);
+                assert!(weak_tree.upgrade().is_none());
+                assert!(data.borrow().mtd.is_none());
+                assert!(data.borrow().inputcb.is_none());
+                assert_eq!(Rc::strong_count(&events), 1);
+                drop(pr);
+                drop(data);
+                assert!(weak_data.upgrade().is_none());
+            }
         }
     }
 }

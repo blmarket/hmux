@@ -9,6 +9,8 @@ use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result, PromptRef}
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
+use std::cell::{RefCell, UnsafeCell};
+use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
 pub struct mode_tree_help_info {
@@ -44,7 +46,7 @@ pub struct mode_tree_data {
     pub current: u_int,
     pub screen: screen,
     pub prompt: Option<PromptRef>,
-    pub prompt_data: *mut mode_tree_prompt,
+    pub prompt_data: ModeTreePromptWeak,
     pub prompt_cx: u_int,
     pub prompt_top: ::core::ffi::c_int,
     pub preview: ::core::ffi::c_int,
@@ -89,7 +91,7 @@ impl Default for mode_tree_data {
             current: 0,
             screen: screen::empty(),
             prompt: None,
-            prompt_data: std::ptr::null_mut(),
+            prompt_data: Weak::new(),
             prompt_cx: 0,
             prompt_top: 0,
             preview: 0,
@@ -105,9 +107,13 @@ impl Default for mode_tree_data {
 
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
+pub type ModeTreePromptRef = Rc<RefCell<mode_tree_prompt>>;
+pub type ModeTreePromptWeak = Weak<RefCell<mode_tree_prompt>>;
+
 pub struct mode_tree_prompt {
-    pub mtd: *mut mode_tree_data,
-    pub c: *mut client,
+    /// Taken at logical cleanup, even if a dispatch still retains this record.
+    pub mtd: Option<Rc<UnsafeCell<mode_tree_data>>>,
+    pub c: Weak<UnsafeCell<client>>,
     pub inputcb: mode_tree_prompt_input_cb,
     pub freecb: prompt_free_cb,
 }

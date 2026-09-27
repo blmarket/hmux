@@ -2149,8 +2149,15 @@ unsafe fn window_tree_key(
     let mut ns: *mut session = ::core::ptr::null_mut::<session>();
     let mut nwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let mode = crate::src::shared::rc::downgrade(data);
     item = mode_tree_get_current((*data).data) as *mut window_tree_itemdata;
     finished = mode_tree_key((*data).data, c, &raw mut key, m, &raw mut x, &raw mut y);
+    let Some(_mode_owner) = mode.upgrade() else {
+        return;
+    };
+    if (*data).dead != 0 {
+        return;
+    }
     loop {
         new_item = mode_tree_get_current((*data).data) as *mut window_tree_itemdata;
         if item != new_item {
