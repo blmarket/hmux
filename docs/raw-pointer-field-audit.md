@@ -8,8 +8,8 @@ Tests and foreign ABI records are included. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields, their disposition, and the lifecycle reason. **66 fields were migrated;
-254 remain raw.** A skipped candidate is not a claim that its current raw API is
+fields, their disposition, and the lifecycle reason. **67 fields were migrated;
+253 remain raw.** A skipped candidate is not a claim that its current raw API is
 safe, nor that migration is impossible. It means this review did not establish
 the ownership, aliasing, and callback guarantees needed for that substitution.
 
@@ -70,7 +70,7 @@ disposition for every remaining field and rejects stale skipped entries.
 | `EventPayloadValue::Client/Session/Window/Pane` | Existing retained references are stored as `Rc<UnsafeCell<_>>`. Item Drop still detaches the value before invoking the original model-specific release function, preserving deferred release and last-window-close notifications. |
 | `cmd_if_shell_data.client`, `cmd_load_buffer_data.client`, `cmd_run_shell_data.client`, `popup_data.c`, `format_tree.client`, `client_file.c` | `Option<ClientOwner>` holds each existing retained reference. Drop uses deferred client release even on early exits; explicit teardown takes the owner at the original point. Readers project only a raw observer, without a client-lifetime borrow. |
 | `cmd_run_shell_data.s`, `monitor_set.session` | `Option<SessionOwner>` holds the existing retained session reference and preserves deferred session release and diagnostic labels. Teardown takes it at the same point as before. Current/last-session observers in clients remain raw. |
-
+| `window_switch_modedata.matches` | Row indices into the mode-owned list. Rebuild clears the indices before replacing rows; bounded filtering/sorting borrows end before rendering or commands. Filtering, ranking, list growth and replacement are covered by a regression. |
 
 Prompt option setup now takes a mutable session borrow because style application
 updates the option cache. It previously hid that mutation behind a shared session
@@ -95,8 +95,8 @@ The TSV gives a separate decision for every field. The main blockers are:
 
 ## Validation
 
-`cargo test --workspace`: **598 passed**. The inventory coverage check passes
-for all **254** remaining fields, and `git diff --check` is clean.
+`cargo test --workspace`: **599 passed**. The inventory coverage check passes
+for all **253** remaining fields, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -122,3 +122,22 @@ reactor and verifies neither callback runs and both captures are released.
 Remaining unsafe observer APIs are explicit limitations: storing owners in boxes
 does not make those APIs safe or certify arbitrary reentrant use of their raw
 pointers.
+
+## Completion review
+
+The final pass rechecked all remaining Box conversion boundaries outside compat.
+They either transfer into the typed owners above, are local/legacy API boundaries,
+or belong to the mixed mode-payload and intrusive job protocols documented in the
+inventory. No remaining field has a proven uniform Box transfer left unmigrated.
+The retained-model review also distinguishes actual retained references from
+indexes and observers: file, pane and window indexes acquire no independent
+reference; session indexes accept caller-owned Boxes; winlinks can also observe
+stack-owned windows. Their ownership cannot be inferred from the runtime model's
+usual Rc allocation alone.
+
+Every original field has a migration or skip decision in the TSV. The generated
+external report contains a reason for each remaining field. The scanner checks
+that these decisions cover the current declarations exactly; it is a coverage
+check, not proof that raw observers are safe. The skips use the requested rule:
+leave the field raw where its existing ownership and callback behavior do not
+establish a valid replacement. `src/compat/` is unchanged.

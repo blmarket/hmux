@@ -68,9 +68,9 @@ pub struct window_switch_modedata {
     pub filter: CString,
     pub prompt: Option<PromptOwner>,
     pub prompt_cx: u_int,
-    // Matches only borrow rows; boxes keep their addresses stable as the list grows.
+    // Match indices are rebuilt whenever the owned row list changes.
     item_list: Vec<Box<window_switch_itemdata>>,
-    matches: Vec<*mut window_switch_itemdata>,
+    matches: Vec<usize>,
     pub current: u_int,
     pub offset: u_int,
 }
@@ -204,10 +204,34 @@ unsafe fn window_switch_add_window(
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
 }
+fn window_switch_matches(
+    items: &mut [Box<window_switch_itemdata>],
+    filter: &CStr,
+    width: u_int,
+) -> Vec<usize> {
+    let mut matches = Vec::new();
+    for (index, item) in items.iter_mut().enumerate() {
+        item.score = 0;
+        item.match_mask = if filter.is_empty() {
+            None
+        } else {
+            // Both C strings and the score slot are borrowed for this call only.
+            unsafe { fuzzy_match_owned(filter, &item.text, width, Some(&mut item.score)) }
+        };
+        if filter.is_empty() || item.match_mask.is_some() {
+            matches.push(index);
+        }
+    }
+    matches.sort_unstable_by(|&a, &b| {
+        items[b]
+            .score
+            .cmp(&items[a].score)
+            .then_with(|| items[a].order.cmp(&items[b].order))
+    });
+    matches
+}
+
 unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
-    let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
-    let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
-    let mut f: *const ::core::ffi::c_char = (*data).filter.as_ptr();
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
     let mut sx: u_int = (*data).screen.grid().sx;
@@ -218,6 +242,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     };
     sort_crit.order = SORT_NAME;
     sort_crit.reversed = 0 as ::core::ffi::c_int;
+    (*data).matches.clear();
     (*data).item_list.clear();
     match (*data).type_0 as ::core::ffi::c_uint {
         0 => {
@@ -237,31 +262,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
         }
         _ => {}
     }
-    i = 0 as u_int;
-    while (i as usize) < (*data).item_list.len() {
-        item = &raw mut *(&mut (*data).item_list)[i as usize];
-        if *f as ::core::ffi::c_int == '\0' as i32 {
-            m.push(item);
-        } else {
-            (*item).match_mask = fuzzy_match_owned(
-                std::ffi::CStr::from_ptr(f),
-                (*item).text.as_c_str(),
-                sx,
-                Some(&mut (*item).score),
-            );
-            if (*item).match_mask.is_some() {
-                m.push(item);
-            }
-        }
-        i = i.wrapping_add(1);
-    }
-    m.sort_unstable_by(|a, b| unsafe {
-        (**b)
-            .score
-            .cmp(&(**a).score)
-            .then_with(|| (**a).order.cmp(&(**b).order))
-    });
-    (*data).matches = m;
+    (*data).matches = window_switch_matches(&mut (*data).item_list, &(*data).filter, sx);
 }
 unsafe fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
     let mut sy: u_int = (*data).screen.grid().sy;
@@ -379,7 +380,8 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         if (idx as usize) >= (*data).matches.len() {
             break;
         }
-        item = (&(*data).matches)[idx as usize];
+        let row = (&(*data).matches)[idx as usize];
+        item = &raw mut *(&mut (*data).item_list)[row];
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
@@ -538,8 +540,8 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window((*(*wme).wp).window as *mut window);
     }
-    (*data).item_list.clear();
     (*data).matches.clear();
+    (*data).item_list.clear();
     if let Some(prompt) = (*data).prompt.take() {
         prompt_free(&prompt.downgrade());
     }
@@ -575,7 +577,8 @@ unsafe fn window_switch_run_command(
     if (*data).matches.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
-    item = (&(*data).matches)[(*data).current as usize];
+    let row = (&(*data).matches)[(*data).current as usize];
+    item = &raw mut *(&mut (*data).item_list)[row];
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
@@ -1048,4 +1051,36 @@ unsafe fn window_switch_key(
     }
     window_switch_draw_screen(wme);
     (*wp).flags |= PANE_REDRAW;
+}
+
+#[cfg(test)]
+mod match_tests {
+    use super::*;
+
+    fn row(text: &CStr, order: u_int) -> Box<window_switch_itemdata> {
+        Box::new(window_switch_itemdata {
+            type_0: WINDOW_SWITCH_TYPE_SESSION,
+            session: 0,
+            winlink: 0,
+            text: text.to_owned(),
+            match_mask: None,
+            score: 0,
+            order,
+        })
+    }
+
+    #[test]
+    fn matches_rank_rows_and_refresh_after_list_changes() {
+        let mut rows = vec![row(c"same", 9), row(c"other", 1), row(c"same", 2)];
+        assert_eq!(window_switch_matches(&mut rows, c"same", 80), [2, 0]);
+        assert!(rows[0].match_mask.is_some());
+        assert!(rows[1].match_mask.is_none());
+        rows.push(row(c"same", 0));
+        assert_eq!(window_switch_matches(&mut rows, c"same", 80), [3, 2, 0]);
+        assert_eq!(window_switch_matches(&mut rows, c"", 80), [3, 1, 2, 0]);
+        assert!(rows.iter().all(|row| row.match_mask.is_none() && row.score == 0));
+        rows = vec![row(c"new", 0)];
+        assert!(window_switch_matches(&mut rows, c"same", 80).is_empty());
+        assert_eq!(window_switch_matches(&mut rows, c"new", 80), [0]);
+    }
 }
