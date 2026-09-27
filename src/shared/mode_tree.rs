@@ -26,7 +26,7 @@ pub struct mode_tree_help_info {
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
     pub zoomed: ::core::ffi::c_int,
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub menu: &'static [menu_item<'static>],
     pub sort_crit: sort_criteria,
     pub view_name: Option<&'static ::std::ffi::CStr>,
@@ -67,7 +67,7 @@ impl Default for mode_tree_data {
         Self {
             dead: 0,
             zoomed: 0,
-            wp: std::ptr::null_mut(),
+            wp: Weak::new(),
             menu: &[],
             sort_crit: sort_criteria {
                 order: 0,

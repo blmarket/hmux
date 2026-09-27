@@ -71,8 +71,8 @@ use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_st
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
-use crate::src::window::window_zoom;
-use std::cell::{RefCell, UnsafeCell};
+use crate::src::window::{window_pane_upgrade, window_pane_weak, window_zoom};
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -503,7 +503,7 @@ pub unsafe fn mode_tree_start(
 ) -> *mut mode_tree_data {
     let mut mtd: *mut mode_tree_data = ::core::ptr::null_mut::<mode_tree_data>();
     mtd = mode_tree_alloc_data();
-    (*mtd).wp = wp;
+    (*mtd).wp = window_pane_weak(wp);
     (*mtd).menu = menu;
     if drawcb.is_none() {
         (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
@@ -536,7 +536,11 @@ pub unsafe fn mode_tree_start(
     return mtd;
 }
 pub unsafe fn mode_tree_zoom(mut mtd: *mut mode_tree_data, mut args: *mut args) {
-    let mut wp: *mut window_pane = (*mtd).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         (*mtd).zoomed = (*(*wp).window).flags & WINDOW_ZOOMED;
         if (*mtd).zoomed == 0 && window_zoom(wp) == 0 as ::core::ffi::c_int {
@@ -638,9 +642,13 @@ unsafe fn mode_tree_remove_ref(mut mtd: *mut mode_tree_data) {
     crate::src::shared::rc::release(mtd);
 }
 pub unsafe fn mode_tree_free(mut mtd: *mut mode_tree_data) {
-    let mut wp: *mut window_pane = (*mtd).wp;
-    if (*mtd).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window((*wp).window as *mut window);
+    // Pane destruction closes modes before releasing the pane's initial owner.
+    // Unlike normal access, cleanup must allow a logically destroyed pane.
+    if (*mtd).zoomed == 0 {
+        if let Some(pane) = (*mtd).wp.upgrade() {
+            let wp = crate::src::shared::rc::as_ptr(&pane);
+            server_unzoom_window((*wp).window);
+        }
     }
     mode_tree_clear_prompt(mtd);
     mode_tree_free_items(&mut (*mtd).children);
@@ -652,11 +660,15 @@ pub unsafe fn mode_tree_free(mut mtd: *mut mode_tree_data) {
     mode_tree_remove_ref(mtd);
 }
 pub unsafe fn mode_tree_resize(mut mtd: *mut mode_tree_data, mut sx: u_int, mut sy: u_int) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
-    (*(*mtd).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 pub unsafe fn mode_tree_add(
     mtd: *mut mode_tree_data,
@@ -739,7 +751,11 @@ fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: Option<&CStr>) {
     }
 }
 pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
-    let mut wp: *mut window_pane = (*mtd).wp;
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
+    let mut wp: *mut window_pane = mode_pane;
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -1394,6 +1410,13 @@ pub unsafe fn mode_tree_set_prompt(
     mut inputcb: mode_tree_prompt_input_cb,
     mut freecb: prompt_free_cb,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        if let Some(freecb) = freecb {
+            freecb();
+        }
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut pd = prompt_create_data::default();
@@ -1438,7 +1461,7 @@ pub unsafe fn mode_tree_set_prompt(
     (*mtd).prompt = Some(prompt);
     (*mtd).prompt_data = Some(identity);
     mode_tree_draw(mtd);
-    (*(*mtd).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
         crate::src::shared::rc::retain(mtd);
         let tree = crate::src::shared::rc::take(mtd);
@@ -1530,6 +1553,10 @@ unsafe fn mode_tree_search(mtd: *mut mode_tree_data, forward: bool) -> Option<Mo
     }
 }
 unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let found = if (*mtd).search_dir == MODE_TREE_SEARCH_FORWARD {
         mode_tree_search_forward(mtd)
     } else {
@@ -1548,7 +1575,7 @@ unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
     mode_tree_build(mtd);
     mode_tree_set_current(mtd, tag);
     mode_tree_draw(mtd);
-    (*(*mtd).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn mode_tree_search_callback(
     mut mtd: *mut mode_tree_data,
@@ -1577,6 +1604,10 @@ unsafe fn mode_tree_filter_callback(
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return PROMPT_CLOSE;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     if (*mtd).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -1586,7 +1617,7 @@ unsafe fn mode_tree_filter_callback(
     (*mtd).filter = replacement;
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
-    (*(*mtd).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return PROMPT_CONTINUE;
@@ -1594,10 +1625,14 @@ unsafe fn mode_tree_filter_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     (*mtd).filter = None;
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
-    (*(*mtd).wp).flags |= PANE_REDRAW;
+    (*mode_pane).flags |= PANE_REDRAW;
 }
 fn mode_tree_menu_callback(
     tree: Rc<UnsafeCell<mode_tree_data>>,
@@ -1637,6 +1672,10 @@ unsafe fn mode_tree_display_menu(
     mut y: u_int,
     mut outside: ::core::ffi::c_int,
 ) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let items: &[menu_item<'_>];
     let mut line: u_int = 0;
     if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
@@ -1675,8 +1714,8 @@ unsafe fn mode_tree_display_menu(
     } else {
         x = 0 as u_int;
     }
-    x = x.wrapping_add((*(*mtd).wp).xoff as u_int);
-    y = y.wrapping_add((*(*mtd).wp).yoff as u_int);
+    x = x.wrapping_add((*mode_pane).xoff as u_int);
+    y = y.wrapping_add((*mode_pane).yoff as u_int);
     menu_display(
         menu,
         0 as ::core::ffi::c_int,
@@ -1729,8 +1768,12 @@ unsafe fn mode_tree_draw_help_line(
     );
 }
 unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen_write_ctx) {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        return;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*mtd).wp).window).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options);
     let mut box_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1801,7 +1844,7 @@ unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen
         ::core::ptr::null_mut::<client>(),
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),
-        (*mtd).wp,
+        mode_pane,
     );
     screen_write_cursormove(
         &mut *ctx,
@@ -1845,6 +1888,11 @@ pub unsafe fn mode_tree_key(
     mut xp: *mut u_int,
     mut yp: *mut u_int,
 ) -> ::core::ffi::c_int {
+    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+        *key = KEYC_NONE;
+        return 0;
+    };
+    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut i: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -1882,7 +1930,7 @@ pub unsafe fn mode_tree_key(
                 || (*m).b & MOUSE_MASK_DRAG as u_int != 0
                 || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
                 || cmd_mouse_at(
-                    (*mtd).wp,
+                    mode_pane,
                     m,
                     &raw mut x,
                     &raw mut y,
@@ -1947,7 +1995,7 @@ pub unsafe fn mode_tree_key(
                 .is_some_and(|current| prompt.is(current))
         {
             mode_tree_draw(mtd);
-            (*(*mtd).wp).flags |= PANE_REDRAW;
+            (*mode_pane).flags |= PANE_REDRAW;
         }
         if result as ::core::ffi::c_uint
             != PROMPT_KEY_NOT_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1989,7 +2037,7 @@ pub unsafe fn mode_tree_key(
         && !m.is_null()
     {
         if cmd_mouse_at(
-            (*mtd).wp,
+            mode_pane,
             m,
             &raw mut x,
             &raw mut y,
@@ -2480,7 +2528,6 @@ mod mode_tree_tests {
 mod mode_prompt_data_tests {
     use super::*;
     use crate::src::shared::rc;
-    use crate::src::text::utf8::utf8_fromcstr_vec;
     use std::cell::{Cell, UnsafeCell};
 
     fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> ModeTreePromptOwner {
@@ -2531,97 +2578,59 @@ mod mode_prompt_data_tests {
             assert!(!weak_old.is_alive());
         }
     }
+}
+
+#[cfg(test)]
+mod pane_observer_tests {
+    use super::*;
+    use crate::src::shared::rc;
+    use std::cell::Cell;
 
     #[test]
-    fn active_callback_retains_tree_until_deferred_prompt_cleanup() {
-        for (dispatch, retain_tree) in [(false, false), (true, false), (true, true)] {
-            unsafe {
-                let tree = rc::take(mode_tree_alloc_data());
-                let weak_tree = Rc::downgrade(&tree);
-                let retained_tree = retain_tree.then(|| tree.clone());
-                let mtd = rc::as_ptr(&tree);
-                let data = data(&tree);
-                let weak_data = data.downgrade();
-                let tree_slot = Rc::new(RefCell::new(Some(tree)));
-                let pr = refbox::RefBox::new(prompt {
-                    buffer: utf8_fromcstr_vec(c""),
-                    flags: PROMPT_SINGLE,
-                    ..Default::default()
-                });
-                let input_data = data.downgrade();
-                pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |text, key| {
-                    mode_tree_prompt_input_callback(&input_data, text, key)
-                }));
-                let free_data = data;
-                let data = weak_data.clone();
-                pr.try_borrow_mut().unwrap().freecb =
-                    Some(Box::new(move || mode_tree_prompt_free_callback(&free_data)));
-                let pr_observer = pr.downgrade();
-                (*mtd).prompt = Some(pr);
-                let pr = pr_observer;
-                (*mtd).prompt_data = Some(data.clone());
-                (*mtd).lines.push(mode_tree_line {
-                    item: mode_tree_test_row(mtd),
-                    depth: 0,
-                    last: 0,
-                    flat: 0,
-                });
-                let events = Rc::new(RefCell::new(Vec::new()));
-                let input_events = events.clone();
-                let slot = tree_slot.clone();
-                let observed = weak_tree.clone();
-                data.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |client, input, key| {
-                    assert!(client.is_none());
-                    assert_eq!(input, Some(c"x"));
-                    assert_eq!(key, PROMPT_KEY_CLOSE);
-                    input_events.borrow_mut().push("start");
-                    let tree = slot.borrow_mut().take().unwrap();
-                    let mtd = rc::as_ptr(&tree);
-                    mode_tree_clear_prompt(mtd);
-                    (*mtd).dead = 1;
-                    (*mtd).lines.clear();
-                    drop(tree);
-                    assert!(observed.upgrade().is_some());
-                    input_events.borrow_mut().push("end");
-                    PROMPT_CLOSE
-                }));
-                let free_events = events.clone();
-                let observed = weak_tree.clone();
-                data.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
-                    assert!(observed.upgrade().is_some());
-                    free_events.borrow_mut().push("freed");
-                }));
-                if dispatch {
-                    let mut key = b'x' as key_code;
-                    assert_eq!(
-                        mode_tree_key(
-                            mtd,
-                            std::ptr::null_mut(),
-                            &mut key,
-                            std::ptr::null_mut(),
-                            std::ptr::null_mut(),
-                            std::ptr::null_mut()
-                        ),
-                        0
-                    );
-                    assert_eq!(key, KEYC_NONE);
-                } else {
-                    assert_eq!(prompt_key(&pr, b'x' as key_code, &mut 0), PROMPT_KEY_CLOSE);
-                }
-                assert_eq!(&*events.borrow(), &["start", "end", "freed"]);
-                assert!(tree_slot.borrow().is_none());
-                drop(retained_tree);
-                assert!(weak_tree.upgrade().is_none());
-                assert!(!data.is_alive());
-                assert_eq!(Rc::strong_count(&events), 1);
-                drop(pr);
-                drop(data);
-                assert!(!weak_data.is_alive());
-                assert_eq!(
-                    mode_tree_prompt_input_callback(&weak_data, None, PROMPT_KEY_CLOSE),
-                    PROMPT_CLOSE,
-                );
-            }
+    fn expired_parent_rejects_input_and_prompt_but_allows_tree_cleanup() {
+        unsafe {
+            let pane = rc::take(rc::new(window_pane::empty()));
+            let tree = mode_tree_alloc_data();
+            let tree_observer = rc::downgrade(tree);
+            (*tree).wp = Rc::downgrade(&pane);
+            assert_eq!(Rc::strong_count(&pane), 1);
+            drop(pane);
+
+            let mut key = b'x' as key_code;
+            assert_eq!(
+                mode_tree_key(
+                    tree,
+                    std::ptr::null_mut(),
+                    &mut key,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                ),
+                0,
+            );
+            assert_eq!(key, KEYC_NONE);
+
+            let frees = Rc::new(Cell::new(0));
+            let calls = frees.clone();
+            mode_tree_set_prompt(
+                tree,
+                std::ptr::null_mut(),
+                c"prompt",
+                None,
+                PROMPT_TYPE_COMMAND,
+                0,
+                None,
+                Some(Box::new(move || calls.set(calls.get() + 1))),
+            );
+            assert_eq!(frees.get(), 1);
+            assert!((*tree).prompt.is_none());
+
+            // Even unzoom cleanup must tolerate an expired parent and continue
+            // releasing the tree, rather than returning early and leaking it.
+            assert_eq!((*tree).zoomed, 0);
+            mode_tree_free(tree);
+            assert!(tree_observer.upgrade().is_none());
+            assert_eq!(Rc::strong_count(&frees), 1);
         }
     }
 }
@@ -2765,8 +2774,6 @@ mod menu_callback_owner_tests {
             unsafe {
                 let mtd = mode_tree_alloc_data();
                 let observer = rc::downgrade(mtd);
-                let mut pane = window_pane::empty();
-                (*mtd).wp = &mut pane;
                 (*mtd).zoomed = 1;
                 one_line(&observer.upgrade().unwrap());
                 let calls = Rc::new(Cell::new(0));
@@ -2822,8 +2829,6 @@ mod row_owner_tests {
         unsafe {
             let tree = mode_tree_alloc_data();
             let observer = rc::downgrade(tree);
-            let mut pane = window_pane::empty();
-            (*tree).wp = &mut pane;
             (*tree).zoomed = 1;
             let parent = mode_tree_add(tree, None, ModeTreeItemData::None, 1, c"parent", None, 1);
             let name = CString::new(b"child \xff".to_vec()).unwrap();
@@ -2993,8 +2998,6 @@ mod payload_owner_tests {
     fn row_payloads_expire_on_list_replacement_but_action_snapshots_survive() {
         unsafe {
             let tree = mode_tree_alloc_data();
-            let mut pane = window_pane::empty();
-            (*tree).wp = &mut pane;
             (*tree).zoomed = 1;
             let owner = payload(c"original");
             let original = ModeTreeItemData::Buffer(owner.downgrade());

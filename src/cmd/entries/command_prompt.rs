@@ -29,15 +29,18 @@ use crate::src::shared::rc;
 use crate::src::status::{status_prompt_set, status_prompt_update};
 use crate::src::window::{
     window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt,
+    window_pane_upgrade, window_pane_weak,
 };
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Weak;
 
 pub struct cmd_command_prompt_cdata {
     pub item: *mut cmdq_item,
     pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
-    pub wp: *mut window_pane,
+    pub wp: Option<Weak<UnsafeCell<window_pane>>>,
     pub prompts: Vec<cmd_command_prompt_prompt>,
     pub current: u_int,
     pub argv: Vec<CString>,
@@ -148,7 +151,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         state: None,
         flags: 0,
         prompt_type: PROMPT_TYPE_COMMAND,
-        wp: ::core::ptr::null_mut(),
+        wp: None,
         prompts: Vec::new(),
         current: 0,
         argv: Vec::new(),
@@ -157,7 +160,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         cdata.item = item;
     }
     if pane != 0 {
-        cdata.wp = wp;
+        cdata.wp = Some(window_pane_weak(wp));
     }
     cdata.state = Some(args_make_commands_prepare(
         self_0,
@@ -280,8 +283,11 @@ unsafe fn cmd_command_prompt_callback(
                 if (cdata.current as usize) != cdata.prompts.len() {
                     let (prompt_ptr, input_ptr) =
                         (&cdata.prompts)[cdata.current as usize].pointers();
-                    if !cdata.wp.is_null() {
-                        window_pane_update_prompt(cdata.wp, prompt_ptr, input_ptr);
+                    if let Some(pane) = &cdata.wp {
+                        let Some(pane) = window_pane_upgrade(pane) else {
+                            return PROMPT_CLOSE;
+                        };
+                        window_pane_update_prompt(rc::as_ptr(&pane), prompt_ptr, input_ptr);
                     } else {
                         status_prompt_update(c, prompt_ptr, input_ptr);
                     }
@@ -392,7 +398,7 @@ mod tests {
                     state: Some(state),
                     flags: 0,
                     prompt_type: PROMPT_TYPE_COMMAND,
-                    wp: std::ptr::null_mut(),
+                    wp: None,
                     prompts: cmd_command_prompt_rows(b"owner:", None, false, true),
                     current: 0,
                     argv: Vec::new(),

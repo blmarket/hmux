@@ -5012,6 +5012,28 @@ mod zoom_teardown_tests {
     }
 
     #[test]
+    fn mode_tree_cleanup_unzooms_a_logically_destroyed_pane() {
+        unsafe {
+            let w = zoomed_window();
+            let pane = (*w).active;
+            let tree = rc::new(crate::src::shared::mode_tree::mode_tree_data {
+                wp: window_pane_weak(pane),
+                zoomed: 0,
+                ..Default::default()
+            });
+            let observed = rc::downgrade(tree);
+            (*pane).flags |= PANE_DESTROYED;
+            assert!(window_pane_upgrade(&(*tree).wp).is_none());
+
+            crate::src::mode_tree::mode_tree_free(tree);
+
+            assert!(observed.upgrade().is_none());
+            assert_eq!((*w).flags & WINDOW_ZOOMED, 0);
+            drop(rc::take(w));
+        }
+    }
+
+    #[test]
     fn raw_and_typed_final_owners_destroy_zoomed_windows_without_resize_events() {
         unsafe {
             for typed in [false, true] {
