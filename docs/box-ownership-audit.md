@@ -35,6 +35,7 @@ guidance; other listed migrations still require that review.
 
 | Allocation | Result |
 | --- | --- |
+| Prompt roots | Clients, panes, and modes solely own RefBox prompts. Dispatch observes weakly and takes both callbacks out before input, deferring cleanup until input returns even if the sole owner is removed. Status cleanup detaches its screen before callbacks can install replacements. |
 | Menu state | Windows solely own RefBox menu records. Redraw scenes and key dispatch hold weak identities; key dispatch releases borrows before callbacks. Cancellation takes ownership out of the window and keeps its screen alive until the callback returns, preserving replacements and window teardown. |
 | Mode buffer/client/customize/tree payloads | Mode lists solely own RefBox records; rows retain weak identities. Actions copy independent input snapshots before callbacks can rebuild the list. Client snapshots retain the already reference-counted client and preserve deferred release. |
 | Pane and mode-tree prompt callback records | The cleanup closure solely owns a RefBox. Input closures and parent identity slots hold weak observers. Dispatch takes out the callback and ends its record borrow before invoking it; cleanup clears only the matching identity and preserves client/tree release order. |

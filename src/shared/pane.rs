@@ -14,7 +14,7 @@ use super::grid::grid_cell;
 use super::input::input_ctx;
 use super::layout::layout_cell;
 use super::options::options;
-use super::prompt::{prompt_free_cb, prompt_type, PromptRef};
+use super::prompt::{prompt_free_cb, prompt_type, PromptOwner};
 use super::screen::screen;
 use super::spawn::spawn_editor_state;
 use super::status::status_prompt_input_cb;
@@ -211,7 +211,7 @@ pub struct window_pane {
     pub modes: window_pane_modes,
     pub searchstr: Option<CString>,
     pub searchregex: ::core::ffi::c_int,
-    pub prompt: Option<PromptRef>,
+    pub prompt: Option<PromptOwner>,
     /// Callback-owned data; this observer cannot keep a closed prompt alive.
     pub prompt_data: WindowPanePromptWeak,
     pub prompt_cx: u_int,

@@ -206,28 +206,28 @@ mod tests {
                     confirm_key: b'y',
                     default_yes: 0,
                 });
-                let owner = Rc::new(RefCell::new(prompt {
+                let owner = refbox::RefBox::new(prompt {
                     flags: PROMPT_SINGLE,
                     buffer: utf8_fromcstr_vec(c""),
                     ..Default::default()
-                }));
+                });
                 let mut callback = data.into_callback().unwrap();
-                owner.borrow_mut().inputcb =
+                owner.try_borrow_mut().unwrap().inputcb =
                     Some(Box::new(move |text, key| callback(pointer, text, key)));
                 if reject {
-                    assert_eq!(prompt_key(&owner, b'n' as u64, &mut 0), PROMPT_KEY_CLOSE);
+                    assert_eq!(prompt_key(&owner.downgrade(), b'n' as u64, &mut 0), PROMPT_KEY_CLOSE);
                     assert_eq!(item.flags & CMDQ_WAITING, 0);
                 }
                 assert!(commands.upgrade().is_some());
-                prompt_free(&owner);
+                prompt_free(&owner.downgrade());
                 assert!(commands.upgrade().is_none());
-                assert!(owner.borrow().inputcb.is_none());
+                assert!(owner.try_borrow_mut().unwrap().inputcb.is_none());
                 if !reject {
                     // Pinned tmux cleanup only frees commands; callback dispatch
                     // is responsible for continuing a waiting confirmation.
                     assert_ne!(item.flags & CMDQ_WAITING, 0);
                 }
-                prompt_free(&owner);
+                prompt_free(&owner.downgrade());
             }
         }
     }

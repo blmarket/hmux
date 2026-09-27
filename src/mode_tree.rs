@@ -1264,7 +1264,7 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_w
     };
     (*s).mode |= MODE_CURSOR;
     (*mtd).prompt_cx = prompt_draw(
-        &(*mtd).prompt.as_ref().expect("active prompt").borrow(),
+        &(*mtd).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
         ctx,
         pdd,
     );
@@ -1277,7 +1277,7 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_w
 }
 pub unsafe fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
     if let Some(prompt) = (*mtd).prompt.take() {
-        prompt_free(&prompt);
+        prompt_free(&prompt.downgrade());
         (*mtd).screen.mode &= !MODE_CURSOR;
     }
 }
@@ -1395,7 +1395,7 @@ pub unsafe fn mode_tree_set_prompt(
         mode_tree_prompt_free_callback(&free_data)
     }));
     let prompt = prompt_create(pd);
-    (*mtd).prompt = Some(prompt.clone());
+    (*mtd).prompt = Some(prompt);
     (*mtd).prompt_data = Some(identity);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
@@ -1812,7 +1812,7 @@ pub unsafe fn mode_tree_key(
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 1 as ::core::ffi::c_int;
     }
-    if let Some(prompt) = (*mtd).prompt.clone() {
+    if let Some(prompt) = (*mtd).prompt.as_ref().map(|prompt| prompt.downgrade()) {
         let tree = crate::src::shared::rc::downgrade(mtd);
         redraw = 0 as ::core::ffi::c_int;
         let mtp = (*mtd).prompt_data.clone();
@@ -1853,7 +1853,7 @@ pub unsafe fn mode_tree_key(
                 }
                 if y == py {
                     result = prompt_mouse(
-                        &mut prompt.borrow_mut(),
+                        &mut prompt.try_borrow_mut().expect("live unborrowed prompt"),
                         x,
                         0 as u_int,
                         sx,
@@ -1883,10 +1883,10 @@ pub unsafe fn mode_tree_key(
         if (*mtd)
             .prompt
             .as_ref()
-            .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+            .is_some_and(|current| prompt.is(current))
             && (result as ::core::ffi::c_uint
                 == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
-                || prompt_closed(&prompt.borrow()) != 0)
+                || prompt_closed(&prompt.try_borrow_mut().expect("live unborrowed prompt")) != 0)
         {
             mode_tree_clear_prompt(mtd);
         }
@@ -1898,7 +1898,7 @@ pub unsafe fn mode_tree_key(
             || !(*mtd)
                 .prompt
                 .as_ref()
-                .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+                .is_some_and(|current| prompt.is(current))
         {
             mode_tree_draw(mtd);
             (*(*mtd).wp).flags |= PANE_REDRAW;
@@ -2489,20 +2489,22 @@ mod mode_prompt_data_tests {
                 let data = data(&tree);
                 let weak_data = data.downgrade();
                 let tree_slot = Rc::new(RefCell::new(Some(tree)));
-                let pr = Rc::new(RefCell::new(prompt {
+                let pr = refbox::RefBox::new(prompt {
                     buffer: utf8_fromcstr_vec(c""),
                     flags: PROMPT_SINGLE,
                     ..Default::default()
-                }));
+                });
                 let input_data = data.downgrade();
-                pr.borrow_mut().inputcb = Some(Box::new(move |text, key| {
+                pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |text, key| {
                     mode_tree_prompt_input_callback(&input_data, text, key)
                 }));
                 let free_data = data;
                 let data = weak_data.clone();
-                pr.borrow_mut().freecb =
+                pr.try_borrow_mut().unwrap().freecb =
                     Some(Box::new(move || mode_tree_prompt_free_callback(&free_data)));
-                (*mtd).prompt = Some(pr.clone());
+                let pr_observer = pr.downgrade();
+                (*mtd).prompt = Some(pr);
+                let pr = pr_observer;
                 (*mtd).prompt_data = Some(data.clone());
                 (*mtd).lines.push(mode_tree_line {
                     item: Rc::new(RefCell::new(mode_tree_item::empty())),

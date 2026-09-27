@@ -65,7 +65,7 @@ pub struct window_switch_modedata {
     pub command: CString,
     pub type_0: window_switch_type,
     pub filter: CString,
-    pub prompt: Option<PromptRef>,
+    pub prompt: Option<PromptOwner>,
     pub prompt_cx: u_int,
     // Matches only borrow rows; boxes keep their addresses stable as the list grows.
     item_list: Vec<Box<window_switch_itemdata>>,
@@ -446,7 +446,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         };
         (*s).mode |= MODE_CURSOR;
         (*data).prompt_cx = prompt_draw(
-            &(*data).prompt.as_ref().expect("active prompt").borrow(),
+            &(*data).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
             &mut ctx,
             pdd,
         );
@@ -511,9 +511,11 @@ unsafe fn window_switch_init(
         window_switch_prompt_callback(data, s, key)
     }));
     let prompt = prompt_create(pd);
-    (*data).prompt = Some(prompt.clone());
+    let prompt_observer = prompt.downgrade();
+    (*data).prompt = Some(prompt);
+    let prompt = prompt_observer;
     prompt_update(
-        &mut prompt.borrow_mut(),
+        &mut prompt.try_borrow_mut().expect("live unborrowed prompt"),
         c"(search) ",
         Some(&(*data).filter),
     );
@@ -545,7 +547,7 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     (*data).item_list.clear();
     (*data).matches.clear();
     if let Some(prompt) = (*data).prompt.take() {
-        prompt_free(&prompt);
+        prompt_free(&prompt.downgrade());
     }
     screen_free(&mut (*data).screen);
     drop(Box::from_raw(data));
@@ -709,7 +711,7 @@ unsafe fn window_switch_key(
             && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
         {
             result = prompt_mouse(
-                &mut (*data).prompt.as_ref().expect("active prompt").borrow_mut(),
+                &mut (*data).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
                 x,
                 0 as u_int,
                 (*data).screen.grid().sx,
@@ -772,7 +774,7 @@ unsafe fn window_switch_key(
             }
             _ => {}
         }
-        if let Some(prompt) = (*data).prompt.clone() {
+        if let Some(prompt) = (*data).prompt.as_ref().map(|prompt| prompt.downgrade()) {
             result = prompt_key(&prompt, key, &mut redraw);
             if redraw != 0 {
                 window_switch_draw_screen(wme);

@@ -397,32 +397,32 @@ mod tests {
                     current: 0,
                     argv: Vec::new(),
                 });
-                let owner = Rc::new(RefCell::new(prompt {
+                let owner = refbox::RefBox::new(prompt {
                     flags: 0,
                     buffer: utf8_fromcstr_vec(c""),
                     ..Default::default()
-                }));
-                let active = Rc::downgrade(&owner);
+                });
+                let active = owner.downgrade();
                 let observed = commands.clone();
                 let mut callback = data.into_callback().unwrap();
-                owner.borrow_mut().inputcb = Some(Box::new(move |text, key| {
+                owner.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |text, key| {
                     let result = callback(None, text, key);
                     if close_path == 2 {
-                        prompt_free(&active.upgrade().unwrap());
+                        prompt_free(&active);
                         assert!(observed.upgrade().is_some());
                     }
                     result
                 }));
                 if close_path != 0 {
-                    assert_eq!(prompt_key(&owner, 27, &mut 0), PROMPT_KEY_CLOSE);
+                    assert_eq!(prompt_key(&owner.downgrade(), 27, &mut 0), PROMPT_KEY_CLOSE);
                     assert_eq!(item.flags & CMDQ_WAITING, 0);
                 }
-                prompt_free(&owner);
+                prompt_free(&owner.downgrade());
                 assert_eq!(item.flags & CMDQ_WAITING, 0);
                 assert!(commands.upgrade().is_none());
-                assert!(owner.borrow().inputcb.is_none());
+                assert!(owner.try_borrow_mut().unwrap().inputcb.is_none());
                 // Retaining the closed prompt does not retain its callback record.
-                prompt_free(&owner);
+                prompt_free(&owner.downgrade());
             }
         }
     }

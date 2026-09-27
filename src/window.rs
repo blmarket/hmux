@@ -3333,7 +3333,9 @@ pub unsafe fn window_pane_set_prompt(
         window_pane_prompt_free_callback(&free_data)
     }));
     let prompt = prompt_create(pd);
-    (*wp).prompt = Some(prompt.clone());
+    let prompt_observer = prompt.downgrade();
+    (*wp).prompt = Some(prompt);
+    let prompt = prompt_observer;
     (*wp).prompt_data = Some(identity);
     (*wp).flags |= PANE_REDRAW;
     prompt_incremental_start(&prompt);
@@ -3351,7 +3353,7 @@ pub unsafe fn window_pane_clear_prompt(mut wp: *mut window_pane) {
         if let Some(wpp) = wpp {
             type_0 = wpp.try_borrow_mut().expect("live pane prompt record").type_0;
         }
-        prompt_free(&prompt);
+        prompt_free(&prompt.downgrade());
         (*wp).flags |= PANE_REDRAW;
         if !(*wp).flags & PANE_DESTROYED != 0 {
             window_fire_pane_prompt(
@@ -3372,7 +3374,7 @@ pub unsafe fn window_pane_update_prompt(
 ) {
     if (*wp).prompt.is_some() {
         prompt_update(
-            &mut (*wp).prompt.as_ref().expect("active prompt").borrow_mut(),
+            &mut (*wp).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
             CStr::from_ptr(msg),
             (!input.is_null()).then(|| CStr::from_ptr(input)),
         );
@@ -3385,7 +3387,7 @@ pub unsafe fn window_pane_prompt_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
-    let prompt = (*wp).prompt.clone();
+    let prompt = (*wp).prompt.as_ref().map(|prompt| prompt.downgrade());
     let wpp = (*wp).prompt_data.clone();
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut wp_id: u_int = (*wp).id;
@@ -3428,7 +3430,7 @@ pub unsafe fn window_pane_prompt_key(
             }
             if y == py {
                 result = prompt_mouse(
-                    &mut prompt.borrow_mut(),
+                    &mut prompt.try_borrow_mut().expect("live unborrowed prompt"),
                     x,
                     0 as u_int,
                     (*wp).sx,
@@ -3453,10 +3455,10 @@ pub unsafe fn window_pane_prompt_key(
     if (*wp)
         .prompt
         .as_ref()
-        .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+        .is_some_and(|current| prompt.is(current))
         && (result as ::core::ffi::c_uint
             == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
-            || prompt_closed(&prompt.borrow()) != 0)
+            || prompt_closed(&prompt.try_borrow_mut().expect("live unborrowed prompt")) != 0)
     {
         window_pane_clear_prompt(wp);
     }
@@ -3464,7 +3466,7 @@ pub unsafe fn window_pane_prompt_key(
         || !(*wp)
             .prompt
             .as_ref()
-            .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
+            .is_some_and(|current| prompt.is(current))
     {
         (*wp).flags |= PANE_REDRAW;
     }
@@ -4623,18 +4625,18 @@ mod pane_prompt_data_tests {
         })
     }
 
-    fn attach(data: WindowPanePromptOwner) -> PromptRef {
-        let pr = Rc::new(RefCell::new(prompt {
+    fn attach(data: WindowPanePromptOwner) -> crate::src::shared::prompt::PromptOwner {
+        let pr = refbox::RefBox::new(prompt {
             flags: PROMPT_SINGLE,
             buffer: utf8_fromcstr_vec(c""),
             ..Default::default()
-        }));
+        });
         let input = data.downgrade();
-        pr.borrow_mut().inputcb = Some(Box::new(move |text, key| {
+        pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |text, key| {
             window_pane_prompt_input_callback(&input, text, key)
         }));
         let freed = data;
-        pr.borrow_mut().freecb = Some(Box::new(move || unsafe {
+        pr.try_borrow_mut().unwrap().freecb = Some(Box::new(move || unsafe {
             window_pane_prompt_free_callback(&freed)
         }));
         pr
@@ -4717,12 +4719,13 @@ mod pane_prompt_data_tests {
             let replacement_prompt = attach(replacement);
             let replacement = replacement_weak.clone();
             let next_data = replacement.clone();
-            let next_prompt = replacement_prompt.clone();
+            let replacement_observer = replacement_prompt.downgrade();
+            let mut next_prompt = Some(replacement_prompt);
             old_data.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |_, text, kind| {
                 assert_eq!(text, Some(c"x"));
                 assert_eq!(kind, PROMPT_KEY_CLOSE);
                 window_pane_clear_prompt(wp);
-                (*wp).prompt = Some(next_prompt.clone());
+                (*wp).prompt = next_prompt.take();
                 (*wp).prompt_data = Some(next_data.clone());
                 PROMPT_CLOSE
             }));
@@ -4730,7 +4733,8 @@ mod pane_prompt_data_tests {
             let count = frees.clone();
             old_data.try_borrow_mut().unwrap().freecb =
                 Some(Box::new(move || count.set(count.get() + 1)));
-            (*wp).prompt = Some(old_prompt.clone());
+            let old_observer = old_prompt.downgrade();
+            (*wp).prompt = Some(old_prompt);
             (*wp).prompt_data = Some(old_weak.clone());
             assert_eq!(
                 window_pane_prompt_key(
@@ -4743,16 +4747,13 @@ mod pane_prompt_data_tests {
             );
             assert_eq!(frees.get(), 1);
             assert!((*wp).prompt_data.as_ref() == Some(&replacement_weak));
-            assert!(Rc::ptr_eq(
-                (*wp).prompt.as_ref().unwrap(),
-                &replacement_prompt
-            ));
-            drop(old_prompt);
+            assert!(replacement_observer.is((*wp).prompt.as_ref().unwrap()));
+            assert!(!old_observer.is_alive());
             drop(old_data);
             assert!(!old_weak.is_alive());
             window_pane_clear_prompt(wp);
             assert!((*wp).prompt_data.is_none());
-            drop(replacement_prompt);
+            assert!(!replacement_observer.is_alive());
             drop(replacement);
             assert!(!replacement_weak.is_alive());
             assert_eq!(window_pane_tree_remove(&raw mut all_window_panes, wp), wp);

@@ -721,7 +721,9 @@ pub unsafe fn status_prompt_set(
     }
     pd.freecb = freecb.take();
     let prompt = prompt_create(pd);
-    (*c).prompt = Some(prompt.clone());
+    let prompt_observer = prompt.downgrade();
+    (*c).prompt = Some(prompt);
+    let prompt = prompt_observer;
     if !flags & PROMPT_INCREMENTAL != 0 && !flags & PROMPT_NOFREEZE != 0 {
         (*c).tty.flags |= TTY_FREEZE;
     }
@@ -738,23 +740,14 @@ pub unsafe fn status_prompt_set(
     }
 }
 pub unsafe fn status_prompt_clear(mut c: *mut client) {
-    let Some(prompt) = (*c).prompt.clone() else {
+    let Some(prompt) = (*c).prompt.take() else {
         return;
     };
-    prompt_free(&prompt);
-    if !(*c)
-        .prompt
-        .as_ref()
-        .is_some_and(|current| std::rc::Rc::ptr_eq(current, &prompt))
-    {
-        // Recursive cleanup may already have popped this prompt's screen,
-        // or installed another prompt with its own screen and tty flags.
-        return;
-    }
-    (*c).prompt = None;
     (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
     status_pop_screen(c);
+    // The old screen and owner are detached before cleanup can install a new prompt.
+    prompt_free(&prompt.downgrade());
 }
 pub unsafe fn status_prompt_update(
     mut c: *mut client,
@@ -765,7 +758,7 @@ pub unsafe fn status_prompt_update(
         return;
     }
     prompt_update(
-        &mut (*c).prompt.as_ref().expect("active prompt").borrow_mut(),
+        &mut (*c).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
         CStr::from_ptr(msg),
         (!input.is_null()).then(|| CStr::from_ptr(input)),
     );
@@ -830,7 +823,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         prompt_line: promptline,
     };
     (*sl).prompt_cx = prompt_draw(
-        &(*c).prompt.as_ref().expect("active prompt").borrow(),
+        &(*c).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
         &mut ctx,
         pdd,
     );
@@ -851,7 +844,7 @@ pub unsafe fn status_prompt_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
-    let Some(prompt) = (*c).prompt.clone() else {
+    let Some(prompt) = (*c).prompt.as_ref().map(|prompt| prompt.downgrade()) else {
         return PROMPT_KEY_NOT_HANDLED;
     };
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
@@ -875,7 +868,7 @@ pub unsafe fn status_prompt_key(
         }
         let (ax, aw) = status_message_area(&*c);
         result = prompt_mouse(
-            &mut (*c).prompt.as_ref().expect("active prompt").borrow_mut(),
+            &mut (*c).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
             (*m).x,
             ax,
             aw,
@@ -888,7 +881,7 @@ pub unsafe fn status_prompt_key(
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
     if (*c).prompt.is_some()
-        && prompt_closed(&(*c).prompt.as_ref().expect("active prompt").borrow()) != 0
+        && prompt_closed(&(*c).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt")) != 0
     {
         status_prompt_clear(c);
     }
@@ -1048,19 +1041,20 @@ mod status_screen_tests {
             c.tty.sy = 24;
             status_init(&mut *c);
             status_push_screen(&mut *c);
-            let old = std::rc::Rc::new(std::cell::RefCell::new(prompt::default()));
-            let replacement = std::rc::Rc::new(std::cell::RefCell::new(prompt::default()));
-            let next = replacement.clone();
+            let old = refbox::RefBox::new(prompt::default());
+            let replacement = refbox::RefBox::new(prompt::default());
+            let replacement_observer = replacement.downgrade();
+            let next = replacement;
             let client = &raw mut *c;
-            old.borrow_mut().freecb = Some(Box::new(move || {
+            old.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                 status_prompt_clear(client);
                 status_push_screen(client);
                 (*client).prompt = Some(next);
                 (*client).tty.flags |= TTY_FREEZE;
             }));
-            c.prompt = Some(old.clone());
+            c.prompt = Some(old);
             status_prompt_clear(&mut *c);
-            assert!(std::rc::Rc::ptr_eq(c.prompt.as_ref().unwrap(), &replacement));
+            assert!(replacement_observer.is(c.prompt.as_ref().unwrap()));
             assert_eq!(c.status.screen_users, 1);
             assert!(c.status.active.is_some());
             assert_ne!(c.tty.flags & TTY_FREEZE, 0);

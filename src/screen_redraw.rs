@@ -1814,7 +1814,7 @@ unsafe fn redraw_draw_pane_prompt(dctx: &mut redraw_draw_ctx<'_>, mut wp: *mut w
         prompt_line: 0 as u_int,
     };
     (*wp).prompt_cx = prompt_draw(
-        &(*wp).prompt.as_ref().expect("active prompt").borrow(),
+        &(*wp).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),
         &mut ctx,
         pdd,
     );

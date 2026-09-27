@@ -4,12 +4,11 @@ use super::abi::{size_t, u_int};
 use super::command::cmd_find_state;
 use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
-use std::cell::RefCell;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
 
-/// A heap-owned prompt retained across callbacks which may clear its owner.
-pub type PromptRef = Rc<RefCell<prompt>>;
+/// The client, pane, or mode solely owns a prompt. Dispatch observes its identity.
+pub type PromptOwner = refbox::RefBox<prompt>;
+pub type PromptWeak = refbox::Weak<prompt>;
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
 pub const PROMPT_TYPE_INVALID: prompt_type = 255;

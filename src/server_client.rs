@@ -1533,7 +1533,7 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
         event_del(&raw mut (*c).message_timer);
     }
     if let Some(prompt) = (*c).prompt.take() {
-        prompt_free(&prompt);
+        prompt_free(&prompt.downgrade());
     }
     format_lost_client(c);
     drop((*c).environ.take());
@@ -3739,7 +3739,7 @@ mod prompt_cursor_tests {
                 let mut window = window::default();
                 window.sx = 100;
                 window.sy = 40;
-                let prompt = std::rc::Rc::new(std::cell::RefCell::new(prompt::default()));
+                let prompt = refbox::RefBox::new(prompt::default());
                 let base = rc::take(rc::new(window_pane::empty()));
                 let wp = rc::as_ptr(&base);
                 (*wp).window = &raw mut window;
@@ -3748,7 +3748,7 @@ mod prompt_cursor_tests {
                 (*wp).sy = 4;
                 (*wp).prompt_cx = 2;
                 if has_prompt {
-                    (*wp).prompt = Some(prompt.clone());
+                    (*wp).prompt = Some(prompt);
                 }
                 window.z_index.push_front(std::rc::Rc::downgrade(&base));
                 let blocker = rc::take(rc::new(window_pane::empty()));
