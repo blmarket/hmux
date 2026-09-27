@@ -129,7 +129,10 @@ pub unsafe fn prompt_save_history() {
         i = 0 as u_int;
         let history = &*(&raw const prompt_hlist[type_0 as usize]);
         while i < history.len() as u_int {
-            fputs(prompt_type_string(type_0 as prompt_type), stream.as_ptr());
+            fputs(
+                prompt_type_string(type_0 as prompt_type).as_ptr(),
+                stream.as_ptr(),
+            );
             fputc(':' as i32, stream.as_ptr());
             fputs(history[i as usize].as_ptr(), stream.as_ptr());
             fputc('\n' as i32, stream.as_ptr());

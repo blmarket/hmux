@@ -626,7 +626,7 @@ unsafe fn window_fire_pane_prompt(
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    let mut type_string: *const ::core::ffi::c_char = prompt_type_string(type_0);
+    let type_string = prompt_type_string(type_0);
     ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
     event_payload_set_target(ep, &raw mut fs);
@@ -639,7 +639,7 @@ unsafe fn window_fire_pane_prompt(
     event_payload_set_string(
         ep,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, type_string),
+        |out| out.write_all(type_string.to_bytes()),
     );
     events_fire(name, ep);
 }

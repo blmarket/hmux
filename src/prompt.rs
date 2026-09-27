@@ -1,6 +1,6 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strcmp, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strlen};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -37,7 +37,7 @@ use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
     prompt_result, PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE,
     PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE,
-    PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NTYPES, PROMPT_NUMERIC, PROMPT_QUOTENEXT,
+    PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_QUOTENEXT,
     PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
@@ -81,105 +81,33 @@ pub struct prompt_layout {
     pub input_width: u_int,
 }
 
-unsafe fn prompt_flags_to_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut tmp: [::core::ffi::c_char; 256] = [0; 256];
-    *(&raw mut tmp as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if flags & PROMPT_SINGLE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"SINGLE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
+fn prompt_write_flags(
+    out: &mut dyn std::io::Write,
+    flags: ::core::ffi::c_int,
+) -> std::io::Result<()> {
+    let mut separator = "";
+    for (flag, name) in [
+        (PROMPT_SINGLE, "SINGLE"),
+        (PROMPT_NUMERIC, "NUMERIC"),
+        (PROMPT_INCREMENTAL, "INCREMENTAL"),
+        (PROMPT_NOFORMAT, "NOFORMAT"),
+        (PROMPT_KEY, "KEY"),
+        (PROMPT_ACCEPT, "ACCEPT"),
+        (PROMPT_QUOTENEXT, "QUOTENEXT"),
+        (PROMPT_BSPACE_EXIT, "BSPACE_EXIT"),
+        (PROMPT_NOFREEZE, "NOFREEZE"),
+        (PROMPT_COMMANDMODE, "COMMANDMODE"),
+        (PROMPT_ISPANE, "ISPANE"),
+        (PROMPT_ISMODE, "ISMODE"),
+        (PROMPT_EDITARROWS, "EDITARROWS"),
+    ] {
+        if flags & flag != 0 {
+            out.write_all(separator.as_bytes())?;
+            out.write_all(name.as_bytes())?;
+            separator = ",";
+        }
     }
-    if flags & PROMPT_NUMERIC != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"NUMERIC,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_INCREMENTAL != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"INCREMENTAL,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_NOFORMAT != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"NOFORMAT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_KEY != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"KEY,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_ACCEPT != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"ACCEPT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_QUOTENEXT != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"QUOTENEXT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_BSPACE_EXIT != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"BSPACE_EXIT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_NOFREEZE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"NOFREEZE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_COMMANDMODE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"COMMANDMODE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_ISPANE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"ISPANE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_ISMODE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"ISMODE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if flags & PROMPT_EDITARROWS != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"EDITARROWS,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if *(&raw mut tmp as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
-        tmp[strlen(&raw mut tmp as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-            '\0' as i32 as ::core::ffi::c_char;
-    }
-    return &raw mut tmp as *mut ::core::ffi::c_char;
+    Ok(())
 }
 pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&session>) {
     let oo = s.map_or(global_s_options, |s| s.options);
@@ -569,12 +497,12 @@ unsafe fn prompt_format_tree(pr: &prompt) -> *mut format_tree {
     format_add(
         ft,
         b"prompt_flags\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, prompt_flags_to_string(pr.flags)),
+        |out| prompt_write_flags(out, pr.flags),
     );
     format_add(
         ft,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, prompt_type_string(pr.type_0)),
+        |out| out.write_all(prompt_type_string(pr.type_0).to_bytes()),
     );
     if pr.flags & PROMPT_COMMANDMODE != 0 {
         format_add(
@@ -10387,25 +10315,20 @@ unsafe fn prompt_complete(mut pr: *mut prompt, word: &CStr, mut offset: u_int) -
     prompt_store_complete(pr, list);
     None
 }
-pub unsafe fn prompt_type(mut type_0: *const ::core::ffi::c_char) -> prompt_type {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < PROMPT_NTYPES as u_int {
-        if strcmp(type_0, prompt_type_string(i as prompt_type)) == 0 as ::core::ffi::c_int {
-            return i as prompt_type;
-        }
-        i = i.wrapping_add(1);
+pub fn prompt_type(name: &CStr) -> prompt_type {
+    match name.to_bytes() {
+        b"command" => PROMPT_TYPE_COMMAND,
+        b"search" => PROMPT_TYPE_SEARCH,
+        _ => PROMPT_TYPE_INVALID,
     }
-    return PROMPT_TYPE_INVALID;
 }
-pub unsafe fn prompt_type_string(mut type_0: prompt_type) -> *const ::core::ffi::c_char {
-    match type_0 as ::core::ffi::c_uint {
-        0 => return b"command\0" as *const u8 as *const ::core::ffi::c_char,
-        1 => return b"search\0" as *const u8 as *const ::core::ffi::c_char,
-        255 => return b"invalid\0" as *const u8 as *const ::core::ffi::c_char,
-        _ => {}
+pub fn prompt_type_string(kind: prompt_type) -> &'static CStr {
+    match kind {
+        PROMPT_TYPE_COMMAND => c"command",
+        PROMPT_TYPE_SEARCH => c"search",
+        PROMPT_TYPE_INVALID => c"invalid",
+        _ => c"unknown",
     }
-    return b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
 }
 
 #[cfg(test)]

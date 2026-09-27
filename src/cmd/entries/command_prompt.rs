@@ -190,7 +190,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     (*cdata).prompts = cmd_command_prompt_rows(&prompt_bytes, input_bytes, literal, space != 0);
     type_0 = args_get(args, 'T' as i32 as u_char);
     if !type_0.is_null() {
-        (*cdata).prompt_type = prompt_type(type_0);
+        (*cdata).prompt_type = prompt_type(CStr::from_ptr(type_0));
         if (*cdata).prompt_type as ::core::ffi::c_uint
             == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
         {

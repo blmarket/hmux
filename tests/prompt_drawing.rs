@@ -38,7 +38,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
         options_default(server, definition);
 
         // Geometry checked against prompt_layout in tmux e880cf63e0a9.
-        // All prompts start at column 3 on a 20-column screen.
+        // All prompts start at column 3 on an 80-column screen.
         for (label, input, index, width, style, flags, completion, expected, cursor) in [
             (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),
             (
@@ -142,6 +142,28 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 "   L:abc",
                 8,
             ),
+            (
+                c"#{prompt_flags}|#{prompt_type}:",
+                c"abc",
+                3,
+                40,
+                c"align=left",
+                0,
+                None,
+                "   NOFORMAT|command:abc",
+                23,
+            ),
+            (
+                c"#{prompt_flags}|#{prompt_type}:",
+                c"abc",
+                3,
+                40,
+                c"align=left",
+                PROMPT_EDITARROWS,
+                None,
+                "   NOFORMAT,EDITARROWS|command:abc",
+                34,
+            ),
         ] {
             let mut prompt = prompt_create(prompt_create_data {
                 prompt: label,
@@ -163,7 +185,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             prompt.index = index;
             prompt.completion.display = completion.map(CStr::to_owned);
             let mut s = screen::empty();
-            screen_init(&mut s, 20, 1, 0);
+            screen_init(&mut s, 80, 1, 0);
             let mut ctx = screen_write_ctx::default();
             screen_write_start(&mut ctx, &mut s);
             let cursor_x = prompt_draw(
@@ -177,7 +199,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             );
             screen_write_stop(&mut ctx);
             let text =
-                grid_string_cells_bytes(s.grid(), 0, 0, 20, None, GRID_STRING_TRIM_SPACES, None);
+                grid_string_cells_bytes(s.grid(), 0, 0, 80, None, GRID_STRING_TRIM_SPACES, None);
             assert_eq!(
                 text,
                 expected.as_bytes(),

@@ -11,6 +11,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
+use std::ffi::CStr;
 pub static mut cmd_show_prompt_history_entry: cmd_entry = {
     cmd_entry {
         name: c"show-prompt-history",
@@ -70,7 +71,7 @@ unsafe fn cmd_show_prompt_history_exec(
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut typestr: *const ::core::ffi::c_char = args_get(args, 'T' as i32 as u_char);
+    let typestr: *const ::core::ffi::c_char = args_get(args, 'T' as i32 as u_char);
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;
     let mut h: u_int = 0;
@@ -83,7 +84,7 @@ unsafe fn cmd_show_prompt_history_exec(
                 t = t.wrapping_add(1);
             }
         } else {
-            type_0 = prompt_type(typestr);
+            type_0 = prompt_type(CStr::from_ptr(typestr));
             if type_0 as ::core::ffi::c_uint
                 == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -100,10 +101,10 @@ unsafe fn cmd_show_prompt_history_exec(
     if typestr.is_null() {
         t = 0 as u_int;
         while t < PROMPT_NTYPES as u_int {
-            typestr = prompt_type_string(t as prompt_type);
+            let type_name = prompt_type_string(t as prompt_type);
             cmdq_print(item, |out| {
                 out.write_all(b"History for ")?;
-                write_cstr(out, typestr)?;
+                out.write_all(type_name.to_bytes())?;
                 out.write_all(b":\n")
             });
             h = 0 as u_int;
@@ -121,7 +122,7 @@ unsafe fn cmd_show_prompt_history_exec(
             t = t.wrapping_add(1);
         }
     } else {
-        type_0 = prompt_type(typestr);
+        type_0 = prompt_type(CStr::from_ptr(typestr));
         if type_0 as ::core::ffi::c_uint
             == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -133,7 +134,7 @@ unsafe fn cmd_show_prompt_history_exec(
         }
         cmdq_print(item, |out| {
             out.write_all(b"History for ")?;
-            write_cstr(out, prompt_type_string(type_0))?;
+            out.write_all(prompt_type_string(type_0).to_bytes())?;
             out.write_all(b":\n")
         });
         h = 0 as u_int;
