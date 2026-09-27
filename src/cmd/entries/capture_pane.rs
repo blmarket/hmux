@@ -6,8 +6,8 @@ use crate::src::ffi::libc::{memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::grid::{
-    grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_default_cell,
-    grid_get_cell, grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line,
+    grid_cell_attr_display, grid_cell_flags_display, grid_clear_history, grid_default_cell,
+    grid_get_cell, grid_get_line, grid_line_flags_display, grid_line_time, grid_peek_line,
     grid_string_cells_bytes,
 };
 use crate::src::hyperlinks::hyperlinks_get;
@@ -163,11 +163,15 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     )
     .expect("writing to a byte vector succeeds");
     line.extend_from_slice(&data);
-    line.extend_from_slice(b") flags=");
-    line.extend_from_slice(CStr::from_ptr(grid_cell_flags_string(flags as i32)).to_bytes());
-    write!(&mut line, "[{:x}] attr=", flags).expect("writing to a byte vector succeeds");
-    line.extend_from_slice(CStr::from_ptr(grid_cell_attr_string(gc.attr as i32)).to_bytes());
-    write!(&mut line, "[{:x}] fg=", gc.attr).expect("writing to a byte vector succeeds");
+    write!(
+        &mut line,
+        ") flags={}[{:x}] attr={}[{:x}] fg=",
+        grid_cell_flags_display(flags as i32),
+        flags,
+        grid_cell_attr_display(gc.attr as i32),
+        gc.attr,
+    )
+    .expect("writing to a byte vector succeeds");
     line.extend_from_slice(f.to_bytes());
     line.extend_from_slice(b" bg=");
     line.extend_from_slice(b.to_bytes());
@@ -219,10 +223,12 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
         let mut row = Vec::new();
         write!(&mut row, "\tL {} (", yy).expect("writing to a byte vector succeeds");
         row.extend_from_slice(CStr::from_ptr(p.as_ptr()).to_bytes());
-        row.extend_from_slice(b") flags=");
-        row.extend_from_slice(
-            CStr::from_ptr(grid_line_flags_string((*gl).flags as ::core::ffi::c_int)).to_bytes(),
-        );
+        write!(
+            &mut row,
+            ") flags={}",
+            grid_line_flags_display((*gl).flags as i32)
+        )
+        .expect("writing to a byte vector succeeds");
         write!(
             &mut row,
             "[{:x}] {}/{}",

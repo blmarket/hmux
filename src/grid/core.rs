@@ -1744,257 +1744,104 @@ pub unsafe fn grid_in_set(
     }
     return utf8_cstrhas(set, &gc.data) as ::core::ffi::c_int;
 }
-pub unsafe fn grid_line_flags_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 128] = [0; 128];
-    *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if flags & GRID_LINE_WRAPPED != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"WRAPPED,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_EXTENDED != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"EXTENDED,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_DEAD != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"DEAD,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_START_PROMPT != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"START_PROMPT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_SECOND_PROMPT != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"SECOND_PROMPT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_START_COMMAND != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"START_COMMAND,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_START_OUTPUT != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"START_OUTPUT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_END_OUTPUT != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"END_OUTPUT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_LINE_HYPERLINK != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"HYPERLINK,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {
-        return b"NONE\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-        '\0' as i32 as ::core::ffi::c_char;
-    return &raw mut s as *mut ::core::ffi::c_char;
+struct GridFlagNames {
+    flags: i32,
+    names: &'static [(i32, &'static str)],
 }
-pub unsafe fn grid_cell_flags_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 128] = [0; 128];
-    *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if flags & GRID_FLAG_FG256 != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"FG256,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
+impl std::fmt::Display for GridFlagNames {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut separator = "";
+        for &(mask, name) in self.names {
+            if self.flags & mask != 0 {
+                out.write_str(separator)?;
+                out.write_str(name)?;
+                separator = ",";
+            }
+        }
+        if separator.is_empty() {
+            out.write_str("NONE")?;
+        }
+        Ok(())
     }
-    if flags & GRID_FLAG_BG256 != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"BG256,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_FLAG_PADDING != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"PADDING,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_FLAG_EXTENDED != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"EXTENDED,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_FLAG_SELECTED != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"SELECTED,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_FLAG_CLEARED != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"CLEARED,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_FLAG_TAB != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"TAB,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & GRID_FLAG_NOPALETTE != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"NOPALETTE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {
-        return b"NONE\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-        '\0' as i32 as ::core::ffi::c_char;
-    return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub unsafe fn grid_cell_attr_string(mut attr: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 256] = [0; 256];
-    *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if attr & GRID_ATTR_CHARSET != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"CHARSET,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
+pub fn grid_line_flags_display(flags: i32) -> impl std::fmt::Display {
+    GridFlagNames {
+        flags,
+        names: &[
+            (GRID_LINE_WRAPPED, "WRAPPED"),
+            (GRID_LINE_EXTENDED, "EXTENDED"),
+            (GRID_LINE_DEAD, "DEAD"),
+            (GRID_LINE_START_PROMPT, "START_PROMPT"),
+            (GRID_LINE_SECOND_PROMPT, "SECOND_PROMPT"),
+            (GRID_LINE_START_COMMAND, "START_COMMAND"),
+            (GRID_LINE_START_OUTPUT, "START_OUTPUT"),
+            (GRID_LINE_END_OUTPUT, "END_OUTPUT"),
+            (GRID_LINE_HYPERLINK, "HYPERLINK"),
+        ],
     }
-    if attr & GRID_ATTR_BRIGHT != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"BRIGHT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
+}
+pub fn grid_cell_flags_display(flags: i32) -> impl std::fmt::Display {
+    GridFlagNames {
+        flags,
+        names: &[
+            (GRID_FLAG_FG256, "FG256"),
+            (GRID_FLAG_BG256, "BG256"),
+            (GRID_FLAG_PADDING, "PADDING"),
+            (GRID_FLAG_EXTENDED, "EXTENDED"),
+            (GRID_FLAG_SELECTED, "SELECTED"),
+            (GRID_FLAG_CLEARED, "CLEARED"),
+            (GRID_FLAG_TAB, "TAB"),
+            (GRID_FLAG_NOPALETTE, "NOPALETTE"),
+        ],
     }
-    if attr & GRID_ATTR_DIM != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"DIM,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
+}
+pub fn grid_cell_attr_display(attr: i32) -> impl std::fmt::Display {
+    GridFlagNames {
+        flags: attr,
+        names: &[
+            (GRID_ATTR_CHARSET, "CHARSET"),
+            (GRID_ATTR_BRIGHT, "BRIGHT"),
+            (GRID_ATTR_DIM, "DIM"),
+            (GRID_ATTR_UNDERSCORE, "UNDERSCORE"),
+            (GRID_ATTR_BLINK, "BLINK"),
+            (GRID_ATTR_REVERSE, "REVERSE"),
+            (GRID_ATTR_HIDDEN, "HIDDEN"),
+            (GRID_ATTR_ITALICS, "ITALICS"),
+            (GRID_ATTR_STRIKETHROUGH, "STRIKETHROUGH"),
+            (GRID_ATTR_UNDERSCORE_2, "UNDERSCORE_2"),
+            (GRID_ATTR_UNDERSCORE_3, "UNDERSCORE_3"),
+            (GRID_ATTR_UNDERSCORE_4, "UNDERSCORE_4"),
+            (GRID_ATTR_UNDERSCORE_5, "UNDERSCORE_5"),
+            (GRID_ATTR_OVERLINE, "OVERLINE"),
+        ],
     }
-    if attr & GRID_ATTR_UNDERSCORE != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"UNDERSCORE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_BLINK != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"BLINK,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_REVERSE != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"REVERSE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_HIDDEN != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"HIDDEN,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_ITALICS != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"ITALICS,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_STRIKETHROUGH != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"STRIKETHROUGH,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_UNDERSCORE_2 != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"UNDERSCORE_2,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_UNDERSCORE_3 != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"UNDERSCORE_3,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_UNDERSCORE_4 != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"UNDERSCORE_4,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_UNDERSCORE_5 != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"UNDERSCORE_5,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if attr & GRID_ATTR_OVERLINE != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"OVERLINE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        );
-    }
-    if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {
-        return b"NONE\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-        '\0' as i32 as ::core::ffi::c_char;
-    return &raw mut s as *mut ::core::ffi::c_char;
 }
 
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn flag_descriptions_keep_order_unknown_bits_and_independent_values() {
+        let first = grid_line_flags_display(GRID_LINE_WRAPPED | GRID_LINE_START_PROMPT);
+        let empty = grid_line_flags_display(1 << 30);
+        let all = grid_line_flags_display(-1);
+        assert_eq!(
+            format!("{first}|{empty}|{first}"),
+            "WRAPPED,START_PROMPT|NONE|WRAPPED,START_PROMPT"
+        );
+        assert_eq!(all.to_string(), "WRAPPED,EXTENDED,DEAD,START_PROMPT,SECOND_PROMPT,START_COMMAND,START_OUTPUT,END_OUTPUT,HYPERLINK");
+        let cells = grid_cell_flags_display(GRID_FLAG_PADDING | GRID_FLAG_TAB);
+        let all_cells = grid_cell_flags_display(-1);
+        assert_eq!(
+            all_cells.to_string(),
+            "FG256,BG256,PADDING,EXTENDED,SELECTED,CLEARED,TAB,NOPALETTE"
+        );
+        assert_eq!(cells.to_string(), "PADDING,TAB");
+        assert_eq!(grid_cell_flags_display(0).to_string(), "NONE");
+        assert_eq!(grid_cell_attr_display(GRID_ATTR_NOATTR).to_string(), "NONE");
+        assert_eq!(grid_cell_attr_display(-1).to_string(), "CHARSET,BRIGHT,DIM,UNDERSCORE,BLINK,REVERSE,HIDDEN,ITALICS,STRIKETHROUGH,UNDERSCORE_2,UNDERSCORE_3,UNDERSCORE_4,UNDERSCORE_5,OVERLINE");
+    }
 
     #[test]
     fn borrowed_bulk_writes_keep_embedded_nuls_bytes_and_empty_extent() {
