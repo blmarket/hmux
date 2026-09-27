@@ -325,14 +325,14 @@ unsafe fn cmd_command_prompt_callback(
                     }
                     Ok(cmdlist) if item.is_null() => {
                         new_item = cmdq_get_command(
-                            rc::as_ptr(&cmdlist),
+                            &cmdlist,
                             ::core::ptr::null_mut::<cmdq_state>(),
                         );
                         cmdq_append(c, new_item);
                         drop(cmdlist);
                     }
                     Ok(cmdlist) => {
-                        new_item = cmdq_get_command(rc::as_ptr(&cmdlist), cmdq_get_state(item));
+                        new_item = cmdq_get_command(&cmdlist, cmdq_get_state(item));
                         cmdq_insert_after(item, new_item);
                         drop(cmdlist);
                     }
@@ -390,9 +390,9 @@ mod tests {
                 let mut item = cmdq_item::empty();
                 item.flags = CMDQ_WAITING;
                 let cmdlist = cmd_list_new();
-                let commands = rc::downgrade(cmdlist);
+                let commands = std::rc::Rc::downgrade(&cmdlist);
                 let mut state = Box::new(args_command_state::empty());
-                state.cmdlist = Some(rc::take(cmdlist));
+                state.cmdlist = Some(cmdlist);
                 let data = Box::new(cmd_command_prompt_cdata {
                     item: &mut item,
                     state: Some(state),

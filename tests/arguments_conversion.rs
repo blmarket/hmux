@@ -164,7 +164,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
     unsafe {
         let mut args = args_create();
         let cmdlist = cmd_list_new();
-        args_set_owned_commands(&mut args, b'c', rc::take(cmdlist), 0);
+        args_set_owned_commands(&mut args, b'c', cmdlist, 0);
 
         assert_eq!(
             args_strtonum_result(&mut *args, b'c', 0, 100),
@@ -181,7 +181,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         drop(args);
 
         let mut args = args_create();
-        args_push_positional_commands(&mut args, rc::take(cmd_list_new()));
+        args_push_positional_commands(&mut args, cmd_list_new());
         let first = args_string(&mut *args, 0);
         let second = args_string(&mut *args, 0);
         assert_eq!(first, second);
@@ -200,7 +200,7 @@ fn borrowed_parser_command_retains_only_while_stored() {
     }
 
     unsafe {
-        let cmdlist = rc::take(cmd_list_new());
+        let cmdlist = cmd_list_new();
         let values = [
             ArgumentValue::borrowed_string(c"command"),
             ArgumentValue::borrowed_commands(&cmdlist),
@@ -238,7 +238,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 
     unsafe {
         let command = cstring("command");
-        let command_lists = [rc::take(cmd_list_new()), rc::take(cmd_list_new())];
+        let command_lists = [cmd_list_new(), cmd_list_new()];
         let values = [
             borrowed_string_value(command.as_c_str()),
             borrowed_commands_value(&command_lists[0]),
@@ -278,7 +278,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 fn rejected_command_argument_keeps_source_value_ownership() {
     unsafe {
         let command = cstring("command");
-        let command_list = rc::take(cmd_list_new());
+        let command_list = cmd_list_new();
         let values = [
             borrowed_string_value(command.as_c_str()),
             borrowed_commands_value(&command_list),

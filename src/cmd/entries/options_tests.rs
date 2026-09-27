@@ -1,7 +1,7 @@
 use crate::src::cfg::{cfg_finished, cfg_test_take_causes, CFG_TEST_LOCK};
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_command, cmdq_get_name};
-use crate::src::cmd::{cmd_list_free, cmdq_item};
+use crate::src::cmd::{cmdq_item};
 use crate::src::ffi::libc::snprintf;
 use crate::src::options::{options_create, options_free};
 use crate::src::shared::command::{cmd_retval, CMD_PARSE_SUCCESS, CMD_RETURN_ERROR};
@@ -75,10 +75,10 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     let mut parsed = cmd_parse_from_string(command.as_c_str(), std::ptr::null_mut());
     assert_eq!(parsed.status, CMD_PARSE_SUCCESS, "command={command:?}");
 
-    let command_list = parsed.take_cmdlist();
-    let item: *mut cmdq_item = cmdq_get_command(command_list, std::ptr::null_mut());
+    let command_list = parsed.take_cmdlist().unwrap();
+    let item: *mut cmdq_item = cmdq_get_command(&command_list, std::ptr::null_mut());
     assert!(!item.is_null(), "command={command:?}");
-    cmd_list_free(command_list);
+    drop(command_list);
 
     let cmd = (*item).cmd;
     let exec = (*cmd)
@@ -101,10 +101,10 @@ fn command_queue_name_keeps_entry_label_and_item_pointer() {
         let mut parsed = cmd_parse_from_string(command, std::ptr::null_mut());
         assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
 
-        let command_list = parsed.take_cmdlist();
-        let item = cmdq_get_command(command_list, std::ptr::null_mut());
+        let command_list = parsed.take_cmdlist().unwrap();
+        let item = cmdq_get_command(&command_list, std::ptr::null_mut());
         assert!(!item.is_null());
-        cmd_list_free(command_list);
+        drop(command_list);
 
         let mut expected = [0_i8; 128];
         let written = snprintf(

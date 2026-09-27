@@ -219,7 +219,7 @@ pub struct cmd_find_state {
 }
 
 #[repr(C)]
-/// Rc-owned from `cmd_list_new` until the last retained reference is released.
+/// Owned by ordinary Rc handles from construction through final drop.
 #[derive(Default)]
 pub struct cmd_list {
     pub group: u_int,
@@ -322,11 +322,8 @@ impl cmd_parse_result {
             .as_ref()
             .map_or(std::ptr::null_mut(), super::rc::as_ptr)
     }
-    /// Transfer the retained list to a legacy consuming API.
-    pub fn take_cmdlist(&mut self) -> *mut cmd_list {
-        self.cmdlist.take().map_or(std::ptr::null_mut(), |owner| {
-            std::rc::Rc::into_raw(owner).cast_mut().cast()
-        })
+    pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>> {
+        self.cmdlist.take()
     }
 
     pub fn empty() -> Self {

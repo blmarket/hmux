@@ -150,12 +150,12 @@ unsafe fn cmd_confirm_before_callback(
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
                     new_item = cmdq_get_command(
-                        rc::as_ptr(&cdata.cmdlist),
+                        &cdata.cmdlist,
                         ::core::ptr::null_mut::<cmdq_state>(),
                     );
                     cmdq_append(c, new_item);
                 } else {
-                    new_item = cmdq_get_command(rc::as_ptr(&cdata.cmdlist), cmdq_get_state(item));
+                    new_item = cmdq_get_command(&cdata.cmdlist, cmdq_get_state(item));
                     cmdq_insert_after(item, new_item);
                 }
             }
@@ -199,10 +199,10 @@ mod tests {
                 let mut item = cmdq_item::empty();
                 item.flags = CMDQ_WAITING;
                 let cmdlist = cmd_list_new();
-                let commands = rc::downgrade(cmdlist);
+                let commands = std::rc::Rc::downgrade(&cmdlist);
                 let data = Box::new(cmd_confirm_before_data {
                     item: &mut item,
-                    cmdlist: rc::take(cmdlist),
+                    cmdlist: cmdlist,
                     confirm_key: b'y',
                     default_yes: 0,
                 });

@@ -9,7 +9,7 @@ use crate::src::cmd::queue::{
     cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
     cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new,
 };
-use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
+use crate::src::cmd::{cmd_list_all_have, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
 use crate::src::compat::imsg::msg_command;
 use crate::src::control::{
@@ -4559,10 +4559,9 @@ unsafe fn server_client_read_only(mut item: *mut cmdq_item) -> cmd_retval {
 }
 unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    cmdlist = options_get_command(global_options);
-    if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(cmdlist) == 0 {
+    let cmdlist = options_get_command(global_options);
+    if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(crate::src::shared::rc::as_ptr(&cmdlist)) == 0 {
         new_item = cmdq_get_callback_owned(
             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|item| unsafe {
@@ -4570,7 +4569,7 @@ unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval 
             })),
         );
     } else {
-        new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+        new_item = cmdq_get_command(&cmdlist, ::core::ptr::null_mut::<cmdq_state>());
     }
     cmdq_insert_after(item, new_item);
     return CMD_RETURN_NORMAL;
@@ -4649,7 +4648,7 @@ unsafe fn server_client_dispatch_command(
                         );
                     } else {
                         new_item =
-                            cmdq_get_command(pr.cmdlist_ptr(), ::core::ptr::null_mut::<cmdq_state>());
+                            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), ::core::ptr::null_mut::<cmdq_state>());
                     }
                     drop(pr.cmdlist.take());
                     current_block = 13472856163611868459;

@@ -1,5 +1,5 @@
 use crate::src::cmd::parse::cmd_parse_from_argv;
-use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
+use crate::src::cmd::{cmd_list_any_have, cmd_pack_argv};
 use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::msg_command;
 use crate::src::compat::imsg::*;

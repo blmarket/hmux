@@ -934,7 +934,7 @@ pub unsafe fn options_get_number(
     }
     return (*o).value.number();
 }
-pub unsafe fn options_get_command(mut oo: *mut options) -> *mut cmd_list {
+pub unsafe fn options_get_command(mut oo: *mut options) -> std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
     let mut name: *const ::core::ffi::c_char =
         b"default-client-command\0" as *const u8 as *const ::core::ffi::c_char;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -955,7 +955,7 @@ pub unsafe fn options_get_command(mut oo: *mut options) -> *mut cmd_list {
             out.write_all(b" is not a command")
         });
     }
-    return (*o).value.cmdlist();
+    return (*o).value.commands().expect("default client command").clone();
 }
 pub unsafe fn options_set_string(
     mut oo: *mut options,
@@ -1063,7 +1063,7 @@ pub unsafe fn options_set_number(
 pub unsafe fn options_set_command(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
-    mut value: *mut cmd_list,
+    value: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
 ) -> *mut options_entry {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if *name as ::core::ffi::c_int == '@' as i32 {
@@ -1090,7 +1090,7 @@ pub unsafe fn options_set_command(
             out.write_all(b" is not a command")
         });
     }
-    (*o).value = options_value::Command(OptionCommand::from_retained(value));
+    (*o).value = options_value::Command(OptionCommand(value));
     return o;
 }
 pub unsafe fn options_scope_from_name(

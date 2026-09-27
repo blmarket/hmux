@@ -2,7 +2,7 @@ use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{
-    cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_list_free,
+    cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first,
     cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
@@ -336,10 +336,10 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             }
             args_value::string(expanded)
         }
-        2 => args_value::commands(rc::take(cmd_list_copy(
+        2 => args_value::commands(cmd_list_copy(
             &*rc::as_ptr(from.as_commands().expect("command argument")),
             argv,
-        ))),
+        )),
         0 | _ => args_value::empty(),
     }
 }
@@ -644,10 +644,10 @@ mod ownership_tests {
         }
         unsafe {
             let commands = crate::src::cmd::cmd_list_new();
-            let observer = rc::downgrade(commands);
+            let observer = std::rc::Rc::downgrade(&commands);
             let values = vec![
                 args_value::string(c"test".to_owned()),
-                args_value::commands(rc::take(commands)),
+                args_value::commands(commands),
                 args_value::string(c"extra".to_owned()),
             ];
             let mut spec = args_parse {
@@ -681,9 +681,10 @@ mod ownership_tests {
     fn prepared_commands_keep_their_list_after_source_and_state_drop() {
         unsafe {
             let commands = crate::src::cmd::cmd_list_new();
-            let observer = crate::src::shared::rc::downgrade(commands);
+            let observer = std::rc::Rc::downgrade(&commands);
             let mut source = Box::new(args::empty());
-            args_push_positional_commands(&mut source, rc::take(commands));
+            let commands_ptr = rc::as_ptr(&commands);
+            args_push_positional_commands(&mut source, commands);
             let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
             command.args = Some(source);
             let mut item = cmdq_item::empty();
@@ -698,7 +699,7 @@ mod ownership_tests {
                 b""
             );
             let returned = args_make_commands(&mut state, &Vec::new()).unwrap();
-            assert_eq!(rc::as_ptr(&returned), commands);
+            assert_eq!(rc::as_ptr(&returned), commands_ptr);
             assert_eq!(observer.strong_count(), 2);
             drop(state);
             assert_eq!(observer.strong_count(), 1);
@@ -743,7 +744,7 @@ mod ownership_tests {
                     cmd_list_print_cstring(&*rc::as_ptr(&commands), 0).as_bytes(),
                     b"display-message -p expanded"
                 );
-                let item = cmdq_get_command(rc::as_ptr(&commands), std::ptr::null_mut());
+                let item = cmdq_get_command(&commands, std::ptr::null_mut());
                 assert!(!item.is_null());
                 assert!((*item).next.is_null());
                 drop(commands);
@@ -851,19 +852,17 @@ mod ownership_tests {
         unsafe {
             let commands = crate::src::cmd::cmd_list_new();
             let mut owner = Box::new(args::empty());
-            crate::src::shared::rc::retain(commands);
             args_set_value(
                 &mut owner,
                 b'c',
-                Some(args_value::commands(rc::take(commands))),
+                Some(args_value::commands(commands.clone())),
                 0,
             );
-            crate::src::shared::rc::retain(commands);
-            args_push_positional_owned(&mut owner, args_value::commands(rc::take(commands)));
-            assert_eq!(crate::src::shared::rc::strong_count(commands), 3);
+            args_push_positional_owned(&mut owner, args_value::commands(commands.clone()));
+            assert_eq!(std::rc::Rc::strong_count(&commands), 3);
             drop(owner);
-            assert_eq!(crate::src::shared::rc::strong_count(commands), 1);
-            cmd_list_free(commands);
+            assert_eq!(std::rc::Rc::strong_count(&commands), 1);
+            drop(commands);
         }
     }
 
@@ -1030,7 +1029,7 @@ pub unsafe fn args_make_commands(
         if argv.is_empty() {
             return Ok(Rc::clone(commands));
         }
-        return Ok(rc::take(cmd_list_copy(&*rc::as_ptr(commands), argv)));
+        return Ok(cmd_list_copy(&*rc::as_ptr(commands), argv));
     }
     let mut cmd = state.cmd.as_ref().expect("prepared command text").clone();
     log_debug(format_args!(

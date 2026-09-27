@@ -114,13 +114,12 @@ static mut hooks_events: HooksEvents = HooksEvents { events: Vec::new() };
 unsafe fn hooks_insert_one(
     mut item: *mut cmdq_item,
     mut hd: *mut hooks_data,
-    mut cmdlist: *mut cmd_list,
+    commands: Option<&std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
     mut state: *mut cmdq_state,
 ) -> *mut cmdq_item {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    if cmdlist.is_null() {
-        return item;
-    }
+    let Some(commands) = commands else { return item; };
+    let cmdlist = rc::as_ptr(commands);
     if log_get_level() != 0 as ::core::ffi::c_int {
         let s = cmd_list_print_cstring(&*cmdlist, 0 as ::core::ffi::c_int);
         log_debug(format_args!(
@@ -130,7 +129,7 @@ unsafe fn hooks_insert_one(
             log_cstr((s.as_ptr()) as *const _)
         ));
     }
-    new_item = cmdq_get_command(cmdlist, state);
+    new_item = cmdq_get_command(commands, state);
     if !item.is_null() {
         return cmdq_insert_after(item, new_item);
     }
@@ -172,7 +171,6 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     log_debug(format_args!(
@@ -242,7 +240,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 ));
             }
             1 => {
-                hooks_insert_one(item, hd, pr.cmdlist_ptr(), state);
+                hooks_insert_one(item, hd, pr.cmdlist.as_ref(), state);
             }
             _ => {}
         }
@@ -259,12 +257,12 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                         }
                     }
                     1 => {
-                        item = hooks_insert_one(item, hd, pr.cmdlist_ptr(), state);
+                        item = hooks_insert_one(item, hd, pr.cmdlist.as_ref(), state);
                     }
                     _ => {}
                 }
             } else {
-                cmdlist = (*options_array_item_value(a)).cmdlist();
+                let cmdlist = (*options_array_item_value(a)).commands();
                 item = hooks_insert_one(item, hd, cmdlist, state);
             }
             a = options_array_next(a);

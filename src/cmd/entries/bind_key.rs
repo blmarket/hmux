@@ -77,16 +77,13 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
             key,
             note,
             repeat,
-            ::core::ptr::null_mut::<cmd_list>(),
+            None,
         );
         return CMD_RETURN_NORMAL;
     }
     if count == 2 {
         if let Some(commands) = (&(*args).values)[1].as_commands() {
-            let commands = crate::src::shared::rc::as_ptr(commands);
-            // The binding's legacy API consumes one retained reference.
-            crate::src::shared::rc::retain(commands);
-            key_bindings_add(tablename, key, note, repeat, commands);
+            key_bindings_add(tablename, key, note, repeat, Some(commands.clone()));
             return CMD_RETURN_NORMAL;
         }
     }

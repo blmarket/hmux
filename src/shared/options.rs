@@ -94,17 +94,6 @@ pub struct options_entry {
 
 pub struct OptionCommand(pub Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>);
 
-impl OptionCommand {
-    /// Transfer the existing retained reference; do not increment its count.
-    pub unsafe fn from_retained(ptr: *mut cmd_list) -> Self {
-        Self(if ptr.is_null() {
-            None
-        } else {
-            Some(super::rc::take(ptr))
-        })
-    }
-}
-
 /// The stored value owns its payload. Accessors expose borrowed pointers to
 /// callers only while the containing option record remains alive.
 pub enum options_value {
@@ -128,6 +117,14 @@ impl options_value {
         match self {
             Self::Number(value) => *value,
             _ => panic!("option value is not a number"),
+        }
+    }
+
+    pub fn commands(&self) -> Option<&std::rc::Rc<std::cell::UnsafeCell<cmd_list>>> {
+        match self {
+            Self::Command(value) => value.0.as_ref(),
+            Self::Empty => None,
+            _ => panic!("option value is not a command"),
         }
     }
 

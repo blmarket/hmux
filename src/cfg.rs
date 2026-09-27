@@ -1,4 +1,3 @@
-use crate::src::cmd::cmd_list_free;
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_free_state,
@@ -179,7 +178,7 @@ pub unsafe fn load_cfg(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist_ptr(), state);
+    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
 
     new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
 
@@ -259,7 +258,7 @@ pub unsafe fn load_cfg_from_buffer(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist_ptr(), state);
+    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
     if !item.is_null() {
         new_item0 = cmdq_insert_after(item, new_item0);
     } else {

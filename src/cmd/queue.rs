@@ -7,7 +7,7 @@ use crate::src::cmd::find::{
     cmd_find_target, cmd_find_valid_state,
 };
 use crate::src::cmd::{
-    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_free, cmd_print_cstring,
+    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
 };
 use crate::src::control::{control_write, control_write_guard};
 use crate::src::events::events_fire;
@@ -488,9 +488,10 @@ unsafe fn cmdq_remove_group(mut item: *mut cmdq_item) {
     }
 }
 pub unsafe fn cmdq_get_command(
-    mut cmdlist: *mut cmd_list,
+    commands: &std::rc::Rc<std::cell::UnsafeCell<cmd_list>>,
     mut state: *mut cmdq_state,
 ) -> *mut cmdq_item {
+    let cmdlist = crate::src::shared::rc::as_ptr(commands);
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut first: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut last: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -517,8 +518,7 @@ pub unsafe fn cmdq_get_command(
         (*item).group = cmd_get_group(cmd);
         (*item).state = Some(crate::src::shared::rc::take(cmdq_link_state(state)));
         (*item).cmd = cmd;
-        crate::src::shared::rc::retain(cmdlist);
-        (*item).cmdlist = Some(crate::src::shared::rc::take(cmdlist));
+        (*item).cmdlist = Some(commands.clone());
         log_debug(format_args!(
             "{}: {} group {}",
             "cmdq_get_command",

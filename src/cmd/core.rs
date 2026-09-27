@@ -448,13 +448,13 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     }
     CString::new(buf).expect("command print contains no interior NUL")
 }
-pub unsafe fn cmd_list_new() -> *mut cmd_list {
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    cmdlist = crate::src::shared::rc::new(cmd_list::default());
-    let fresh6 = cmd_list_next_group;
+pub unsafe fn cmd_list_new() -> std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+    let group = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
-    (*cmdlist).group = fresh6;
-    return cmdlist;
+    std::rc::Rc::new(std::cell::UnsafeCell::new(cmd_list {
+        group,
+        ..cmd_list::default()
+    }))
 }
 pub unsafe fn cmd_list_append(cmdlist: *mut cmd_list, mut command: Box<cmd>) {
     command.group = (*cmdlist).group;
@@ -478,11 +478,7 @@ pub unsafe fn cmd_list_move(cmdlist: *mut cmd_list, from: *mut cmd_list) {
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = group;
 }
-pub unsafe fn cmd_list_free(cmdlist: *mut cmd_list) {
-    crate::src::shared::rc::release(cmdlist);
-}
-pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd_list {
-    let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
+pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
     let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(format_args!(
@@ -490,7 +486,8 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
         "cmd_list_copy",
         log_bytes(s.as_bytes())
     ));
-    new_cmdlist = cmd_list_new();
+    let owner = cmd_list_new();
+    let new_cmdlist = crate::src::shared::rc::as_ptr(&owner);
     for cmd in &cmdlist.list {
         if (*cmd).group != group {
             let fresh7 = cmd_list_next_group;
@@ -507,7 +504,7 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
         "cmd_list_copy",
         log_bytes(s.as_bytes())
     ));
-    return new_cmdlist;
+    owner
 }
 pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();

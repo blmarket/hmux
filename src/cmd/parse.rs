@@ -1,7 +1,7 @@
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::cmd::{
-    cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_free, cmd_list_move,
+    cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move,
     cmd_list_new, cmd_list_print_cstring, cmd_parse,
 };
 use crate::src::environ::environ_put;
@@ -293,7 +293,7 @@ unsafe fn cmd_parse_expand_alias(
     let Some(cmd_parse_argument::String(name)) = cmd.arguments.items.front().map(Box::as_ref)
     else {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
+        pr.cmdlist = Some(cmd_list_new());
         return true;
     };
     let Some(alias) = cmd_get_alias(name) else {
@@ -316,7 +316,7 @@ unsafe fn cmd_parse_expand_alias(
     };
     let Some(last) = cmds.items.last_mut() else {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
+        pr.cmdlist = Some(cmd_list_new());
         return true;
     };
     drop(
@@ -362,7 +362,7 @@ unsafe fn cmd_parse_build_command(
     match cmd_parse(&values, pi.file.as_deref(), pi.line, pi.flags) {
         Ok(command) => {
             pr.status = CMD_PARSE_SUCCESS;
-            pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
+            pr.cmdlist = Some(cmd_list_new());
             cmd_list_append(pr.cmdlist_ptr(), command);
         }
         Err(cause) => {
@@ -378,46 +378,39 @@ unsafe fn cmd_parse_build_commands(
     pr: &mut cmd_parse_result,
 ) {
     let mut line: u_int = UINT_MAX;
-    let mut current: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut result: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
+    let mut current = None;
     *pr = cmd_parse_result::empty();
     let command_count = cmds.items.len();
     if command_count == 0 {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
+        pr.cmdlist = Some(cmd_list_new());
         return;
     }
     cmd_parse_log_commands(cmds, c"cmd_parse_build_commands");
-    result = cmd_list_new();
+    let result_owner = cmd_list_new();
+    let result = rc::as_ptr(&result_owner);
     for cmd in &mut cmds.items {
         if !pi.flags & CMD_PARSE_ONEGROUP != 0 && cmd.line != line {
-            if !current.is_null() {
-                cmd_parse_print_commands(pi, current);
-                cmd_list_move(result, current);
-                cmd_list_free(current);
+            if let Some(current) = current.take() {
+                cmd_parse_print_commands(pi, rc::as_ptr(&current));
+                cmd_list_move(result, rc::as_ptr(&current));
             }
-            current = cmd_list_new();
         }
-        if current.is_null() {
-            current = cmd_list_new();
-        }
+        let current = rc::as_ptr(current.get_or_insert_with(|| cmd_list_new()));
         pi.line = cmd.line;
         line = pi.line;
         cmd_parse_build_command(cmd, pi, pr);
         if pr.status as ::core::ffi::c_uint
             != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            cmd_list_free(result);
-            cmd_list_free(current);
             return;
         }
         cmd_list_append_all(current, pr.cmdlist_ptr());
         drop(pr.cmdlist.take());
     }
-    if !current.is_null() {
-        cmd_parse_print_commands(pi, current);
-        cmd_list_move(result, current);
-        cmd_list_free(current);
+    if let Some(current) = current {
+        cmd_parse_print_commands(pi, rc::as_ptr(&current));
+        cmd_list_move(result, rc::as_ptr(&current));
     }
     let s = cmd_list_print_cstring(&*result, 0);
     log_debug(format_args!(
@@ -426,7 +419,7 @@ unsafe fn cmd_parse_build_commands(
         log_bytes(s.as_bytes())
     ));
     pr.status = CMD_PARSE_SUCCESS;
-    pr.cmdlist = Some(rc::take(result));
+    pr.cmdlist = Some(result_owner);
 }
 pub unsafe fn cmd_parse_from_file(
     mut f: *mut FILE,
@@ -501,7 +494,7 @@ pub unsafe fn cmd_parse_and_append(
     if pr.status == CMD_PARSE_ERROR {
         return Err(pr.error.take());
     }
-    item = cmdq_get_command(pr.cmdlist_ptr(), state);
+    item = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
     cmdq_append(c, item);
     drop(pr.cmdlist.take());
     Ok(pr.status)
@@ -533,7 +526,7 @@ pub unsafe fn cmd_parse_from_buffer(
     }
     if len == 0 as size_t {
         pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = Some(crate::src::shared::rc::take(cmd_list_new()));
+        pr.cmdlist = Some(cmd_list_new());
         return pr;
     }
     let mut cmds = match cmd_parse_do_buffer(std::slice::from_raw_parts(buf.cast(), len), &mut *pi)
@@ -687,7 +680,7 @@ mod parser_collection_tests {
             let result = cmd_parse_from_string(c"display-message retained", &mut input);
             assert_eq!(result.status, CMD_PARSE_SUCCESS);
             let observer = Rc::downgrade(result.cmdlist.as_ref().unwrap());
-            let item = cmdq_get_command(result.cmdlist_ptr(), std::ptr::null_mut());
+            let item = cmdq_get_command(result.cmdlist.as_ref().expect("successful command parse"), std::ptr::null_mut());
             drop(result);
             assert!(observer.upgrade().is_some());
             assert_eq!((*(*item).cmd).entry.name, c"display-message");
