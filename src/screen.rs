@@ -627,7 +627,7 @@ unsafe fn screen_reflow(
             (wy) as u32
         ));
     }
-    grid_reflow((*s).grid, new_x);
+    grid_reflow(&mut *(*s).grid, new_x);
     if cursor != 0 {
         grid_unwrap_position((*s).grid, cx, cy, wx, wy);
         log_debug(format_args!(
