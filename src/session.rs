@@ -1057,8 +1057,11 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
         if wl == (*s).curw {
             new_curw_idx = (*wl_new).idx;
         }
-        new_idx += 1;
         wl = winlinks_next(&*wl);
+        if !wl.is_null() {
+            // The final window may use i32::MAX; no next index is needed.
+            new_idx += 1;
+        }
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
