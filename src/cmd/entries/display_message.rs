@@ -8,7 +8,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create, format_defaults, format_each, format_expand_time_cstring, format_free,
 };
-use crate::src::json::{json_destroy_node, json_parse, json_to_string};
+use crate::src::json::{json_parse, json_to_string};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server_client::server_client_print;
 use crate::src::shared::abi::*;
@@ -23,7 +23,6 @@ use crate::src::shared::command::{
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NONE, FORMAT_VERBOSE};
-use crate::src::shared::json::json_node;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
@@ -81,7 +80,6 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let mut Cflag: ::core::ffi::c_int = args_has(args, 'C' as i32 as u_char);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut count: u_int = args_count(args);
-    let mut jn: *mut json_node = ::core::ptr::null_mut::<json_node>();
     if args_has(args, 'I' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
@@ -160,8 +158,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         format_expand_time_cstring(ft, template)
     };
     if args_has(args, 'j' as i32 as u_char) != 0 {
-        jn = json_parse(msg.as_ptr(), &raw mut cause);
-        if jn.is_null() {
+        let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
             cmdq_error(item, |out| {
                 write_cstr(
                     out,
@@ -173,10 +170,8 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
             drop(msg);
             format_free(ft);
             return CMD_RETURN_ERROR;
-        }
-        drop(msg);
-        msg = json_to_string(jn).expect("parsed JSON is not null");
-        json_destroy_node(jn);
+        };
+        msg = json_to_string(&jn);
     }
     if cmdq_get_client(item).is_null() {
         cmdq_error(item, |out| write_cstr(out, msg.as_ptr()));

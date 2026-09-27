@@ -1,68 +1,47 @@
-use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, strlen, strncmp, strtoll};
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::fatalx;
-use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-};
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{int64_t, ssize_t};
-use crate::src::shared::ctype::{_ISdigit, _ISspace, _ISxdigit};
-use crate::src::shared::event::*;
-use crate::src::shared::json::{
-    json_fields, json_members_storage, json_node, json_node_type, JsonValue,
-};
-use crate::src::shared::tree::RB_NEGINF;
-use std::ffi::CStr;
-use std::ffi::CString;
+#![forbid(unsafe_code)]
 
-macro_rules! json_format_cause {
-    ($cause:expr, $fmt:expr, $arg:expr $(,)?) => {{
-        let cause = $cause;
-        unsafe {
-            if !cause.is_null() {
-                *cause = Some(json_one_arg_cause(
-                    CStr::from_ptr($fmt),
-                    CStr::from_ptr($arg),
-                ));
-            }
-        }
-    }};
-}
-
-fn json_one_arg_cause(fmt: &CStr, arg: &CStr) -> CString {
-    let fmt = fmt.to_bytes();
-    let at = fmt
-        .windows(2)
-        .position(|part| part == b"%s")
-        .expect("JSON diagnostic has %s");
-    let arg = arg.to_bytes();
-    let mut message = Vec::with_capacity(fmt.len() + arg.len());
-    message.extend_from_slice(&fmt[..at]);
-    message.extend_from_slice(arg);
-    message.extend_from_slice(&fmt[at + 2..]);
-    CString::new(message).expect("JSON diagnostic contains no NUL")
-}
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
+use crate::src::shared::abi::int64_t;
+use crate::src::shared::event::evbuffer;
+use crate::src::shared::json::{json_node, json_node_type, JsonValue};
+use hmux_buffer::BufMut;
+use std::ffi::{CStr, CString};
 
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;
 pub const NODE_BOOLEAN: json_node_type = 2;
 pub const NODE_NUMBER: json_node_type = 1;
 pub const NODE_STRING: json_node_type = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_parse_ctx {
-    pub input: *const ::core::ffi::c_char,
-    pub cause: *mut Option<CString>,
-    pub depth: ::core::ffi::c_int,
+pub const ERROR_CTX_LEN: usize = 8;
+pub const PARSE_DEPTH_MAX: usize = 200;
+
+pub struct json_parse_ctx<'input, 'cause> {
+    pub input: &'input CStr,
+    pub cause: Option<&'cause mut Option<CString>>,
+    pub depth: usize,
 }
+
+impl<'input> json_parse_ctx<'input, '_> {
+    fn text(&self, token: &json_token) -> &'input [u8] {
+        &self.input.to_bytes()[token.offset..token.offset + token.len]
+    }
+
+    fn error(&mut self, reason: &CStr, token: &json_token) {
+        json_error(
+            self.cause.as_deref_mut(),
+            reason,
+            &self.input.to_bytes()[token.offset..],
+        );
+    }
+}
+
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct json_token {
     pub type_0: json_token_type,
-    pub offset: ::core::ffi::c_int,
-    pub len: ::core::ffi::c_int,
+    pub offset: usize,
+    pub len: usize,
 }
-pub type json_token_type = ::core::ffi::c_uint;
+pub type json_token_type = u32;
 pub const TOK_EOF: json_token_type = 8;
 pub const TOK_VALUE: json_token_type = 7;
 pub const TOK_QUOTE: json_token_type = 6;
@@ -72,1171 +51,475 @@ pub const TOK_CLOSEARRAY: json_token_type = 3;
 pub const TOK_OPENARRAY: json_token_type = 2;
 pub const TOK_CLOSEOBJECT: json_token_type = 1;
 pub const TOK_OPENOBJECT: json_token_type = 0;
-pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
-pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 
-fn json_set_string(node: &mut json_node, string: CString) {
-    node.value = JsonValue::String(string);
-}
-
-unsafe fn json_fields_insert(head: &mut json_fields, elm: &mut json_node) -> *mut json_node {
-    if elm.key.is_none() {
-        return ::core::ptr::null_mut::<json_node>();
+/// Parse tmux's JSON subset. The returned tree owns its strings and children;
+/// neither the input nor the optional diagnostic output is retained.
+pub fn json_parse(input: &CStr, mut cause: Option<&mut Option<CString>>) -> Option<Box<json_node>> {
+    if input.to_bytes().is_empty() {
+        json_error(cause, c"empty input", &[]);
+        return None;
     }
-    let key = elm.key.as_ref().unwrap().as_bytes().to_vec();
-    match head.entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(&raw mut *elm);
-            ::core::ptr::null_mut::<json_node>()
-        }
-    }
-}
-
-unsafe fn json_fields_remove(head: &mut json_fields, elm: &json_node) -> *mut json_node {
-    if elm.key.is_none() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    let key = elm.key.as_ref().unwrap().as_bytes();
-    let entries = &mut head.entries;
-    if entries.get(key).copied() != Some(elm as *const json_node as *mut json_node) {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    entries
-        .remove(key)
-        .unwrap_or(::core::ptr::null_mut::<json_node>())
-}
-
-unsafe fn json_fields_minmax(head: &json_fields) -> *mut json_node {
-    let entry = head.entries.values().next();
-    entry
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<json_node>())
-}
-
-unsafe fn json_fields_find(head: &json_fields, key: &CStr) -> *mut json_node {
-    head.entries
-        .get(key.to_bytes())
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<json_node>())
-}
-
-unsafe fn json_fields_next(head: &json_fields, elm: &json_node) -> *mut json_node {
-    if elm.key.is_none() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    let key = elm.key.as_ref().unwrap().as_bytes().to_vec();
-    head.entries
-        .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
-        .next()
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<json_node>())
-}
-
-unsafe fn json_members_first(head: &json_members_storage) -> *mut json_node {
-    head.members
-        .first()
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<json_node>())
-}
-
-unsafe fn json_members_next(head: &json_members_storage, elm: &json_node) -> *mut json_node {
-    let storage = head;
-    storage
-        .indices
-        .get(&(elm as *const json_node as *mut json_node))
-        .and_then(|index| storage.members.get(index + 1))
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<json_node>())
-}
-
-unsafe fn json_members_push(head: &mut json_members_storage, elm: &mut json_node) {
-    let storage = head;
-    let index = storage.members.len();
-    let elm = &raw mut *elm;
-    storage.members.push(elm);
-    storage.indices.insert(elm, index);
-}
-
-pub unsafe fn json_parse(
-    mut input: *const ::core::ffi::c_char,
-    mut cause: *mut Option<CString>,
-) -> *mut json_node {
-    let mut pctx: json_parse_ctx = json_parse_ctx {
-        input: ::core::ptr::null::<::core::ffi::c_char>(),
-        cause: ::core::ptr::null_mut::<Option<CString>>(),
+    let tokens = json_tokenize_input(input, cause.as_deref_mut())?;
+    let mut pctx = json_parse_ctx {
+        input,
+        cause,
         depth: 0,
     };
-    if *input as ::core::ffi::c_int == '\0' as i32 {
-        json_error(cause.as_mut(), c"empty input", None);
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    let tokens = match json_tokenize_input(input, cause) {
-        Some(tokens) => tokens,
-        None => return ::core::ptr::null_mut::<json_node>(),
+    json_parse_tokens(&tokens, &mut pctx)
+}
+
+pub fn json_find<'a>(node: &'a json_node, key: &CStr) -> Option<&'a json_node> {
+    let JsonValue::Object(fields) = &node.value else {
+        return None;
     };
-    pctx.input = input;
-    pctx.cause = cause;
-    pctx.depth = 0 as ::core::ffi::c_int;
-    json_parse_tokens(&tokens, &raw mut pctx)
+    fields.entries.get(key.to_bytes()).map(Box::as_ref)
 }
-pub unsafe fn json_find(
-    mut jn: *mut json_node,
-    mut key: *const ::core::ffi::c_char,
-) -> *mut json_node {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-        || key.is_null()
-    {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    return json_fields_find((*jn).value.fields(), CStr::from_ptr(key));
-}
-pub unsafe fn json_array_first(mut jn: *mut json_node) -> *mut json_node {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    return json_members_first((*jn).value.members());
-}
-pub unsafe fn json_array_next(mut member: *mut json_node) -> *mut json_node {
-    if member.is_null()
-        || (*member).parent.is_null()
-        || (*(*member).parent).type_0() as ::core::ffi::c_uint
-            != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    return json_members_next((*(*member).parent).value.members(), &*member);
-}
-pub unsafe fn json_get_number(mut jn: *mut json_node, mut i: *mut int64_t) -> ::core::ffi::c_int {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *i = (*jn).value.number();
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_get_object(
-    mut jn: *mut json_node,
-    mut o: *mut *mut json_node,
-) -> ::core::ffi::c_int {
-    if (*jn).type_0() as ::core::ffi::c_uint
-        != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *o = jn;
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_find_string(
-    mut jn: *mut json_node,
-    mut out: *mut *const ::core::ffi::c_char,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut key: *const ::core::ffi::c_char = b"t\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    field = json_find(jn, key);
-    if field.is_null() {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*field).type_0() as ::core::ffi::c_uint
-        != NODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" expected a string\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    *out = (*field).value.string_ptr();
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_find_number(
-    mut jn: *mut json_node,
-    mut key: *const ::core::ffi::c_char,
-    mut out: *mut int64_t,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    field = json_find(jn, key);
-    if field.is_null() {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*field).type_0() as ::core::ffi::c_uint
-        != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" expected a number\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    *out = (*field).value.number();
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_find_boolean(
-    mut jn: *mut json_node,
-    mut out: *mut ::core::ffi::c_int,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut key: *const ::core::ffi::c_char = b"a\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    field = json_find(jn, key);
-    if field.is_null() {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*field).type_0() as ::core::ffi::c_uint
-        != NODE_BOOLEAN as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" expected a boolean\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    *out = (*field).value.boolean();
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_find_object(
-    mut jn: *mut json_node,
-    mut out: *mut *mut json_node,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut key: *const ::core::ffi::c_char = b"L\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    field = json_find(jn, key);
-    if field.is_null() {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*field).type_0() as ::core::ffi::c_uint
-        != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" expected an object\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    *out = field;
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn json_find_array(
-    mut jn: *mut json_node,
-    mut out: *mut *mut json_node,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut key: *const ::core::ffi::c_char = b"c\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    field = json_find(jn, key);
-    if field.is_null() {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*field).type_0() as ::core::ffi::c_uint
-        != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if !cause.is_null() {
-            json_format_cause!(
-                cause,
-                b"key \"%s\" expected an array\0" as *const u8 as *const ::core::ffi::c_char,
-                key,
-            );
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    *out = field;
-    return 0 as ::core::ffi::c_int;
-}
-unsafe fn json_error(cause: Option<&mut Option<CString>>, reason: &CStr, loc: Option<&CStr>) {
-    let Some(cause) = cause else {
-        return;
+
+pub fn json_array_members(node: &json_node) -> Option<&[Box<json_node>]> {
+    let JsonValue::Array(members) = &node.value else {
+        return None;
     };
-    let Some(loc) = loc.filter(|loc| !loc.to_bytes().is_empty()) else {
+    Some(&members.members)
+}
+
+pub fn json_get_number(node: &json_node) -> Option<int64_t> {
+    let JsonValue::Number(number) = node.value else {
+        return None;
+    };
+    Some(number)
+}
+
+pub fn json_get_object(node: &json_node) -> Option<&json_node> {
+    matches!(node.value, JsonValue::Object(_)).then_some(node)
+}
+
+fn json_key_error(key: &CStr, message: &[u8]) -> CString {
+    let mut bytes = b"key \"".to_vec();
+    bytes.extend_from_slice(key.to_bytes());
+    bytes.extend_from_slice(b"\" ");
+    bytes.extend_from_slice(message);
+    CString::new(bytes).expect("JSON diagnostic contains no NUL")
+}
+
+fn json_require<'a>(node: &'a json_node, key: &CStr) -> Result<&'a json_node, CString> {
+    json_find(node, key).ok_or_else(|| json_key_error(key, b"not found"))
+}
+
+pub fn json_find_string<'a>(node: &'a json_node, key: &CStr) -> Result<&'a CStr, CString> {
+    let JsonValue::String(string) = &json_require(node, key)?.value else {
+        return Err(json_key_error(key, b"expected a string"));
+    };
+    Ok(string)
+}
+
+pub fn json_find_number(node: &json_node, key: &CStr) -> Result<int64_t, CString> {
+    json_get_number(json_require(node, key)?)
+        .ok_or_else(|| json_key_error(key, b"expected a number"))
+}
+
+pub fn json_find_boolean(node: &json_node, key: &CStr) -> Result<i32, CString> {
+    let JsonValue::Boolean(boolean) = json_require(node, key)?.value else {
+        return Err(json_key_error(key, b"expected a boolean"));
+    };
+    Ok(boolean)
+}
+
+pub fn json_find_object<'a>(node: &'a json_node, key: &CStr) -> Result<&'a json_node, CString> {
+    json_get_object(json_require(node, key)?)
+        .ok_or_else(|| json_key_error(key, b"expected an object"))
+}
+
+pub fn json_find_array<'a>(
+    node: &'a json_node,
+    key: &CStr,
+) -> Result<&'a [Box<json_node>], CString> {
+    json_array_members(json_require(node, key)?)
+        .ok_or_else(|| json_key_error(key, b"expected an array"))
+}
+
+fn json_error(cause: Option<&mut Option<CString>>, reason: &CStr, loc: &[u8]) {
+    let Some(cause) = cause else { return };
+    if loc.is_empty() {
         *cause = Some(reason.to_owned());
         return;
-    };
-    let reason = reason.to_bytes();
-    let loc = loc.to_bytes();
-    let context_len = loc.len().min(ERROR_CTX_LEN as usize);
-    let mut message = Vec::with_capacity(reason.len() + 2 + context_len + 3);
-    message.extend_from_slice(reason);
+    }
+    let mut message = reason.to_bytes().to_vec();
     message.extend_from_slice(b": ");
-    message.extend_from_slice(&loc[..context_len]);
-    if loc.len() > context_len {
+    let len = loc.len().min(ERROR_CTX_LEN);
+    message.extend_from_slice(&loc[..len]);
+    if loc.len() > len {
         message.extend_from_slice(b"...");
     }
     *cause = Some(CString::new(message).expect("JSON diagnostic contains no NUL"));
 }
-unsafe fn json_tokenize_input(
-    mut input: *const ::core::ffi::c_char,
-    mut cause: *mut Option<CString>,
+
+fn json_tokenize_input(
+    input: &CStr,
+    cause: Option<&mut Option<CString>>,
 ) -> Option<Vec<json_token>> {
-    let mut current_block: u64;
+    let input = input.to_bytes();
     let mut tokens = Vec::with_capacity(1024);
-    let mut type_0: json_token_type = TOK_OPENOBJECT;
-    let mut loc: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut start: *const ::core::ffi::c_char = input;
-    let mut in_string: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut scan: ::core::ffi::c_int = 0;
-    loop {
-        if !(*input as ::core::ffi::c_int != '\0' as i32) {
-            current_block = 16924917904204750491;
-            break;
-        }
-        loc = input;
-        scan = 1 as ::core::ffi::c_int;
-        if in_string != 0 && *input as ::core::ffi::c_int != '"' as i32 {
-            type_0 = TOK_VALUE;
+    let mut offset = 0;
+    let mut last = 0;
+    let mut in_string = false;
+    while let Some(&byte) = input.get(offset) {
+        last = offset;
+        let type_0 = if in_string && byte != b'"' {
+            TOK_VALUE
         } else {
-            match *input as ::core::ffi::c_int {
-                32 | 9 | 10 | 13 => {
-                    input = input.offset(1);
+            match byte {
+                b' ' | b'\t' | b'\n' | b'\r' => {
+                    offset += 1;
                     continue;
                 }
-                123 => {
-                    type_0 = TOK_OPENOBJECT;
-                }
-                125 => {
-                    type_0 = TOK_CLOSEOBJECT;
-                }
-                91 => {
-                    type_0 = TOK_OPENARRAY;
-                }
-                93 => {
-                    type_0 = TOK_CLOSEARRAY;
-                }
-                34 => {
-                    type_0 = TOK_QUOTE;
-                }
-                58 => {
-                    type_0 = TOK_COLON;
-                }
-                44 => {
-                    type_0 = TOK_COMMA;
-                }
-                _ => {
-                    type_0 = TOK_VALUE;
-                }
+                b'{' => TOK_OPENOBJECT,
+                b'}' => TOK_CLOSEOBJECT,
+                b'[' => TOK_OPENARRAY,
+                b']' => TOK_CLOSEARRAY,
+                b'"' => TOK_QUOTE,
+                b':' => TOK_COLON,
+                b',' => TOK_COMMA,
+                _ => TOK_VALUE,
             }
-        }
-        if type_0 as ::core::ffi::c_uint == TOK_VALUE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            scan = json_tokenize_value(&tokens, loc);
-            if scan == -(1 as ::core::ffi::c_int) {
-                current_block = 2526103352432062781;
-                break;
-            }
-            input = input.offset((scan - 1 as ::core::ffi::c_int) as isize);
-        }
-        json_add_token(&mut tokens, type_0, start, loc, scan);
-        if type_0 as ::core::ffi::c_uint == TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            in_string = (in_string == 0) as ::core::ffi::c_int;
-        }
-        input = input.offset(1);
-    }
-    match current_block {
-        2526103352432062781 => {
-            json_error(
-                cause.as_mut(),
-                c"tokenization error",
-                Some(CStr::from_ptr(loc)),
-            );
-            return None;
-        }
-        _ => {
-            json_add_token(&mut tokens, TOK_EOF, start, loc, 0 as ::core::ffi::c_int);
-            return Some(tokens);
-        }
-    };
-}
-unsafe fn json_tokenize_value(
-    tokens: &[json_token],
-    mut loc: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let mut i: ::core::ffi::c_int = 0;
-    let mut scan: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let Some(prev) = tokens.last() else {
-        return -(1 as ::core::ffi::c_int);
-    };
-    if prev.type_0 as ::core::ffi::c_uint == TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        while *loc.offset(scan as isize) as ::core::ffi::c_int != '"' as i32 {
-            if *loc.offset(scan as isize) as ::core::ffi::c_int == '\0' as i32
-                || (*loc.offset(scan as isize) as u_char as ::core::ffi::c_int)
-                    < 0x20 as ::core::ffi::c_int
-            {
-                return -(1 as ::core::ffi::c_int);
-            }
-            if *loc.offset(scan as isize) as ::core::ffi::c_int != '\\' as i32 {
-                scan += 1;
-            } else {
-                scan += 1;
-                match *loc.offset(scan as isize) as ::core::ffi::c_int {
-                    34 | 92 | 47 | 98 | 102 | 110 | 114 | 116 => {
-                        scan += 1;
-                    }
-                    117 => {
-                        i = 1 as ::core::ffi::c_int;
-                        while i <= 4 as ::core::ffi::c_int {
-                            if *(*__ctype_b_loc())
-                                .offset(*loc.offset((scan + i) as isize) as u_char
-                                    as ::core::ffi::c_int
-                                    as isize) as ::core::ffi::c_int
-                                & _ISxdigit as ::core::ffi::c_int as ::core::ffi::c_ushort
-                                    as ::core::ffi::c_int
-                                == 0
-                            {
-                                return -(1 as ::core::ffi::c_int);
-                            }
-                            i += 1;
-                        }
-                        scan += 5 as ::core::ffi::c_int;
-                    }
-                    _ => return -(1 as ::core::ffi::c_int),
-                }
-            }
-        }
-    } else if prev.type_0 as ::core::ffi::c_uint
-        == TOK_COLON as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        loop {
-            if *loc.offset(scan as isize) as ::core::ffi::c_int == '\0' as i32 {
-                return -(1 as ::core::ffi::c_int);
-            }
-            scan += 1;
-            if !(*loc.offset(scan as isize) as ::core::ffi::c_int != ']' as i32
-                && *loc.offset(scan as isize) as ::core::ffi::c_int != '}' as i32
-                && *loc.offset(scan as isize) as ::core::ffi::c_int != ',' as i32
-                && *(*__ctype_b_loc())
-                    .offset(*loc.offset(scan as isize) as u_char as ::core::ffi::c_int as isize)
-                    as ::core::ffi::c_int
-                    & _ISspace as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                    == 0)
-            {
-                break;
-            }
-        }
-    } else {
-        return -(1 as ::core::ffi::c_int);
-    }
-    return scan;
-}
-unsafe fn json_add_token(
-    tokens: &mut Vec<json_token>,
-    type_0: json_token_type,
-    input: *const ::core::ffi::c_char,
-    loc: *const ::core::ffi::c_char,
-    len: ::core::ffi::c_int,
-) {
-    tokens.push(json_token {
-        type_0,
-        offset: loc.offset_from(input) as ::core::ffi::c_long as ::core::ffi::c_int,
-        len,
-    });
-}
-unsafe fn json_create_node(
-    mut parent: *mut json_node,
-    mut type_0: json_node_type,
-    mut key: *const ::core::ffi::c_char,
-    mut val: *mut ::core::ffi::c_void,
-) -> *mut json_node {
-    let mut node: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut owner = Box::new(json_node {
-        key: if key.is_null() {
-            None
-        } else {
-            Some(CStr::from_ptr(key).to_owned())
-        },
-        ..json_node::empty()
-    });
-
-    node = Box::into_raw(owner).cast::<json_node>();
-    (*node).parent = parent;
-    (*node).value = match type_0 {
-        NODE_STRING => JsonValue::String(Default::default()),
-        NODE_NUMBER => JsonValue::Number(0),
-        NODE_BOOLEAN => JsonValue::Boolean(0),
-        NODE_OBJECT => JsonValue::Object(json_fields::default()),
-        NODE_ARRAY => JsonValue::Array(Default::default()),
-        _ => fatalx(|out| out.write_all(b"unknown node type")),
-    };
-    if !val.is_null() {
-        json_assign_value(node, val);
-    }
-    return node;
-}
-pub unsafe fn json_destroy_node(mut node: *mut json_node) {
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut field1: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let _member: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    if node.is_null() {
-        return;
-    }
-    match (*node).type_0() as ::core::ffi::c_uint {
-        0 => {}
-        3 => {
-            field = json_fields_minmax((*node).value.fields());
-            while !field.is_null() && {
-                field1 = json_fields_next((*node).value.fields(), &*field);
-                1 as ::core::ffi::c_int != 0
-            } {
-                json_fields_remove((*node).value.fields_mut(), &*field);
-                json_destroy_node(field);
-                field = field1;
-            }
-        }
-        4 => {
-            let storage = (*node).value.members_mut();
-            let members = ::core::mem::take(&mut storage.members);
-            storage.indices.clear();
-            for member in members {
-                json_destroy_node(member);
-            }
-        }
-        1 | 2 | _ => {}
-    }
-    drop(Box::from_raw(node));
-}
-unsafe fn json_assign_value(mut node: *mut json_node, mut val: *mut ::core::ffi::c_void) {
-    let mut child: *mut json_node = val as *mut json_node;
-    match (*node).type_0() as ::core::ffi::c_uint {
-        0 => {
-            json_set_string(&mut *node, CStr::from_ptr(val.cast()).to_owned());
-        }
-        1 => {
-            (*node).value = JsonValue::Number(*(val as *mut int64_t));
-        }
-        2 => {
-            (*node).value = JsonValue::Boolean(*(val as *mut ::core::ffi::c_int));
-        }
-        3 => {
-            if !child.is_null() {
-                json_fields_insert((*node).value.fields_mut(), &mut *child);
-            }
-        }
-        4 => {
-            if !child.is_null() {
-                json_members_push((*node).value.members_mut(), &mut *child);
-            }
-        }
-        _ => {
-            fatalx(|out| out.write_all(b"unknown node type"));
-        }
-    };
-}
-unsafe fn json_parse_tokens(
-    tokens: &[json_token],
-    mut pctx: *mut json_parse_ctx,
-) -> *mut json_node {
-    // The parser advances raw cursors over this immutable Vec after tokenization.
-    // No token is appended or moved until parsing returns.
-    let mut tok: *mut json_token = tokens.as_ptr() as *mut json_token;
-    let mut jn: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    if (*tok).type_0 as ::core::ffi::c_uint
-        == TOK_OPENOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        jn = json_parse_object(
-            &raw mut tok,
-            pctx,
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            ::core::ptr::null_mut::<json_node>(),
-        );
-        if !jn.is_null() {
-            if (*tok).type_0 as ::core::ffi::c_uint
-                != TOK_EOF as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                json_error(
-                    (*pctx).cause.as_mut(),
-                    c"unexpected trailing data",
-                    Some(CStr::from_ptr((*pctx).input.offset((*tok).offset as isize))),
-                );
-            } else {
-                return jn;
-            }
-        }
-    } else {
-        json_error(
-            (*pctx).cause.as_mut(),
-            c"expected object",
-            Some(CStr::from_ptr((*pctx).input.offset((*tok).offset as isize))),
-        );
-    }
-    if !jn.is_null() {
-        json_destroy_node(jn);
-    }
-    return ::core::ptr::null_mut::<json_node>();
-}
-unsafe fn json_parse_key(
-    mut tok: *mut *mut json_token,
-    mut pctx: *mut json_parse_ctx,
-) -> Option<CString> {
-    let mut len: ::core::ffi::c_int = 0;
-    let mut loc: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut start: *const ::core::ffi::c_char = (*pctx).input.offset((**tok).offset as isize);
-    if !((**tok).type_0 as ::core::ffi::c_uint
-        != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
-    {
-        *tok = (*tok).offset(1);
-        loc = (*pctx).input.offset((**tok).offset as isize);
-        len = (**tok).len;
-        if !((**tok).type_0 as ::core::ffi::c_uint
-            != TOK_VALUE as ::core::ffi::c_int as ::core::ffi::c_uint)
-        {
-            *tok = (*tok).offset(1);
-            if !((**tok).type_0 as ::core::ffi::c_uint
-                != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
-            {
-                // Match strndup's byte-preserving, first-NUL truncation.
-                let bytes = std::slice::from_raw_parts(loc.cast::<u8>(), len as usize);
-                let end = bytes
-                    .iter()
-                    .position(|&byte| byte == 0)
-                    .unwrap_or(bytes.len());
-                let key = CString::new(&bytes[..end]).expect("key prefix contains no NUL");
-                *tok = (*tok).offset(1);
-                return Some(key);
-            }
-        }
-    }
-    json_error(
-        (*pctx).cause.as_mut(),
-        c"invalid key",
-        Some(CStr::from_ptr(start)),
-    );
-    return None;
-}
-unsafe fn json_parse_object(
-    mut tok: *mut *mut json_token,
-    mut pctx: *mut json_parse_ctx,
-    mut key: *const ::core::ffi::c_char,
-    mut parent: *mut json_node,
-) -> *mut json_node {
-    let mut current_block: u64;
-    let mut object: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut valstr: *mut u_char = ::core::ptr::null_mut::<u_char>();
-    if (**tok).type_0 as ::core::ffi::c_uint
-        != TOK_OPENOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    (*pctx).depth += 1;
-    if (*pctx).depth > PARSE_DEPTH_MAX {
-        json_error(
-            (*pctx).cause.as_mut(),
-            c"parse depth exceeded",
-            Some(CStr::from_ptr(
-                (*pctx).input.offset((**tok).offset as isize),
-            )),
-        );
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    *tok = (*tok).offset(1);
-    object = json_create_node(parent, NODE_OBJECT, key, NULL);
-    loop {
-        if !((**tok).type_0 as ::core::ffi::c_uint
-            != TOK_CLOSEOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint)
-        {
-            current_block = 9853141518545631134;
-            break;
-        }
-        let Some(fkey) = json_parse_key(tok, pctx) else {
-            current_block = 7971653673408253115;
-            break;
         };
-        // Lookup only borrows; child creation duplicates the key. No pointer
-        // outlives this iteration, including on errors before object teardown.
-        if !json_find(object, fkey.as_ptr()).is_null() {
-            json_error(
-                (*pctx).cause.as_mut(),
-                c"duplicate key",
-                Some(CStr::from_ptr(
-                    (*pctx).input.offset((**tok).offset as isize),
-                )),
-            );
-            current_block = 7971653673408253115;
-            break;
-        } else if (**tok).type_0 as ::core::ffi::c_uint
-            != TOK_COLON as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            json_error(
-                (*pctx).cause.as_mut(),
-                c"missing colon",
-                Some(CStr::from_ptr(
-                    (*pctx).input.offset((**tok).offset as isize),
-                )),
-            );
-            current_block = 7971653673408253115;
-            break;
+        let len = if type_0 == TOK_VALUE {
+            let Some(len) = json_tokenize_value(&tokens, &input[offset..]) else {
+                json_error(cause, c"tokenization error", &input[offset..]);
+                return None;
+            };
+            len
         } else {
-            *tok = (*tok).offset(1);
-            match (**tok).type_0 as ::core::ffi::c_uint {
-                6 => {
-                    field = json_parse_string(tok, pctx, fkey.as_ptr(), object);
-                }
-                7 => {
-                    valstr = (*pctx).input.offset((**tok).offset as isize) as *mut u_char;
-                    if *valstr as ::core::ffi::c_int == '-' as i32
-                        && *(*__ctype_b_loc())
-                            .offset(*valstr.offset(1 as ::core::ffi::c_int as isize)
-                                as ::core::ffi::c_int as isize)
-                            as ::core::ffi::c_int
-                            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort
-                                as ::core::ffi::c_int
-                            != 0
-                        || *(*__ctype_b_loc()).offset(*valstr as ::core::ffi::c_int as isize)
-                            as ::core::ffi::c_int
-                            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort
-                                as ::core::ffi::c_int
-                            != 0
-                    {
-                        field = json_parse_number(tok, pctx, fkey.as_ptr(), object);
-                    } else {
-                        field = json_parse_boolean(tok, pctx, fkey.as_ptr(), object);
+            1
+        };
+        tokens.push(json_token {
+            type_0,
+            offset,
+            len,
+        });
+        if type_0 == TOK_QUOTE {
+            in_string = !in_string;
+        }
+        offset += len;
+    }
+    // tmux points EOF at the start of the last scanned token/whitespace.
+    tokens.push(json_token {
+        type_0: TOK_EOF,
+        offset: last,
+        len: 0,
+    });
+    Some(tokens)
+}
+
+fn json_tokenize_value(tokens: &[json_token], input: &[u8]) -> Option<usize> {
+    match tokens.last()?.type_0 {
+        TOK_QUOTE => {
+            let mut scan = 0;
+            loop {
+                match *input.get(scan)? {
+                    b'"' => return Some(scan),
+                    0..=0x1f => return None,
+                    b'\\' => {
+                        scan += 1;
+                        match *input.get(scan)? {
+                            b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => scan += 1,
+                            b'u' => {
+                                if !input
+                                    .get(scan + 1..scan + 5)?
+                                    .iter()
+                                    .all(u8::is_ascii_hexdigit)
+                                {
+                                    return None;
+                                }
+                                scan += 5;
+                            }
+                            _ => return None,
+                        }
                     }
+                    _ => scan += 1,
                 }
-                0 => {
-                    field = json_parse_object(tok, pctx, fkey.as_ptr(), object);
-                }
-                2 => {
-                    field = json_parse_array(tok, pctx, fkey.as_ptr(), object);
-                }
-                _ => {
-                    json_error(
-                        (*pctx).cause.as_mut(),
-                        c"unexpected value when parsing object",
-                        Some(CStr::from_ptr(
-                            (*pctx).input.offset((**tok).offset as isize),
-                        )),
-                    );
-                    current_block = 7971653673408253115;
-                    break;
-                }
-            }
-            if field.is_null() {
-                current_block = 7971653673408253115;
-                break;
-            }
-            json_assign_value(object, field as *mut ::core::ffi::c_void);
-            if (**tok).type_0 as ::core::ffi::c_uint
-                == TOK_COMMA as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                if (*(*tok).offset(1 as ::core::ffi::c_int as isize)).type_0 as ::core::ffi::c_uint
-                    == TOK_CLOSEOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    json_error(
-                        (*pctx).cause.as_mut(),
-                        c"invalid object",
-                        Some(CStr::from_ptr(
-                            (*pctx).input.offset((**tok).offset as isize),
-                        )),
-                    );
-                    current_block = 7971653673408253115;
-                    break;
-                } else {
-                    *tok = (*tok).offset(1);
-                }
-            } else if (**tok).type_0 as ::core::ffi::c_uint
-                != TOK_CLOSEOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                json_error(
-                    (*pctx).cause.as_mut(),
-                    c"invalid object",
-                    Some(CStr::from_ptr(
-                        (*pctx).input.offset((**tok).offset as isize),
-                    )),
-                );
-                current_block = 7971653673408253115;
-                break;
             }
         }
+        TOK_COLON => input.iter().enumerate().skip(1).find_map(|(index, byte)| {
+            // C isspace also includes vertical tab, which Rust's ASCII
+            // whitespace predicate deliberately omits.
+            (matches!(byte, b']' | b'}' | b',' | 0x0b) || byte.is_ascii_whitespace())
+                .then_some(index)
+        }),
+        _ => None,
     }
-    match current_block {
-        7971653673408253115 => {
-            json_destroy_node(object);
-            return ::core::ptr::null_mut::<json_node>();
-        }
-        _ => {
-            *tok = (*tok).offset(1);
-            (*pctx).depth -= 1;
-            return object;
-        }
-    };
 }
-unsafe fn json_parse_array(
-    mut tok: *mut *mut json_token,
-    mut pctx: *mut json_parse_ctx,
-    mut key: *const ::core::ffi::c_char,
-    mut parent: *mut json_node,
-) -> *mut json_node {
-    let mut current_block: u64;
-    let mut array: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    if (**tok).type_0 as ::core::ffi::c_uint
-        != TOK_OPENARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    *tok = (*tok).offset(1);
-    array = json_create_node(parent, NODE_ARRAY, key, NULL);
-    loop {
-        if !((**tok).type_0 as ::core::ffi::c_uint
-            != TOK_CLOSEARRAY as ::core::ffi::c_int as ::core::ffi::c_uint)
-        {
-            current_block = 1054647088692577877;
-            break;
-        }
-        match (**tok).type_0 as ::core::ffi::c_uint {
-            0 => {
-                member =
-                    json_parse_object(tok, pctx, ::core::ptr::null::<::core::ffi::c_char>(), array);
-                if member.is_null() {
-                    current_block = 15988181977378875837;
-                    break;
-                }
-                json_assign_value(array, member as *mut ::core::ffi::c_void);
-                if (**tok).type_0 as ::core::ffi::c_uint
-                    == TOK_COMMA as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    if (*(*tok).offset(1 as ::core::ffi::c_int as isize)).type_0
-                        as ::core::ffi::c_uint
-                        == TOK_CLOSEARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        json_error(
-                            (*pctx).cause.as_mut(),
-                            c"invalid array",
-                            Some(CStr::from_ptr(
-                                (*pctx).input.offset((**tok).offset as isize),
-                            )),
-                        );
-                        current_block = 15988181977378875837;
-                        break;
-                    } else {
-                        *tok = (*tok).offset(1);
-                    }
-                } else {
-                    if !((**tok).type_0 as ::core::ffi::c_uint
-                        != TOK_CLOSEARRAY as ::core::ffi::c_int as ::core::ffi::c_uint)
-                    {
-                        continue;
-                    }
-                    json_error(
-                        (*pctx).cause.as_mut(),
-                        c"invalid array",
-                        Some(CStr::from_ptr(
-                            (*pctx).input.offset((**tok).offset as isize),
-                        )),
-                    );
-                    current_block = 15988181977378875837;
-                    break;
-                }
-            }
-            _ => {
-                json_error(
-                    (*pctx).cause.as_mut(),
-                    c"invalid array member",
-                    Some(CStr::from_ptr(
-                        (*pctx).input.offset((**tok).offset as isize),
-                    )),
-                );
-                current_block = 15988181977378875837;
-                break;
-            }
-        }
-    }
-    match current_block {
-        15988181977378875837 => {
-            json_destroy_node(array);
-            return ::core::ptr::null_mut::<json_node>();
-        }
-        _ => {
-            *tok = (*tok).offset(1);
-            return array;
-        }
-    };
+
+fn json_create_node(key: Option<&CStr>, value: JsonValue) -> Box<json_node> {
+    Box::new(json_node {
+        key: key.map(CStr::to_owned),
+        value,
+    })
 }
-unsafe fn json_parse_string(
-    mut tok: *mut *mut json_token,
-    mut pctx: *mut json_parse_ctx,
-    mut key: *const ::core::ffi::c_char,
-    mut parent: *mut json_node,
-) -> *mut json_node {
-    let mut loc: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut start: *const ::core::ffi::c_char = (*pctx).input.offset((**tok).offset as isize);
-    let mut len: ::core::ffi::c_int = 0;
-    if !((**tok).type_0 as ::core::ffi::c_uint
-        != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
-    {
-        *tok = (*tok).offset(1);
-        if !((**tok).type_0 as ::core::ffi::c_uint
-            != TOK_VALUE as ::core::ffi::c_int as ::core::ffi::c_uint)
-        {
-            loc = (*pctx).input.offset((**tok).offset as isize);
-            len = (**tok).len;
-            *tok = (*tok).offset(1);
-            if !((**tok).type_0 as ::core::ffi::c_uint
-                != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
-            {
-                *tok = (*tok).offset(1);
-                let bytes = ::core::slice::from_raw_parts(loc.cast::<u8>(), len as usize);
-                let string = CString::new(bytes).expect("JSON token contains no NUL");
-                let node = json_create_node(parent, NODE_STRING, key, ::core::ptr::null_mut());
-                json_set_string(&mut *node, string);
-                return node;
-            }
-        }
-    }
-    json_error(
-        (*pctx).cause.as_mut(),
-        c"invalid string",
-        Some(CStr::from_ptr(start)),
-    );
-    return ::core::ptr::null_mut::<json_node>();
-}
-unsafe fn json_parse_number(
-    mut tok: *mut *mut json_token,
-    mut pctx: *mut json_parse_ctx,
-    mut key: *const ::core::ffi::c_char,
-    mut parent: *mut json_node,
-) -> *mut json_node {
-    let mut start: *const ::core::ffi::c_char = (*pctx).input.offset((**tok).offset as isize);
-    let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut num: int64_t = 0;
-    let mut len: ::core::ffi::c_int = (**tok).len;
-    if !(*start.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '0' as i32
-        && len != 1 as ::core::ffi::c_int
-        || *start.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '-' as i32
-            && *start.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '0' as i32
-            && len != 2 as ::core::ffi::c_int)
-    {
-        *__errno_location() = 0 as ::core::ffi::c_int;
-        num = strtoll(start, &raw mut endptr, 10 as ::core::ffi::c_int) as int64_t;
-        if !(*__errno_location() != 0 as ::core::ffi::c_int
-            || endptr != start.offset(len as isize) as *mut ::core::ffi::c_char)
-        {
-            *tok = (*tok).offset(1);
-            return json_create_node(
-                parent,
-                NODE_NUMBER,
-                key,
-                &raw mut num as *mut ::core::ffi::c_void,
-            );
-        }
-    }
-    json_error(
-        (*pctx).cause.as_mut(),
-        c"invalid number",
-        Some(CStr::from_ptr(start)),
-    );
-    return ::core::ptr::null_mut::<json_node>();
-}
-unsafe fn json_parse_boolean(
-    mut tok: *mut *mut json_token,
-    mut pctx: *mut json_parse_ctx,
-    mut key: *const ::core::ffi::c_char,
-    mut parent: *mut json_node,
-) -> *mut json_node {
-    let mut len: ::core::ffi::c_int = (**tok).len;
-    let mut boolean: ::core::ffi::c_int = 0;
-    let mut start: *const ::core::ffi::c_char = (*pctx).input.offset((**tok).offset as isize);
-    if strncmp(
-        start,
-        b"true\0" as *const u8 as *const ::core::ffi::c_char,
-        len as size_t,
-    ) == 0 as ::core::ffi::c_int
-        && len == 4 as ::core::ffi::c_int
-    {
-        boolean = 1 as ::core::ffi::c_int;
-    } else if strncmp(
-        start,
-        b"false\0" as *const u8 as *const ::core::ffi::c_char,
-        len as size_t,
-    ) == 0 as ::core::ffi::c_int
-        && len == 5 as ::core::ffi::c_int
-    {
-        boolean = 0 as ::core::ffi::c_int;
-    } else {
-        json_error(
-            (*pctx).cause.as_mut(),
-            c"invalid boolean",
-            Some(CStr::from_ptr(start)),
-        );
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    *tok = (*tok).offset(1);
-    return json_create_node(
-        parent,
-        NODE_BOOLEAN,
-        key,
-        &raw mut boolean as *mut ::core::ffi::c_void,
-    );
-}
-unsafe fn json_string_append(mut buffer: &mut evbuffer, mut node: *mut json_node) {
-    let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut comma: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*node).type_0() as ::core::ffi::c_uint {
-        0 => {
-            evbuffer_add_formatted(buffer, |out| {
-                out.write_all(b"\"")?;
-                write_cstr(out, (*node).value.string_ptr())?;
-                out.write_all(b"\"")
-            });
-        }
-        1 => {
-            evbuffer_add_formatted(buffer, |out| {
-                write!(
-                    out,
-                    "{}",
-                    ((*node).value.number() as ::core::ffi::c_longlong) as i64
-                )
-            });
-        }
-        2 => {
-            if (*node).value.boolean() != 0 {
-                s = b"true\0" as *const u8 as *const ::core::ffi::c_char;
-            } else {
-                s = b"false\0" as *const u8 as *const ::core::ffi::c_char;
-            }
-            evbuffer_add(buffer, s as *const ::core::ffi::c_void, strlen(s));
-        }
-        3 => {
-            evbuffer_add(
-                buffer,
-                b"{\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                1 as size_t,
-            );
-            field = json_fields_minmax((*node).value.fields());
-            while !field.is_null() {
-                if comma != 0 {
-                    evbuffer_add(
-                        buffer,
-                        b",\0" as *const u8 as *const ::core::ffi::c_char
-                            as *const ::core::ffi::c_void,
-                        1 as size_t,
-                    );
-                }
-                evbuffer_add_formatted(buffer, |out| {
-                    out.write_all(b"\"")?;
-                    write_cstr(
-                        out,
-                        ((*field).key)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )?;
-                    out.write_all(b"\":")
-                });
-                json_string_append(buffer, field);
-                comma = 1 as ::core::ffi::c_int;
-                field = json_fields_next((*node).value.fields(), &*field);
-            }
-            evbuffer_add(
-                buffer,
-                b"}\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                1 as size_t,
-            );
-        }
-        4 => {
-            evbuffer_add(
-                buffer,
-                b"[\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                1 as size_t,
-            );
-            member = json_members_first((*node).value.members());
-            while !member.is_null() {
-                if comma != 0 {
-                    evbuffer_add(
-                        buffer,
-                        b",\0" as *const u8 as *const ::core::ffi::c_char
-                            as *const ::core::ffi::c_void,
-                        1 as size_t,
-                    );
-                }
-                json_string_append(buffer, member);
-                comma = 1 as ::core::ffi::c_int;
-                member = json_members_next((*node).value.members(), &*member);
-            }
-            evbuffer_add(
-                buffer,
-                b"]\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                1 as size_t,
-            );
-        }
-        _ => {}
-    };
-}
-pub unsafe fn json_to_string(node: *mut json_node) -> Option<CString> {
-    if node.is_null() {
+
+fn json_parse_tokens(
+    mut tokens: &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+) -> Option<Box<json_node>> {
+    // Tokenization is complete. Recursive parsers advance this borrowed slice,
+    // leaving the EOF token in place on incomplete input.
+    if tokens[0].type_0 != TOK_OPENOBJECT {
+        pctx.error(c"expected object", &tokens[0]);
         return None;
     }
+    let node = json_parse_object(&mut tokens, pctx, None)?;
+    if tokens[0].type_0 != TOK_EOF {
+        pctx.error(c"unexpected trailing data", &tokens[0]);
+        return None;
+    }
+    Some(node)
+}
+
+fn json_parse_key(
+    tokens: &mut &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+) -> Option<CString> {
+    let start = tokens[0];
+    if tokens[0].type_0 == TOK_QUOTE {
+        *tokens = &tokens[1..];
+        if tokens[0].type_0 == TOK_VALUE {
+            let bytes = pctx.text(&tokens[0]);
+            *tokens = &tokens[1..];
+            if tokens[0].type_0 == TOK_QUOTE {
+                *tokens = &tokens[1..];
+                return Some(CString::new(bytes).expect("JSON key contains no NUL"));
+            }
+        }
+    }
+    pctx.error(c"invalid key", &start);
+    None
+}
+
+fn json_parse_object(
+    tokens: &mut &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+    key: Option<&CStr>,
+) -> Option<Box<json_node>> {
+    if tokens[0].type_0 != TOK_OPENOBJECT {
+        return None;
+    }
+    pctx.depth += 1;
+    if pctx.depth > PARSE_DEPTH_MAX {
+        pctx.error(c"parse depth exceeded", &tokens[0]);
+        return None;
+    }
+    *tokens = &tokens[1..];
+    let mut object = json_create_node(key, JsonValue::Object(Default::default()));
+    loop {
+        if tokens[0].type_0 == TOK_CLOSEOBJECT {
+            *tokens = &tokens[1..];
+            pctx.depth -= 1;
+            return Some(object);
+        }
+        let Some(key) = json_parse_key(tokens, pctx) else {
+            break;
+        };
+        if json_find(&object, &key).is_some() {
+            pctx.error(c"duplicate key", &tokens[0]);
+            break;
+        }
+        if tokens[0].type_0 != TOK_COLON {
+            pctx.error(c"missing colon", &tokens[0]);
+            break;
+        }
+        *tokens = &tokens[1..];
+        let field = match tokens[0].type_0 {
+            TOK_QUOTE => json_parse_string(tokens, pctx, Some(&key)),
+            TOK_VALUE => {
+                let bytes = pctx.text(&tokens[0]);
+                if bytes[0].is_ascii_digit()
+                    || (bytes[0] == b'-' && bytes.get(1).is_some_and(u8::is_ascii_digit))
+                {
+                    json_parse_number(tokens, pctx, Some(&key))
+                } else {
+                    json_parse_boolean(tokens, pctx, Some(&key))
+                }
+            }
+            TOK_OPENOBJECT => json_parse_object(tokens, pctx, Some(&key)),
+            TOK_OPENARRAY => json_parse_array(tokens, pctx, Some(&key)),
+            _ => {
+                pctx.error(c"unexpected value when parsing object", &tokens[0]);
+                break;
+            }
+        };
+        let field = field?;
+        let JsonValue::Object(fields) = &mut object.value else {
+            unreachable!()
+        };
+        fields.entries.insert(key.to_bytes().to_vec(), field);
+        if tokens[0].type_0 == TOK_COMMA {
+            if tokens[1].type_0 == TOK_CLOSEOBJECT {
+                pctx.error(c"invalid object", &tokens[0]);
+                break;
+            }
+            *tokens = &tokens[1..];
+        } else if tokens[0].type_0 != TOK_CLOSEOBJECT {
+            pctx.error(c"invalid object", &tokens[0]);
+            break;
+        }
+    }
+    None
+}
+
+fn json_parse_array(
+    tokens: &mut &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+    key: Option<&CStr>,
+) -> Option<Box<json_node>> {
+    if tokens[0].type_0 != TOK_OPENARRAY {
+        return None;
+    }
+    *tokens = &tokens[1..];
+    let mut array = json_create_node(key, JsonValue::Array(Default::default()));
+    loop {
+        if tokens[0].type_0 == TOK_CLOSEARRAY {
+            *tokens = &tokens[1..];
+            return Some(array);
+        }
+        if tokens[0].type_0 != TOK_OPENOBJECT {
+            pctx.error(c"invalid array member", &tokens[0]);
+            break;
+        }
+        let member = json_parse_object(tokens, pctx, None)?;
+        let JsonValue::Array(members) = &mut array.value else {
+            unreachable!()
+        };
+        members.members.push(member);
+        if tokens[0].type_0 == TOK_COMMA {
+            if tokens[1].type_0 == TOK_CLOSEARRAY {
+                pctx.error(c"invalid array", &tokens[0]);
+                break;
+            }
+            *tokens = &tokens[1..];
+        } else if tokens[0].type_0 != TOK_CLOSEARRAY {
+            pctx.error(c"invalid array", &tokens[0]);
+            break;
+        }
+    }
+    None
+}
+
+fn json_parse_string(
+    tokens: &mut &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+    key: Option<&CStr>,
+) -> Option<Box<json_node>> {
+    let start = tokens[0];
+    if tokens[0].type_0 == TOK_QUOTE {
+        *tokens = &tokens[1..];
+        if tokens[0].type_0 == TOK_VALUE {
+            let bytes = pctx.text(&tokens[0]);
+            *tokens = &tokens[1..];
+            if tokens[0].type_0 == TOK_QUOTE {
+                *tokens = &tokens[1..];
+                let string = CString::new(bytes).expect("JSON token contains no NUL");
+                return Some(json_create_node(key, JsonValue::String(string)));
+            }
+        }
+    }
+    pctx.error(c"invalid string", &start);
+    None
+}
+
+fn json_parse_number(
+    tokens: &mut &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+    key: Option<&CStr>,
+) -> Option<Box<json_node>> {
+    let bytes = pctx.text(&tokens[0]);
+    if !(bytes.starts_with(b"0") && bytes.len() != 1
+        || bytes.starts_with(b"-0") && bytes.len() != 2)
+    {
+        if let Some(number) = std::str::from_utf8(bytes)
+            .ok()
+            .and_then(|text| text.parse::<i64>().ok())
+        {
+            *tokens = &tokens[1..];
+            return Some(json_create_node(key, JsonValue::Number(number)));
+        }
+    }
+    pctx.error(c"invalid number", &tokens[0]);
+    None
+}
+
+fn json_parse_boolean(
+    tokens: &mut &[json_token],
+    pctx: &mut json_parse_ctx<'_, '_>,
+    key: Option<&CStr>,
+) -> Option<Box<json_node>> {
+    let boolean = match pctx.text(&tokens[0]) {
+        b"true" => 1,
+        b"false" => 0,
+        _ => {
+            pctx.error(c"invalid boolean", &tokens[0]);
+            return None;
+        }
+    };
+    *tokens = &tokens[1..];
+    Some(json_create_node(key, JsonValue::Boolean(boolean)))
+}
+fn json_string_append(buffer: &mut evbuffer, node: &json_node) {
+    match &node.value {
+        JsonValue::String(string) => {
+            buffer.put_slice(b"\"");
+            buffer.put_slice(string.to_bytes());
+            buffer.put_slice(b"\"");
+        }
+        JsonValue::Number(number) => {
+            evbuffer_add_formatted(buffer, |out| write!(out, "{number}"));
+        }
+        JsonValue::Boolean(boolean) => {
+            buffer.put_slice(if *boolean != 0 { b"true" } else { b"false" })
+        }
+        JsonValue::Object(fields) => {
+            buffer.put_slice(b"{");
+            for (index, (key, field)) in fields.entries.iter().enumerate() {
+                if index != 0 {
+                    buffer.put_slice(b",");
+                }
+                buffer.put_slice(b"\"");
+                buffer.put_slice(key);
+                buffer.put_slice(b"\":");
+                json_string_append(buffer, field);
+            }
+            buffer.put_slice(b"}");
+        }
+        JsonValue::Array(members) => {
+            buffer.put_slice(b"[");
+            for (index, member) in members.members.iter().enumerate() {
+                if index != 0 {
+                    buffer.put_slice(b",");
+                }
+                json_string_append(buffer, member);
+            }
+            buffer.put_slice(b"]");
+        }
+    }
+}
+
+pub fn json_to_string(node: &json_node) -> CString {
     let mut buffer = evbuffer_new();
-    json_string_append(&mut *buffer, node);
-    let bytes = evbuffer_pullup(&mut buffer, -1).unwrap_or_default().to_vec();
-    Some(CString::new(bytes).expect("serialized JSON contains no NUL"))
+    json_string_append(&mut buffer, node);
+    let bytes = evbuffer_pullup(&mut buffer, -1)
+        .unwrap_or_default()
+        .to_vec();
+    CString::new(bytes).expect("serialized JSON contains no NUL")
 }
 
 #[cfg(test)]
-mod json_fields_tests {
+mod tests {
     use super::*;
-    use std::ffi::{CStr, CString};
 
     #[test]
     fn diagnostics_preserve_bytes_and_context_truncation() {
-        unsafe {
-            let mut cause = None;
-            json_error(Some(&mut cause), c"\xff", Some(c"abcdefghZ"));
-            assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: abcdefgh...");
-            json_error(Some(&mut cause), c"\xff", Some(c"ab"));
-            assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: ab");
-        }
+        let mut cause = None;
+        json_error(Some(&mut cause), c"\xff", b"abcdefghZ");
+        assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: abcdefgh...");
+        json_error(Some(&mut cause), c"\xff", b"ab");
+        assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: ab");
     }
 }

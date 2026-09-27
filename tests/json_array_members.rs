@@ -1,69 +1,46 @@
 use hmux2::src::json::{
-    json_array_first, json_array_next, json_destroy_node, json_find, json_get_number, json_parse,
-    json_to_string, NODE_ARRAY, NODE_OBJECT,
+    json_array_members, json_find, json_get_number, json_parse, json_to_string, NODE_ARRAY,
+    NODE_OBJECT,
 };
 use std::ffi::CString;
 
 #[test]
 fn array_owned_members_preserve_order_and_iteration() {
-    unsafe {
-        let input = CString::new(r#"{"items":[{"x":1},{"y":2},{"z":3}]}"#).unwrap();
-        let mut cause: Option<CString> = None;
-        let root = json_parse(input.as_ptr(), &mut cause);
-        assert!(!root.is_null(), "parse error: {:?}", cause);
-        assert!(cause.is_none());
-        let key = CString::new("items").unwrap();
-        let array = json_find(root, key.as_ptr());
-        assert_eq!((*array).type_0(), NODE_ARRAY);
-
-        let first = json_array_first(array);
-        assert_eq!((*first).type_0(), NODE_OBJECT);
-        let second = json_array_next(first);
-        assert_eq!((*second).type_0(), NODE_OBJECT);
-        let last = json_array_next(second);
-        assert_eq!((*last).type_0(), NODE_OBJECT);
-        assert!(json_array_next(last).is_null());
-
-        let x_key = CString::new("x").unwrap();
-        let first_value = json_find(first, x_key.as_ptr());
-        let mut number = 0;
-        assert_eq!(json_get_number(first_value, &mut number), 0);
-        assert_eq!(number, 1);
-        let z_key = CString::new("z").unwrap();
-        let last_value = json_find(last, z_key.as_ptr());
-        assert_eq!(json_get_number(last_value, &mut number), 0);
-        assert_eq!(number, 3);
-
-        let serialized = json_to_string(root).unwrap();
+    let input = CString::new(r#"{"items":[{"x":1},{"y":2},{"z":3}]}"#).unwrap();
+    let mut cause = None;
+    let root = json_parse(&input, Some(&mut cause)).expect("parse JSON array");
+    assert!(cause.is_none());
+    drop(input);
+    let array = json_find(&root, c"items").unwrap();
+    assert_eq!(array.type_0(), NODE_ARRAY);
+    let members = json_array_members(array).unwrap();
+    assert_eq!(members.len(), 3);
+    for ((member, key), number) in members.iter().zip([c"x", c"y", c"z"]).zip(1..=3) {
+        assert_eq!(member.type_0(), NODE_OBJECT);
         assert_eq!(
-            serialized.to_bytes(),
-            br#"{"items":[{"x":1},{"y":2},{"z":3}]}"#
+            json_get_number(json_find(member, key).unwrap()),
+            Some(number)
         );
-        json_destroy_node(root);
     }
+    assert_eq!(
+        json_to_string(&root).to_bytes(),
+        br#"{"items":[{"x":1},{"y":2},{"z":3}]}"#
+    );
 }
 
 #[test]
 fn empty_array_has_no_members() {
-    unsafe {
-        let input = CString::new(r#"{"items":[]}"#).unwrap();
-        let mut cause: Option<CString> = None;
-        let root = json_parse(input.as_ptr(), &mut cause);
-        assert!(!root.is_null(), "parse error: {:?}", cause);
-        assert!(cause.is_none());
-        let key = CString::new("items").unwrap();
-        assert!(json_array_first(json_find(root, key.as_ptr())).is_null());
-        json_destroy_node(root);
-    }
+    let root = json_parse(c"{\"items\":[]}", None).unwrap();
+    assert!(json_array_members(json_find(&root, c"items").unwrap())
+        .unwrap()
+        .is_empty());
+    assert!(json_array_members(&root).is_none());
 }
 
 #[test]
-fn malformed_array_destroys_already_parsed_members() {
-    unsafe {
-        let input = CString::new(r#"{"items":[{"x":1},{"y":2},]}"#).unwrap();
-        let mut cause: Option<CString> = None;
-        let root = json_parse(input.as_ptr(), &mut cause);
-        assert!(root.is_null());
-        assert!(cause.is_some());
-    }
+fn malformed_array_drops_already_parsed_members() {
+    let input = c"{\"items\":[{\"x\":1},{\"y\":2},]}";
+    let mut cause = None;
+    assert!(json_parse(input, Some(&mut cause)).is_none());
+    assert!(cause.is_some());
 }

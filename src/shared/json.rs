@@ -1,30 +1,28 @@
-//! Authoritative json model declarations.
+#![forbid(unsafe_code)]
+
+//! Authoritative JSON model declarations.
 
 use super::abi::int64_t;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::ffi::CString;
 
+/// Nodes stay separately allocated; containers own their children for the
+/// lifetime of the parsed document. Traversal borrows the owning container.
+#[derive(Debug)]
 pub struct json_node {
-    pub key: Option<std::ffi::CString>,
-    pub parent: *mut json_node,
+    pub key: Option<CString>,
     pub value: JsonValue,
 }
 
 impl json_node {
-    pub fn empty() -> Self {
-        Self {
-            key: None,
-            parent: std::ptr::null_mut(),
-            value: JsonValue::String(Default::default()),
-        }
-    }
     pub fn type_0(&self) -> json_node_type {
         self.value.kind()
     }
 }
 
+#[derive(Debug)]
 pub enum JsonValue {
-    String(std::ffi::CString),
+    String(CString),
     Number(int64_t),
     Boolean(::core::ffi::c_int),
     Object(json_fields),
@@ -41,61 +39,16 @@ impl JsonValue {
             Self::Array(_) => 4,
         }
     }
-    pub fn string_ptr(&self) -> *const ::core::ffi::c_char {
-        let Self::String(value) = self else {
-            panic!("not a JSON string")
-        };
-        value.as_ptr()
-    }
-    pub fn number(&self) -> int64_t {
-        let Self::Number(value) = self else {
-            panic!("not a JSON number")
-        };
-        *value
-    }
-    pub fn boolean(&self) -> ::core::ffi::c_int {
-        let Self::Boolean(value) = self else {
-            panic!("not a JSON boolean")
-        };
-        *value
-    }
-    pub fn fields(&self) -> &json_fields {
-        let Self::Object(value) = self else {
-            panic!("not a JSON object")
-        };
-        value
-    }
-    pub fn fields_mut(&mut self) -> &mut json_fields {
-        let Self::Object(value) = self else {
-            panic!("not a JSON object")
-        };
-        value
-    }
-    pub fn members(&self) -> &json_members_storage {
-        let Self::Array(value) = self else {
-            panic!("not a JSON array")
-        };
-        value
-    }
-    pub fn members_mut(&mut self) -> &mut json_members_storage {
-        let Self::Array(value) = self else {
-            panic!("not a JSON array")
-        };
-        value
-    }
 }
 
-/// Array order belongs to the array node. Child nodes do not need intrusive links.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct json_members_storage {
-    pub(crate) members: Vec<*mut json_node>,
-    pub(crate) indices: HashMap<*mut json_node, usize>,
+    pub(crate) members: Vec<Box<json_node>>,
 }
 
-/// Ordered index for an object's separately Box-owned field nodes.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct json_fields {
-    pub(crate) entries: BTreeMap<Vec<u8>, *mut json_node>,
+    pub(crate) entries: BTreeMap<Vec<u8>, Box<json_node>>,
 }
 
 pub type json_node_type = ::core::ffi::c_uint;
