@@ -157,7 +157,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             .find(|oe| oe.name == Some(c"update-environment"))
             .unwrap();
         let array = options_empty(oo, definition);
-        assert!(options_array_first(array).is_null());
+        assert!(options_array_iter_mut(&mut *(array)).next().map_or(std::ptr::null_mut(), |item| item).is_null());
         let keys: &[&[u8]] = &[
             b"\xff",
             b"10",
@@ -175,14 +175,14 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 0
             );
         }
-        let first = options_array_first(array);
-        let two = options_array_next(first);
+        let first = options_array_iter_mut(&mut *(array)).next().map_or(std::ptr::null_mut(), |item| item);
+        let two = options_array_iter_mut(&mut *array).nth(1).map_or(std::ptr::null_mut(), |item| item);
         assert_eq!(CStr::from_ptr(options_array_item_key(&*(two)).as_ptr()), c"2");
         assert_eq!(
             options_array_set(array, c"0002".as_ptr(), c"updated".as_ptr(), 0, null_mut()),
             0
         );
-        assert_eq!(options_array_next(first), two);
+        assert_eq!(options_array_iter_mut(&mut *array).nth(1).map_or(std::ptr::null_mut(), |item| item), two);
         assert_eq!(
             hmux2::src::options::options_array_get_mut(&mut *(array), std::ffi::CStr::from_ptr(c"02".as_ptr())).map_or(std::ptr::null_mut(), |value| value),
             (hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)
@@ -230,23 +230,21 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             b"\x80",
             b"\xff",
         ];
-        let mut item = first;
-        for key in expected {
+        let keys: Vec<_> = options_array_iter(&*array).map(|item| item.key.clone()).collect();
+        for (key, saved_key) in expected.iter().zip(keys) {
+            let item = options_array_iter_mut(&mut *array).find(|item| item.key == saved_key).map_or(std::ptr::null_mut(), |item| item);
             assert!(!item.is_null());
             assert_eq!(
                 CStr::from_ptr(options_array_item_key(&*(item)).as_ptr()).to_bytes(),
                 *key
             );
-            let next = options_array_next(item);
             let key = CString::new(*key).unwrap();
             assert_eq!(
                 options_array_set(array, key.as_ptr(), null(), 0, null_mut()),
                 0
             );
-            item = next;
         }
-        assert!(item.is_null());
-        assert!(options_array_first(array).is_null());
+        assert!(options_array_iter_mut(&mut *(array)).next().map_or(std::ptr::null_mut(), |item| item).is_null());
         // Clearing keeps the storage reusable; destroying a populated option
         // releases both the Rust index and C-allocated values.
         for _ in 0..3 {
@@ -258,7 +256,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 );
             }
             options_array_clear(array);
-            assert!(options_array_first(array).is_null());
+            assert!(options_array_iter_mut(&mut *(array)).next().map_or(std::ptr::null_mut(), |item| item).is_null());
         }
         assert_eq!(
             options_array_set(array, c"7".as_ptr(), c"last".as_ptr(), 0, null_mut()),
@@ -266,7 +264,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         );
         // Replacing the option also destroys populated array storage.
         let replacement = options_default(oo, definition);
-        assert!(!options_array_first(replacement).is_null());
+        assert!(!options_array_iter_mut(&mut *(replacement)).next().map_or(std::ptr::null_mut(), |item| item).is_null());
         options_free(oo);
     }
 }

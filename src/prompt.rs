@@ -12,7 +12,7 @@ use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{
-    options_array_first, options_array_item_value, options_array_next, options_get_number,
+    options_array_item_value, options_get_number,
     options_get_only, options_get_string,
 };
 use crate::src::paste::{paste_buffer_data, paste_get_top};
@@ -1629,7 +1629,9 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     }
     o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
     if !o.is_null() {
-        a = options_array_first(o);
+        let a_root = o;
+        let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         while !a.is_null() {
             let value = CStr::from_ptr((*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
             if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
@@ -1639,7 +1641,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                     prompt_complete_add(&mut list, alias.as_c_str());
                 }
             }
-            a = options_array_next(a);
+            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         }
     }
     return list;

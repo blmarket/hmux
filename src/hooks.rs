@@ -36,7 +36,7 @@ use crate::src::monitor::{
     monitor_get_fire_time,
 };
 use crate::src::options::{
-    options_array_first, options_array_item_value, options_array_next, options_get,
+    options_array_item_value, options_get,
     options_get_monitor_data, options_get_only, options_get_string, options_hook_fired,
     options_name, options_search, options_set_monitor_data, options_set_string,
 };
@@ -245,7 +245,9 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
             _ => {}
         }
     } else {
-        a = options_array_first(o);
+        let a_root = o;
+        let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         while !a.is_null() {
             if (*hd).expand != 0 {
                 value = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -265,7 +267,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 let cmdlist = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).commands();
                 item = hooks_insert_one(item, hd, cmdlist, &state);
             }
-            a = options_array_next(a);
+            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         }
     }
 

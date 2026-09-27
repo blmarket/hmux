@@ -1504,7 +1504,7 @@ pub(super) unsafe fn format_loop_add_array_item(
         b"option_array_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, array_key),
     );
-    if a == options_array_first(o) {
+    if a == crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item) {
         format_add(
             nft,
             b"option_array_first\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1517,7 +1517,7 @@ pub(super) unsafe fn format_loop_add_array_item(
             |out| out.write_all(b"0"),
         );
     }
-    if options_array_next(a).is_null() {
+    if !crate::src::options::options_array_iter(&*(*a).owner).any(|item| crate::src::options::options_array_index(&item.key) > crate::src::options::options_array_index(&(*a).key)) {
         format_add(
             nft,
             b"option_array_last\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1559,7 +1559,7 @@ pub(super) unsafe fn format_loop_add_array_item(
             )
         },
     );
-    if options_array_next(a).is_null() && !crate::src::options::options_iter(&*(*o).owner).any(|entry| entry.name.as_bytes() > (*o).name.as_bytes()) {
+    if !crate::src::options::options_array_iter(&*(*a).owner).any(|item| crate::src::options::options_array_index(&item.key) > crate::src::options::options_array_index(&(*a).key)) && !crate::src::options::options_iter(&*(*o).owner).any(|entry| entry.name.as_bytes() > (*o).name.as_bytes()) {
         format_add(
             nft,
             b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1637,10 +1637,12 @@ pub(super) unsafe fn format_loop_options(
     while !o.is_null() {
         n = 0 as u_int;
         if options_is_array(o) != 0 {
-            a = options_array_first(o);
+            let a_root = o;
+            let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             while !a.is_null() {
                 n = n.wrapping_add(1);
-                a = options_array_next(a);
+                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             }
         }
         if options_is_array(o) == 0 || n == 0 as u_int {
@@ -1648,11 +1650,13 @@ pub(super) unsafe fn format_loop_options(
             i = i.wrapping_add(1);
             o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         } else {
-            a = options_array_first(o);
+            let a_root = o;
+            let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             while !a.is_null() {
                 format_loop_add_array_item(es, fmt, &mut buffer, o, a, n as ::core::ffi::c_int, i);
                 i = i.wrapping_add(1);
-                a = options_array_next(a);
+                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             }
             o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         }

@@ -12,7 +12,7 @@ use crate::src::hooks::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_first, options_array_item_key, options_array_next, options_get,
+    options_array_item_key, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
     options_is_array, options_is_string, options_match_owned, options_name, options_scope_from_flags, options_scope_from_name, options_to_cstring, OptionMatchFailure,
 };
@@ -221,7 +221,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                     print_parent = parent;
                     if array_key.is_null()
                         && options_is_array(o) != 0
-                        && options_array_first(o).is_null()
+                        && crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item).is_null()
                     {
                         print_parent = 0 as ::core::ffi::c_int;
                     }
@@ -281,12 +281,14 @@ unsafe fn cmd_show_options_print(
     if !array_key.is_null() {
         value = cmd_show_options_value(o, array_key);
     } else if options_is_array(o) != 0 {
-        a = options_array_first(o);
+        let a_root = o;
+        let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         if !a.is_null() {
             while !a.is_null() {
                 array_key = options_array_item_key(&*(a)).as_ptr();
                 cmd_show_options_print(self_0, item, o, array_key, parent);
-                a = options_array_next(a);
+                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             }
             return;
         }

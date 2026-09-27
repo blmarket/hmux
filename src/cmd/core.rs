@@ -81,7 +81,7 @@ use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::{
-    options_array_first, options_array_item_value, options_array_next, options_get_only,
+    options_array_item_value, options_get_only,
 };
 use crate::src::session::session_find_by_id;
 use crate::src::shared::abi::*;
@@ -294,7 +294,9 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
         return None;
     }
     wanted = name.to_bytes().len();
-    a = options_array_first(o);
+    let a_root = o;
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
         ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         equals = strchr((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()), '=' as i32);
@@ -308,7 +310,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
                 );
             }
         }
-        a = options_array_next(a);
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
     None
 }

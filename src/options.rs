@@ -135,7 +135,7 @@ fn options_array_correct_key(key: &CStr) -> Option<CString> {
     }
 }
 // Internal callers pass keys already validated by options_array_correct_key.
-fn options_array_index(key: &CStr) -> OptionsArrayKey {
+pub(crate) fn options_array_index(key: &CStr) -> OptionsArrayKey {
     match parse_array_index(key.to_bytes()).expect("validated array key") {
         ArrayIndex::Numeric(number) => OptionsArrayKey::Numeric(number),
         ArrayIndex::Text(bytes) => OptionsArrayKey::Text(bytes.to_vec()),
@@ -459,7 +459,7 @@ pub unsafe fn options_get_fire_time(mut o: *mut options_entry) -> time_t {
 pub fn options_table_entry(o: &options_entry) -> Option<&'static options_table_entry> {
     o.tableentry
 }
-unsafe fn options_array_item(
+pub(crate) unsafe fn options_array_item(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
@@ -497,13 +497,10 @@ pub unsafe fn options_array_clear(mut o: *mut options_entry) {
     if !(!(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() && (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return;
     }
-    a = options_array_first(o);
-    while !a.is_null() && {
-        a1 = options_array_next(a);
-        1 as ::core::ffi::c_int != 0
-    } {
-        options_array_free(o, a);
-        a = a1;
+    let keys: Vec<_> = options_array_iter(&*o).map(|item| item.key.clone()).collect();
+    for key in keys {
+        let item = options_array_item(o, key.as_ptr());
+        if !item.is_null() { options_array_free(o, item); }
     }
 }
 pub fn options_array_get<'a>(o: &'a options_entry, key: &CStr) -> Option<&'a options_value> {
@@ -702,26 +699,19 @@ pub unsafe fn options_array_assign(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn options_array_first(mut o: *mut options_entry) -> *mut options_array_item {
-    if !(!(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() && (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
-        return ::core::ptr::null_mut::<options_array_item>();
-    }
-    (*o).value
-        .array_storage()
-        .entries
-        .values_mut()
-        .next()
-        .map_or(::core::ptr::null_mut(), |item| &mut **item)
+pub fn options_array_iter(o: &options_entry) -> impl DoubleEndedIterator<Item = &options_array_item> {
+    let entries = match &o.value {
+        options_value::Array(array) => Some(&array.entries),
+        _ => None,
+    };
+    entries.into_iter().flat_map(|entries| entries.values().map(Box::as_ref))
 }
-pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options_array_item {
-    let key = options_array_index((*a).key.as_c_str());
-    (*(*a).owner)
-        .value
-        .array_storage()
-        .entries
-        .range_mut((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(::core::ptr::null_mut(), |(_, item)| &mut **item)
+pub fn options_array_iter_mut(o: &mut options_entry) -> impl DoubleEndedIterator<Item = &mut options_array_item> {
+    let entries = match &mut o.value {
+        options_value::Array(array) => Some(&mut array.entries),
+        _ => None,
+    };
+    entries.into_iter().flat_map(|entries| entries.values_mut().map(Box::as_mut))
 }
 pub fn options_array_item_key(a: &options_array_item) -> &CStr {
     &a.key
@@ -758,7 +748,9 @@ pub unsafe fn options_to_cstring(
     if !(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() && (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if key.is_null() {
             let mut result = Vec::new();
-            let mut a = options_array_first(o);
+            let a_root = o;
+            let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+            let mut a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             let mut first = true;
             while !a.is_null() {
                 let value = options_value_to_cstring(&*o, &(*a).value, numeric);
@@ -767,7 +759,7 @@ pub unsafe fn options_to_cstring(
                 }
                 result.extend_from_slice(value.as_bytes());
                 first = false;
-                a = options_array_next(a);
+                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             }
             return CString::new(result).expect("option values have no NUL");
         }

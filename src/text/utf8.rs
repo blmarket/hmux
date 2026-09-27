@@ -2,7 +2,7 @@ use crate::src::compat::utf8proc::utf8proc_wcwidth;
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::options::{
-    options_array_first, options_array_item_value, options_array_next, options_get,
+    options_array_item_value, options_get,
 };
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -52,10 +52,12 @@ pub unsafe fn utf8_update_width_cache() {
         global_options,
         b"codepoint-widths\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    a = options_array_first(o);
+    let a_root = o;
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
         utf8_add_to_width_cache(CStr::from_ptr((*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())));
-        a = options_array_next(a);
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
 }
 unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {

@@ -42,8 +42,8 @@ use crate::src::mode_tree::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_first, options_array_get, options_array_get_index, options_array_item_key,
-    options_array_next, options_array_set, options_create, options_default,
+    options_array_get, options_array_get_index, options_array_item_key,
+    options_array_set, options_create, options_default,
     options_default_to_cstring, options_free, options_from_string, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
     options_get_only, options_get_parent, options_match_owned, options_name, options_owner, options_push_changes, options_remove_or_default, options_set_number,
@@ -995,11 +995,13 @@ unsafe fn window_customize_build_array(
     let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
-    ai = options_array_first(o);
+    let ai_root = o;
+    let mut ai_keys = crate::src::options::options_array_iter(&*ai_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(ai_root, key.as_ptr()));
     while !ai.is_null() {
         array_key = options_array_item_key(&*(ai)).as_ptr();
         if (*data).hide_default != 0 && window_customize_option_is_changed(o, array_key) == 0 {
-            ai = options_array_next(ai);
+            ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(ai_root, key.as_ptr()));
         } else {
             let mut name = CStr::from_ptr(options_name(&*(o)).as_ptr()).to_bytes().to_vec();
             name.push(b'[');
@@ -1049,7 +1051,7 @@ unsafe fn window_customize_build_array(
             );
             drop(value);
             count = count.wrapping_add(1);
-            ai = options_array_next(ai);
+            ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(ai_root, key.as_ptr()));
         }
     }
     return count;

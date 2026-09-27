@@ -12,7 +12,7 @@ use crate::src::ffi::ncurses::{
 use crate::src::format::bytes::{format_message_with, xformat};
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{
-    options_array_first, options_array_item_value, options_array_next, options_get_only,
+    options_array_item_value, options_get_only,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -1166,7 +1166,9 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
     o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"terminal-overrides\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
-    a = options_array_first(o);
+    let a_root = o;
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
         ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         s = (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -1181,7 +1183,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         }) {
             tty_term_apply(term, s.offset(offset as isize), 0 as ::core::ffi::c_int);
         }
-        a = options_array_next(a);
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
     log_debug(format_args!(
         "SIXEL flag is {}",
@@ -1355,7 +1357,9 @@ pub unsafe fn tty_term_create(
         i = i.wrapping_add(1);
     }
     o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"terminal-features\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
-    a = options_array_first(o);
+    let a_root = o;
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
         ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
         s = (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -1374,7 +1378,7 @@ pub unsafe fn tty_term_create(
                 b":\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        a = options_array_next(a);
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
     del_curterm(cur_term);
     envent = environ_find(

@@ -3,7 +3,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
 use crate::src::log::log_cstr;
-use crate::src::options::{options_array_first, options_array_get_index, options_get};
+use crate::src::options::{options_array_get_index, options_get};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::colour::*;
@@ -3799,7 +3799,7 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
         return;
     };
     let o = options_get(oo, c"pane-colours".as_ptr());
-    if options_array_first(o).is_null() {
+    if crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item).is_null() {
         p.default_palette = None;
         return;
     }
