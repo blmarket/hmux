@@ -136,7 +136,8 @@ pub type mode_tree_prompt_input_cb = Option<
 /// Mode lists own payloads. Rows carry weak identities; actions copy a snapshot
 /// before dispatch so rebuilding or drawing the list cannot conflict with a borrow.
 #[derive(Clone, Default)]
-pub enum ModeTreeItemData {    #[default]
+pub enum ModeTreeItemData {
+    #[default]
     None,
     Buffer(refbox::Weak<window_buffer_itemdata>),
     Client(refbox::Weak<window_client_itemdata>),

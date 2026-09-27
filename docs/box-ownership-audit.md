@@ -28,8 +28,9 @@ but must not permit conflicting access. Never retain a map borrow across a
 callback that can replace or remove entries.
 
 The Rc reversal backlog is tracked in `../plan.md` relative to the repository
-root. The completed conversions below supersede the earlier shared-ownership
-guidance; other listed migrations still require that review.
+root. All 18 Rc reversal entries are converted. The completed conversions below
+supersede the earlier shared-ownership guidance; the broader raw ownership
+backlog remains separate from that completed reversal scope.
 
 ## Completed migrations
 
@@ -71,17 +72,25 @@ guidance; other listed migrations still require that review.
 | Queue roots | Clients and the lazy global queue own boxes directly. Client teardown drops its empty queue before releasing the client registry entry; queue Drop preserves the nonempty-queue invariant. Detached item ownership and active-item observers remain separate. |
 | Layout cells and roots | Constructors, detach/replace operations, and custom parsers transfer boxes directly. Windows own active/saved root boxes; presets explicitly retain detached leaves until reinsertion, including floating panes. Drop clears pane observers; zoom transfers root owners without moving cells. Teardown restores zoom links without resizing dying panes, avoiding zero-count Rc retention. |
 | Environment roots | Global, client, session, spawn, and temporary environments own boxes directly. Lookup/iteration/copy/update borrow actual values. Customize rows resolve weak session identities through short retained guards whose release remains deferred; nullable spawn/job environments use `Option<&environ>`. |
-| Popup state | Startup keeps a box, owned by typed shared state. Overlay/job/input callbacks hold weak handles; active guards retain the allocation until callbacks return, including self-close. Drop preserves waiting-command, client, job, input, screen, and palette cleanup order. |
+| Popup state | The overlay solely owns a RefBox around the boxed popup. Job and overlay callbacks borrow through weak identities; owner removal invalidates observers while the active borrow defers destruction. Nested terminal callbacks use weak identities and independent boxed palette snapshots. The source palette has one RefBox owner in the popup so callbacks can read OSC updates without reborrowing the active popup. Drop preserves waiting-command, client, job, input, screen, and palette cleanup order. |
 | Command descriptors | Commands store immutable static references and construction requires a descriptor. Lookup returns references; listing/completion borrow the bounded table, and dispatch/identity checks borrow descriptors and flags. All 92 descriptors and their order are preserved. |
 
 Each migration has its own commit. Validation includes the workspace suite,
 focused lifecycle tests, live command comparisons with the pinned tmux build,
 and focused Valgrind checks. Changes from three independent worktrees were reviewed
-and integrated as separate commits. The latest combined tree passes 573 workspace
-tests and builds; 867 command name/alias/prefix/error observations match pinned
-tmux. Integrated environment, layout, popup, queue, parser, and callback lifecycle
-checks pass, including focused unit and live Valgrind checks with zero errors and
-zero definite/indirect leaks.
+and integrated as separate commits. Before the Rc reversal series, 867 command
+name/alias/prefix/error observations matched pinned tmux, with focused unit and
+live Valgrind checks recording zero errors and zero definite/indirect leaks.
+
+The final Rc reversal tree passes all 592 workspace tests. The popup PTY test
+covers OSC palette updates, terminal resize, modifying an active popup, exit
+status propagation, and cancellation of its job. The five popup lifecycle unit
+tests also pass under Valgrind with zero errors and zero definite/indirect leaks;
+Valgrind reports 48 bytes possibly lost in Rust's test-harness thread allocation.
+Every tracked target's owner and construction path was reviewed, including the
+weak-observer wrappers; no tracked allocation retains Rc ownership. The twelve
+previously reference-counted model types remain permitted and unchanged in that
+respect. See `../plan.md` for per-target ownership and validation evidence.
 
 ## Remaining production ownership paths
 

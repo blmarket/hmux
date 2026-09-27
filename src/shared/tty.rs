@@ -425,6 +425,8 @@ pub struct tty_term_entry {
 /// Command metadata; screen and cell borrows are supplied only at dispatch.
 #[derive(Default)]
 pub struct tty_ctx<'a> {
+    /// Optional independent palette for terminal callbacks that outlive their source.
+    pub owned_palette: Option<Box<colour_palette>>,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
     pub flags: ::core::ffi::c_int,
