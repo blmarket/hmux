@@ -2310,13 +2310,6 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
         scrolled: 0,
         bg: 0,
     };
-    let mut pdd: prompt_draw_data = prompt_draw_data {
-        ctx: ::core::ptr::null_mut::<screen_write_ctx>(),
-        cursor_x: ::core::ptr::null_mut::<u_int>(),
-        area_x: 0,
-        area_width: 0,
-        prompt_line: 0,
-    };
     let mut ox: ::core::ffi::c_int = (*scene).ox as ::core::ffi::c_int;
     let mut oy: ::core::ffi::c_int = (*scene).oy as ::core::ffi::c_int;
     let mut sx: ::core::ffi::c_int = (*scene).sx as ::core::ffi::c_int;
@@ -2360,12 +2353,12 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
     }
     screen_init(&mut screen, (*wp).sx, 1 as u_int, 0 as u_int);
     screen_write_start(&mut ctx, &raw mut screen);
-    pdd.ctx = &raw mut ctx;
-    pdd.cursor_x = &raw mut (*wp).prompt_cx;
-    pdd.area_x = 0 as u_int;
-    pdd.area_width = (*wp).sx;
-    pdd.prompt_line = 0 as u_int;
-    prompt_draw((*wp).prompt, &raw mut pdd);
+    let pdd = prompt_draw_data {
+        area_x: 0 as u_int,
+        area_width: (*wp).sx,
+        prompt_line: 0 as u_int,
+    };
+    (*wp).prompt_cx = prompt_draw(&*(*wp).prompt, &mut ctx, pdd);
     screen_write_stop(&mut ctx);
     tty_draw_line(
         tty,

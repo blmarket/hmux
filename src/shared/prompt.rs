@@ -4,7 +4,6 @@ use super::abi::{size_t, u_int};
 use super::command::cmd_find_state;
 use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
-use super::screen_write::screen_write_ctx;
 use std::ffi::{CStr, CString};
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
@@ -124,8 +123,6 @@ pub struct prompt_create_data<'a> {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct prompt_draw_data {
-    pub ctx: *mut screen_write_ctx,
-    pub cursor_x: *mut u_int,
     pub area_x: u_int,
     pub area_width: u_int,
     pub prompt_line: u_int,

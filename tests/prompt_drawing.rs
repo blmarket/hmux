@@ -1,0 +1,218 @@
+use hmux2::src::environ::{environ_create, environ_free};
+use hmux2::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
+use hmux2::src::options::{options_create, options_default, options_free};
+use hmux2::src::options_table::options_table;
+use hmux2::src::prompt::{prompt_create, prompt_draw, prompt_free};
+use hmux2::src::screen::{screen_free, screen_init};
+use hmux2::src::screen_write::{screen_write_start, screen_write_stop};
+use hmux2::src::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
+use hmux2::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
+use hmux2::src::shared::prompt::*;
+use hmux2::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
+use hmux2::src::shared::screen_write::screen_write_ctx;
+use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use std::ffi::CStr;
+
+#[test]
+fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
+    unsafe {
+        assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
+        let saved = (
+            global_environ,
+            global_options,
+            global_s_options,
+            global_w_options,
+        );
+        let environment = environ_create();
+        let server = options_create(std::ptr::null_mut());
+        let session = options_create(std::ptr::null_mut());
+        let window = options_create(std::ptr::null_mut());
+        global_environ = environment;
+        global_options = server;
+        global_s_options = session;
+        global_w_options = window;
+        let definition = (&*std::ptr::addr_of!(options_table))
+            .iter()
+            .find(|entry| !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys")
+            .unwrap();
+        options_default(server, definition);
+
+        // Geometry checked against prompt_layout in tmux e880cf63e0a9.
+        // All prompts start at column 3 on a 20-column screen.
+        for (label, input, index, width, style, flags, completion, expected, cursor) in [
+            (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),
+            (
+                c"L:",
+                c"abc",
+                3,
+                10,
+                c"align=centre",
+                0,
+                None,
+                "     L:abc",
+                10,
+            ),
+            (
+                c"L:",
+                c"abc",
+                3,
+                10,
+                c"align=right",
+                0,
+                None,
+                "        L:abc",
+                13,
+            ),
+            (
+                c"L:",
+                c"abcdefghijk",
+                11,
+                8,
+                c"align=left",
+                0,
+                None,
+                "   L:ghijk",
+                10,
+            ),
+            (
+                c"L:",
+                c"abcdefghijk",
+                2,
+                8,
+                c"align=left",
+                0,
+                None,
+                "   L:abcdef",
+                7,
+            ),
+            (c"LONG", c"abc", 3, 2, c"align=left", 0, None, "   LO", 5),
+            (c"L:", c"abc", 3, 0, c"align=left", 0, None, "", 0),
+            (
+                c"L:",
+                c"é漢Z",
+                3,
+                10,
+                c"align=left",
+                0,
+                None,
+                "   L:é漢Z",
+                9,
+            ),
+            (
+                c"L:",
+                c"abc",
+                1,
+                10,
+                c"align=left",
+                PROMPT_QUOTENEXT,
+                None,
+                "   L:a^bc",
+                6,
+            ),
+            (
+                c"L:",
+                c"ab",
+                2,
+                10,
+                c"align=left",
+                0,
+                Some(c" done"),
+                "   L:ab done",
+                7,
+            ),
+            (
+                c"L:",
+                c"abc",
+                3,
+                10,
+                c"align=left",
+                PROMPT_COMMANDMODE,
+                None,
+                "        L:abc",
+                13,
+            ),
+            (
+                c"L:",
+                c"abc",
+                3,
+                10,
+                c"invalid-style",
+                0,
+                None,
+                "   L:abc",
+                8,
+            ),
+        ] {
+            let mut prompt = prompt_create(prompt_create_data {
+                prompt: label,
+                input: Some(input),
+                flags: flags | PROMPT_NOFORMAT,
+                style: grid_default_cell,
+                command_style: grid_default_cell,
+                style_str: style.to_owned(),
+                command_style_str: c"align=right".to_owned(),
+                message_format: c"#{message}".to_owned(),
+                cstyle: SCREEN_CURSOR_UNDERLINE,
+                cmode: MODE_CURSOR,
+                ccolour: 1,
+                command_cstyle: SCREEN_CURSOR_BLOCK,
+                command_cmode: MODE_CURSOR | MODE_CURSOR_BLINKING,
+                command_ccolour: 2,
+                ..Default::default()
+            });
+            prompt.index = index;
+            prompt.completion.display = completion.map(CStr::to_owned);
+            let mut s = screen::empty();
+            screen_init(&mut s, 20, 1, 0);
+            let mut ctx = screen_write_ctx::default();
+            screen_write_start(&mut ctx, &mut s);
+            let cursor_x = prompt_draw(
+                &prompt,
+                &mut ctx,
+                prompt_draw_data {
+                    area_x: 3,
+                    area_width: width,
+                    prompt_line: 0,
+                },
+            );
+            screen_write_stop(&mut ctx);
+            let text =
+                grid_string_cells_bytes(s.grid(), 0, 0, 20, None, GRID_STRING_TRIM_SPACES, None);
+            assert_eq!(
+                text,
+                expected.as_bytes(),
+                "{input:?}, {style:?}, flags {flags}, width {width}"
+            );
+            assert_eq!(
+                cursor_x, cursor,
+                "{input:?}, {style:?}, flags {flags}, width {width}"
+            );
+            let appearance = if flags & PROMPT_COMMANDMODE != 0 {
+                (SCREEN_CURSOR_BLOCK, MODE_CURSOR | MODE_CURSOR_BLINKING, 2)
+            } else {
+                (SCREEN_CURSOR_UNDERLINE, MODE_CURSOR, 1)
+            };
+            assert_eq!(
+                (s.default_cstyle, s.default_mode, s.default_ccolour),
+                appearance
+            );
+            if completion.is_some() {
+                let mut cell = grid_default_cell;
+                grid_get_cell(s.grid(), 8, 0, &mut cell);
+                assert_ne!(cell.attr as i32 & GRID_ATTR_UNDERSCORE, 0);
+            }
+            screen_free(&mut s);
+            prompt_free(Box::into_raw(prompt));
+        }
+        (
+            global_environ,
+            global_options,
+            global_s_options,
+            global_w_options,
+        ) = saved;
+        environ_free(environment);
+        options_free(server);
+        options_free(session);
+        options_free(window);
+    }
+}

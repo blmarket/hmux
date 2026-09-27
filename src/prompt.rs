@@ -67,7 +67,7 @@ fn prompt_trim_buffer(pr: &mut prompt) {
     pr.buffer.truncate(len);
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct prompt_layout {
     pub area_x: u_int,
@@ -438,55 +438,55 @@ pub unsafe fn prompt_closed(mut pr: *mut prompt) -> ::core::ffi::c_int {
     return (*pr).closed;
 }
 unsafe fn prompt_redraw_character(
-    mut ctx: *mut screen_write_ctx,
+    ctx: &mut screen_write_ctx,
     mut offset: u_int,
     mut pwidth: u_int,
-    mut width: *mut u_int,
-    mut gc: *mut grid_cell,
-    mut ud: *const utf8_data,
+    width: &mut u_int,
+    gc: &mut grid_cell,
+    ud: &utf8_data,
 ) -> ::core::ffi::c_int {
     let mut ch: u_char = 0;
     if *width < offset {
-        *width = (*width).wrapping_add((*ud).width as u_int);
+        *width = (*width).wrapping_add(ud.width as u_int);
         return 1 as ::core::ffi::c_int;
     }
     if *width >= offset.wrapping_add(pwidth) {
         return 0 as ::core::ffi::c_int;
     }
-    *width = (*width).wrapping_add((*ud).width as u_int);
+    *width = (*width).wrapping_add(ud.width as u_int);
     if *width > offset.wrapping_add(pwidth) {
         return 0 as ::core::ffi::c_int;
     }
-    ch = *(&raw const (*ud).data as *const u_char);
-    if (*ud).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+    ch = ud.data[0];
+    if ud.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
         && (ch as ::core::ffi::c_int <= 0x1f as ::core::ffi::c_int
             || ch as ::core::ffi::c_int == 0x7f as ::core::ffi::c_int)
     {
-        (*gc).data.data[0 as ::core::ffi::c_int as usize] = '^' as i32 as u_char;
-        (*gc).data.data[1 as ::core::ffi::c_int as usize] =
+        gc.data.data[0 as ::core::ffi::c_int as usize] = '^' as i32 as u_char;
+        gc.data.data[1 as ::core::ffi::c_int as usize] =
             (if ch as ::core::ffi::c_int == 0x7f as ::core::ffi::c_int {
                 '?' as i32
             } else {
                 ch as ::core::ffi::c_int | 0x40 as ::core::ffi::c_int
             }) as u_char;
-        (*gc).data.have = 2 as u_char;
-        (*gc).data.size = (*gc).data.have;
-        (*gc).data.width = 2 as u_char;
+        gc.data.have = 2 as u_char;
+        gc.data.size = gc.data.have;
+        gc.data.width = 2 as u_char;
     } else {
-        (*gc).data = utf8_copy(&*ud);
+        gc.data = utf8_copy(ud);
     }
-    screen_write_cell(&mut *ctx, &*gc);
+    screen_write_cell(ctx, gc);
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn prompt_redraw_quote(
-    mut pr: *const prompt,
+    pr: &prompt,
     mut pcursor: u_int,
     mut input_x: u_int,
-    mut ctx: *mut screen_write_ctx,
+    ctx: &mut screen_write_ctx,
     mut offset: u_int,
     mut pw: u_int,
-    mut w: *mut u_int,
-    mut gc: *mut grid_cell,
+    w: &mut u_int,
+    gc: &mut grid_cell,
 ) -> ::core::ffi::c_int {
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -494,85 +494,62 @@ unsafe fn prompt_redraw_quote(
         size: 0,
         width: 0,
     };
-    if (*pr).flags & PROMPT_QUOTENEXT != 0
+    if pr.flags & PROMPT_QUOTENEXT != 0
         && pcursor >= offset
-        && (*(*ctx).s).cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
+        && (*ctx.s).cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
     {
         utf8_set(&mut ud, '^' as i32 as u_char);
-        return prompt_redraw_character(ctx, offset, pw, w, gc, &raw mut ud);
+        return prompt_redraw_character(ctx, offset, pw, w, gc, &ud);
     }
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn prompt_draw_complete(
-    mut pr: *mut prompt,
-    mut ctx: *mut screen_write_ctx,
+    pr: &prompt,
+    ctx: &mut screen_write_ctx,
     mut ax: u_int,
     mut aw: u_int,
     mut cx: u_int,
     mut py: u_int,
-    mut base: *const grid_cell,
+    base: &grid_cell,
 ) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
+    let mut gc = *base;
     let mut avail: u_int = 0;
     let mut width: u_int = 0;
-    let display = (*pr)
-        .completion
-        .display
-        .as_ref()
-        .map_or(::core::ptr::null(), |s| s.as_ptr());
-    if display.is_null() {
+    let Some(display) = pr.completion.display.as_deref() else {
         return;
-    }
-    if (*pr).index != utf8_strlen(&(*pr).buffer) {
+    };
+    if pr.index != utf8_strlen(&pr.buffer) {
         return;
     }
     if cx < ax || cx.wrapping_sub(ax) >= aw {
         return;
     }
     avail = aw.wrapping_sub(cx.wrapping_sub(ax));
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        base as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE) as u_short;
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         cx as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
     width = 0 as u_int;
-    let mut cells = utf8_fromcstr_vec(CStr::from_ptr(display));
+    let mut cells = utf8_fromcstr_vec(display);
     for cell in &mut cells {
         if cell.size == 0 || width.wrapping_add(cell.width as u_int) > avail {
             break;
         }
         gc.data = utf8_copy(cell);
-        screen_write_cell(&mut *ctx, &gc);
+        screen_write_cell(ctx, &gc);
         width = width.wrapping_add(cell.width as u_int);
     }
 }
-unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
+unsafe fn prompt_format_tree(pr: &prompt) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    if cmd_find_valid_state(&(*pr).state) != 0 {
+    if cmd_find_valid_state(&pr.state) != 0 {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
             ::core::ptr::null_mut::<client>(),
-            &(*pr).state,
+            &pr.state,
         );
     } else {
         ft = format_create_defaults(
@@ -583,7 +560,7 @@ unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
             ::core::ptr::null_mut::<window_pane>(),
         );
     }
-    let tmp = utf8_tocstr_cstring(&(*pr).buffer);
+    let tmp = utf8_tocstr_cstring(&pr.buffer);
     format_add(
         ft,
         b"prompt_input\0" as *const u8 as *const ::core::ffi::c_char,
@@ -592,14 +569,14 @@ unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     format_add(
         ft,
         b"prompt_flags\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, prompt_flags_to_string((*pr).flags)),
+        |out| write_cstr(out, prompt_flags_to_string(pr.flags)),
     );
     format_add(
         ft,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, prompt_type_string((*pr).type_0)),
+        |out| write_cstr(out, prompt_type_string(pr.type_0)),
     );
-    if (*pr).flags & PROMPT_COMMANDMODE != 0 {
+    if pr.flags & PROMPT_COMMANDMODE != 0 {
         format_add(
             ft,
             b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
@@ -614,46 +591,33 @@ unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     }
     return ft;
 }
-unsafe fn prompt_expand1(mut pr: *mut prompt, mut ft: *mut format_tree) -> CString {
-    let prompt = format_expand_time_cstring(ft, (*pr).string.as_ptr());
+unsafe fn prompt_expand1(pr: &prompt, mut ft: *mut format_tree) -> CString {
+    let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
     format_add(
         ft,
         b"message\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, prompt.as_ptr()),
     );
-    format_expand_time_cstring(ft, (*pr).message_format.as_ptr())
+    format_expand_time_cstring(ft, pr.message_format.as_ptr())
 }
-unsafe fn prompt_effective_style(
-    mut pr: *mut prompt,
-    mut sy: *mut style,
-    mut ft: *mut format_tree,
-) {
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut gc: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
-    if (*pr).flags & PROMPT_COMMANDMODE != 0 {
-        s = (*pr).command_style_str.as_ptr();
-        gc = &raw mut (*pr).command_style;
+unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: *mut format_tree) {
+    let (text, cell) = if pr.flags & PROMPT_COMMANDMODE != 0 {
+        (&pr.command_style_str, &pr.command_style)
     } else {
-        s = (*pr).style_str.as_ptr();
-        gc = &raw mut (*pr).style;
-    }
-    style_set(sy, gc);
-    if !s.is_null() {
-        let expanded = format_expand_time_cstring(ft, s);
-        if style_parse(sy, &raw const grid_default_cell, expanded.as_ptr())
-            != 0 as ::core::ffi::c_int
-        {
-            style_set(sy, gc);
-        }
+        (&pr.style_str, &pr.style)
+    };
+    style_set(sy, cell);
+    let expanded = format_expand_time_cstring(ft, text.as_ptr());
+    if style_parse(sy, &grid_default_cell, expanded.as_ptr()) != 0 {
+        style_set(sy, cell);
     }
 }
 unsafe fn prompt_layout(
-    mut pr: *mut prompt,
+    pr: &prompt,
     mut ax: u_int,
     mut aw: u_int,
-    mut pl: *mut prompt_layout,
-    mut sy: *mut style,
-) -> CString {
+    mut sy: Option<&mut style>,
+) -> (prompt_layout, CString) {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut pcursor: u_int = 0;
     let mut pwidth: u_int = 0;
@@ -661,39 +625,34 @@ unsafe fn prompt_layout(
     let mut width: u_int = 0;
     let mut offset: u_int = 0;
     let mut avail: u_int = 0;
-    memset(
-        pl as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<prompt_layout>() as size_t,
-    );
-    (*pl).area_x = ax;
-    (*pl).area_width = aw;
+    let mut pl = prompt_layout {
+        area_x: ax,
+        area_width: aw,
+        ..Default::default()
+    };
     ft = prompt_format_tree(pr);
-    if !sy.is_null() {
+    if let Some(sy) = sy.as_deref_mut() {
         prompt_effective_style(pr, sy, ft);
     }
     let expanded = prompt_expand1(pr, ft);
     format_free(ft);
     if aw == 0 as u_int {
-        return expanded;
+        return (pl, expanded);
     }
-    (*pl).label_width = format_width(expanded.as_ptr());
-    if (*pl).label_width > aw {
-        (*pl).label_width = aw;
+    pl.label_width = format_width(expanded.as_ptr());
+    if pl.label_width > aw {
+        pl.label_width = aw;
     }
-    pcursor = utf8_strwidth(&(*pr).buffer, (*pr).index as ssize_t);
-    pwidth = utf8_strwidth(
-        &(*pr).buffer,
-        -(1 as ::core::ffi::c_int) as ssize_t,
-    );
-    if (*pr).flags & PROMPT_QUOTENEXT != 0 {
+    pcursor = utf8_strwidth(&pr.buffer, pr.index as ssize_t);
+    pwidth = utf8_strwidth(&pr.buffer, -(1 as ::core::ffi::c_int) as ssize_t);
+    if pr.flags & PROMPT_QUOTENEXT != 0 {
         pwidth = pwidth.wrapping_add(1);
     }
-    avail = aw.wrapping_sub((*pl).label_width);
+    avail = aw.wrapping_sub(pl.label_width);
     if avail == 0 as u_int {
-        (*pl).input_offset = 0 as u_int;
-        (*pl).input_width = 0 as u_int;
-        (*pl).cursor_x = (*pl).label_width;
+        pl.input_offset = 0 as u_int;
+        pl.input_width = 0 as u_int;
+        pl.cursor_x = pl.label_width;
     } else {
         if pcursor >= avail {
             offset = pcursor.wrapping_sub(avail).wrapping_add(1 as u_int);
@@ -705,49 +664,49 @@ unsafe fn prompt_layout(
         if width > avail {
             width = avail;
         }
-        (*pl).input_offset = offset;
-        (*pl).input_width = width;
-        (*pl).cursor_x = (*pl).label_width.wrapping_add(pcursor).wrapping_sub(offset);
+        pl.input_offset = offset;
+        pl.input_width = width;
+        pl.cursor_x = pl.label_width.wrapping_add(pcursor).wrapping_sub(offset);
     }
-    (*pl).content_width = (*pl).label_width.wrapping_add((*pl).input_width);
-    if let Some(display) = (*pr).completion.display.as_deref().filter(|_| {
-        (*pr).index == utf8_strlen(&(*pr).buffer) && (*pl).cursor_x < aw
-    })
+    pl.content_width = pl.label_width.wrapping_add(pl.input_width);
+    if let Some(display) = pr
+        .completion
+        .display
+        .as_deref()
+        .filter(|_| pr.index == utf8_strlen(&pr.buffer) && pl.cursor_x < aw)
     {
-        avail = aw.wrapping_sub((*pl).cursor_x);
+        avail = aw.wrapping_sub(pl.cursor_x);
         width = utf8_cstrwidth(display);
         if width > avail {
             width = avail;
         }
-        end = (*pl).cursor_x.wrapping_add(width);
-        if end > (*pl).content_width {
-            (*pl).content_width = end;
+        end = pl.cursor_x.wrapping_add(width);
+        if end > pl.content_width {
+            pl.content_width = end;
         }
     }
-    if (*pl).content_width > aw {
-        (*pl).content_width = aw;
+    if pl.content_width > aw {
+        pl.content_width = aw;
     }
-    if !sy.is_null() {
-        match (*sy).align as ::core::ffi::c_uint {
+    if let Some(sy) = sy.as_ref() {
+        match sy.align as ::core::ffi::c_uint {
             2 | 4 => {
-                (*pl).content_x = ax.wrapping_add(
-                    aw.wrapping_sub((*pl).content_width)
-                        .wrapping_div(2 as u_int),
-                );
+                pl.content_x =
+                    ax.wrapping_add(aw.wrapping_sub(pl.content_width).wrapping_div(2 as u_int));
             }
             3 => {
-                (*pl).content_x = ax.wrapping_add(aw).wrapping_sub((*pl).content_width);
+                pl.content_x = ax.wrapping_add(aw).wrapping_sub(pl.content_width);
             }
             _ => {
-                (*pl).content_x = ax;
+                pl.content_x = ax;
             }
         }
     } else {
-        (*pl).content_x = ax;
+        pl.content_x = ax;
     }
-    (*pl).input_x = (*pl).content_x.wrapping_add((*pl).label_width);
-    (*pl).cursor_x = (*pl).cursor_x.wrapping_add((*pl).content_x);
-    expanded
+    pl.input_x = pl.content_x.wrapping_add(pl.label_width);
+    pl.cursor_x = pl.cursor_x.wrapping_add(pl.content_x);
+    (pl, expanded)
 }
 unsafe fn prompt_mouse_complete(
     mut pr: *mut prompt,
@@ -808,38 +767,11 @@ unsafe fn prompt_mouse_complete(
     }
     return PROMPT_KEY_HANDLED;
 }
-pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
-    let mut ctx: *mut screen_write_ctx = (*pd).ctx;
-    let mut s: *mut screen = (*ctx).s;
-    let mut ax: u_int = (*pd).area_x;
-    let mut py: u_int = (*pd).prompt_line;
-    let mut cx: *mut u_int = ::core::ptr::null_mut::<u_int>();
-    let mut aw: u_int = (*pd).area_width;
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut pl: prompt_layout = prompt_layout {
-        area_x: 0,
-        area_width: 0,
-        content_x: 0,
-        content_width: 0,
-        label_width: 0,
-        input_x: 0,
-        cursor_x: 0,
-        input_offset: 0,
-        input_width: 0,
-    };
+pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
+    let mut s: *mut screen = ctx.s;
+    let mut ax: u_int = pd.area_x;
+    let mut py: u_int = pd.prompt_line;
+    let mut aw: u_int = pd.area_width;
     let mut sy: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -869,39 +801,32 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    let mut i: u_int = 0;
     let mut width: u_int = 0;
     let mut pcursor: u_int = 0;
-    if (*pr).flags & PROMPT_COMMANDMODE != 0 {
-        (*s).default_cstyle = (*pr).command_cstyle;
-        (*s).default_mode = (*pr).command_cmode;
-        (*s).default_ccolour = (*pr).command_ccolour;
+    if pr.flags & PROMPT_COMMANDMODE != 0 {
+        (*s).default_cstyle = pr.command_cstyle;
+        (*s).default_mode = pr.command_cmode;
+        (*s).default_ccolour = pr.command_ccolour;
     } else {
-        (*s).default_cstyle = (*pr).cstyle;
-        (*s).default_mode = (*pr).cmode;
-        (*s).default_ccolour = (*pr).ccolour;
+        (*s).default_cstyle = pr.cstyle;
+        (*s).default_mode = pr.cmode;
+        (*s).default_ccolour = pr.ccolour;
     }
-    let expanded = prompt_layout(pr, ax, aw, &raw mut pl, &raw mut sy);
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw mut sy.gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    cx = (*pd).cursor_x;
-    *cx = pl.cursor_x;
+    let (pl, expanded) = prompt_layout(pr, ax, aw, Some(&mut sy));
+    let mut gc = sy.gc;
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         ax as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
     if sy.fill != 8 as ::core::ffi::c_int {
-        screen_write_clearcharacter(&mut *ctx, aw, sy.fill as u_int);
+        screen_write_clearcharacter(ctx, aw, sy.fill as u_int);
     }
-    pcursor = utf8_strwidth(&(*pr).buffer, (*pr).index as ssize_t);
+    pcursor = utf8_strwidth(&pr.buffer, pr.index as ssize_t);
     if pl.content_width != 0 as u_int {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             pl.content_x as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -909,7 +834,7 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
         if pl.label_width != 0 as u_int {
             format_draw(
                 ctx,
-                &raw mut gc,
+                &mut gc,
                 pl.label_width,
                 expanded.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
@@ -917,16 +842,13 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
             );
         }
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             pl.input_x as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         width = 0 as u_int;
-        i = 0 as u_int;
-        while (*prompt_buffer_cells(pr).offset(i as isize)).size as ::core::ffi::c_int
-            != 0 as ::core::ffi::c_int
-        {
+        for cell in pr.buffer.iter().take_while(|cell| cell.size != 0) {
             if prompt_redraw_quote(
                 pr,
                 pcursor,
@@ -934,8 +856,8 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
                 ctx,
                 pl.input_offset,
                 pl.input_width,
-                &raw mut width,
-                &raw mut gc,
+                &mut width,
+                &mut gc,
             ) == 0
             {
                 break;
@@ -944,14 +866,13 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
                 ctx,
                 pl.input_offset,
                 pl.input_width,
-                &raw mut width,
-                &raw mut gc,
-                prompt_buffer_cells(pr).offset(i as isize) as *mut utf8_data,
+                &mut width,
+                &mut gc,
+                cell,
             ) == 0
             {
                 break;
             }
-            i = i.wrapping_add(1);
         }
         prompt_redraw_quote(
             pr,
@@ -960,8 +881,8 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
             ctx,
             pl.input_offset,
             pl.input_width,
-            &raw mut width,
-            &raw mut gc,
+            &mut width,
+            &mut gc,
         );
         prompt_draw_complete(
             pr,
@@ -970,9 +891,10 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
             pl.content_width,
             pl.cursor_x,
             py,
-            &raw mut gc,
+            &gc,
         );
     }
+    pl.cursor_x
 }
 pub unsafe fn prompt_mouse(
     mut pr: *mut prompt,
@@ -983,17 +905,6 @@ pub unsafe fn prompt_mouse(
 ) -> prompt_key_result {
     let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
-    let mut pl: prompt_layout = prompt_layout {
-        area_x: 0,
-        area_width: 0,
-        content_x: 0,
-        content_width: 0,
-        label_width: 0,
-        input_x: 0,
-        cursor_x: 0,
-        input_offset: 0,
-        input_width: 0,
-    };
     let mut sy: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -1030,14 +941,11 @@ pub unsafe fn prompt_mouse(
     if x < ax || x >= ax.wrapping_add(aw) {
         return PROMPT_KEY_NOT_HANDLED;
     }
-    drop(prompt_layout(pr, ax, aw, &raw mut pl, &raw mut sy));
+    let (pl, _) = prompt_layout(&*pr, ax, aw, Some(&mut sy));
     if pl.input_width == 0 as u_int {
         return PROMPT_KEY_HANDLED;
     }
-    pwidth = utf8_strwidth(
-        &(*pr).buffer,
-        -(1 as ::core::ffi::c_int) as ssize_t,
-    );
+    pwidth = utf8_strwidth(&(*pr).buffer, -(1 as ::core::ffi::c_int) as ssize_t);
     if (*pr).flags & PROMPT_QUOTENEXT != 0 {
         pwidth = pwidth.wrapping_add(1);
     }

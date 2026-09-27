@@ -360,13 +360,6 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         link: 0,
     };
     let mut dgc: *const grid_cell = &raw const grid_default_cell;
-    let mut pdd: prompt_draw_data = prompt_draw_data {
-        ctx: ::core::ptr::null_mut::<screen_write_ctx>(),
-        cursor_x: ::core::ptr::null_mut::<u_int>(),
-        area_x: 0,
-        area_width: 0,
-        prompt_line: 0,
-    };
     screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     if sy <= 1 as u_int {
@@ -446,13 +439,13 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         i = i.wrapping_add(1);
     }
     if !(*data).prompt.is_null() {
-        pdd.ctx = &raw mut ctx;
-        pdd.cursor_x = &raw mut (*data).prompt_cx;
-        pdd.area_x = 0 as u_int;
-        pdd.area_width = sx;
-        pdd.prompt_line = sy.wrapping_sub(1 as u_int);
+        let pdd = prompt_draw_data {
+            area_x: 0 as u_int,
+            area_width: sx,
+            prompt_line: sy.wrapping_sub(1 as u_int),
+        };
         (*s).mode |= MODE_CURSOR;
-        prompt_draw((*data).prompt, &raw mut pdd);
+        (*data).prompt_cx = prompt_draw(&*(*data).prompt, &mut ctx, pdd);
         screen_write_cursormove(
             &mut ctx,
             (*data).prompt_cx as ::core::ffi::c_int,

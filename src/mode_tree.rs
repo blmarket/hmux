@@ -1297,7 +1297,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
         mode_tree_draw_help(mtd, &raw mut ctx);
     }
     if !(*mtd).prompt.is_null() {
-        mode_tree_draw_prompt(mtd, &raw mut ctx);
+        mode_tree_draw_prompt(mtd, &mut ctx);
     } else {
         (*s).mode &= !MODE_CURSOR;
         screen_write_cursormove(
@@ -1309,15 +1309,8 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     }
     screen_write_stop(&mut ctx);
 }
-unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, mut ctx: *mut screen_write_ctx) {
+unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_write_ctx) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut pdd: prompt_draw_data = prompt_draw_data {
-        ctx: ::core::ptr::null_mut::<screen_write_ctx>(),
-        cursor_x: ::core::ptr::null_mut::<u_int>(),
-        area_x: 0,
-        area_width: 0,
-        prompt_line: 0,
-    };
     let mut sx: u_int = (*s).grid().sx;
     let mut sy: u_int = (*s).grid().sy;
     let mut py: u_int = 0;
@@ -1329,15 +1322,15 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, mut ctx: *mut scre
     } else {
         py = sy.wrapping_sub(1 as u_int);
     }
-    pdd.ctx = ctx;
-    pdd.cursor_x = &raw mut (*mtd).prompt_cx;
-    pdd.area_x = 0 as u_int;
-    pdd.area_width = sx;
-    pdd.prompt_line = py;
+    let pdd = prompt_draw_data {
+        area_x: 0 as u_int,
+        area_width: sx,
+        prompt_line: py,
+    };
     (*s).mode |= MODE_CURSOR;
-    prompt_draw((*mtd).prompt, &raw mut pdd);
+    (*mtd).prompt_cx = prompt_draw(&*(*mtd).prompt, ctx, pdd);
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         (*mtd).prompt_cx as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,

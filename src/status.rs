@@ -804,13 +804,6 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         bg: 0,
     };
     let mut old_screen: screen = screen::empty();
-    let mut pdd: prompt_draw_data = prompt_draw_data {
-        ctx: ::core::ptr::null_mut::<screen_write_ctx>(),
-        cursor_x: ::core::ptr::null_mut::<u_int>(),
-        area_x: 0,
-        area_width: 0,
-        prompt_line: 0,
-    };
     let mut lines: u_int = 0;
     let mut ax: u_int = 0;
     let mut aw: u_int = 0;
@@ -838,12 +831,12 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         (*c).tty.sx,
         lines,
     );
-    pdd.ctx = &raw mut ctx;
-    pdd.area_x = ax;
-    pdd.area_width = aw;
-    pdd.prompt_line = promptline;
-    pdd.cursor_x = &raw mut (*sl).prompt_cx;
-    prompt_draw((*c).prompt, &raw mut pdd);
+    let pdd = prompt_draw_data {
+        area_x: ax,
+        area_width: aw,
+        prompt_line: promptline,
+    };
+    (*sl).prompt_cx = prompt_draw(&*(*c).prompt, &mut ctx, pdd);
     screen_write_stop(&mut ctx);
     if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&mut old_screen);
