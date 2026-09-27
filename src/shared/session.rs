@@ -95,64 +95,6 @@ pub struct session_groups {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
 }
 
-/// One retained session reference with its existing deferred release policy.
-pub struct SessionOwner {
-    owner: Option<std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    release_from: &'static std::ffi::CStr,
-}
-
-impl SessionOwner {
-    /// Upgrade an observer into an operation guard with deferred release.
-    pub(crate) fn upgrade(
-        observer: &std::rc::Weak<std::cell::UnsafeCell<session>>,
-        release_from: &'static std::ffi::CStr,
-    ) -> Option<Self> {
-        Some(Self {
-            owner: Some(observer.upgrade()?),
-            release_from,
-        })
-    }
-
-    /// Retain a live session, preserving null as absence.
-    ///
-    /// # Safety
-    /// A non-null pointer must identify a live Rc-owned session.
-    pub unsafe fn retain(
-        ptr: *mut session,
-        retain_from: &'static std::ffi::CStr,
-        release_from: &'static std::ffi::CStr,
-    ) -> Option<Self> {
-        if ptr.is_null() {
-            return None;
-        }
-        crate::src::session::session_add_ref(ptr, retain_from.as_ptr());
-        Some(Self {
-            owner: Some(super::rc::take(ptr)),
-            release_from,
-        })
-    }
-
-    pub fn as_ptr(&self) -> *mut session {
-        super::rc::as_ptr(self.owner.as_ref().expect("live session owner"))
-    }
-}
-
-impl Drop for SessionOwner {
-    fn drop(&mut self) {
-        if let Some(owner) = self.owner.take() {
-            unsafe {
-                crate::src::session::session_remove_ref(owner, self.release_from);
-            }
-        }
-    }
-}
-
-pub fn session_owner_ptr(owner: &Option<SessionOwner>) -> *mut session {
-    owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), SessionOwner::as_ptr)
-}
-
 #[cfg(test)]
 mod retained_session_tests {
     use super::*;
@@ -185,15 +127,15 @@ mod retained_session_tests {
     }
 
     #[test]
-    fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {
+    fn final_reference_release_defers_cleanup_until_dispatch_or_cancellation() {
         unsafe {
             for cancel in [false, true] {
                 let ptr = rc::new(session::empty());
                 let observer = rc::downgrade(ptr);
-                let owner = SessionOwner::retain(ptr, c"owner-test", c"owner-test").unwrap();
+                let owner = observer.upgrade().unwrap();
                 rc::release(ptr);
-                assert_eq!(owner.as_ptr(), ptr);
-                drop(owner);
+                assert_eq!(rc::as_ptr(&owner), ptr);
+                crate::src::session::session_remove_ref(owner, c"owner-test");
                 assert_eq!(observer.strong_count(), 1);
                 if cancel {
                     reactor::shutdown_runtime();
@@ -203,7 +145,6 @@ mod retained_session_tests {
                 assert_eq!(observer.strong_count(), 0);
                 reactor::shutdown_runtime();
             }
-            assert!(SessionOwner::retain(std::ptr::null_mut(), c"test", c"test").is_none());
         }
     }
 }

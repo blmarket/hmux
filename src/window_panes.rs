@@ -46,7 +46,7 @@ use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUS_BOTTOM, PANE_STATUS_TOP}
 use crate::src::shared::rc;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::{session, SessionOwner};
+use crate::src::shared::session::session;
 use crate::src::shared::style::*;
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::shared::window::{
@@ -64,7 +64,7 @@ use crate::src::window::{
 use crate::src::window_clock::window_clock_table;
 use std::cell::UnsafeCell;
 use std::ffi::CString;
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_panes_modedata {
@@ -134,9 +134,9 @@ pub const WINDOW_PANES_BORDER_L: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_R: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_U: ::core::ffi::c_int = 4;
 pub const WINDOW_PANES_BORDER_D: ::core::ffi::c_int = 8;
-unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<SessionOwner> {
-    SessionOwner::upgrade(&(*data).session, c"window-panes-session")
-        .filter(|owner| session_alive(owner.as_ptr()) != 0)
+unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<Rc<UnsafeCell<session>>> {
+    (*data).session.upgrade()
+        .filter(|owner| session_alive(rc::as_ptr(owner)) != 0)
 }
 
 // The caller holds session_owner through every use of the raw output
@@ -146,7 +146,7 @@ unsafe fn window_panes_get_source(
     mut sp: *mut *mut session,
     mut wlp: *mut *mut winlink,
     mut wp: *mut *mut window,
-    session_owner: &mut Option<SessionOwner>,
+    session_owner: &mut Option<Rc<UnsafeCell<session>>>,
 ) -> ::core::ffi::c_int {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -156,13 +156,13 @@ unsafe fn window_panes_get_source(
         return 0 as ::core::ffi::c_int;
     }
     s = session_find_by_id((*data).source_session);
-    *session_owner = SessionOwner::retain(s, c"window-panes-source", c"window-panes-source");
+    *session_owner = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
     if !s.is_null() {
         wl = winlink_find_by_window(&raw mut (*s).windows, w);
     }
     if wl.is_null() {
         *session_owner = window_panes_session(data);
-        s = session_owner.as_ref().map_or(std::ptr::null_mut(), SessionOwner::as_ptr);
+        s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     }
     if !s.is_null() {
         wl = winlink_find_by_window(&raw mut (*s).windows, w);
@@ -333,7 +333,7 @@ unsafe fn window_panes_get_border_cell(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut wp: *mut window_pane = mode_pane;
     let session_owner = window_panes_session(data);
-    let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), SessionOwner::as_ptr);
+    let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     memcpy(
         gc as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
@@ -1117,7 +1117,7 @@ unsafe fn window_panes_draw_format(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
-    let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), SessionOwner::as_ptr);
+    let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw };
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if sx == 0 as u_int {
@@ -1181,7 +1181,7 @@ unsafe fn window_panes_draw_number(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
-    let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), SessionOwner::as_ptr);
+    let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw };
     let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options);
@@ -1856,7 +1856,7 @@ mod session_observer_tests {
     use crate::src::session::{sessions, sessions_insert, sessions_remove};
 
     #[test]
-    fn session_observer_rejects_removed_sessions_and_defers_guard_cleanup() {
+    fn session_observer_rejects_removed_sessions_and_guard_keeps_allocation_alive() {
         unsafe {
             let saved = std::ptr::replace(
                 &raw mut sessions,
@@ -1882,12 +1882,13 @@ mod session_observer_tests {
             };
             assert_eq!(rc::strong_count(session), 1);
             let guard = window_panes_session(&mut mode).unwrap();
-            assert_eq!(guard.as_ptr(), session);
+            assert_eq!(rc::as_ptr(&guard), session);
             sessions_remove(&raw mut sessions, session);
             assert!(window_panes_session(&mut mode).is_none());
             rc::release(session);
+            assert!(observer.upgrade().is_some(), "guard keeps allocation alive");
             drop(guard);
-            assert!(observer.upgrade().is_some(), "guard cleanup is deferred");
+            assert!(observer.upgrade().is_none());
             shutdown_runtime();
             assert!(observer.upgrade().is_none());
             assert!(window_panes_session(&mut mode).is_none());

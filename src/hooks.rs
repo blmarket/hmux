@@ -1,5 +1,4 @@
 use crate::src::shared::client::{ClientOwner, client_owner_ptr};
-use crate::src::shared::session::SessionOwner;
 use crate::src::shared::rc;
 use crate::src::window::window_pane_upgrade;
 use std::cell::UnsafeCell;
@@ -427,8 +426,8 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let wl = change.wl;
     let client_owner = change.c.as_ref().and_then(ClientOwner::upgrade);
     let c = client_owner_ptr(&client_owner);
-    let session_owner = change.s.as_ref().and_then(|session| SessionOwner::upgrade(session, c"hook-monitor"));
-    let s = session_owner.as_ref().map_or(std::ptr::null_mut(), SessionOwner::as_ptr);
+    let session_owner = change.s.as_ref().and_then(Weak::upgrade);
+    let s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let pane_owner = change.wp.as_ref().and_then(|pane| window_pane_upgrade(pane));
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut fs: cmd_find_state = cmd_find_state {

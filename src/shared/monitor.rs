@@ -2,7 +2,7 @@
 
 use super::abi::{time_t, u_int};
 use std::cell::UnsafeCell;
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 use super::client::client;
 use super::event::event;
 use super::pane::window_pane;
@@ -21,7 +21,7 @@ pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int
 #[repr(C)]
 pub struct monitor_set {
     pub client: Option<Weak<UnsafeCell<client>>>,
-    pub session: Option<super::session::SessionOwner>,
+    pub session: Option<Rc<UnsafeCell<session>>>,
     pub cb: monitor_cb,
     pub items: monitor_items,
     pub timer: event,

@@ -1,4 +1,3 @@
-use crate::src::shared::session::{SessionOwner, session_owner_ptr};
 use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
@@ -45,7 +44,9 @@ use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 pub struct cmd_run_shell_data {
     pub client: Option<ClientOwner>,
@@ -53,7 +54,7 @@ pub struct cmd_run_shell_data {
     pub state: Option<Box<args_command_state>>,
     pub cwd: CString,
     pub item: *mut cmdq_item,
-    pub s: Option<SessionOwner>,
+    pub s: Option<Rc<UnsafeCell<session>>>,
     pub wp_id: ::core::ffi::c_int,
     pub timer: event,
     pub flags: ::core::ffi::c_int,
@@ -243,7 +244,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
-    cdata.s = SessionOwner::retain(s, c"cmd_run_shell_exec", c"cmd_run_shell_free");
+    cdata.s = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
     if !delay.is_null() {
         // The pinned tmux build treats negative, nonfinite and out-of-range
         // delays as expired. Rust's saturating float casts would instead turn
@@ -281,7 +282,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             cmd,
             &Vec::new(),
             None,
-            session_owner_ptr(&cdata.s),
+            cdata.s.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr),
             Some(cdata.cwd.as_c_str()),
             None,
             None,
@@ -424,7 +425,9 @@ impl Drop for cmd_run_shell_data {
     fn drop(&mut self) {
         unsafe {
             event_del(&mut self.timer);
-            drop(self.s.take());
+            if let Some(session) = self.s.take() {
+                rc::release_later(session);
+            }
             drop(self.client.take());
             drop(self.state.take());
         }
