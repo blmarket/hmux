@@ -1,4 +1,4 @@
-//! Prompt history readers retain immutable entries across pruning and clearing.
+//! Prompt history owns strings and supplies independent snapshots to readers.
 
 use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::options::{
@@ -13,7 +13,6 @@ use hmux2::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
 use hmux2::src::tmux::global_options;
 use std::ffi::{CStr, CString};
 use std::os::unix::ffi::OsStrExt;
-use std::rc::Rc;
 
 #[test]
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
@@ -42,21 +41,18 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             let text = CString::new(format!("entry-{n}")).unwrap();
             prompt_add_history(&text, PROMPT_TYPE_COMMAND);
         }
-        assert!(Rc::ptr_eq(
+        assert_eq!(
             &prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap(),
             &first
-        ));
-        assert_eq!(first.as_ref().to_bytes(), b"\xff-first");
+        );
+        assert_eq!(first.as_c_str().to_bytes(), b"\xff-first");
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 129);
         prompt_add_history(c"entry-127", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 129);
 
-        let first_weak = Rc::downgrade(&first);
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         assert_eq!(first.to_bytes(), b"\xff-first");
-        assert_eq!(Rc::strong_count(&first), 1);
         drop(first);
-        assert!(first_weak.upgrade().is_none());
         options_set_number(options, c"prompt-history-limit".as_ptr(), 3);
         for text in [c"one", c"two", c"three"] {
             prompt_add_history(text, PROMPT_TYPE_COMMAND);
@@ -64,13 +60,13 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         let middle = prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap();
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 3);
-        assert!(Rc::ptr_eq(
+        assert_eq!(
             &prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap(),
             &middle
-        ));
-        assert_eq!(middle.as_ref(), c"two");
+        );
+        assert_eq!(middle.as_c_str(), c"two");
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 2).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 2).unwrap().as_c_str(),
             c"four"
         );
 
@@ -80,7 +76,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
             c"three"
         );
 
@@ -88,13 +84,13 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(
             prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND)
                 .unwrap()
-                .as_ref(),
+                .as_c_str(),
             c"four"
         );
         assert_eq!(
             prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND)
                 .unwrap()
-                .as_ref(),
+                .as_c_str(),
             c"three"
         );
         assert!(prompt_up_history(&mut indexes, PROMPT_TYPE_COMMAND).is_none());
@@ -133,18 +129,13 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         // A retained input stays valid while the registry prunes its entry.
         let oldest = prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap();
         prompt_add_history(&oldest, PROMPT_TYPE_COMMAND);
-        assert_eq!(oldest.as_ref(), c"three");
-        assert_eq!(Rc::strong_count(&oldest), 1);
-        assert!(!Rc::ptr_eq(
-            &oldest,
-            &prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap()
-        ));
+        assert_eq!(oldest.as_c_str(), c"three");
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
             c"four"
         );
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_c_str(),
             c"three"
         );
 
@@ -163,11 +154,11 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
             c"four"
         );
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_c_str(),
             c"three"
         );
         prompt_history_clear(PROMPT_TYPE_COMMAND);
@@ -175,11 +166,11 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
             c"one"
         );
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_ref(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_c_str(),
             c"two"
         );
 
@@ -207,7 +198,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             assert_eq!(
                 prompt_history_get(PROMPT_TYPE_COMMAND, index as u32)
                     .unwrap()
-                    .as_ref()
+                    .as_c_str()
                     .to_bytes(),
                 expected
             );
@@ -216,7 +207,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(
             prompt_history_get(PROMPT_TYPE_SEARCH, 0)
                 .unwrap()
-                .as_ref()
+                .as_c_str()
                 .to_bytes(),
             b"a:b"
         );

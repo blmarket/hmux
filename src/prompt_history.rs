@@ -10,7 +10,6 @@ use crate::src::shared::stdio::FILE;
 use crate::src::tmux::{find_home_cstr, global_options};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
 
 // Keep the bytes through the first newline, including embedded NULs. The
 // history parser below intentionally sees only the first C-string segment.
@@ -27,10 +26,10 @@ unsafe fn read_history_line(stream: &mut CFile, line: &mut Vec<u8>) -> bool {
         line.push(ch as u8);
     }
 }
-// History lives on the server thread. Readers retain immutable entries across
-// pruning or clearing without borrowing the registry during command output.
+// History lives on the server thread and owns its strings. Readers take an
+// independent copy when input or output must outlive a registry borrow.
 thread_local! {
-    static PROMPT_HISTORY: RefCell<[Vec<Rc<CStr>>; PROMPT_NTYPES as usize]> =
+    static PROMPT_HISTORY: RefCell<[Vec<CString>; PROMPT_NTYPES as usize]> =
         const { RefCell::new([Vec::new(), Vec::new()]) };
 }
 
@@ -147,7 +146,7 @@ pub unsafe fn prompt_save_history() {
 pub fn prompt_up_history(
     indexes: &mut [u_int; PROMPT_NTYPES as usize],
     kind: prompt_type,
-) -> Option<Rc<CStr>> {
+) -> Option<CString> {
     PROMPT_HISTORY.with_borrow(|histories| {
         let history = histories.get(kind as usize)?;
         let index = &mut indexes[kind as usize];
@@ -163,7 +162,7 @@ pub fn prompt_up_history(
 pub fn prompt_down_history(
     indexes: &mut [u_int; PROMPT_NTYPES as usize],
     kind: prompt_type,
-) -> Option<Rc<CStr>> {
+) -> Option<CString> {
     PROMPT_HISTORY.with_borrow(|histories| {
         let history = histories.get(kind as usize)?;
         let index = &mut indexes[kind as usize];
@@ -189,7 +188,7 @@ pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
     PROMPT_HISTORY.with_borrow_mut(|histories| {
         let history = &mut histories[kind as usize];
         let old_size = history.len() as u_int;
-        let new = !history.last().is_some_and(|last| last.as_ref() == line);
+        let new = !history.last().is_some_and(|last| last.as_c_str() == line);
         if limit > old_size {
             if !new {
                 return;
@@ -198,7 +197,7 @@ pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
             return;
         }
 
-        let added = (new && limit != 0).then(|| Rc::<CStr>::from(line));
+        let added = (new && limit != 0).then(|| line.to_owned());
         if limit <= old_size {
             let free_count = (old_size + u_int::from(new) - limit).min(old_size) as usize;
             history.drain(..free_count);
@@ -220,7 +219,7 @@ pub fn prompt_history_size(kind: prompt_type) -> u_int {
     })
 }
 
-pub fn prompt_history_get(kind: prompt_type, index: u_int) -> Option<Rc<CStr>> {
+pub fn prompt_history_get(kind: prompt_type, index: u_int) -> Option<CString> {
     PROMPT_HISTORY
         .with_borrow(|histories| histories.get(kind as usize)?.get(index as usize).cloned())
 }

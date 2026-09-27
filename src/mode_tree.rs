@@ -382,8 +382,8 @@ pub fn mode_tree_get_current(mtd: &mode_tree_data) -> ModeTreeItemData {
         .itemdata
         .clone()
 }
-pub fn mode_tree_get_current_name(mtd: &mode_tree_data) -> Rc<CStr> {
-    Rc::clone(&mtd.lines[mtd.current as usize].item.borrow().name)
+pub fn mode_tree_get_current_name(mtd: &mode_tree_data) -> CString {
+    mtd.lines[mtd.current as usize].item.borrow().name.clone()
 }
 pub unsafe fn mode_tree_expand_current(mtd: *mut mode_tree_data) {
     let item = Rc::clone(&(&(*mtd).lines)[(*mtd).current as usize].item);
@@ -647,7 +647,7 @@ pub unsafe fn mode_tree_add(
         parent: parent.map_or_else(Weak::new, Rc::downgrade),
         itemdata,
         tag,
-        name: Rc::from(name),
+        name: name.to_owned(),
         text: text.map(CStr::to_owned),
         ..mode_tree_item::empty()
     };
@@ -992,7 +992,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             }
             let field_width = mti.align * *alignlen.as_mut_ptr().offset(line.depth as isize);
             let mut name = Vec::new();
-            mode_tree_append_printf_string(&mut name, Some(mti.name.as_ref()));
+            mode_tree_append_printf_string(&mut name, Some(mti.name.as_c_str()));
             let padding = (field_width.unsigned_abs() as usize).saturating_sub(name.len());
             let mut row = Vec::with_capacity(
                 name.len()
@@ -1155,7 +1155,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 None,
             );
             let mut label_bytes = b" ".to_vec();
-            mode_tree_append_printf_string(&mut label_bytes, Some(mti.name.as_ref()));
+            mode_tree_append_printf_string(&mut label_bytes, Some(mti.name.as_c_str()));
             if !(&(*mtd).sort_crit.order_seq).is_empty() {
                 label_bytes.extend_from_slice(b" (sort: ");
                 let order = sort_order_to_string((*mtd).sort_crit.order);
@@ -1464,7 +1464,7 @@ unsafe fn mode_tree_search(mtd: *mut mode_tree_data, forward: bool) -> Option<Mo
         }
         let (name, itemdata) = {
             let row = item.borrow();
-            (Rc::clone(&row.name), row.itemdata.clone())
+            (row.name.clone(), row.itemdata.clone())
         };
         let matched = if let Some(callback) = (*mtd).searchcb.as_mut() {
             callback(&itemdata, search, icase)
@@ -2777,7 +2777,6 @@ mod row_owner_tests {
             (*tree).current = 1;
             let selected = (&(*tree).lines)[1].clone();
             let name = mode_tree_get_current_name(&*tree);
-            let name_observer = Rc::downgrade(&name);
             drop(parent);
             drop(child);
             mode_tree_free(tree);
@@ -2790,7 +2789,6 @@ mod row_owner_tests {
             assert!(child_observer.upgrade().is_none());
             assert_eq!(name.to_bytes(), b"child \xff");
             drop(name);
-            assert!(name_observer.upgrade().is_none());
         }
     }
 
@@ -2819,7 +2817,7 @@ mod row_owner_tests {
                         mode_tree_free_items(&mut (*tree).children);
                         assert!(first_observer.upgrade().is_some());
                         assert!(second_observer.upgrade().is_none());
-                        assert_eq!(row.borrow().name.as_ref(), c"first");
+                        assert_eq!(row.borrow().name.as_c_str(), c"first");
                     },
                     std::ptr::null_mut(),
                     KEYC_NONE,

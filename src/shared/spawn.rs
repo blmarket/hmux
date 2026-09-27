@@ -29,7 +29,8 @@ pub struct spawn_editor_state {
 }
 
 /// Rust-only callback so the editor result can move as owned binary bytes.
-pub type spawn_finish_edit_cb = Option<Box<dyn FnOnce(Option<Vec<u8>>)>>;
+pub type spawn_finish_edit_cb =
+    Option<Box<dyn FnOnce(std::ptr::NonNull<spawn_editor_state>, Option<Vec<u8>>)>>;
 
 #[repr(C)]
 pub struct spawn_context {

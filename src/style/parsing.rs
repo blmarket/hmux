@@ -15,7 +15,7 @@ pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::FORMAT_NOJOBS;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
-pub use crate::src::shared::hyperlinks::HyperlinkRef;
+use crate::src::shared::hyperlinks::hyperlinks_uri;
 pub use crate::src::shared::key::key_event;
 pub use crate::src::shared::layout::layout_cell;
 pub use crate::src::shared::limits::UINT_MAX;
@@ -956,12 +956,14 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub fn style_link(sy: &style) -> Option<HyperlinkRef> {
+/// Copy link data before callers insert it into a table, which may evict the source.
+pub fn style_link(sy: &style) -> Option<Box<hyperlinks_uri>> {
     if sy.link == 0 {
         return None;
     }
     let table = style_hyperlinks(false)?;
-    hyperlinks_get(&table, sy.link)
+    let entry = hyperlinks_get(&table, sy.link)?;
+    Some(Box::new(entry.clone()))
 }
 pub unsafe fn style_add(
     mut gc: *mut grid_cell,

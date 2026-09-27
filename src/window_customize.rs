@@ -1,7 +1,8 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
+use refbox::RefBox;
 use std::borrow::Cow;
-use std::cell::{Cell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -260,7 +261,6 @@ pub struct window_customize_editdata {
     pub wp_id: u_int,
     pub edit_type: window_customize_edit_type,
     pub item: Box<window_customize_itemdata>,
-    pub editor: Cell<Option<NonNull<spawn_editor_state>>>,
 }
 pub type window_customize_edit_type = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_EDIT_ENVIRONMENT: window_customize_edit_type = 3;
@@ -3004,10 +3004,33 @@ struct CustomizePromptItem {
 }
 
 fn window_customize_prompt_callbacks<T: 'static>(
-    owner: Rc<T>,
+    owner: RefBox<T>,
     callback: unsafe fn(
         Option<NonNull<client>>,
         &T,
+        Option<&CStr>,
+        prompt_key_result,
+    ) -> prompt_result,
+) -> (mode_tree_prompt_input_cb, prompt_free_cb) {
+    let weak = RefBox::downgrade(&owner);
+    let inputcb: mode_tree_prompt_input_cb = Some(Box::new(move |client, text, key| {
+        let Ok(owner) = weak.try_borrow_mut() else {
+            return PROMPT_CLOSE;
+        };
+        // Keep the callback's borrowed input alive if it closes its own prompt.
+        unsafe { callback(client, &owner, text, key) }
+    }));
+    // mode_tree invokes cleanup before releasing its own retained tree. Cached
+    // input callbacks only keep a weak reference and cannot extend this lifetime.
+    let freecb: prompt_free_cb = Some(Box::new(move || drop(owner)));
+    (inputcb, freecb)
+}
+
+fn window_customize_mode_prompt_callbacks(
+    owner: Rc<UnsafeCell<window_customize_modedata>>,
+    callback: unsafe fn(
+        Option<NonNull<client>>,
+        &UnsafeCell<window_customize_modedata>,
         Option<&CStr>,
         prompt_key_result,
     ) -> prompt_result,
@@ -3248,7 +3271,7 @@ unsafe fn window_customize_set_environment(
     new_item.environ_flags = envent.unwrap().flags;
     window_customize_set_name(&mut *new_item, item.name.as_deref());
     let value = envent.unwrap().value.clone().unwrap_or_default();
-    let owner = Rc::new(CustomizePromptItem {
+    let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
             .upgrade()
@@ -3376,7 +3399,7 @@ unsafe fn window_customize_add_option(
     new_item.option_type = type_0;
     new_item.scope = scope;
     new_item.oo = oo;
-    let owner = Rc::new(CustomizePromptItem {
+    let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
             .upgrade()
@@ -3475,7 +3498,7 @@ unsafe fn window_customize_add_environment(
     new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
     new_item.scope = scope;
     new_item.environ = Some(target);
-    let owner = Rc::new(CustomizePromptItem {
+    let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
             .upgrade()
@@ -3494,7 +3517,11 @@ unsafe fn window_customize_add_environment(
         freecb,
     );
 }
-unsafe fn window_customize_edit_close_cb(buf: Option<Vec<u8>>, ed: Rc<window_customize_editdata>) {
+unsafe fn window_customize_edit_close_cb(
+    editor: NonNull<spawn_editor_state>,
+    buf: Option<Vec<u8>>,
+    ed: Box<window_customize_editdata>,
+) {
     let mut current_block: u64;
     let item = &*ed.item;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -3507,7 +3534,7 @@ unsafe fn window_customize_edit_close_cb(buf: Option<Vec<u8>>, ed: Rc<window_cus
         wme = (*wp).modes.active;
         if !wme.is_null() && (*wme).mode == &raw const window_customize_mode {
             data = (*wme).data as *mut window_customize_modedata;
-            if NonNull::new((*data).editor) == ed.editor.get() {
+            if NonNull::new((*data).editor) == Some(editor) {
                 (*data).editor = ::core::ptr::null_mut::<spawn_editor_state>();
             }
         }
@@ -3660,26 +3687,23 @@ unsafe fn window_customize_start_edit(
     } else {
         return;
     }
-    // Publish the editor identity after synchronous startup. Only the callback
-    // keeps this record once startup returns; cancellation drops its capture.
-    let ed = Rc::new(window_customize_editdata {
+    // The callback owns the record and receives editor identity at dispatch.
+    // Startup failure and cancellation drop the capture normally.
+    let ed = Box::new(window_customize_editdata {
         wp_id: (*(*data).wp).id,
         edit_type,
         item: window_customize_copy_item(item),
-        editor: Cell::new(None),
     });
     let bytes = value.to_bytes();
     let bytes = if bytes.is_empty() { b"\n" } else { bytes };
-    let callback_owner = Rc::clone(&ed);
     let editor = spawn_editor(
         c,
         |stream| spawn_editor_write(stream, bytes),
-        Some(Box::new(move |buf| unsafe {
-            window_customize_edit_close_cb(buf, callback_owner)
+        Some(Box::new(move |editor, buf| unsafe {
+            window_customize_edit_close_cb(editor, buf, ed)
         })),
     );
     if let Some(editor) = NonNull::new(editor) {
-        ed.editor.set(Some(editor));
         (*data).editor = editor.as_ptr();
     }
 }
@@ -3836,7 +3860,7 @@ unsafe fn window_customize_set_option(
         if !array_key.is_null() {
             window_customize_set_item_array_key(&mut *new_item, Some(CStr::from_ptr(array_key)));
         }
-        let owner = Rc::new(CustomizePromptItem {
+        let owner = RefBox::new(CustomizePromptItem {
             item: new_item,
             mode: crate::src::shared::rc::downgrade(data)
                 .upgrade()
@@ -3970,7 +3994,7 @@ unsafe fn window_customize_set_array_key(
     new_item.oo = item.oo;
     window_customize_set_name(&mut *new_item, item.name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, item.array_key.as_deref());
-    let owner = Rc::new(CustomizePromptItem {
+    let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
             .upgrade()
@@ -4201,7 +4225,7 @@ unsafe fn window_customize_set_key(
         new_item.scope = item.scope;
         window_customize_set_table(&mut *new_item, item.table.as_deref());
         new_item.key = key;
-        let owner = Rc::new(CustomizePromptItem {
+        let owner = RefBox::new(CustomizePromptItem {
             item: new_item,
             mode: crate::src::shared::rc::downgrade(data)
                 .upgrade()
@@ -4229,7 +4253,7 @@ unsafe fn window_customize_set_key(
         new_item.scope = item.scope;
         window_customize_set_table(&mut *new_item, item.table.as_deref());
         new_item.key = key;
-        let owner = Rc::new(CustomizePromptItem {
+        let owner = RefBox::new(CustomizePromptItem {
             item: new_item,
             mode: crate::src::shared::rc::downgrade(data)
                 .upgrade()
@@ -4370,7 +4394,7 @@ unsafe fn window_customize_add_key(
     new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
     new_item.scope = WINDOW_CUSTOMIZE_KEY;
     window_customize_set_table(&mut *new_item, Some(table));
-    let owner = Rc::new(CustomizePromptItem {
+    let owner = RefBox::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
             .upgrade()
@@ -4863,7 +4887,7 @@ unsafe fn window_customize_key(
                     let owner = crate::src::shared::rc::downgrade(data)
                         .upgrade()
                         .expect("live customize mode");
-                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                    let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
                         owner,
                         window_customize_change_current_callback,
                     );
@@ -4888,7 +4912,7 @@ unsafe fn window_customize_key(
                     let owner = crate::src::shared::rc::downgrade(data)
                         .upgrade()
                         .expect("live customize mode");
-                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                    let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
                         owner,
                         window_customize_change_tagged_callback,
                     );
@@ -4936,7 +4960,7 @@ unsafe fn window_customize_key(
                     let owner = crate::src::shared::rc::downgrade(data)
                         .upgrade()
                         .expect("live customize mode");
-                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                    let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
                         owner,
                         window_customize_change_current_callback,
                     );
@@ -4960,7 +4984,7 @@ unsafe fn window_customize_key(
                     let owner = crate::src::shared::rc::downgrade(data)
                         .upgrade()
                         .expect("live customize mode");
-                    let (inputcb, freecb) = window_customize_prompt_callbacks(
+                    let (inputcb, freecb) = window_customize_mode_prompt_callbacks(
                         owner,
                         window_customize_change_tagged_callback,
                     );
@@ -5017,6 +5041,7 @@ mod tag_tests {
 #[cfg(test)]
 mod item_owner_tests {
     use super::*;
+    use std::cell::Cell;
     use std::cell::RefCell;
 
     #[test]
@@ -5091,11 +5116,11 @@ mod item_owner_tests {
             }
             assert!(Rc::ptr_eq(&(&(*data).item_list)[0], &first_owner));
             let mode_observer = crate::src::shared::rc::downgrade(data);
-            let prompt_owner = Rc::new(CustomizePromptItem {
+            let prompt_owner = RefBox::new(CustomizePromptItem {
                 item: window_customize_copy_item(&first_owner),
                 mode: mode_observer.upgrade().unwrap(),
             });
-            let prompt_observer = Rc::downgrade(&prompt_owner);
+            let prompt_observer = RefBox::downgrade(&prompt_owner);
             let (mut inputcb, freecb) = window_customize_prompt_callbacks(prompt_owner, read_item);
             window_customize_destroy(data);
             assert_eq!(
@@ -5104,7 +5129,10 @@ mod item_owner_tests {
             );
             freecb.unwrap()();
             assert!(mode_observer.upgrade().is_none());
-            assert!(prompt_observer.upgrade().is_none());
+            assert!(matches!(
+                prompt_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
             // Caching the input callback must not keep a closed prompt alive.
             assert_eq!(
                 inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
@@ -5146,20 +5174,22 @@ mod item_owner_tests {
             PROMPT_CONTINUE
         }
         let drops = Rc::new(Cell::new(0));
-        let owner = Rc::new(Owner {
+        let owner = RefBox::new(Owner {
             drops: drops.clone(),
             cleanup: RefCell::new(None),
         });
-        let observer = Rc::downgrade(&owner);
-        let (mut inputcb, freecb) = window_customize_prompt_callbacks(owner.clone(), close);
-        *owner.cleanup.borrow_mut() = freecb;
-        drop(owner);
+        let observer = RefBox::downgrade(&owner);
+        let (mut inputcb, freecb) = window_customize_prompt_callbacks(owner, close);
+        *observer.try_borrow_mut().unwrap().cleanup.borrow_mut() = freecb;
         assert_eq!(
             inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
             PROMPT_CONTINUE
         );
         assert_eq!(drops.get(), 1);
-        assert!(observer.upgrade().is_none());
+        assert!(matches!(
+            observer.try_borrow_mut(),
+            Err(refbox::BorrowError::Dropped)
+        ));
         assert_eq!(
             inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
             PROMPT_CLOSE
@@ -5170,18 +5200,18 @@ mod item_owner_tests {
 
     #[test]
     fn editor_cancellation_drops_its_owned_record_without_dispatch() {
-        let edit = Rc::new(window_customize_editdata {
+        let edit = Box::new(window_customize_editdata {
             wp_id: u_int::MAX,
             edit_type: WINDOW_CUSTOMIZE_EDIT_OPTION,
             item: window_customize_new_item(),
-            editor: Cell::new(None),
-        });
-        let observer = Rc::downgrade(&edit);
+            });
+        let capture = (edit, Rc::new(()));
+        let observer = Rc::downgrade(&capture.1);
         let mut state = spawn_editor_state {
             path: c"unused".to_owned(),
             pid: 0,
-            cb: Some(Box::new(move |_| {
-                drop(edit);
+            cb: Some(Box::new(move |_, _| {
+                drop(capture);
                 panic!("cancelled editor callback ran");
             })),
         };

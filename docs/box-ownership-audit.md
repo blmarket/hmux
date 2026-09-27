@@ -20,22 +20,31 @@ local destructor, and multiple transfers of the same allocation; it is not a
 count of production ownership pairs.
 
 Preserve existing heap allocations and pinned tmux behavior. Prefer an owning
-`Box` plus borrowed readers. Use shared owners and weak observers when callbacks
-can outlive a borrow or destroy their own logical owner. Never retain a map or
-mutable state borrow across a callback that can replace or remove it.
+`Box` plus borrowed readers. Only retain `Rc` for types that already had
+reference counting. Check whether observers can use bounded borrows or stable
+identities first; when weak pointers are necessary, use a single `RefBox` owner.
+An active RefBox borrow can defer destruction if a callback removes its owner,
+but must not permit conflicting access. Never retain a map borrow across a
+callback that can replace or remove entries.
+
+The Rc reversal backlog is tracked in `../plan.md` relative to the repository
+root. The completed conversions below supersede the earlier shared-ownership
+guidance; other listed migrations still require that review.
 
 ## Completed migrations
 
 | Allocation | Result |
 | --- | --- |
+| Hyperlink entries | The already reference-counted table owns boxed URI records; lookup returns a table-bound borrow. Style transfers copy values before insertion can evict their source. Entries have no weak observers. |
+| Prompt history and mode-tree names | Owners store `CString`; readers that cross mutation or teardown take independent string snapshots. Neither string store needs weak observers. |
 | Argument flag entries and values | `BTreeMap<u8, Box<args_entry>>`; values remain boxed. Flag/value iterators borrow the argument set. Drop releases entries and command references. |
-| Customize prompt/editor records | Typed owned records with shared callback lifetime where needed; weak input callbacks and automatic cancellation cleanup. |
+| Customize prompt/editor records | Detached prompt items have one `RefBox` owner in cleanup; input closures observe it weakly and borrow only for dispatch, including self-close. Already reference-counted mode records retain their Rc protocol. Editor completion closures own boxed records and receive editor identity at dispatch. |
 | Command-prompt and confirm-before callback records | The input closure owns the original `Box`; callback functions borrow it. Drop performs the prior cleanup. Active prompt dispatch already defers cleanup until callback return. |
 | Run-shell callback record | A reactor one-shot owns the `Box` until timer dispatch; successful startup transfers it into the job completion closure. No embedded callback ownership cycle. Reactor shutdown also drains deferred cleanup scheduled while cancelling these owners. |
 | If-shell callback record | Successful job startup transfers the Box into its completion closure; cancellation drops it without reconstructing ownership from a pointer. |
 | Control window size overrides | The window-ID map owns `Box<control_window>`; lookups borrow entries and removal drops them. |
 | Control pane entries and pending output | Pane map keeps boxed owners; readers borrow entries and offsets. Pending output stores pane IDs and resolves entries around operations that may discard output. |
-| Buffer editor callback record | Shared typed record is captured by the completion closure; a cell publishes editor identity after startup. Cancellation drops the closure, and weak buffer identity prevents updating a replacement buffer. |
+| Buffer editor callback record | The completion closure owns a Box; dispatch supplies editor identity directly, removing startup sharing. Cancellation drops the closure, and weak buffer identity prevents updating a replacement buffer. |
 | Synchronized-output dirty bitmap | Pane stores `Option<Box<[bitstr_t]>>`; readers borrow/index the slice. Resize, explicit clear, and pane destruction release it normally. |
 | Prepared command state | Shell, prompt, and pane-mode records own `Box<args_command_state>` and borrow it during expansion. Retained command lists and clients have typed `Rc` owners; Drop preserves deferred client release. |
 | Parser nodes and nested payloads | Constructors and containers transfer boxes directly. An enum owns string, nested command-set, or shared compiled-command payloads; ordinary Drop handles success and error cleanup. |
@@ -45,7 +54,7 @@ mutable state borrow across a callback that can replace or remove it.
 | Argument roots | Parsing/copying returns `Box<args>`. Commands and copy-mode dispatch own their argument sets; temporary find-window arguments and failed parses drop normally. |
 | Event payload items and root | The ordered map owns boxed entries and readers borrow them. Event dispatch consumes the boxed payload; Drop releases entries in key order before the target. Replacement detaches the old entry before releasing model references. |
 | Redraw scene cache | Client owns an optional boxed scene. Active rendering takes ownership and lends scene/span borrows; returning the scene preserves any newer cache produced by nested rendering. |
-| Pane-input callback record | Shared typed record bridges read startup and callbacks, retains its client, and weakly observes its file. Cancellation releases it through normal callback Drop. The accompanying teardown fix releases empty-pane stream buffers even when no PTY fd exists. |
+| Pane-input callback record | The read callback owns a Box. File creation initializes its weak file identity before opening or scheduling events, removing startup sharing. Drop preserves deferred client release. Failed opens and cancellation release the box normally; empty-pane stream teardown remains intact. |
 | Command records | Command lists own `Vec<Box<cmd>>`; parse/copy/append transfer boxes and readers borrow records. The membership side table and detached next-pointer traversal are removed. Queue items retain their command list while observing stable boxed command addresses. |
 | Parser input buffers | Argument and command parsing borrow slices; flag scanning uses bounded bytes and borrowed configuration/state. Empty-input behavior, libc character classification, positional callbacks, and diagnostics retain pinned semantics. |
 | Copy/view backing screens | Mode data owns `Option<Box<screen>>`; snapshot cloning returns a box and readers borrow it. Refresh and teardown run `screen_free` before dropping the box, preserving parser/backing/visible-screen cleanup order. |

@@ -525,14 +525,17 @@ pub(crate) unsafe fn file_read_with_cmdq_wait(
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) -> *mut client_file {
-    file_read_impl(c, path, cb, Some((item, cancel_cb)))
+    file_read_with_cmdq_wait_init(c, path, |_| cb, item, cancel_cb)
 }
 
-unsafe fn file_read_impl(
+/// Build the callback after allocating its file, before opening or scheduling
+/// any events. This lets a callback own its state without sharing startup data.
+pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     mut c: *mut client,
     mut path: *const ::core::ffi::c_char,
-    mut cb: client_file_cb,
-    wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
+    callback: impl FnOnce(std::rc::Weak<std::cell::UnsafeCell<client_file>>) -> client_file_cb,
+    item: *mut cmdq_item,
+    cancel_cb: Option<Box<dyn FnOnce()>>,
 ) -> *mut client_file {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -544,10 +547,9 @@ unsafe fn file_read_impl(
     let mut file_owner: Option<CFile> = None;
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
-    cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
-    if let Some((item, cancel_cb)) = wait {
-        file_set_cmdq_wait(cf, item, cancel_cb);
-    }
+    cf = file_create_with_client(c, stream as ::core::ffi::c_int, None);
+    file_set_cmdq_wait(cf, item, cancel_cb);
+    (*cf).cb = callback(crate::src::shared::rc::downgrade(cf));
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;

@@ -23,11 +23,14 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
     assert_eq!(link.external_id.as_c_str(), c"tmux1");
     // Sharing and eviction do not move the entry's string allocations.
     let first_external_address = link.external_id.as_ptr() as usize;
+    drop(link);
     let shared = hyperlinks_copy(&a);
     hyperlinks_free(a);
     let link = hyperlinks_get(&shared, first).unwrap();
     assert_eq!(link.external_id.as_ptr() as usize, first_external_address);
     assert_eq!(link.external_id.as_c_str(), c"tmux1");
+    let snapshot = link.clone();
+    drop(link);
     let mut retained_inner = 0;
     let mut retained_external_address = 0;
     for index in 0..MAX_HYPERLINKS {
@@ -49,7 +52,7 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
     assert!(hyperlinks_get(&shared, first).is_none());
     assert!(shared.is_empty());
     assert_eq!(b.len(), MAX_HYPERLINKS as usize - 1);
-    assert_eq!(link.uri.as_c_str(), c"https://example.com");
+    assert_eq!(snapshot.uri.as_c_str(), c"https://example.com");
     hyperlinks_reset(&b);
     assert!(b.is_empty());
     let again = hyperlinks_put(&b, c"again", Some(c"id"));
@@ -67,6 +70,7 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
     let link = hyperlinks_get(&b, escaped).unwrap();
     assert_eq!(link.uri.as_bytes(), b"https://example.com/a\n\\377");
     assert_eq!(link.internal_id.as_bytes(), b"id\n\\377");
+    drop(link);
     assert_eq!(
         hyperlinks_put(
             &b,
@@ -100,7 +104,7 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
 fn reset_removes_both_indexes_and_does_not_reuse_inner_ids() {
     let table = hyperlinks_init();
     let first = hyperlinks_put(&table, c"https://example.test", Some(c"id"));
-    let entry = hyperlinks_get(&table, first).unwrap();
+    let entry = hyperlinks_get(&table, first).unwrap().clone();
     let shared = table.clone();
     hyperlinks_reset(&shared);
     assert!(table.is_empty());
@@ -122,7 +126,7 @@ fn transferring_an_entry_can_evict_its_source_table() {
     for _ in 0..MAX_HYPERLINKS - 2 {
         hyperlinks_put(&destination, c"filler", None);
     }
-    let entry = hyperlinks_get(&source, first).unwrap();
+    let entry = hyperlinks_get(&source, first).unwrap().clone();
     let copied = hyperlinks_put(&destination, &entry.uri, Some(&entry.internal_id));
     assert!(source.is_empty());
     assert!(hyperlinks_get(&source, first).is_none());
@@ -146,6 +150,7 @@ fn uri_limit_applies_after_escaping_without_consuming_ids() {
     assert_eq!(second, first + 1);
     let entry = hyperlinks_get(&table, second).unwrap();
     assert_eq!(entry.uri.as_bytes(), b"\\377".repeat(limit / 4));
+    drop(entry);
     let escaped_overflow = CString::new(vec![0xff; limit / 4 + 1]).unwrap();
     assert_eq!(hyperlinks_put(&table, &escaped_overflow, None), 0);
     assert_eq!(hyperlinks_put(&table, c"next", None), second + 1);

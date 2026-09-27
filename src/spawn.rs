@@ -998,7 +998,7 @@ pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
         return;
     }
     if status != 0 as ::core::ffi::c_int {
-        (*es).cb.take().expect("non-null editor callback")(None);
+        (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), None);
         spawn_editor_free(es);
         return;
     }
@@ -1036,7 +1036,7 @@ pub unsafe fn spawn_editor_finish(mut wp: *mut window_pane) {
         }
         drop(stream);
     }
-    (*es).cb.take().expect("non-null editor callback")(result);
+    (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), result);
     spawn_editor_free(es);
 }
 
@@ -1236,7 +1236,7 @@ mod tests {
     }
 
     fn capture_editor_result(result: *mut Option<Vec<u8>>) -> spawn_finish_edit_cb {
-        Some(Box::new(move |value| unsafe {
+        Some(Box::new(move |_, value| unsafe {
             *result = value;
         }))
     }

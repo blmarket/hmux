@@ -1,9 +1,9 @@
 use crate::src::shared::abi::u_int;
-use crate::src::shared::hyperlinks::{hyperlinks, hyperlinks_uri, HyperlinkKey, HyperlinkRef};
+use crate::src::shared::hyperlinks::{hyperlinks, hyperlinks_uri, HyperlinkKey};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::text::utf8::utf8_stravis_cstring;
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell},
     collections::VecDeque,
     ffi::{CStr, CString},
     rc::{Rc, Weak},
@@ -119,7 +119,7 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
         let inner = table.next_inner;
         table.next_inner = table.next_inner.wrapping_add(1);
         let key = hyperlink_key(&internal_id, &uri, inner);
-        let node = Rc::new(hyperlinks_uri {
+        let node = Box::new(hyperlinks_uri {
             inner,
             internal_id,
             external_id: CString::new(format!("tmux{:X}", external as u64))
@@ -155,10 +155,13 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
     inner
 }
 
-/// Keep an immutable entry alive while it is being consumed, including across
-/// another table's insertion or reset. Evicted entries are no longer indexed.
-pub fn hyperlinks_get(hl: &HyperlinksRef, inner: u_int) -> Option<HyperlinkRef> {
-    hl.0.borrow().by_inner.as_ref()?.get(&inner).cloned()
+/// Borrow an entry from its owning table. End the borrow before mutating any
+/// table: insertion can evict entries from another table through the global FIFO.
+pub fn hyperlinks_get(hl: &HyperlinksRef, inner: u_int) -> Option<Ref<'_, hyperlinks_uri>> {
+    Ref::filter_map(hl.0.borrow(), |table| {
+        table.by_inner.as_ref()?.get(&inner).map(Box::as_ref)
+    })
+    .ok()
 }
 
 pub fn hyperlinks_init() -> HyperlinksRef {
@@ -208,11 +211,11 @@ mod hyperlink_owner_tests {
     use super::*;
 
     #[test]
-    fn dropping_last_table_owner_removes_its_history_but_keeps_borrowed_entries_alive() {
+    fn dropping_last_table_owner_removes_its_history() {
         let table = hyperlinks_init();
         let weak = Rc::downgrade(&table.0);
         let id = hyperlinks_put(&table, c"https://example.test/a", Some(c"alpha"));
-        let node = hyperlinks_get(&table, id).unwrap();
+        let node = hyperlinks_get(&table, id).unwrap().clone();
         let shared = table.clone();
         drop(table);
         assert!(weak.upgrade().is_some());

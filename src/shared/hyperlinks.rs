@@ -1,16 +1,15 @@
 //! Shared hyperlink tables and immutable, heap-allocated entries.
 
 use super::abi::u_int;
-use std::{collections::BTreeMap, ffi::CString, rc::Rc};
+use std::{collections::BTreeMap, ffi::CString};
 
 pub(crate) type HyperlinkKey = (bool, Vec<u8>, Vec<u8>, u32);
-pub type HyperlinkRef = Rc<hyperlinks_uri>;
 
 /// The table, index records, and entries remain heap allocated.
 /// Inner IDs own entries; the URI index stores IDs into the same table.
 pub struct hyperlinks {
     pub(crate) next_inner: u_int,
-    pub(crate) by_inner: Option<Box<BTreeMap<u_int, HyperlinkRef>>>,
+    pub(crate) by_inner: Option<Box<BTreeMap<u_int, Box<hyperlinks_uri>>>>,
     pub(crate) by_uri: Option<Box<BTreeMap<HyperlinkKey, u_int>>>,
 }
 
@@ -24,6 +23,7 @@ impl hyperlinks {
     }
 }
 
+#[derive(Clone)]
 pub struct hyperlinks_uri {
     pub inner: u_int,
     pub internal_id: CString,
