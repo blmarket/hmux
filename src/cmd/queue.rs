@@ -26,7 +26,7 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
-use crate::src::server_client::{server_client_print, server_client_unref};
+use crate::src::server_client::{server_client_print, server_client_unref_owned};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
@@ -142,8 +142,8 @@ pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
 pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
     let mut owner = Box::from_raw(item);
     cmdq_cancel_unfired_data(&mut *owner);
-    if !(*item).client.is_null() {
-        server_client_unref((*item).client);
+    if let Some(client) = (*item).client_owner.take() {
+        server_client_unref_owned(client);
     }
     drop((*item).cmdlist.take());
     drop((*item).state.take());
@@ -306,9 +306,11 @@ pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut 
     loop {
         next = (*item).next;
         (*item).next = ::core::ptr::null_mut::<cmdq_item>();
-        if !c.is_null() {
-            crate::src::shared::rc::retain(c);
-        }
+        (*item).client_owner = if c.is_null() {
+            None
+        } else {
+            Some((*c).observer.upgrade().expect("live Rc client"))
+        };
         (*item).client = c;
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
@@ -343,9 +345,11 @@ pub unsafe fn cmdq_insert_after(
         next = (*item).next;
         (*item).next = (*after).next;
         (*after).next = item;
-        if !c.is_null() {
-            crate::src::shared::rc::retain(c);
-        }
+        (*item).client_owner = if c.is_null() {
+            None
+        } else {
+            Some((*c).observer.upgrade().expect("live Rc client"))
+        };
         (*item).client = c;
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
@@ -453,8 +457,8 @@ unsafe fn cmdq_remove(mut item: *mut cmdq_item) {
         "file wait must finish or cancel before queue item removal"
     );
     cmdq_cancel_unfired_data(&mut *item);
-    if !(*item).client.is_null() {
-        server_client_unref((*item).client);
+    if let Some(client) = (*item).client_owner.take() {
+        server_client_unref_owned(client);
     }
     drop((*item).cmdlist.take());
     drop((*item).state.take());

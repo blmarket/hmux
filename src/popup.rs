@@ -19,7 +19,6 @@ use crate::src::screen_write::{
 };
 use crate::src::server_client::{
     server_client_clear_overlay, server_client_overlay_range, server_client_set_overlay,
-    server_client_unref,
 };
 use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
@@ -1403,7 +1402,8 @@ mod tests {
     fn completion_closes_once_preserves_status_and_releases_the_retained_client() {
         use crate::src::shared::rc;
         unsafe {
-            let c = rc::new(client::empty());
+            let client_owner = client::new();
+            let c = rc::as_ptr(&client_owner);
             let client_observer = rc::downgrade(c);
             let mut item = Box::new(cmdq_item::empty());
             item.client = c;
@@ -1429,7 +1429,7 @@ mod tests {
             assert_eq!(item.flags & CMDQ_WAITING, 0);
             assert!(!handle.0.is_alive());
             assert!((*c).overlay_data.is_none());
-            rc::release(c);
+            drop(client_owner);
             assert!(client_observer.upgrade().is_some());
             crate::src::reactor::shutdown_runtime();
             assert!(client_observer.upgrade().is_none());

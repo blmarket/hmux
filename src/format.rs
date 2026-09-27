@@ -47,7 +47,6 @@ use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::{
     server_client_get_cwd, server_client_get_flags, server_client_get_key_table,
-    server_client_unref,
 };
 use crate::src::server_fn::server_status_client;
 use crate::src::session::{

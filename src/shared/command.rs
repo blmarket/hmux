@@ -139,7 +139,9 @@ pub struct cmdq_item {
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
     pub next: *mut cmdq_item,
+    /// Borrowed execution context, which can temporarily differ from the queue owner.
     pub client: *mut client,
+    pub client_owner: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
     pub target_client: *mut client,
     pub type_0: cmdq_type,
     pub group: u_int,
@@ -164,6 +166,7 @@ impl cmdq_item {
             queue: Default::default(),
             next: Default::default(),
             client: Default::default(),
+            client_owner: None,
             target_client: Default::default(),
             type_0: Default::default(),
             group: Default::default(),

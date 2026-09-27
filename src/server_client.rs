@@ -119,14 +119,18 @@ impl client {
     /// The caller must serialize access to the global server model and perform
     /// client-loss cleanup before releasing a fully initialized client.
     pub unsafe fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
-        unsafe { crate::src::shared::rc::take(crate::src::shared::rc::new(client::empty())) }
+        std::rc::Rc::new_cyclic(|observer| {
+            let mut value = client::empty();
+            value.observer = observer.clone();
+            std::cell::UnsafeCell::new(value)
+        })
     }
 }
 
-/// Non-owning active-client index. Weak allocation observers and successor
-/// entries survive active removal until final Rc cleanup. Each registration
-/// transfers one strong reference to the client-loss path.
+/// Own clients until client-loss cleanup transfers their Rc to deferred release.
+/// Weak observers and successor entries survive active removal until final cleanup.
 pub struct ClientRegistry {
+    owners: std::collections::BTreeMap<usize, std::rc::Rc<std::cell::UnsafeCell<client>>>,
     ordered: Vec<*mut client>,
     indices: std::collections::BTreeMap<usize, usize>,
     successors: std::collections::BTreeMap<usize, *mut client>,
@@ -136,6 +140,7 @@ pub struct ClientRegistry {
 impl ClientRegistry {
     pub(crate) const fn new() -> Self {
         Self {
+            owners: std::collections::BTreeMap::new(),
             ordered: Vec::new(),
             indices: std::collections::BTreeMap::new(),
             successors: std::collections::BTreeMap::new(),
@@ -172,7 +177,7 @@ impl ClientRegistry {
         self.successors.insert(key, ::core::ptr::null_mut());
         self.ordered.push(value);
         self.observers.push(std::rc::Rc::downgrade(&owner));
-        let _ = std::rc::Rc::into_raw(owner);
+        self.owners.insert(key, owner);
         value
     }
 
@@ -217,6 +222,9 @@ impl ClientRegistry {
         self.ordered.clear();
         self.indices.clear();
         self.successors.clear();
+        for owner in std::mem::take(&mut self.owners).into_values() {
+            server_client_unref_owned(owner);
+        }
     }
 }
 
@@ -1541,16 +1549,12 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
         close((*c).fd);
         (*c).fd = -(1 as ::core::ffi::c_int);
     }
-    server_client_unref(c);
+    server_client_unref_owned(clients.owners.remove(&(c as usize)).expect("registered client owner"));
     server_add_accept(0 as ::core::ffi::c_int);
     recalculate_sizes();
     server_check_unattached();
     server_update_socket();
 }
-pub unsafe fn server_client_unref(c: *mut client) {
-    server_client_unref_owned(crate::src::shared::rc::take(c));
-}
-
 /// Transfer a client reference to deferred cleanup, preserving the event-loop
 /// lifetime required by client teardown callbacks.
 pub fn server_client_unref_owned(c: std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -3128,13 +3132,12 @@ unsafe fn server_client_key_callback(
     return CMD_RETURN_NORMAL;
 }
 
-struct QueuedKeyEvent(Box<key_event>);
+struct QueuedKeyEvent(Box<key_event>, Option<std::rc::Rc<std::cell::UnsafeCell<client>>>);
 
 impl Drop for QueuedKeyEvent {
     fn drop(&mut self) {
-        let client = self.0.client;
-        if !client.is_null() {
-            unsafe { server_client_unref(client) };
+        if let Some(client) = self.1.take() {
+            server_client_unref_owned(client);
         }
     }
 }
@@ -3296,7 +3299,13 @@ unsafe fn server_client_handle_key0(
             }
         }
     }
-    let queued_event = QueuedKeyEvent(owned);
+    let client_owner = if after.is_null() {
+        None
+    } else {
+        (*event).client = c;
+        Some((*c).observer.upgrade().expect("live Rc client"))
+    };
+    let queued_event = QueuedKeyEvent(owned, client_owner);
     item = cmdq_get_callback_owned(
         b"server_client_key_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
@@ -3304,8 +3313,6 @@ unsafe fn server_client_handle_key0(
         })),
     );
     if !after.is_null() {
-        (*event).client = c;
-        crate::src::shared::rc::retain(c);
         item = cmdq_insert_after(after, item);
         if !next.is_null() {
             *next = item;
@@ -5397,7 +5404,7 @@ mod client_registry_tests {
             registry.release(last);
             registry.release(extra);
             for c in [first, middle, last, extra] {
-                super::server_client_unref(c);
+                super::server_client_unref_owned(registry.owners.remove(&(c as usize)).unwrap());
             }
             crate::src::reactor::event_loop();
         }
@@ -5431,10 +5438,9 @@ mod key_event_owner_tests {
                 0
             );
 
-            crate::src::shared::rc::retain(pointer);
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
             queued.client = pointer;
-            drop(QueuedKeyEvent(queued));
+            drop(QueuedKeyEvent(queued, Some(owner.clone())));
             assert_eq!(crate::src::shared::rc::strong_count(pointer), 2);
             crate::src::reactor::event_loop();
             assert_eq!(crate::src::shared::rc::strong_count(pointer), 1);

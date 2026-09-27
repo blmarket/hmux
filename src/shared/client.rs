@@ -118,6 +118,7 @@ mod tests {
 }
 
 pub struct client {
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub name: Option<std::ffi::CString>,
     pub peer: *mut tmuxpeer,
     pub user: Option<std::ffi::CString>,
@@ -194,6 +195,7 @@ pub struct client {
 impl client {
     pub fn empty() -> Self {
         Self {
+            observer: std::rc::Weak::new(),
             name: Default::default(),
             peer: Default::default(),
             user: Default::default(),
@@ -368,8 +370,7 @@ impl ClientOwner {
         if ptr.is_null() {
             return None;
         }
-        super::rc::retain(ptr);
-        Some(Self(Some(super::rc::take(ptr))))
+        Some(Self(Some((*ptr).observer.upgrade().expect("live Rc client"))))
     }
 
     pub fn as_ptr(&self) -> *mut client {
@@ -398,10 +399,11 @@ mod retained_client_tests {
     fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {
         unsafe {
             for cancel in [false, true] {
-                let ptr = rc::new(client::empty());
+                let initial = client::new();
+                let ptr = rc::as_ptr(&initial);
                 let observer = rc::downgrade(ptr);
                 let owner = ClientOwner::retain(ptr).unwrap();
-                rc::release(ptr);
+                drop(initial);
                 assert_eq!(owner.as_ptr(), ptr);
                 drop(owner);
                 assert_eq!(observer.strong_count(), 1);
