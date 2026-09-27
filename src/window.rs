@@ -2780,8 +2780,8 @@ unsafe fn window_pane_create(
     ) == 0 as ::core::ffi::c_int
     {
         screen_set_title(
-            &raw mut (*wp).base,
-            &raw mut host as *mut ::core::ffi::c_char,
+            &mut (*wp).base,
+            CStr::from_ptr(host.as_ptr()),
             0 as ::core::ffi::c_int,
         );
     }

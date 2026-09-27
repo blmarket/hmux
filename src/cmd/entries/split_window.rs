@@ -446,8 +446,8 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                         args_get(args, 'T' as i32 as u_char),
                                     );
                                     screen_set_title(
-                                        &raw mut (*new_wp).base,
-                                        title.as_ptr(),
+                                        &mut (*new_wp).base,
+                                        &title,
                                         0 as ::core::ffi::c_int,
                                     );
                                     ep = event_payload_create();

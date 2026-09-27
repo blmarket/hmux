@@ -3866,7 +3866,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 ) {
                     -1 => return,
                     0 | 2 => {
-                        screen_push_title((*sctx).s);
+                        screen_push_title(&mut *(*sctx).s);
                     }
                     _ => {}
                 }
@@ -3882,7 +3882,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 ) {
                     -1 => return,
                     0 | 2 => {
-                        screen_pop_title((*sctx).s);
+                        screen_pop_title(&mut *(*sctx).s);
                         if !wp.is_null() {
                             input_fire_pane_title_changed(wp, (*(*sctx).s).title.as_ptr());
                             server_redraw_window_borders(w);
@@ -4583,8 +4583,8 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                     b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
                 ) != 0
                 && screen_set_title(
-                    (*sctx).s,
-                    p as *const ::core::ffi::c_char,
+                    &mut *(*sctx).s,
+                    CStr::from_ptr(p.cast()),
                     1 as ::core::ffi::c_int,
                 ) != 0
             {
@@ -4597,7 +4597,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             input_osc_4(ictx, p as *const ::core::ffi::c_char);
         }
         7 => {
-            if !wp.is_null() && screen_set_path((*sctx).s, p as *const ::core::ffi::c_char) != 0 {
+            if !wp.is_null() && screen_set_path(&mut *(*sctx).s, CStr::from_ptr(p.cast())) != 0 {
                 server_redraw_window_borders((*wp).window as *mut window);
                 server_status_window((*wp).window as *mut window);
             }
@@ -4667,8 +4667,8 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
             b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         && screen_set_title(
-            (*sctx).s,
-            (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
+            &mut *(*sctx).s,
+            CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer has a terminator"),
             1 as ::core::ffi::c_int,
         ) != 0
     {

@@ -358,7 +358,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
         let title = format_single_from_target_cstring(item, args_get(args, 'T' as i32 as u_char));
-        if screen_set_title(&raw mut (*wp).base, title.as_ptr(), 0 as ::core::ffi::c_int) != 0 {
+        if screen_set_title(&mut (*wp).base, &title, 0 as ::core::ffi::c_int) != 0 {
             ep = event_payload_create();
             cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
             event_payload_set_target(ep, &raw mut fs);

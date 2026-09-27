@@ -32,8 +32,8 @@ use crate::src::tty_acs::tty_acs_get;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
-unsafe fn screen_free_titles(mut s: *mut screen) {
-    (*s).titles = VecDeque::new();
+fn screen_free_titles(s: &mut screen) {
+    s.titles = VecDeque::new();
 }
 pub unsafe fn screen_init(mut s: *mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
     (*s).grid = Some(grid_create(sx, sy, hlimit));
@@ -83,7 +83,7 @@ pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
     let sy = (*s).grid().sy;
     grid_clear_lines((*s).grid_mut(), hsize, sy, 8);
     screen_clear_selection(&mut *s);
-    screen_free_titles(s);
+    screen_free_titles(&mut *s);
     screen_set_progress_bar(&mut *s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
     screen_reset_hyperlinks(s);
 }
@@ -107,7 +107,7 @@ pub unsafe fn screen_free(mut s: *mut screen) {
     if !(*s).hyperlinks.is_null() {
         hyperlinks_free((*s).hyperlinks);
     }
-    screen_free_titles(s);
+    screen_free_titles(&mut *s);
     (*s).hyperlinks = std::ptr::null_mut();
 }
 pub unsafe fn screen_reset_tabs(mut s: *mut screen) {
@@ -224,52 +224,49 @@ pub fn screen_set_cursor_style(
 pub fn screen_set_cursor_colour(s: &mut screen, colour: ::core::ffi::c_int) {
     s.ccolour = colour;
 }
-pub unsafe fn screen_set_title(
-    mut s: *mut screen,
-    mut title: *const ::core::ffi::c_char,
-    mut untrusted: ::core::ffi::c_int,
+pub fn screen_set_title(
+    s: &mut screen,
+    title: &CStr,
+    untrusted: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let Some(new_title) = clean_name_cstring(CStr::from_ptr(title), untrusted) else {
+    let Some(new_title) = clean_name_cstring(title, untrusted) else {
         return 0 as ::core::ffi::c_int;
     };
-    (*s).title = new_title;
+    s.title = new_title;
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn screen_set_path(
-    mut s: *mut screen,
-    mut path: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let mut untrusted: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    let Some(new_path) = clean_name_cstring(CStr::from_ptr(path), untrusted) else {
+pub fn screen_set_path(s: &mut screen, path: &CStr) -> ::core::ffi::c_int {
+    let untrusted: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+    let Some(new_path) = clean_name_cstring(path, untrusted) else {
         return 0 as ::core::ffi::c_int;
     };
-    (*s).path = Some(new_path);
+    s.path = Some(new_path);
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn screen_push_title(mut s: *mut screen) {
+pub unsafe fn screen_push_title(s: &mut screen) {
     log_debug(format_args!(
         "{}: {}",
         "screen_push_title",
-        (*s).titles.len() as u_int
+        s.titles.len() as u_int
     ));
-    while (*s).titles.len() >= 10 {
-        let Some(_title) = (*s).titles.pop_back() else {
+    while s.titles.len() >= 10 {
+        let Some(_title) = s.titles.pop_back() else {
             break;
         };
     }
-    (*s).titles.push_front((*s).title.clone());
+    s.titles.push_front(s.title.clone());
 }
-pub unsafe fn screen_pop_title(mut s: *mut screen) {
-    if (*s).titles.is_empty() {
+pub unsafe fn screen_pop_title(s: &mut screen) {
+    if s.titles.is_empty() {
         return;
     }
     log_debug(format_args!(
         "{}: {}",
         "screen_pop_title",
-        (*s).titles.len() as u_int
+        s.titles.len() as u_int
     ));
-    if let Some(title) = (*s).titles.pop_front() {
-        (*s).title = title;
+    if let Some(title) = s.titles.pop_front() {
+        s.title = title;
     }
 }
 pub fn screen_set_progress_bar(s: &mut screen, pbs: progress_bar_state, p: ::core::ffi::c_int) {
