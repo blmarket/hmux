@@ -617,7 +617,7 @@ unsafe fn screen_reflow(
     let mut wx: u_int = 0;
     let mut wy: u_int = 0;
     if cursor != 0 {
-        grid_wrap_position((*s).grid, *cx, *cy, &raw mut wx, &raw mut wy);
+        (wx, wy) = grid_wrap_position(&*(*s).grid, *cx, *cy);
         log_debug(format_args!(
             "{}: cursor {},{} is {},{}",
             "screen_reflow",
@@ -629,7 +629,7 @@ unsafe fn screen_reflow(
     }
     grid_reflow(&mut *(*s).grid, new_x);
     if cursor != 0 {
-        grid_unwrap_position((*s).grid, cx, cy, wx, wy);
+        (*cx, *cy) = grid_unwrap_position(&*(*s).grid, wx, wy);
         log_debug(format_args!(
             "{}: new cursor is {},{}",
             "screen_reflow",

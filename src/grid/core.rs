@@ -1561,85 +1561,53 @@ pub unsafe fn grid_reflow(gd: &mut grid, sx: u_int) {
     gd.linedata = std::mem::take(&mut target.linedata);
     gd.scroll_generation = gd.scroll_generation.wrapping_add(1);
 }
-pub unsafe fn grid_wrap_position(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut wx: *mut u_int,
-    mut wy: *mut u_int,
-) {
-    let mut ax: u_int = 0 as u_int;
-    let mut ay: u_int = 0 as u_int;
-    let mut yy: u_int = 0;
-    yy = 0 as u_int;
-    while yy < py {
-        if (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int
-            & GRID_LINE_WRAPPED
-            != 0
-        {
-            ax = ax
-                .wrapping_add((*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int);
+pub fn grid_wrap_position(gd: &grid, px: u_int, py: u_int) -> (u_int, u_int) {
+    let mut ax: u_int = 0;
+    let mut ay: u_int = 0;
+    for line in &gd.linedata[..py as usize] {
+        if line.flags as i32 & GRID_LINE_WRAPPED != 0 {
+            ax = ax.wrapping_add(line.cellused as u_int);
         } else {
-            ax = 0 as u_int;
+            ax = 0;
             ay = ay.wrapping_add(1);
         }
-        yy = yy.wrapping_add(1);
     }
-    if px >= (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int {
-        ax = UINT_MAX as u_int;
+    if px >= gd.linedata[py as usize].cellused as u_int {
+        ax = UINT_MAX;
     } else {
         ax = ax.wrapping_add(px);
     }
-    *wx = ax;
-    *wy = ay;
+    (ax, ay)
 }
-pub unsafe fn grid_unwrap_position(
-    mut gd: *mut grid,
-    mut px: *mut u_int,
-    mut py: *mut u_int,
-    mut wx: u_int,
-    mut wy: u_int,
-) {
-    let mut yy: u_int = 0;
-    let mut ay: u_int = 0 as u_int;
-    let mut ey: u_int = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
-    yy = 0 as u_int;
-    while yy < (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
+pub fn grid_unwrap_position(gd: &grid, mut wx: u_int, wy: u_int) -> (u_int, u_int) {
+    let mut row: u_int = 0;
+    let mut ay: u_int = 0;
+    let end = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1);
+    while row < end {
         if ay == wy {
             break;
         }
-        if !((*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int)
-            & GRID_LINE_WRAPPED
-            != 0
-        {
+        if gd.linedata[row as usize].flags as i32 & GRID_LINE_WRAPPED == 0 {
             ay = ay.wrapping_add(1);
         }
-        yy = yy.wrapping_add(1);
+        row = row.wrapping_add(1);
     }
     if wx == UINT_MAX {
-        while yy < ey
-            && (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int
-                & GRID_LINE_WRAPPED
-                != 0
-        {
-            yy = yy.wrapping_add(1);
+        while row < end && gd.linedata[row as usize].flags as i32 & GRID_LINE_WRAPPED != 0 {
+            row = row.wrapping_add(1);
         }
-        wx = (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int;
+        wx = gd.linedata[row as usize].cellused as u_int;
     } else {
-        while (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int
-            & GRID_LINE_WRAPPED
-            != 0
-        {
-            if wx < (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int {
+        while gd.linedata[row as usize].flags as i32 & GRID_LINE_WRAPPED != 0 {
+            let used = gd.linedata[row as usize].cellused as u_int;
+            if wx < used {
                 break;
             }
-            wx = wx
-                .wrapping_sub((*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int);
-            yy = yy.wrapping_add(1);
+            wx = wx.wrapping_sub(used);
+            row = row.wrapping_add(1);
         }
     }
-    *px = wx;
-    *py = yy;
+    (wx, row)
 }
 pub unsafe fn grid_line_length(gd: &grid, mut py: u_int) -> u_int {
     let mut gc: grid_cell = grid_cell {
@@ -2465,6 +2433,47 @@ mod storage_tests {
                 .iter()
                 .all(|line| line.flags as i32 & GRID_LINE_WRAPPED == 0));
             assert_ne!(owner.linedata[3].flags as i32 & GRID_LINE_WRAPPED, 0);
+        }
+    }
+
+    #[test]
+    fn wrapped_positions_keep_line_ends_empty_rows_and_history_coordinates() {
+        unsafe {
+            let mut gd = grid_create_box(8, 5, 10);
+            gd.sy = 3;
+            gd.hsize = 2;
+            for (row, (used, wrapped)) in [(3, true), (2, false), (0, false), (4, true), (1, false)]
+                .into_iter()
+                .enumerate()
+            {
+                gd.linedata[row].cellused = used;
+                if wrapped {
+                    gd.linedata[row].flags |= GRID_LINE_WRAPPED as u_short;
+                }
+            }
+            for (position, wrapped) in [
+                ((2, 0), (2, 0)),
+                ((0, 1), (3, 0)),
+                ((1, 1), (4, 0)),
+                ((2, 3), (2, 2)),
+                ((0, 4), (4, 2)),
+            ] {
+                assert_eq!(grid_wrap_position(&gd, position.0, position.1), wrapped);
+                assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), position);
+            }
+            for (position, wrapped, end) in [
+                ((3, 0), (UINT_MAX, 0), (2, 1)),
+                ((99, 1), (UINT_MAX, 0), (2, 1)),
+                ((0, 2), (UINT_MAX, 1), (0, 2)),
+                ((4, 3), (UINT_MAX, 2), (1, 4)),
+            ] {
+                assert_eq!(grid_wrap_position(&gd, position.0, position.1), wrapped);
+                assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), end);
+            }
+            assert_eq!(grid_unwrap_position(&gd, 99, 99), (99, 4));
+            // Seeking to a wrapped empty row advances without consuming a column.
+            gd.linedata[2].flags |= GRID_LINE_WRAPPED as u_short;
+            assert_eq!(grid_unwrap_position(&gd, 2, 1), (2, 3));
         }
     }
 

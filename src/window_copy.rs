@@ -458,7 +458,7 @@ unsafe fn window_copy_clone_screen(
         reflow = 0 as ::core::ffi::c_int;
     }
     if reflow != 0 {
-        grid_wrap_position((*dst).grid, *cx, *cy, &raw mut wx, &raw mut wy);
+        (wx, wy) = grid_wrap_position(&*(*dst).grid, *cx, *cy);
     }
     screen_resize_cursor(
         dst,
@@ -469,7 +469,7 @@ unsafe fn window_copy_clone_screen(
         0 as ::core::ffi::c_int,
     );
     if reflow != 0 {
-        grid_unwrap_position((*dst).grid, cx, cy, wx, wy);
+        (*cx, *cy) = grid_unwrap_position(&*(*dst).grid, wx, wy);
     }
     return dst;
 }
@@ -1388,7 +1388,7 @@ unsafe fn window_copy_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut
         .wrapping_sub((*data).oy);
     reflow = ((*gd).sx != sx) as ::core::ffi::c_int;
     if reflow != 0 {
-        grid_wrap_position(gd, cx, cy, &raw mut wx, &raw mut wy);
+        (wx, wy) = grid_wrap_position(&*gd, cx, cy);
     }
     screen_resize_cursor(
         (*data).backing,
@@ -1399,7 +1399,7 @@ unsafe fn window_copy_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut
         0 as ::core::ffi::c_int,
     );
     if reflow != 0 {
-        grid_unwrap_position(gd, &raw mut cx, &raw mut cy, wx, wy);
+        (cx, cy) = grid_unwrap_position(&*gd, wx, wy);
     }
     (*data).cx = cx;
     if cy < (*gd).hsize {
