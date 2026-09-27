@@ -249,6 +249,11 @@ impl window {
 pub struct WindowOwner(pub(crate) Option<std::rc::Rc<std::cell::UnsafeCell<window>>>);
 
 impl WindowOwner {
+    /// Adopt an existing reference with the window's pre-release notification policy.
+    pub fn adopt(owner: std::rc::Rc<std::cell::UnsafeCell<window>>) -> Self {
+        Self(Some(owner))
+    }
+
     /// # Safety
     /// The pointer must name a live Rc-owned window.
     pub unsafe fn retain(ptr: *mut window, from: &std::ffi::CStr) -> Self {

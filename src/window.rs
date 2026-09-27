@@ -1064,7 +1064,7 @@ pub unsafe fn window_create(
     mut sy: u_int,
     mut xpixel: u_int,
     mut ypixel: u_int,
-) -> Rc<std::cell::UnsafeCell<window>> {
+) -> crate::src::shared::window::WindowOwner {
     if xpixel == 0 as u_int {
         xpixel = DEFAULT_XPIXEL as u_int;
     }
@@ -1114,7 +1114,7 @@ pub unsafe fn window_create(
         ((*w).xpixel) as u32,
         ((*w).ypixel) as u32
     ));
-    return owner;
+    crate::src::shared::window::WindowOwner::adopt(owner)
 }
 unsafe fn window_destroy(mut w: *mut window) {
     log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));

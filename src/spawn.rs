@@ -366,7 +366,7 @@ pub unsafe fn spawn_window(
             -(1 as ::core::ffi::c_int),
         );
         let window = window_create(sx, sy, xpixel, ypixel);
-        w = crate::src::shared::rc::as_ptr(&window);
+        w = window.as_ptr();
         if w.is_null() {
             winlink_remove(&raw mut (*s).windows, (*sc).wl);
             set_spawn_cause(
@@ -382,7 +382,7 @@ pub unsafe fn spawn_window(
         (*w).latest = (*sc).tc as *mut ::core::ffi::c_void;
         winlink_set_window((*sc).wl, w);
         // The winlink now owns the window; release the construction reference.
-        crate::src::window::window_remove_ref(window, c"spawn_window".as_ptr());
+        drop(window);
     } else {
         w = ::core::ptr::null_mut::<window>();
     }
