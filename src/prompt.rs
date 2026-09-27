@@ -14,7 +14,7 @@ use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_number,
     options_get_only, options_get_string,
 };
-use crate::src::paste::{paste_buffer_data, paste_get_top};
+use crate::src::paste::paste_get_top;
 use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
 use crate::src::screen::screen_set_cursor_style;
 use crate::src::screen_write::{
@@ -30,7 +30,6 @@ use crate::src::shared::key::MODEKEY_VI;
 use crate::src::shared::key::*;
 use crate::src::shared::options::{options, options_array_item, options_entry};
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
@@ -1091,80 +1090,56 @@ fn prompt_save_copied(pr: &mut prompt, idx: size_t) {
     pr.copied = Some(copied.into_boxed_slice());
 }
 
-unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
-    let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut n: size_t = 0;
-    let mut bufsize: size_t = 0;
+unsafe fn prompt_decode_paste(data: &[u8]) -> Vec<utf8_data> {
+    let mut cells = vec![utf8_data::default(); data.len().wrapping_add(1)];
+    let mut count = 0;
     let mut i: u_int = 0;
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut udp: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut scratch: Vec<utf8_data> = Vec::new();
-    let mut more: utf8_state = UTF8_MORE;
-    if let Some(copied) = (*pr).copied.as_ref() {
-        ud = copied.as_ptr() as *mut utf8_data;
-        n = utf8_strlen(copied);
+    while i as usize != data.len() {
+        let cell = &mut cells[count];
+        let mut more = utf8_open(cell, data[i as usize]);
+        if more == UTF8_MORE {
+            loop {
+                i = i.wrapping_add(1);
+                if i as usize == data.len() || more != UTF8_MORE {
+                    break;
+                }
+                more = utf8_append(cell, data[i as usize]);
+            }
+            if more == UTF8_DONE {
+                count += 1;
+                continue;
+            }
+            i = i.wrapping_sub(cell.have as u_int);
+        }
+        if !(b' '..=b'~').contains(&data[i as usize]) {
+            break;
+        }
+        utf8_set(cell, data[i as usize]);
+        count += 1;
+        i = i.wrapping_add(1);
+    }
+    cells[count].size = 0;
+    cells.truncate(count + 1);
+    cells
+}
+
+unsafe fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
+    let decoded;
+    let pasted = if let Some(copied) = pr.copied.as_deref() {
+        &copied[..utf8_strlen(copied)]
     } else {
-        pb = paste_get_top(None);
-        if pb.is_null() {
-            return 0 as ::core::ffi::c_int;
-        }
-        bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        scratch.resize(
-            bufsize.wrapping_add(1 as size_t),
-            utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-        );
-        udp = scratch.as_mut_ptr();
-        ud = udp;
-        i = 0 as u_int;
-        while i as size_t != bufsize {
-            more = utf8_open(&mut *udp, *bufdata.offset(i as isize) as u_char);
-            if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                loop {
-                    i = i.wrapping_add(1);
-                    if !(i as size_t != bufsize
-                        && more as ::core::ffi::c_uint
-                            == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                    {
-                        break;
-                    }
-                    more = utf8_append(&mut *udp, *bufdata.offset(i as isize) as u_char);
-                }
-                if more as ::core::ffi::c_uint
-                    == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    udp = udp.offset(1);
-                    continue;
-                } else {
-                    i = i.wrapping_sub((*udp).have as u_int);
-                }
-            }
-            if *bufdata.offset(i as isize) as ::core::ffi::c_int <= 31 as ::core::ffi::c_int
-                || *bufdata.offset(i as isize) as ::core::ffi::c_int >= 127 as ::core::ffi::c_int
-            {
-                break;
-            }
-            utf8_set(&mut *udp, *bufdata.offset(i as isize) as u_char);
-            udp = udp.offset(1);
-            i = i.wrapping_add(1);
-        }
-        (*udp).size = 0 as u_char;
-        n = udp.offset_from(ud) as ::core::ffi::c_long as size_t;
+        let Some(buffer) = paste_get_top(None).as_ref() else {
+            return 0;
+        };
+        let bytes = &buffer.data.as_deref().unwrap_or_default()[..buffer.size];
+        decoded = prompt_decode_paste(bytes);
+        &decoded[..decoded.len() - 1]
+    };
+    if !pasted.is_empty() {
+        pr.buffer.splice(pr.index..pr.index, pasted.iter().copied());
+        pr.index = pr.index.wrapping_add(pasted.len());
     }
-    if n != 0 as size_t {
-        let pasted = std::slice::from_raw_parts(ud, n);
-        (*pr)
-            .buffer
-            .splice((*pr).index..(*pr).index, pasted.iter().copied());
-        (*pr).index = (*pr).index.wrapping_add(n);
-    }
-    return 1 as ::core::ffi::c_int;
+    1
 }
 unsafe fn prompt_replace_complete(
     pr: &mut prompt,
@@ -1730,7 +1705,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2029,7 +2004,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2328,7 +2303,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2627,7 +2602,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2926,7 +2901,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -3225,7 +3200,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -3524,7 +3499,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -3823,7 +3798,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -4122,7 +4097,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -4421,7 +4396,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -4720,7 +4695,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5019,7 +4994,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5318,7 +5293,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5617,7 +5592,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5916,7 +5891,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -6215,7 +6190,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -6514,7 +6489,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -6813,7 +6788,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -7112,7 +7087,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -7411,7 +7386,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -7710,7 +7685,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8009,7 +7984,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8308,7 +8283,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8607,7 +8582,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8906,7 +8881,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -9205,7 +9180,7 @@ pub unsafe fn prompt_key(
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
-                                if prompt_paste(pr) != 0 {
+                                if prompt_paste(&mut *pr) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -9630,6 +9605,50 @@ mod prompt_buffer_tests {
             );
             assert_eq!(pr.index, 2);
             assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+
+            // Even an empty copied word takes precedence over the clipboard.
+            pr.copied = Some(vec![utf8_data::default()].into_boxed_slice());
+            assert_eq!(prompt_paste(&mut pr), 1);
+            assert_eq!(pr.index, 2);
+            assert_eq!(
+                utf8_tocstr_cstring(&pr.buffer).as_bytes(),
+                b"a\xce\xbb\xc3\xa9Z"
+            );
+        }
+    }
+
+    #[test]
+    fn paste_decoding_preserves_utf8_and_stops_at_control_or_invalid_bytes() {
+        unsafe {
+            assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
+            for (input, expected, count) in [
+                (&b""[..], &b""[..], 0),
+                (&b"ab"[..], &b"ab"[..], 2),
+                ("Aé漢Z".as_bytes(), "Aé漢Z".as_bytes(), 4),
+                ("éZ".as_bytes(), "éZ".as_bytes(), 3),
+                (&b"abc\nignored"[..], &b"abc"[..], 3),
+                (&b"abc\tignored"[..], &b"abc"[..], 3),
+                (&b"ab\0ignored"[..], &b"ab"[..], 2),
+                (&b"x\x7fz"[..], &b"x"[..], 1),
+                (&b"x\x1bz"[..], &b"x"[..], 1),
+                (&b"x\xffz"[..], &b"x"[..], 1),
+                (&b"x\xc0\xafz"[..], &b"x"[..], 1),
+                (&b"x\xe2(\xa1Z"[..], &b"x"[..], 1),
+                (&b"x\xe2\x82"[..], &b"x"[..], 1),
+                (&b"x\xf0\x9f"[..], &b"x"[..], 1),
+                (&b"x\xed\xa0\x80Z"[..], &b"x"[..], 1),
+                (&b"x\xf4\x90\x80\x80z"[..], &b"x"[..], 1),
+            ] {
+                let cells = prompt_decode_paste(input);
+                assert_eq!(
+                    utf8_tocstr_cstring(&cells).as_bytes(),
+                    expected,
+                    "{input:?}"
+                );
+                assert_eq!(utf8_strlen(&cells), count, "{input:?}");
+                assert_eq!(cells.len(), count + 1);
+                assert_eq!(cells.last().unwrap().size, 0);
+            }
         }
     }
 }
