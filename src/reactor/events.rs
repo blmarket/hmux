@@ -264,6 +264,47 @@ where
     }
     result
 }
+/// Schedule a one-shot callback that owns a record containing its event handle.
+///
+/// The record stays in its original Box allocation. Only the reactor holds the
+/// callback, so the embedded event cannot keep its enclosing owner alive in a
+/// cycle. A missing timeout activates the callback immediately, like event_active.
+pub fn event_once_owned<T: 'static>(
+    mut owner: Box<T>,
+    event_handle: fn(&mut T) -> &mut event,
+    timeout: Option<&timeval>,
+    callback: impl FnOnce(Box<T>) + 'static,
+) -> c_int {
+    ensure_runtime();
+    let ev = event_handle(&mut owner);
+    remove(ev as *mut event as usize);
+    *ev = event {
+        initialized: true,
+        fd: -1,
+        flags: 0,
+        callback: None,
+    };
+    let mut state = configure(ev, timeout.map(delay));
+    let mut pending = Some((owner, callback));
+    Rc::get_mut(&mut state).unwrap().callback =
+        Some(Rc::new(RefCell::new(Box::new(move |_, _| {
+            if let Some((owner, callback)) = pending.take() {
+                callback(owner);
+            }
+        }))));
+    EVENTS.with(|events| events.borrow_mut().insert(state.key, state.clone()));
+    if timeout.is_some() {
+        if let Err(error) = start(&state) {
+            remove(state.key);
+            unsafe { *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO) };
+            return -1;
+        }
+    } else {
+        state.active.set(EV_TIMEOUT as c_short);
+        activate(&state);
+    }
+    0
+}
 pub unsafe fn event_pending(ev: *const event, flags: c_short, out: *mut timeval) -> c_int {
     EVENTS.with(|e| {
         let e = e.borrow();
@@ -296,6 +337,101 @@ pub unsafe fn event_get_version() -> *const c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct TimerOwner {
+        timer: event,
+        drops: Rc<Cell<usize>>,
+    }
+
+    impl Drop for TimerOwner {
+        fn drop(&mut self) {
+            unsafe { event_del(&mut self.timer) };
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+
+    #[test]
+    fn owned_timer_passes_the_original_box_once_and_releases_it() {
+        for timeout in [
+            None,
+            Some(timeval {
+                tv_sec: 0,
+                tv_usec: 0,
+            }),
+        ] {
+            let drops = Rc::new(Cell::new(0));
+            let calls = Rc::new(Cell::new(0));
+            let owner = Box::new(TimerOwner {
+                timer: event::default(),
+                drops: drops.clone(),
+            });
+            let address = &*owner as *const TimerOwner as usize;
+            let observed = calls.clone();
+            assert_eq!(
+                event_once_owned(
+                    owner,
+                    |owner| &mut owner.timer,
+                    timeout.as_ref(),
+                    move |owner| {
+                        assert_eq!(&*owner as *const TimerOwner as usize, address);
+                        assert!(
+                            owner.timer.callback.is_none(),
+                            "embedded timer must not own its enclosing record"
+                        );
+                        assert_eq!(owner.drops.get(), 0);
+                        observed.set(observed.get() + 1);
+                    }
+                ),
+                0
+            );
+            assert_eq!(drops.get(), 0);
+            for _ in 0..3 {
+                super::super::HOST.with(|host| {
+                    host.borrow_mut()
+                        .as_mut()
+                        .unwrap()
+                        .poll(Some(Duration::from_millis(1)))
+                        .unwrap();
+                });
+            }
+            assert_eq!(calls.get(), 1);
+            assert_eq!(drops.get(), 1);
+            assert!(EVENTS.with(|events| events.borrow().is_empty()));
+            super::super::shutdown_runtime();
+            assert_eq!(drops.get(), 1);
+        }
+    }
+
+    #[test]
+    fn cancelling_owned_timers_drops_the_record_without_dispatch() {
+        for timeout in [
+            None,
+            Some(timeval {
+                tv_sec: 60,
+                tv_usec: 0,
+            }),
+        ] {
+            let drops = Rc::new(Cell::new(0));
+            let owner = Box::new(TimerOwner {
+                timer: event::default(),
+                drops: drops.clone(),
+            });
+            assert_eq!(
+                event_once_owned(
+                    owner,
+                    |owner| &mut owner.timer,
+                    timeout.as_ref(),
+                    |_| {
+                        panic!("cancelled timer must not dispatch");
+                    }
+                ),
+                0
+            );
+            assert_eq!(drops.get(), 0);
+            super::super::shutdown_runtime();
+            assert_eq!(drops.get(), 1);
+        }
+    }
 
     #[test]
     fn overflowing_timers_remain_armed_and_fire_including_repeats() {

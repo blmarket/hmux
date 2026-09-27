@@ -18,7 +18,7 @@ use crate::src::format::{
 use crate::src::job::job_run;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_readln, event_active, event_add, event_del, event_set,
+    evbuffer_readln, event_del, event_once_owned,
 };
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::session::{session_add_ref, session_remove_ref};
@@ -46,7 +46,6 @@ use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct cmd_run_shell_data {
     pub client: *mut client,
     pub cmd: Option<CString>,
@@ -97,10 +96,7 @@ fn cmd_run_shell_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_run_shell_print(
-    mut cdata: *mut cmd_run_shell_data,
-    mut msg: *const ::core::ffi::c_char,
-) {
+unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -112,16 +108,16 @@ unsafe fn cmd_run_shell_print(
         idx: 0,
     };
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    if (*cdata).wp_id != -(1 as ::core::ffi::c_int) {
-        wp = window_pane_find_by_id((*cdata).wp_id as u_int);
+    if cdata.wp_id != -(1 as ::core::ffi::c_int) {
+        wp = window_pane_find_by_id(cdata.wp_id as u_int);
     }
     if wp.is_null() {
-        if !(*cdata).item.is_null() {
-            cmdq_print((*cdata).item, |out| write_cstr(out, msg));
+        if !cdata.item.is_null() {
+            cmdq_print(cdata.item, |out| write_cstr(out, msg));
             return;
         }
-        if !(*cdata).client.is_null() && !(*(*cdata).client).session.is_null() {
-            wp = (*(*(*(*(*cdata).client).session).curw).window).active;
+        if !cdata.client.is_null() && !(*cdata.client).session.is_null() {
+            wp = (*(*(*(*cdata.client).session).curw).window).active;
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
@@ -146,7 +142,6 @@ unsafe fn cmd_run_shell_print(
     }
     window_copy_add(wp, 1 as ::core::ffi::c_int, |out| write_cstr(out, msg));
 }
-
 fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
     let cmd = cmd.to_bytes();
     let code = code.to_string();
@@ -161,7 +156,6 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut cdata: *mut cmd_run_shell_data = ::core::ptr::null_mut::<cmd_run_shell_data>();
     let mut c: *mut client = cmdq_get_client(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
@@ -197,7 +191,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     } else {
         server_client_get_cwd(c, s)
     };
-    cdata = Box::into_raw(Box::new(cmd_run_shell_data {
+    let mut cdata = Box::new(cmd_run_shell_data {
         client: ::core::ptr::null_mut(),
         cmd: None,
         state: ::core::ptr::null_mut(),
@@ -207,7 +201,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         wp_id: 0,
         timer: Default::default(),
         flags: 0,
-    }));
+    });
     if args_has(args, 'C' as i32 as u_char) == 0 {
         cmd = args_string(args, 0 as u_int);
         if !cmd.is_null() {
@@ -220,11 +214,11 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 });
                 i = i.wrapping_add(1);
             }
-            (*cdata).cmd = Some(format_expand_cstring(ft, cmd));
+            cdata.cmd = Some(format_expand_cstring(ft, cmd));
             format_free(ft);
         }
     } else {
-        (*cdata).state = args_make_commands_prepare(
+        cdata.state = args_make_commands_prepare(
             self_0,
             item,
             0 as u_int,
@@ -234,36 +228,30 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         );
     }
     if args_has(args, 't' as i32 as u_char) != 0 && !wp.is_null() {
-        (*cdata).wp_id = (*wp).id as ::core::ffi::c_int;
+        cdata.wp_id = (*wp).id as ::core::ffi::c_int;
     } else {
-        (*cdata).wp_id = -(1 as ::core::ffi::c_int);
+        cdata.wp_id = -(1 as ::core::ffi::c_int);
     }
     if wait != 0 {
-        (*cdata).client = c;
-        (*cdata).item = item;
+        cdata.client = c;
+        cdata.item = item;
     } else {
-        (*cdata).client = tc;
-        (*cdata).flags |= JOB_NOWAIT;
+        cdata.client = tc;
+        cdata.flags |= JOB_NOWAIT;
     }
-    if !(*cdata).client.is_null() {
-        crate::src::shared::rc::retain((*cdata).client);
+    if !cdata.client.is_null() {
+        crate::src::shared::rc::retain(cdata.client);
     }
     if args_has(args, 'E' as i32 as u_char) != 0 {
-        (*cdata).flags |= JOB_SHOWSTDERR;
+        cdata.flags |= JOB_SHOWSTDERR;
     }
-    (*cdata).s = s;
+    cdata.s = s;
     if !s.is_null() {
         session_add_ref(
             s,
             b"cmd_run_shell_exec\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    event_set(
-        &raw mut (*cdata).timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe { cmd_run_shell_timer(cdata as *mut ::core::ffi::c_void) },
-    );
     if !delay.is_null() {
         // The pinned tmux build treats negative, nonfinite and out-of-range
         // delays as expired. Rust's saturating float casts would instead turn
@@ -273,47 +261,45 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             tv.tv_sec = d as time_t;
             tv.tv_usec = ((d - tv.tv_sec as f64) * 1_000_000.0) as __suseconds_t;
         }
-        event_add(&raw mut (*cdata).timer, &raw mut tv);
-    } else {
-        event_active(&raw mut (*cdata).timer);
     }
+    event_once_owned(
+        cdata,
+        |data| &mut data.timer,
+        (!delay.is_null()).then_some(&tv),
+        |data| unsafe { cmd_run_shell_timer(data) },
+    );
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
     return CMD_RETURN_WAIT;
 }
-unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
-    let mut cdata: *mut cmd_run_shell_data = arg as *mut cmd_run_shell_data;
-    let mut c: *mut client = (*cdata).client;
-    let cmd = (*cdata).cmd.as_deref();
-    let mut item: *mut cmdq_item = (*cdata).item;
+unsafe fn cmd_run_shell_timer(cdata: Box<cmd_run_shell_data>) {
+    let mut c: *mut client = cdata.client;
+    let cmd = cdata.cmd.as_deref();
+    let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    if (*cdata).state.is_null() {
+    if cdata.state.is_null() {
         if cmd.is_none() {
-            if !(*cdata).item.is_null() {
-                cmdq_continue((*cdata).item);
+            if !cdata.item.is_null() {
+                cmdq_continue(cdata.item);
             }
-            cmd_run_shell_free(cdata);
             return;
         }
-        if job_run(
+        let job = job_run(
             cmd,
             &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
-            (*cdata).s,
-            Some((*cdata).cwd.as_c_str()),
+            cdata.s,
+            Some(cdata.cwd.as_c_str()),
             None,
-            Some(Box::new(move |completion| unsafe {
-                cmd_run_shell_callback(completion, cdata)
-            })),
-            Some(Box::new(move || unsafe { cmd_run_shell_free(cdata) })),
-            (*cdata).flags,
+            None,
+            None,
+            cdata.flags,
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),
-        )
-        .is_null()
-        {
-            if (*cdata).item.is_null() {
+        );
+        if job.is_null() {
+            if cdata.item.is_null() {
                 status_message_set(
                     c,
                     -(1 as ::core::ffi::c_int),
@@ -326,25 +312,31 @@ unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
                     },
                 );
             } else {
-                cmdq_error((*cdata).item, |out| {
+                cmdq_error(cdata.item, |out| {
                     out.write_all(b"failed to run command: ")?;
                     write_cstr(out, cmd.unwrap().as_ptr())
                 });
-                cmdq_continue((*cdata).item);
+                cmdq_continue(cdata.item);
             }
-            cmd_run_shell_free(cdata);
+        } else {
+            // job_run does not dispatch callbacks before returning. Transfer the
+            // record only after startup succeeds; dropping the callback also
+            // releases it if the job is cancelled before completion.
+            (*job).completecb = Some(Box::new(move |completion| unsafe {
+                cmd_run_shell_callback(completion, &cdata);
+            }));
         }
         return;
     }
-    match args_make_commands((*cdata).state, &Vec::new()) {
+    match args_make_commands(cdata.state, &Vec::new()) {
         Err(mut error) => {
-            if (*cdata).item.is_null() {
+            if cdata.item.is_null() {
                 cmd_parse_error_uppercase_first(&mut error);
             }
             let error_ptr = error
                 .as_ref()
                 .map_or(::core::ptr::null(), |cause| cause.as_ptr());
-            if (*cdata).item.is_null() {
+            if cdata.item.is_null() {
                 status_message_set(
                     c,
                     -(1 as ::core::ffi::c_int),
@@ -354,7 +346,7 @@ unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
                     |out| write_cstr(out, error_ptr),
                 );
             } else {
-                cmdq_error((*cdata).item, |out| write_cstr(out, error_ptr));
+                cmdq_error(cdata.item, |out| write_cstr(out, error_ptr));
             }
         }
         Ok(commands) if item.is_null() => {
@@ -368,12 +360,11 @@ unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
             cmd_list_free(commands);
         }
     }
-    if !(*cdata).item.is_null() {
-        cmdq_continue((*cdata).item);
+    if !cdata.item.is_null() {
+        cmdq_continue(cdata.item);
     }
-    cmd_run_shell_free(cdata);
 }
-unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_run_shell_data) {
+unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shell_data) {
     let mut event = evbuffer_new();
     if !completion.output.is_empty() {
         evbuffer_add(
@@ -382,7 +373,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
             completion.output.len(),
         );
     }
-    let mut item: *mut cmdq_item = (*cdata).item;
+    let mut item: *mut cmdq_item = cdata.item;
     let cmd = (*cdata)
         .cmd
         .as_ref()
@@ -433,19 +424,19 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
         cmdq_continue(item);
     }
 }
-unsafe fn cmd_run_shell_free(mut data: *mut cmd_run_shell_data) {
-    let mut cdata = Box::from_raw(data);
-    event_del(&raw mut (*cdata).timer);
-    if !(*cdata).s.is_null() {
-        session_remove_ref(
-            (*cdata).s,
-            b"cmd_run_shell_free\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-    }
-    if !(*cdata).client.is_null() {
-        server_client_unref((*cdata).client);
-    }
-    if !(*cdata).state.is_null() {
-        args_make_commands_free((*cdata).state);
+impl Drop for cmd_run_shell_data {
+    fn drop(&mut self) {
+        unsafe {
+            event_del(&mut self.timer);
+            if !self.s.is_null() {
+                session_remove_ref(self.s, c"cmd_run_shell_free".as_ptr());
+            }
+            if !self.client.is_null() {
+                server_client_unref(self.client);
+            }
+            if !self.state.is_null() {
+                args_make_commands_free(self.state);
+            }
+        }
     }
 }
