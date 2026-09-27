@@ -146,6 +146,7 @@ pub struct window_pane_prompt {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane {
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub id: u_int,
     pub active_point: u_int,
     pub window: *mut window,
@@ -221,6 +222,17 @@ pub struct window_pane {
 }
 
 impl window_pane {
+    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        Self::empty().into_shared()
+    }
+
+    pub fn into_shared(mut self) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        std::rc::Rc::new_cyclic(|observer| {
+            self.observer = observer.clone();
+            std::cell::UnsafeCell::new(self)
+        })
+    }
+
     pub fn empty() -> Self {
         Self::default()
     }
@@ -229,7 +241,7 @@ impl window_pane {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window_pane>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>>,
 }
 
 /// Ordered mode stack owned by a pane. Each entry remains boxed so mode
@@ -476,6 +488,6 @@ impl window_pane_history {
 
 #[repr(C)]
 pub struct window_pane_tree {
-    /// The global pane index owns its map; retained Rc references own pane records.
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window_pane>>>,
+    /// The global pane index owns both its map and the Rc pane records.
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>>,
 }

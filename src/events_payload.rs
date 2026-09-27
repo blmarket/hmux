@@ -64,9 +64,9 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
             b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !target.wp.is_null() {
+    if let Some(pane) = ep.target_pane.take() {
         window_pane_remove_ref(
-            target.wp,
+            pane,
             b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
@@ -89,7 +89,7 @@ impl Drop for event_payload_item {
                     window_remove_ref(window, c"event_payload_free_value".as_ptr())
                 }
                 EventPayloadValue::Pane(pane) => {
-                    window_pane_remove_ref(crate::src::shared::rc::into_raw(pane), c"event_payload_free_value".as_ptr())
+                    window_pane_remove_ref(pane, c"event_payload_free_value".as_ptr())
                 }
                 _ => {}
             }
@@ -114,6 +114,7 @@ unsafe fn event_payload_set_item(
 
 pub fn event_payload_create() -> Box<event_payload> {
     Box::new(event_payload {
+        target_pane: None,
         target_window: None,
         target_session: None,
         items: event_payload_tree::default(),
@@ -171,10 +172,10 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
         target.w = (*fs.wl).window_ptr();
     }
     if !fs.wp.is_null() {
-        window_pane_add_ref(
+        ep.target_pane = Some(window_pane_add_ref(
             fs.wp,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        ));
         target.wp = fs.wp;
     }
 }
@@ -308,11 +309,11 @@ pub unsafe fn event_payload_set_pane(
     mut name: *const ::core::ffi::c_char,
     mut wp: *mut window_pane,
 ) {
-    window_pane_add_ref(
+    let pane = window_pane_add_ref(
         wp,
         b"event_payload_set_pane\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(crate::src::shared::rc::take(wp)));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(pane));
 }
 pub unsafe fn event_payload_set_pointer(
     ep: &mut event_payload,
@@ -568,7 +569,8 @@ mod tests {
                 }),
             );
             let mut payload = event_payload {
-                target_window: None,
+                target_pane: None,
+        target_window: None,
         target_session: None,
                 items: event_payload_tree::default(),
                 target: Default::default(),
@@ -592,7 +594,8 @@ mod tests {
     fn boxed_items_preserve_order_and_addresses_when_the_payload_moves() {
         unsafe {
             let mut payload = event_payload {
-                target_window: None,
+                target_pane: None,
+        target_window: None,
         target_session: None,
                 items: event_payload_tree::default(),
                 target: Default::default(),

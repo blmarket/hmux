@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 fn pane_owner() -> Rc<UnsafeCell<window_pane>> {
     // Collection fixtures have no display resources requiring model cleanup.
-    unsafe { rc::take(rc::new(window_pane::empty())) }
+    window_pane::new()
 }
 
 #[test]
@@ -73,14 +73,15 @@ fn global_lookup_preserves_pane_identity() {
     unsafe {
         let head = &raw mut all_window_panes;
         assert!((*head).storage.is_none());
-        let mut pane = window_pane::empty();
+        let owner = window_pane::new();
+        let pane = &mut *rc::as_ptr(&owner);
         pane.id = 123;
-        assert!(window_pane_tree_insert(head, &mut pane).is_null());
-        assert_eq!(window_pane_find_by_id(123), &mut pane as *mut _);
+        assert!(window_pane_tree_insert(head, owner.clone()).is_null());
+        assert_eq!(window_pane_find_by_id(123), pane as *mut _);
         assert!(window_pane_find_by_id(124).is_null());
         assert_eq!(
-            window_pane_tree_remove(head, &mut pane),
-            &mut pane as *mut _
+            rc::as_ptr(&window_pane_tree_remove(head, pane).unwrap()),
+            pane as *mut _
         );
         assert!(window_pane_find_by_id(123).is_null());
         assert!((*head).storage.is_none());

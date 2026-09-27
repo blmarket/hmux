@@ -3747,7 +3747,7 @@ mod prompt_cursor_tests {
                 window.sx = 100;
                 window.sy = 40;
                 let prompt = refbox::RefBox::new(prompt::default());
-                let base = rc::take(rc::new(window_pane::empty()));
+                let base = window_pane::new();
                 let wp = rc::as_ptr(&base);
                 (*wp).window = &raw mut window;
                 (*wp).xoff = x;
@@ -3758,7 +3758,7 @@ mod prompt_cursor_tests {
                     (*wp).prompt = Some(prompt);
                 }
                 window.z_index.push_front(std::rc::Rc::downgrade(&base));
-                let blocker = rc::take(rc::new(window_pane::empty()));
+                let blocker = window_pane::new();
                 if covered {
                     let cover = rc::as_ptr(&blocker);
                     (*cover).window = &raw mut window;

@@ -2590,7 +2590,7 @@ mod pane_observer_tests {
     #[test]
     fn expired_parent_rejects_input_and_prompt_but_allows_tree_cleanup() {
         unsafe {
-            let pane = rc::take(rc::new(window_pane::empty()));
+            let pane = window_pane::new();
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
             let tree_observer = rc::downgrade(tree);

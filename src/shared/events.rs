@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 pub struct event_payload {
     pub items: event_payload_tree,
     pub target: cmd_find_state,
+    pub target_pane: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     pub target_window: Option<std::rc::Rc<std::cell::UnsafeCell<window>>>,
     pub target_session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>>,
 }

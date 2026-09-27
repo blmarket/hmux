@@ -46,7 +46,7 @@ impl Scene {
         pane.yoff = y;
         pane.sx = width;
         pane.sy = height;
-        let owner = unsafe { rc::take(rc::new(pane)) };
+        let owner = pane.into_shared();
         let ptr = rc::as_ptr(&owner);
         self.window.z_index.push_front(Rc::downgrade(&owner));
         self.panes.push(owner);

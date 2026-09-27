@@ -386,20 +386,21 @@ pub fn window_pane_tree_find(head: &window_pane_tree, elm: &window_pane) -> *mut
     };
     let map = owner.try_borrow_mut().expect("pane index already borrowed");
     let key = elm.id;
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
+    map.get(&key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
 }
 pub unsafe fn window_pane_tree_insert(
     head: *mut window_pane_tree,
-    elm: *mut window_pane,
+    pane: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> *mut window_pane {
+    let elm = crate::src::shared::rc::as_ptr(&pane);
     let key = (*elm).id;
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner.try_borrow_mut().expect("pane index already borrowed");
     match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Occupied(entry) => return crate::src::shared::rc::as_ptr(entry.get()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(pane);
             (*elm).tree_entry.owner = Some(observer);
         }
     }
@@ -408,27 +409,26 @@ pub unsafe fn window_pane_tree_insert(
 pub unsafe fn window_pane_tree_remove(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
-) -> *mut window_pane {
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     if elm.is_null() {
-        return std::ptr::null_mut();
+        return None;
     }
     let key = (*elm).id;
     let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
+        return None;
     };
-    let empty = {
+    let (pane, empty) = {
         let mut map = owner.try_borrow_mut().expect("pane index already borrowed");
-        if map.get(&key).copied() != Some(elm) {
-            return std::ptr::null_mut();
+        if map.get(&key).map(crate::src::shared::rc::as_ptr) != Some(elm) {
+            return None;
         }
-        map.remove(&key);
-        map.is_empty()
+        (map.remove(&key).expect("matching pane"), map.is_empty())
     };
     (*elm).tree_entry.owner = None;
     if empty {
         (*head).storage = None;
     }
-    elm
+    Some(pane)
 }
 pub fn window_pane_tree_minmax(head: &window_pane_tree) -> *mut window_pane {
     let Some(owner) = head.storage.as_ref() else {
@@ -436,7 +436,7 @@ pub fn window_pane_tree_minmax(head: &window_pane_tree) -> *mut window_pane {
     };
     let map = owner.try_borrow_mut().expect("pane index already borrowed");
     let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    pair.map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
     let Some(owner) = elm.tree_entry.owner.as_ref() else {
@@ -450,7 +450,7 @@ pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
     let key = elm.id;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::ffi::c_char) {
     let mut fs: cmd_find_state = cmd_find_state {
@@ -1187,21 +1187,23 @@ pub unsafe fn window_remove_ref(owner: Rc<std::cell::UnsafeCell<window>>, from: 
     window_before_release(crate::src::shared::rc::as_ptr(&owner), from);
     drop(owner);
 }
-pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
-    crate::src::shared::rc::retain(wp);
+pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
+    let owner = (*wp).observer.upgrade().expect("live Rc pane");
     log_debug(format_args!(
         "retain pane %{} ({})",
         ((*wp).id) as u32,
         log_cstr((from) as *const _)
     ));
+    owner
 }
-pub unsafe fn window_pane_remove_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
+pub unsafe fn window_pane_remove_ref(owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>, from: *const ::core::ffi::c_char) {
+    let wp = crate::src::shared::rc::as_ptr(&owner);
     log_debug(format_args!(
         "release pane %{} ({})",
         ((*wp).id) as u32,
         log_cstr((from) as *const _)
     ));
-    crate::src::shared::rc::release(wp);
+    drop(owner);
 }
 pub unsafe fn window_set_name(
     mut w: *mut window,
@@ -2266,6 +2268,7 @@ pub unsafe fn window_pane_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *
 }
 pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
     let mut wp: window_pane = window_pane {
+        observer: std::rc::Weak::new(),
         id: 0,
         active_point: 0,
         window: ::core::ptr::null_mut::<window>(),
@@ -2433,7 +2436,7 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
 pub(crate) unsafe fn window_pane_weak(
     wp: *mut window_pane,
 ) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
-    crate::src::shared::rc::downgrade(wp)
+    (*wp).observer.clone()
 }
 
 /// Retain a live pane for an operation through a nonowning model link.
@@ -2802,7 +2805,8 @@ unsafe fn window_pane_create(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    wp = crate::src::shared::rc::new(window_pane::empty());
+    let owner = window_pane::new();
+    wp = crate::src::shared::rc::as_ptr(&owner);
     (*wp).window = w as *mut window;
     (*wp).options = Some(crate::src::options::options_create_owned(options_owner_ptr(&mut (*w).options)));
     (*wp).flags = PANE_STYLECHANGED;
@@ -2810,7 +2814,7 @@ unsafe fn window_pane_create(
     let fresh2 = next_window_pane_id;
     next_window_pane_id = next_window_pane_id.wrapping_add(1);
     (*wp).id = fresh2;
-    window_pane_tree_insert(&raw mut all_window_panes, wp);
+    window_pane_tree_insert(&raw mut all_window_panes, owner);
     (*wp).fd = -(1 as ::core::ffi::c_int);
     (*wp).modes = window_pane_modes::default();
     (*wp).resize_queue = window_pane_resizes::default();
@@ -2914,7 +2918,7 @@ unsafe fn window_pane_scrollbar_redraw_visibility(mut wp: *mut window_pane) {
 unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     window_pane_wait_finish(wp);
     spawn_editor_finish(wp);
-    window_pane_tree_remove(&raw mut all_window_panes, wp);
+    let owner = window_pane_tree_remove(&raw mut all_window_panes, wp).expect("registered pane owner");
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(wp);
     window_pane_free_modes(wp);
@@ -2950,7 +2954,7 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     }
     window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
     window_pane_remove_ref(
-        wp,
+        owner,
         b"window_pane_destroy\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
@@ -4518,13 +4522,14 @@ mod collection_index_tests {
         unsafe {
             // No display resources in this fixture; exercise the actual pane
             // retain/release functions with ordinary field drop.
-            let wp = crate::src::shared::rc::new(window_pane::empty());
+            let wp_owner = window_pane::new();
+            let wp = crate::src::shared::rc::as_ptr(&wp_owner);
             let weak = window_pane_weak(wp);
-            window_pane_add_ref(wp, c"callback".as_ptr());
-            window_pane_remove_ref(wp, c"pane shutdown".as_ptr());
+            let callback = window_pane_add_ref(wp, c"callback".as_ptr());
+            window_pane_remove_ref(wp_owner, c"pane shutdown".as_ptr());
             let retained = weak.upgrade().expect("callback keeps the pane alive");
             assert_eq!(crate::src::shared::rc::as_ptr(&retained), wp);
-            window_pane_remove_ref(wp, c"callback complete".as_ptr());
+            window_pane_remove_ref(callback, c"callback complete".as_ptr());
             assert!(
                 weak.upgrade().is_some(),
                 "upgraded Rc independently owns the pane"
@@ -4577,32 +4582,32 @@ mod collection_index_tests {
             let mut head = window_pane_tree { storage: None };
             let mut other = window_pane_tree { storage: None };
             let first_owner =
-                crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
+                window_pane::new();
             let first = crate::src::shared::rc::as_ptr(&first_owner);
             (*first).id = 1;
             let second_owner =
-                crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
+                window_pane::new();
             let second = crate::src::shared::rc::as_ptr(&second_owner);
             (*second).id = 2;
             let duplicate_owner =
-                crate::src::shared::rc::take(crate::src::shared::rc::new(window_pane::empty()));
+                window_pane::new();
             let duplicate = crate::src::shared::rc::as_ptr(&duplicate_owner);
             (*duplicate).id = 1;
 
-            assert!(window_pane_tree_insert(&mut head, first).is_null());
-            assert!(window_pane_tree_insert(&mut head, second).is_null());
+            assert!(window_pane_tree_insert(&mut head, first_owner.clone()).is_null());
+            assert!(window_pane_tree_insert(&mut head, second_owner.clone()).is_null());
             let index_observer = (*first).tree_entry.owner.as_ref().unwrap().clone();
-            assert_eq!(window_pane_tree_insert(&mut head, duplicate), first);
+            assert_eq!(window_pane_tree_insert(&mut head, duplicate_owner.clone()), first);
             assert!((*duplicate).tree_entry.owner.is_none());
-            assert!(window_pane_tree_remove(&mut other, first).is_null());
+            assert!(window_pane_tree_remove(&mut other, first).is_none());
             assert!((*first).tree_entry.owner.is_some());
 
             let mut moved = head;
             assert_eq!(window_pane_tree_next(&*first), second);
-            assert_eq!(window_pane_tree_remove(&mut moved, first), first);
+            assert_eq!(crate::src::shared::rc::as_ptr(&window_pane_tree_remove(&mut moved, first).unwrap()), first);
             assert!((*first).tree_entry.owner.is_none());
             assert!(window_pane_tree_next(&*first).is_null());
-            assert_eq!(window_pane_tree_remove(&mut moved, second), second);
+            assert_eq!(crate::src::shared::rc::as_ptr(&window_pane_tree_remove(&mut moved, second).unwrap()), second);
 
             drop(first_owner);
             drop(second_owner);
@@ -4724,12 +4729,12 @@ mod pane_prompt_data_tests {
     #[test]
     fn callback_replacement_keeps_new_pane_data_and_releases_the_old_record() {
         unsafe {
-            let pane = rc::take(rc::new(window_pane::empty()));
+            let pane = window_pane::new();
             let wp = rc::as_ptr(&pane);
             (*wp).id = u_int::MAX - 1;
             // This fixture exercises cleanup without firing pane hook events.
             (*wp).flags = PANE_DESTROYED;
-            assert!(window_pane_tree_insert(&raw mut all_window_panes, wp).is_null());
+            assert!(window_pane_tree_insert(&raw mut all_window_panes, pane.clone()).is_null());
             let old_data = data((*wp).id);
             let old_weak = old_data.downgrade();
             let old_prompt = attach(old_data);
@@ -4776,7 +4781,7 @@ mod pane_prompt_data_tests {
             assert!(!replacement_observer.is_alive());
             drop(replacement);
             assert!(!replacement_weak.is_alive());
-            assert_eq!(window_pane_tree_remove(&raw mut all_window_panes, wp), wp);
+            assert_eq!(rc::as_ptr(&window_pane_tree_remove(&raw mut all_window_panes, wp).unwrap()), wp);
         }
     }
 }
@@ -4926,7 +4931,8 @@ mod pane_stream_lifecycle_tests {
     #[test]
     fn pane_observers_expire_on_logical_destruction_before_the_last_guard() {
         unsafe {
-            let pane = rc::new(window_pane::empty());
+            let pane_owner = window_pane::new();
+            let pane = crate::src::shared::rc::as_ptr(&pane_owner);
             (*pane).fd = -1;
             (*pane).pipe_fd = -1;
             let observer = window_pane_weak(pane);
@@ -4934,6 +4940,7 @@ mod pane_stream_lifecycle_tests {
             let guard = window_pane_upgrade(&observer).unwrap();
             assert_eq!(rc::as_ptr(&guard), pane);
 
+            window_pane_tree_insert(&raw mut all_window_panes, pane_owner);
             window_pane_destroy(pane);
 
             // An in-flight operation can still hold the allocation, but new
@@ -4950,7 +4957,8 @@ mod pane_stream_lifecycle_tests {
     #[test]
     fn destroying_an_empty_pane_releases_its_stream_callbacks() {
         unsafe {
-            let pane = rc::new(window_pane::empty());
+            let pane_owner = window_pane::new();
+            let pane = crate::src::shared::rc::as_ptr(&pane_owner);
             let observer = window_pane_weak(pane);
             (*pane).fd = -1;
             (*pane).pipe_fd = -1;
@@ -4959,6 +4967,7 @@ mod pane_stream_lifecycle_tests {
             assert!((*pane).ictx.is_some());
             let callback = Rc::downgrade((*(*pane).event).readcb.as_ref().unwrap());
 
+            window_pane_tree_insert(&raw mut all_window_panes, pane_owner);
             window_pane_destroy(pane);
 
             assert!(observer.upgrade().is_none());
@@ -4992,7 +5001,9 @@ mod zoom_teardown_tests {
             })
             .unwrap();
         options_default(options_owner_ptr(&mut (*w).options), entry);
-        let pane = rc::new(window_pane::empty());
+        let pane_owner = window_pane::new();
+            let pane = crate::src::shared::rc::as_ptr(&pane_owner);
+        window_pane_tree_insert(&raw mut all_window_panes, pane_owner);
         (*pane).window = w;
         (*pane).fd = -1;
         (*pane).pipe_fd = -1;
