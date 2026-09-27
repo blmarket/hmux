@@ -578,11 +578,13 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         (*s).attached = 0 as u_int;
         status_update_cache(s);
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     c = clients.first();
     while !c.is_null() {

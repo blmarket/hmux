@@ -268,14 +268,16 @@ unsafe fn cmd_find_best_session(
             i = i.wrapping_add(1);
         }
     } else {
-        s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         while !s_loop.is_null() {
             if !(cmd_find_session_valid(s_loop) == 0) {
                 if cmd_find_session_better(s_loop, s, flags) != 0 {
                     s = s_loop;
                 }
             }
-            s_loop = sessions_next(&*s_loop);
+            s_loop_owner = sessions_next(&*s_loop);
+            s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
     }
     return s;
@@ -288,12 +290,14 @@ unsafe fn cmd_find_best_session_with_window(mut fs: *mut cmd_find_state) -> ::co
         "cmd_find_best_session_with_window",
         ((*(*fs).w).id) as u32
     ));
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if !(session_has(s, (*fs).w) == 0) {
             slist.push(s);
         }
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     let best = if slist.is_empty() {
         None
@@ -397,7 +401,8 @@ unsafe fn cmd_find_get_session(
         return -(1 as ::core::ffi::c_int);
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s_loop.is_null() {
         if strncmp(
             session,
@@ -410,14 +415,16 @@ unsafe fn cmd_find_get_session(
             }
             s = s_loop;
         }
-        s_loop = sessions_next(&*s_loop);
+        s_loop_owner = sessions_next(&*s_loop);
+        s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     if !s.is_null() {
         (*fs).s = s;
         return 0 as ::core::ffi::c_int;
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s_loop.is_null() {
         if fnmatch(
             session,
@@ -430,7 +437,8 @@ unsafe fn cmd_find_get_session(
             }
             s = s_loop;
         }
-        s_loop = sessions_next(&*s_loop);
+        s_loop_owner = sessions_next(&*s_loop);
+        s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     if !s.is_null() {
         (*fs).s = s;

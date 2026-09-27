@@ -99,7 +99,8 @@ unsafe fn cmd_kill_session_all(
 ) -> cmd_retval {
     let mut s: *mut session = (*cmdq_get_target(item)).s;
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
-    sloop = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut sloop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
         if !(sloop == s) {
@@ -112,7 +113,8 @@ unsafe fn cmd_kill_session_all(
                 );
             }
         }
-        sloop = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        sloop_owner = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return CMD_RETURN_NORMAL;
 }

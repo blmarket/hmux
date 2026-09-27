@@ -428,7 +428,8 @@ unsafe fn server_send_exit() {
         (*c).session = ::core::ptr::null_mut::<session>();
         c = c1;
     }
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         let name = sessions_key(&*s);
         session_destroy(
@@ -436,7 +437,8 @@ unsafe fn server_send_exit() {
             1 as ::core::ffi::c_int,
             b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        s = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        s_owner = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }
 pub unsafe fn server_update_socket() {
@@ -471,13 +473,15 @@ pub unsafe fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if (*s).attached != 0 as u_int {
             n += 1;
             break;
         } else {
-            s = sessions_next(&*s);
+            s_owner = sessions_next(&*s);
+            s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
     }
     if n != last {

@@ -72,10 +72,12 @@ unsafe fn cmd_list_panes_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
 }
 unsafe fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut cmdq_item) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         cmd_list_panes_session(self_0, s, item, 2 as ::core::ffi::c_int);
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }
 unsafe fn cmd_list_panes_session(

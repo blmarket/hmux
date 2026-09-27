@@ -2300,10 +2300,12 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         n = n.wrapping_add(1);
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return Some(
         CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
@@ -2652,7 +2654,8 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if !(*ft).wl.is_null() {
-        s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         while !s.is_null() {
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
@@ -2664,7 +2667,8 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
                 }
                 wl = winlinks_next(&*wl);
             }
-            s = sessions_next(&*s);
+            s_owner = sessions_next(&*s);
+            s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
         return Some(c"0".to_owned());
     }
@@ -2690,14 +2694,16 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         }
         sg = session_groups_next(&*sg);
     }
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if session_group_contains(s).is_null() {
             if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
                 n = n.wrapping_add(1);
             }
         }
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return Some(
         CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),

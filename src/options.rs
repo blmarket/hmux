@@ -1891,16 +1891,20 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         while !s.is_null() {
             session_update_history(s);
-            s = sessions_next(&*s);
+            s_owner = sessions_next(&*s);
+            s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
     }
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         status_update_cache(s);
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     recalculate_sizes();
     loop_0 = clients.first();

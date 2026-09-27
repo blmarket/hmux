@@ -109,44 +109,44 @@ pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> Option<
     }
     Some(session)
 }
-pub fn sessions_minmax(head: &sessions) -> *mut session {
+pub fn sessions_minmax(head: &sessions) -> Option<Rc<UnsafeCell<session>>> {
     let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
+        return None;
     };
     let map = owner
         .try_borrow_mut()
         .expect("session index already borrowed");
     let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
+    pair.map(|(_, node)| Rc::clone(node))
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
-pub fn sessions_after(head: &sessions, name: &[u8]) -> *mut session {
+pub fn sessions_after(head: &sessions, name: &[u8]) -> Option<Rc<UnsafeCell<session>>> {
     let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
+        return None;
     };
     let map = owner
         .try_borrow_mut()
         .expect("session index already borrowed");
     map.range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
+        .map(|(_, node)| Rc::clone(node))
 }
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
-pub unsafe fn sessions_next(elm: &session) -> *mut session {
+pub unsafe fn sessions_next(elm: &session) -> Option<Rc<UnsafeCell<session>>> {
     let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
+        return None;
     };
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Dropped) => return None,
         Err(refbox::BorrowError::Borrowed) => panic!("session index already borrowed"),
     };
     let key = elm.name.as_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
+        .map(|(_, node)| Rc::clone(node))
 }
 pub fn session_groups_find(head: &session_groups, elm: &session_group) -> *mut session_group {
     let Some(owner) = head.storage.as_ref() else {
@@ -253,12 +253,14 @@ pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
 }
 pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s_loop.is_null() {
         if s_loop == s {
             return 1 as ::core::ffi::c_int;
         }
-        s_loop = sessions_next(&*s_loop);
+        s_loop_owner = sessions_next(&*s_loop);
+        s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -286,12 +288,14 @@ pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Optio
 }
 pub unsafe fn session_find_by_id(mut id: u_int) -> Option<Rc<UnsafeCell<session>>> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if (*s).id == id {
             return (*s).observer.upgrade();
         }
-        s = sessions_next(&*s);
+        s_owner = sessions_next(&*s);
+        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return None;
 }
