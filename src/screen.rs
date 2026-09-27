@@ -390,7 +390,7 @@ unsafe fn screen_resize_y(
                 if available > needed {
                     available = needed;
                 }
-                grid_view_delete_lines(gd, oldy.wrapping_sub(available), available, 8 as u_int);
+                grid_view_delete_lines(&mut *gd, oldy.wrapping_sub(available), available, 8 as u_int);
             }
             needed = needed.wrapping_sub(available);
         }
@@ -402,7 +402,7 @@ unsafe fn screen_resize_y(
             if available > needed {
                 available = needed;
             }
-            grid_view_delete_lines(gd, 0 as u_int, available, 8 as u_int);
+            grid_view_delete_lines(&mut *gd, 0 as u_int, available, 8 as u_int);
             *cy = (*cy).wrapping_sub(available);
         }
     }
@@ -670,7 +670,7 @@ pub unsafe fn screen_alternate_on(
         gc as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    grid_view_clear((*s).grid, 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
+    grid_view_clear(&mut *(*s).grid, 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
     (*s).saved_flags = (*(*s).grid).flags;
     (*(*s).grid).flags &= !GRID_HISTORY;
     return 1 as ::core::ffi::c_int;

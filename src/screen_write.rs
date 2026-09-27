@@ -1965,7 +1965,7 @@ pub unsafe fn screen_write_insertcharacter(
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    grid_view_insert_cells((*s).grid, (*s).cx, (*s).cy, nx, bg);
+    grid_view_insert_cells(&mut *(*s).grid, (*s).cx, (*s).cy, nx, bg);
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
@@ -2053,7 +2053,7 @@ pub unsafe fn screen_write_deletecharacter(
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    grid_view_delete_cells((*s).grid, (*s).cx, (*s).cy, nx, bg);
+    grid_view_delete_cells(&mut *(*s).grid, (*s).cx, (*s).cy, nx, bg);
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
@@ -2141,7 +2141,7 @@ pub unsafe fn screen_write_clearcharacter(
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    grid_view_clear((*s).grid, (*s).cx, (*s).cy, nx, 1 as u_int, bg);
+    grid_view_clear(&mut *(*s).grid, (*s).cx, (*s).cy, nx, 1 as u_int, bg);
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
@@ -2228,7 +2228,7 @@ pub unsafe fn screen_write_insertline(
             1 as ::core::ffi::c_int,
         );
         ttyctx.bg = bg;
-        grid_view_insert_lines(gd, (*s).cy, ny, bg);
+        grid_view_insert_lines(&mut *gd, (*s).cy, ny, bg);
         screen_write_collect_flush(
             ctx,
             0 as ::core::ffi::c_int,
@@ -2262,9 +2262,9 @@ pub unsafe fn screen_write_insertline(
     );
     ttyctx.bg = bg;
     if (*s).cy < (*s).rupper || (*s).cy > (*s).rlower {
-        grid_view_insert_lines(gd, (*s).cy, ny, bg);
+        grid_view_insert_lines(&mut *gd, (*s).cy, ny, bg);
     } else {
-        grid_view_insert_lines_region(gd, (*s).rlower, (*s).cy, ny, bg);
+        grid_view_insert_lines_region(&mut *gd, (*s).rlower, (*s).cy, ny, bg);
     }
     screen_write_collect_flush(
         ctx,
@@ -2358,7 +2358,7 @@ pub unsafe fn screen_write_deleteline(
             1 as ::core::ffi::c_int,
         );
         ttyctx.bg = bg;
-        grid_view_delete_lines(gd, (*s).cy, ny, bg);
+        grid_view_delete_lines(&mut *gd, (*s).cy, ny, bg);
         screen_write_collect_flush(
             ctx,
             0 as ::core::ffi::c_int,
@@ -2397,9 +2397,9 @@ pub unsafe fn screen_write_deleteline(
     );
     ttyctx.bg = bg;
     if (*s).cy < (*s).rupper || (*s).cy > (*s).rlower {
-        grid_view_delete_lines(gd, (*s).cy, ny, bg);
+        grid_view_delete_lines(&mut *gd, (*s).cy, ny, bg);
     } else {
-        grid_view_delete_lines_region(gd, (*s).rlower, (*s).cy, ny, bg);
+        grid_view_delete_lines_region(&mut *gd, (*s).rlower, (*s).cy, ny, bg);
     }
     screen_write_collect_flush(
         ctx,
@@ -2444,7 +2444,7 @@ pub unsafe fn screen_write_clearline(mut ctx: *mut screen_write_ctx, mut bg: u_i
         &raw mut (*gl).osc133_data as *const ::core::ffi::c_void,
         ::core::mem::size_of::<osc133_data>() as size_t,
     );
-    grid_view_clear((*s).grid, 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
+    grid_view_clear(&mut *(*s).grid, 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
     gl = grid_get_line((*s).grid, (*(*s).grid).hsize.wrapping_add((*s).cy));
     (*gl).flags = ((*gl).flags as u_int | flags) as u_short;
     memcpy(
@@ -2478,7 +2478,7 @@ pub unsafe fn screen_write_clearendofline(mut ctx: *mut screen_write_ctx, mut bg
         return;
     }
     grid_view_clear(
-        (*s).grid,
+        &mut *(*s).grid,
         (*s).cx,
         (*s).cy,
         sx.wrapping_sub((*s).cx),
@@ -2500,10 +2500,10 @@ pub unsafe fn screen_write_clearstartofline(mut ctx: *mut screen_write_ctx, mut 
         return;
     }
     if (*s).cx > sx.wrapping_sub(1 as u_int) {
-        grid_view_clear((*s).grid, 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
+        grid_view_clear(&mut *(*s).grid, 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
     } else {
         grid_view_clear(
-            (*s).grid,
+            &mut *(*s).grid,
             0 as u_int,
             (*s).cy,
             (*s).cx.wrapping_add(1 as u_int),
@@ -2604,7 +2604,7 @@ pub unsafe fn screen_write_reverseindex(mut ctx: *mut screen_write_ctx, mut bg: 
         }
         return;
     }
-    grid_view_scroll_region_down((*s).grid, (*s).rupper, (*s).rlower, bg);
+    grid_view_scroll_region_down(&mut *(*s).grid, (*s).rupper, (*s).rlower, bg);
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
@@ -2697,7 +2697,7 @@ pub unsafe fn screen_write_linefeed(
         }
         return;
     }
-    grid_view_scroll_region_up(gd, (*s).rupper, (*s).rlower, bg);
+    grid_view_scroll_region_up(&mut *gd, (*s).rupper, (*s).rlower, bg);
     screen_write_collect_scroll(ctx, bg);
     (*ctx).scrolled = (*ctx).scrolled.wrapping_add(1);
 }
@@ -2732,7 +2732,7 @@ pub unsafe fn screen_write_scrollup(
     }
     i = 0 as u_int;
     while i < lines {
-        grid_view_scroll_region_up(gd, (*s).rupper, (*s).rlower, bg);
+        grid_view_scroll_region_up(&mut *gd, (*s).rupper, (*s).rlower, bg);
         screen_write_collect_scroll(ctx, bg);
         i = i.wrapping_add(1);
     }
@@ -2812,7 +2812,7 @@ pub unsafe fn screen_write_scrolldown(
     }
     i = 0 as u_int;
     while i < lines {
-        grid_view_scroll_region_down(gd, (*s).rupper, (*s).rlower, bg);
+        grid_view_scroll_region_down(&mut *gd, (*s).rupper, (*s).rlower, bg);
         i = i.wrapping_add(1);
     }
     screen_write_collect_flush(
@@ -2911,11 +2911,11 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
             b"scroll-on-clear\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
-        grid_view_clear_history(gd, bg);
+        grid_view_clear_history(&mut *gd, bg);
     } else {
         if (*s).cx <= sx.wrapping_sub(1 as u_int) {
             grid_view_clear(
-                gd,
+                &mut *gd,
                 (*s).cx,
                 (*s).cy,
                 sx.wrapping_sub((*s).cx),
@@ -2924,7 +2924,7 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
             );
         }
         grid_view_clear(
-            gd,
+            &mut *gd,
             0 as u_int,
             (*s).cy.wrapping_add(1 as u_int),
             sx,
@@ -3061,13 +3061,13 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
     );
     ttyctx.bg = bg;
     if (*s).cy > 0 as u_int {
-        grid_view_clear((*s).grid, 0 as u_int, 0 as u_int, sx, (*s).cy, bg);
+        grid_view_clear(&mut *(*s).grid, 0 as u_int, 0 as u_int, sx, (*s).cy, bg);
     }
     if (*s).cx > sx.wrapping_sub(1 as u_int) {
-        grid_view_clear((*s).grid, 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
+        grid_view_clear(&mut *(*s).grid, 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
     } else {
         grid_view_clear(
-            (*s).grid,
+            &mut *(*s).grid,
             0 as u_int,
             (*s).cy,
             (*s).cx.wrapping_add(1 as u_int),
@@ -3206,9 +3206,9 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
             b"scroll-on-clear\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
-        grid_view_clear_history((*s).grid, bg);
+        grid_view_clear_history(&mut *(*s).grid, bg);
     } else {
-        grid_view_clear((*s).grid, 0 as u_int, 0 as u_int, sx, sy, bg);
+        grid_view_clear(&mut *(*s).grid, 0 as u_int, 0 as u_int, sx, sy, bg);
     }
     screen_write_collect_clear(ctx, 0 as u_int, sy);
     if screen_write_should_draw_lines(ctx, 0 as u_int, sy) == 0 {
@@ -4175,7 +4175,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         return;
     }
     if (*s).mode & MODE_INSERT != 0 {
-        grid_view_insert_cells((*s).grid, (*s).cx, (*s).cy, width, 8 as u_int);
+        grid_view_insert_cells(&mut *(*s).grid, (*s).cx, (*s).cy, width, 8 as u_int);
         skip = 0 as ::core::ffi::c_int;
     }
     if (*s).mode & MODE_WRAP != 0 && (*s).cx > sx.wrapping_sub(width) {
