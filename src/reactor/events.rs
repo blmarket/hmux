@@ -38,13 +38,20 @@ fn remove(key: usize) {
     }
 }
 pub(super) fn clear() {
-    let states = EVENTS.with(|e| e.borrow_mut().drain().map(|(_, s)| s).collect::<Vec<_>>());
-    for state in states {
-        state.live.set(false);
-        let task = state.task.borrow_mut().take();
-        let activation = state.activation.borrow_mut().take();
-        drop(task);
-        drop(activation);
+    loop {
+        let states = EVENTS.with(|e| e.borrow_mut().drain().map(|(_, s)| s).collect::<Vec<_>>());
+        if states.is_empty() {
+            break;
+        }
+        for state in states {
+            state.live.set(false);
+            let task = state.task.borrow_mut().take();
+            let activation = state.activation.borrow_mut().take();
+            drop(task);
+            drop(activation);
+        }
+        // Dropping callback owners may defer their own cleanup with event_once.
+        // Cancel those registrations too before the runtime is torn down.
     }
 }
 fn fire(state: &Rc<EventState>, flags: c_short) {
@@ -430,6 +437,86 @@ mod tests {
             assert_eq!(drops.get(), 0);
             super::super::shutdown_runtime();
             assert_eq!(drops.get(), 1);
+        }
+    }
+
+    #[test]
+    fn cancelling_owned_timers_drains_cleanup_scheduled_by_drop() {
+        struct DeferredValue {
+            drops: Rc<Cell<usize>>,
+            next: Option<Rc<DeferredValue>>,
+        }
+
+        impl Drop for DeferredValue {
+            fn drop(&mut self) {
+                self.drops.set(self.drops.get() + 1);
+                if let Some(next) = self.next.take() {
+                    crate::src::shared::rc::release_later(next);
+                }
+            }
+        }
+
+        struct DeferredTimerOwner {
+            timer: event,
+            value: Option<Rc<DeferredValue>>,
+        }
+
+        impl Drop for DeferredTimerOwner {
+            fn drop(&mut self) {
+                unsafe { event_del(&mut self.timer) };
+                crate::src::shared::rc::release_later(self.value.take().unwrap());
+            }
+        }
+
+        for timeout in [
+            None,
+            Some(timeval {
+                tv_sec: 60,
+                tv_usec: 0,
+            }),
+        ] {
+            let drops = Rc::new(Cell::new(0));
+            let tail = Rc::new(DeferredValue {
+                drops: drops.clone(),
+                next: None,
+            });
+            let tail_observer = Rc::downgrade(&tail);
+            let value = Rc::new(DeferredValue {
+                drops: drops.clone(),
+                next: Some(tail),
+            });
+            let observer = Rc::downgrade(&value);
+            let owner = Box::new(DeferredTimerOwner {
+                timer: event::default(),
+                value: Some(value),
+            });
+            assert_eq!(
+                event_once_owned(
+                    owner,
+                    |owner| &mut owner.timer,
+                    timeout.as_ref(),
+                    |_| {
+                        panic!("cancelled timer must not dispatch");
+                    }
+                ),
+                0
+            );
+            super::super::shutdown_runtime();
+            let retained = EVENTS.with(|events| events.borrow().len());
+            let released = drops.get();
+            // Clean up even if an implementation under test stops draining too
+            // early, so a failed assertion cannot leave thread-local owners.
+            while EVENTS.with(|events| !events.borrow().is_empty()) {
+                clear();
+            }
+            super::super::shutdown_runtime();
+            assert_eq!(retained, 0, "shutdown retained deferred cleanup events");
+            assert_eq!(
+                released, 2,
+                "shutdown must release the entire cleanup chain"
+            );
+            assert!(observer.upgrade().is_none());
+            assert!(tail_observer.upgrade().is_none());
         }
     }
 
