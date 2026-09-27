@@ -24,7 +24,7 @@ Preserve existing heap allocations and pinned tmux behavior. Prefer an owning
 can outlive a borrow or destroy their own logical owner. Never retain a map or
 mutable state borrow across a callback that can replace or remove it.
 
-## Migrated in this batch
+## Completed migrations
 
 | Allocation | Result |
 | --- | --- |
@@ -37,6 +37,10 @@ mutable state borrow across a callback that can replace or remove it.
 | Control pane entries and pending output | Pane map keeps boxed owners; readers borrow entries and offsets. Pending output stores pane IDs and resolves entries around operations that may discard output. |
 | Buffer editor callback record | Shared typed record is captured by the completion closure; a cell publishes editor identity after startup. Cancellation drops the closure, and weak buffer identity prevents updating a replacement buffer. |
 | Synchronized-output dirty bitmap | Pane stores `Option<Box<[bitstr_t]>>`; readers borrow/index the slice. Resize, explicit clear, and pane destruction release it normally. |
+| Prepared command state | Shell, prompt, and pane-mode records own `Box<args_command_state>` and borrow it during expansion. Retained command lists and clients have typed `Rc` owners; Drop preserves deferred client release. |
+| Parser nodes and nested payloads | Constructors and containers transfer boxes directly. An enum owns string, nested command-set, or shared compiled-command payloads; ordinary Drop handles success and error cleanup. |
+| Source-file callback state | A read callback owns an optional Box, borrows it during progress, then transfers it to the next read or command callback. Drop handles cancellation and exactly-once depth cleanup, preserving the startup exception. |
+| Control-state root | Client stores `Option<Box<control_state>>`. Callbacks resolve short borrows through the client; teardown keeps state available until monitor and stream cleanup finishes. |
 
 Each migration has its own commit. Validation includes the workspace suite,
 focused lifecycle tests, live command comparisons with the pinned tmux build,
@@ -51,13 +55,9 @@ ownership boundary. Broader migrations need their callers changed together.
 | Sites / records | Current ownership and proposed migration |
 | --- | --- |
 | `src/arguments.rs`: argument root | Command owns the argument allocation through a raw field. Return `Box<args>`, store it in the command, and borrow at consumers; parser failure and command-copy paths must transfer the owner explicitly. |
-| `src/arguments.rs`: `args_command_state` | Prepared command state is owned by shell/prompt/mode records. Return a boxed state with Drop for retained client/command-list references; these records can use `Option<Box<_>>` and borrow while expanding. Coordinate all prepare/free callers. |
 | `src/cmd/core.rs`: `cmd` | Command-list storage owns command records, but constructors/free helpers and traversal use raw handles plus a membership side table. Transfer `Box<cmd>` into/out of the list and borrow records; migrate argument ownership with it and eliminate detached-pointer traversal. |
-| `src/cmd/parse.rs`: parser arguments, commands, command sets | Containers already own boxed children but allocation, insertion, and recursive cleanup round-trip them through raw pointers. Use typed boxed constructors/transfers and Drop; nested commands and command-list references need distinct owned variants. Preserve alias expansion and parser error cleanup. |
 | `src/cmd/queue.rs`: queue root and detached items | Queue stores `Box<cmdq_item>`; detached construction and enqueue recover owners from pointers. Return/accept typed detached owners. Queue callbacks, waiting commands, and cancellation retain item identities, so borrowing alone does not cover every observer; use IDs or weak handles across dispatch. |
-| `src/cmd/entries/source_file.rs`: source-file callback data | Read-progress and cancellation callbacks share the record, which transfers to subsequent files and finally command completion. Prefer an `Option<Box<_>>` captured by the read callback: progress borrows and a terminal event takes/transfers it. A shared take-once owner is needed only if separate cancel callbacks remain. File completion drops its cancellation callback before terminal read dispatch; owning the record only in cancellation would free it too early. Preserve exactly-once depth decrement and the startup path that intentionally skips it. |
 | `src/window.rs`: `window_pane_input_data` | File-progress and cancellation callbacks share data; the file handle is assigned after startup. Use a shared typed record and a cell for file identity, with owned client-reference cleanup. Cancelling a progress read schedules a terminal event and must not release its client prematurely. |
-| `src/control.rs`: control-state root | Client is the sole owner of state through a raw handle; streams and monitor callbacks observe it. Store `Option<Box<control_state>>` in the client, keeping state accessible until monitor/event cancellation and pane cleanup finish. Use short borrows around callback dispatch. Pane and window indexes now have typed ownership. |
 | `src/environ.rs`: environment root | Entries already have typed ownership; environments still transfer through raw create/free APIs. Store `Box<environ>` in sessions, clients, globals, and temporary spawn owners; borrow for copying/lookup and retain nullable ownership where present. |
 | `src/events_payload.rs`: payload root/items | Item index stores raw owning addresses; value cleanup releases retained client/session/window/pane references. Own entries in the map and detach an owner before cleanup that can fire callbacks. Convert payload transfer through event dispatch to a typed owner with explicit target/value Drop ordering. |
 | `src/format/tree.rs`: tree and entries | Entries are raw map values; lazy callbacks can add/replace entries while evaluating. Map can own boxes, but evaluation must take callback state, release the entry borrow, invoke it, then resolve the key/identity again. Tree Drop must preserve client release and callback cleanup ordering. |
@@ -81,12 +81,11 @@ ownership boundary. Broader migrations need their callers changed together.
 ## Tests and fixtures
 
 `src/input.rs`, `src/mode_tree.rs`, `src/monitor.rs`, `src/spawn.rs`,
-`src/window.rs`, `src/events_payload.rs`, `src/control.rs`, and
+`src/window.rs`, `src/events_payload.rs`, and
 `src/format/jobs.rs` include raw allocation fixtures for APIs still under
-migration. The `src/cmd/entries/command_prompt.rs` lifecycle test also constructs a raw
-`args_command_state` to exercise that existing ownership API. Convert these
-fixtures when their corresponding API changes; they are not evidence of an
-external C ownership requirement.
+migration. The command-prompt lifecycle fixture now uses a boxed prepared state.
+Convert remaining fixtures when their corresponding API changes; they are not
+evidence of an external C ownership requirement.
 
 `tests/fixtures/architecture/rust-deallocation.rs` intentionally contains
 `Box::from_raw` as input to an architecture test and must retain that example.
