@@ -1,6 +1,6 @@
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
-use crate::src::ffi::libc::{memcpy, memset, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
@@ -156,70 +156,25 @@ impl Drop for RedrawCellScratch {
 pub const REDRAW_ISOLATES: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_DEFAULT_SET: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_STATUS_TOP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-unsafe fn redraw_flags_to_string(mut flags: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 128] = [0; 128];
-    *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if flags & REDRAW_STATUS != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"status \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & REDRAW_PANE != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"pane \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & REDRAW_PANE_BORDER != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"border \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & REDRAW_PANE_STATUS != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"pane-status \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & REDRAW_PANE_SCROLLBAR != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"scrollbar \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & REDRAW_MENU != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"menu \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
-    }
-    if flags & REDRAW_OVERLAY != 0 {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"overlay \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
+fn redraw_flags_to_string(flags: ::core::ffi::c_int) -> std::ffi::CString {
+    let mut names = Vec::new();
+    for (flag, name) in [
+        (REDRAW_STATUS, "status"),
+        (REDRAW_PANE, "pane"),
+        (REDRAW_PANE_BORDER, "border"),
+        (REDRAW_PANE_STATUS, "pane-status"),
+        (REDRAW_PANE_SCROLLBAR, "scrollbar"),
+        (REDRAW_MENU, "menu"),
+        (REDRAW_OVERLAY, "overlay"),
+    ] {
+        if flags & flag != 0 {
+            names.push(name);
+        }
     }
     if flags == REDRAW_ALL {
-        strlcat(
-            &raw mut s as *mut ::core::ffi::c_char,
-            b"all \0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
-        );
+        names.push("all");
     }
-    if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
-        s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-            '\0' as i32 as ::core::ffi::c_char;
-    }
-    return &raw mut s as *mut ::core::ffi::c_char;
+    std::ffi::CString::new(names.join(" ")).expect("redraw flag names contain no NUL")
 }
 unsafe fn redraw_get_window_offset(c: &mut client) -> tty_window_view {
     let mut view = tty_window_offset(&c.tty);
@@ -1857,7 +1812,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
                     as *const _
             ),
             ((*w).id) as u32,
-            log_cstr((redraw_flags_to_string(flags)) as *const _)
+            log_cstr(redraw_flags_to_string(flags).as_ptr())
         ));
     }
     let Some(scene) = redraw_get_scene(c) else {

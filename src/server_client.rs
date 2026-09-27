@@ -4711,7 +4711,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_FEATURES {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr((tty_get_features(feat)) as *const _)
+                log_cstr(tty_get_features(feat).as_ptr())
             ));
         }
         100 => {

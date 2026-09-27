@@ -86,7 +86,7 @@ unsafe fn cmd_show_messages_terminals(
             i = 0 as u_int;
             while i < tty_term_ncodes() {
                 cmdq_print(item, |out| {
-                    write_cstr(out, tty_term_describe(term, i as tty_code_code))
+                    out.write_all(tty_term_describe(term, i as tty_code_code).as_bytes())
                 });
                 i = i.wrapping_add(1);
             }

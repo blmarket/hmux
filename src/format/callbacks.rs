@@ -1156,7 +1156,7 @@ unsafe fn format_cb_client_session(mut ft: *mut format_tree) -> Option<CString> 
 }
 unsafe fn format_cb_client_termfeatures(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some(CStr::from_ptr(tty_get_features((*(*ft).c).term_features)).to_owned());
+        return Some(tty_get_features((*(*ft).c).term_features));
     }
     return None;
 }

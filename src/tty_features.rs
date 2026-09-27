@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{strcasecmp, strcmp, strlcat, strlen, strsep};
+use crate::src::ffi::libc::{strcasecmp, strcmp, strlen, strsep};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -8,7 +8,7 @@ use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_RGBCOLOURS, TERM_SIXEL,
 };
 use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -289,33 +289,17 @@ pub unsafe fn tty_parse_features(
         }
     }
 }
-pub unsafe fn tty_get_features(mut feat: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
-    static mut s: [::core::ffi::c_char; 512] = [0; 512];
-    let mut i: u_int = 0;
-    *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    i = 0 as u_int;
-    while (i as usize) < tty_features.len() {
-        if !(!feat & (1 as ::core::ffi::c_int) << i != 0) {
-            tf = tty_features[i as usize];
-            strlcat(
-                &raw mut s as *mut ::core::ffi::c_char,
-                (*tf).name.as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
-            );
-            strlcat(
-                &raw mut s as *mut ::core::ffi::c_char,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
-            );
+pub unsafe fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
+    let mut names = Vec::new();
+    for (i, feature) in tty_features.iter().enumerate() {
+        if feat & (1 << i) != 0 {
+            if !names.is_empty() {
+                names.push(b',');
+            }
+            names.extend_from_slice((**feature).name.to_bytes());
         }
-        i = i.wrapping_add(1);
     }
-    if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
-        s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-            '\0' as i32 as ::core::ffi::c_char;
-    }
-    return &raw mut s as *mut ::core::ffi::c_char;
+    CString::new(names).expect("feature names contain no NUL")
 }
 pub unsafe fn tty_feature_present(
     mut term: *const tty_term,
@@ -376,7 +360,7 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int 
     }
     log_debug(format_args!(
         "applying terminal features: {}",
-        log_cstr((tty_get_features(feat)) as *const _)
+        log_cstr(tty_get_features(feat).as_ptr())
     ));
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {

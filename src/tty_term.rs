@@ -9,7 +9,7 @@ use crate::src::ffi::ncurses::TERMINAL;
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
-use crate::src::format::bytes::{xformat, xformat_with};
+use crate::src::format::bytes::{format_message_with, xformat};
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_only,
@@ -1474,7 +1474,7 @@ pub unsafe fn tty_term_create(
             log_debug(format_args!(
                 "{}{}",
                 log_cstr((name) as *const _),
-                log_cstr((tty_term_describe(term, i as tty_code_code)) as *const _)
+                log_cstr(tty_term_describe(term, i as tty_code_code).as_ptr())
             ));
             i = i.wrapping_add(1);
         }
@@ -1737,18 +1737,17 @@ pub unsafe fn tty_term_flag(term: *const tty_term, code: tty_code_code) -> ::cor
     }
 }
 pub unsafe fn tty_term_describe(
-    mut term: *const tty_term,
-    mut code: tty_code_code,
-) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 256] = [0; 256];
+    term: *const tty_term,
+    code: tty_code_code,
+) -> CString {
     let mut escaped: [::core::ffi::c_char; 128] = [0; 128];
     match &(&(*term).codes)[code as usize] {
         tty_code::None => {
-            xformat_with(&mut *(&raw mut s), |out| {
+            format_message_with(|out| {
                 write!(out, "{:4}: ", code as u32)?;
                 out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
                 out.write_all(b": [missing]")
-            });
+            })
         }
         tty_code::String(value) => {
             strnvis(
@@ -1757,30 +1756,29 @@ pub unsafe fn tty_term_describe(
                 ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
                 VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
             );
-            xformat_with(&mut *(&raw mut s), |out| {
+            format_message_with(|out| {
                 write!(out, "{:4}: ", code as u32)?;
                 out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
                 out.write_all(b": (string) ")?;
                 out.write_all(CStr::from_ptr(escaped.as_ptr()).to_bytes())
-            });
+            })
         }
         tty_code::Number(value) => {
-            xformat_with(&mut *(&raw mut s), |out| {
+            format_message_with(|out| {
                 write!(out, "{:4}: ", code as u32)?;
                 out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
                 write!(out, ": (number) {}", (*value) as i32)
-            });
+            })
         }
         tty_code::Flag(value) => {
-            xformat_with(&mut *(&raw mut s), |out| {
+            format_message_with(|out| {
                 write!(out, "{:4}: ", code as u32)?;
                 out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
                 out.write_all(b": (flag) ")?;
                 out.write_all(if *value != 0 { b"true" } else { b"false" })
-            });
+            })
         }
     }
-    return &raw mut s as *mut ::core::ffi::c_char;
 }
 
 #[cfg(test)]
@@ -1871,7 +1869,7 @@ mod term_string_owner_tests {
                 term.codes[TTYC_CLEAR as usize] = value;
                 let expected = format!("{:4}: clear: {suffix}", TTYC_CLEAR as u32);
                 assert_eq!(
-                    CStr::from_ptr(tty_term_describe(&mut term, TTYC_CLEAR)).to_bytes(),
+                    tty_term_describe(&mut term, TTYC_CLEAR).as_bytes(),
                     expected.as_bytes(),
                 );
             }

@@ -1,8 +1,7 @@
 use hmux2::src::tty_features::{tty_get_features, tty_parse_features};
-use std::ffi::CStr;
 
 fn feature_names(bits: i32) -> String {
-    unsafe { CStr::from_ptr(tty_get_features(bits)) }
+    unsafe { tty_get_features(bits) }
         .to_str()
         .unwrap()
         .to_owned()
