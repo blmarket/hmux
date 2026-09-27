@@ -7,7 +7,6 @@ use super::abi::{bitstr_t, pid_t, size_t, time_t, timeval, u_int, uint64_t};
 use super::client::client;
 use super::colour::{client_theme, colour_palette};
 use super::command::cmdq_item;
-use super::display::visible_ranges;
 use super::event::{bufferevent, event};
 use super::grid::grid_cell;
 use super::input::input_ctx;
@@ -217,7 +216,6 @@ pub struct window_pane {
     pub control_bg: ::core::ffi::c_int,
     pub control_fg: ::core::ffi::c_int,
     pub scrollbar_style: style,
-    pub r: visible_ranges,
     pub tree_entry: window_pane_tree_entry,
 }
 

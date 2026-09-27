@@ -3559,8 +3559,8 @@ unsafe fn server_client_prompt_cursor(
     mut cx: *mut u_int,
     mut cy: *mut u_int,
 ) -> ::core::ffi::c_int {
+    let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     let mut sx: u_int = 0;
@@ -3589,13 +3589,14 @@ unsafe fn server_client_prompt_cursor(
     }
     *cx = (px as u_int).wrapping_sub(ox);
     *cy = (py as u_int).wrapping_sub(oy);
-    r = window_visible_ranges(
+    window_visible_ranges(
         wp,
         *cx as ::core::ffi::c_int,
         *cy as ::core::ffi::c_int,
         1 as u_int,
+        &mut r,
     );
-    if window_position_is_visible(r, *cx) != 0 {
+    if window_position_is_visible(&r, *cx) {
         if status_at_line(c) == 0 as ::core::ffi::c_int {
             *cy = (*cy).wrapping_add(status_line_size(c));
         }
@@ -3604,6 +3605,7 @@ unsafe fn server_client_prompt_cursor(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_client_reset_state(mut c: *mut client) {
+    let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut wp: *mut window_pane = (*w).active;
@@ -3622,7 +3624,6 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut sy: u_int = 0;
     let mut prompt: u_int = 0 as u_int;
     let mut sb_w: u_int = 0;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;
     }
@@ -3702,13 +3703,14 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                     as u_int;
                 cy = ((*wp).yoff + (*s).cy as ::core::ffi::c_int - oy as ::core::ffi::c_int)
                     as u_int;
-                r = window_visible_ranges(
+                window_visible_ranges(
                     wp,
                     cx as ::core::ffi::c_int,
                     cy as ::core::ffi::c_int,
                     1 as u_int,
+                    &mut r,
                 );
-                if window_position_is_visible(r, cx) == 0 {
+                if !window_position_is_visible(&r, cx) {
                     cursor = 0 as ::core::ffi::c_int;
                 }
                 if window_pane_scrollbar_overlay_visible(wp) != 0 {

@@ -29,7 +29,7 @@ use crate::src::shared::borders::{
 use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_REDRAWWINDOW;
 use crate::src::shared::colour::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
+use crate::src::shared::display::visible_range;
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks;
@@ -808,6 +808,7 @@ pub unsafe fn screen_write_fast_copy(
     mut nx: u_int,
     mut ny: u_int,
 ) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
     let mut ttyctx: tty_ctx = tty_ctx {
@@ -876,7 +877,6 @@ pub unsafe fn screen_write_fast_copy(
     let mut cy: u_int = (*s).cy;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     if nx == 0 as u_int || ny == 0 as u_int {
         return;
     }
@@ -896,11 +896,12 @@ pub unsafe fn screen_write_fast_copy(
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        r = window_visible_ranges(
+        window_visible_ranges(
             wp,
             (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
             (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
             nx,
+            &mut r,
         );
         xx = px;
         while xx < px.wrapping_add(nx) {
@@ -914,7 +915,7 @@ pub unsafe fn screen_write_fast_copy(
                 break;
             }
             grid_view_set_cell((*s).grid, (*s).cx, (*s).cy, &raw mut gc);
-            if window_position_is_visible(r, (xoff as u_int).wrapping_add((*s).cx)) == 0 {
+            if !window_position_is_visible(&r, (xoff as u_int).wrapping_add((*s).cx)) {
                 break;
             }
             ttyctx.cell = &raw mut gc;
@@ -1602,6 +1603,7 @@ unsafe fn screen_write_redraw_line(
     mut ctx: *mut screen_write_ctx,
     mut ttyctx: *mut tty_ctx,
     mut yy: u_int,
+    r: &mut Vec<visible_range>,
 ) {
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
     let mut s: *mut screen = (*ctx).s;
@@ -1638,17 +1640,16 @@ unsafe fn screen_write_redraw_line(
     let mut i: u_int = 0;
     let mut xoff: ::core::ffi::c_int = (*wp).xoff;
     let mut yoff: ::core::ffi::c_int = (*wp).yoff;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
-    r = window_visible_ranges(
+    window_visible_ranges(
         wp,
         xoff,
         (yoff as u_int).wrapping_add(yy) as ::core::ffi::c_int,
         sx,
+        r,
     );
     i = 0 as u_int;
-    while i < (*r).used {
-        ri = &raw mut (&mut (*r).storage)[i as usize];
+    while (i as usize) < r.len() {
+        let ri = &r[i as usize];
         if !((*ri).nx == 0 as u_int) {
             cx = (*ri).px.wrapping_sub(xoff as u_int);
             if !(cx >= sx) {
@@ -1694,6 +1695,7 @@ unsafe fn screen_write_redraw_line(
     }
 }
 unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
+    let mut r = Vec::new();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -1768,7 +1770,7 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
             & (1 as ::core::ffi::c_int) << (y & 0x7 as u_int)
             != 0
         {
-            screen_write_redraw_line(&raw mut ctx, &raw mut ttyctx, y);
+            screen_write_redraw_line(&raw mut ctx, &raw mut ttyctx, y, &mut r);
             lines = lines.wrapping_add(1);
         }
         y = y.wrapping_add(1);
@@ -1793,11 +1795,12 @@ pub unsafe fn screen_write_clear_dirty(mut wp: *mut window_pane) {
     }
 }
 unsafe fn screen_write_redraw_pane(mut ctx: *mut screen_write_ctx, mut ttyctx: *mut tty_ctx) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut yy: u_int = 0;
     yy = 0 as u_int;
     while yy < (*(*s).grid).sy {
-        screen_write_redraw_line(ctx, ttyctx, yy);
+        screen_write_redraw_line(ctx, ttyctx, yy, &mut r);
         yy = yy.wrapping_add(1);
     }
 }
@@ -1904,6 +1907,7 @@ pub unsafe fn screen_write_insertcharacter(
     mut nx: u_int,
     mut bg: u_int,
 ) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -1984,13 +1988,14 @@ pub unsafe fn screen_write_insertcharacter(
         );
         return;
     }
-    screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy);
+    screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy, &mut r);
 }
 pub unsafe fn screen_write_deletecharacter(
     mut ctx: *mut screen_write_ctx,
     mut nx: u_int,
     mut bg: u_int,
 ) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -2071,13 +2076,14 @@ pub unsafe fn screen_write_deletecharacter(
         );
         return;
     }
-    screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy);
+    screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy, &mut r);
 }
 pub unsafe fn screen_write_clearcharacter(
     mut ctx: *mut screen_write_ctx,
     mut nx: u_int,
     mut bg: u_int,
 ) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -2158,7 +2164,7 @@ pub unsafe fn screen_write_clearcharacter(
         );
         return;
     }
-    screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy);
+    screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy, &mut r);
 }
 pub unsafe fn screen_write_insertline(
     mut ctx: *mut screen_write_ctx,
@@ -2841,6 +2847,7 @@ pub unsafe fn screen_write_carriagereturn(mut ctx: *mut screen_write_ctx) {
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
 }
 pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut bg: u_int) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut gd: *mut grid = (*s).grid;
     let mut ttyctx: tty_ctx = tty_ctx {
@@ -2894,8 +2901,6 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
     let mut yoff: u_int = 0;
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     screen_write_initctx(
         ctx,
         &raw mut ttyctx,
@@ -2963,15 +2968,16 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
         yoff = 0 as u_int;
     }
     if (*s).cx <= sx.wrapping_sub(1 as u_int) {
-        r = window_visible_ranges(
+        window_visible_ranges(
             (*ctx).wp as *mut window_pane,
             xoff.wrapping_add((*s).cx) as ::core::ffi::c_int,
             yoff.wrapping_add((*s).cy) as ::core::ffi::c_int,
             sx.wrapping_sub((*s).cx),
+            &mut r,
         );
         i = 0 as u_int;
-        while i < (*r).used {
-            ri = &raw mut (&mut (*r).storage)[i as usize];
+        while (i as usize) < r.len() {
+            let ri = &r[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -2981,15 +2987,16 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
     y = (*s).cy.wrapping_add(1 as u_int);
     while y < sy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
-        r = window_visible_ranges(
+        window_visible_ranges(
             (*ctx).wp as *mut window_pane,
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
+            &mut r,
         );
         i = 0 as u_int;
-        while i < (*r).used {
-            ri = &raw mut (&mut (*r).storage)[i as usize];
+        while (i as usize) < r.len() {
+            let ri = &r[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3000,6 +3007,7 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mut bg: u_int) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -3051,8 +3059,6 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
     let mut yoff: u_int = 0;
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     screen_write_initctx(
         ctx,
         &raw mut ttyctx,
@@ -3103,15 +3109,16 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
     y = 0 as u_int;
     while y < (*s).cy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
-        r = window_visible_ranges(
+        window_visible_ranges(
             (*ctx).wp as *mut window_pane,
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
+            &mut r,
         );
         i = 0 as u_int;
-        while i < (*r).used {
-            ri = &raw mut (&mut (*r).storage)[i as usize];
+        while (i as usize) < r.len() {
+            let ri = &r[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3120,15 +3127,16 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
         y = y.wrapping_add(1);
     }
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, (*s).cy as ::core::ffi::c_int);
-    r = window_visible_ranges(
+    window_visible_ranges(
         (*ctx).wp as *mut window_pane,
         xoff as ::core::ffi::c_int,
         yoff.wrapping_add(ocy) as ::core::ffi::c_int,
         (*s).cx.wrapping_add(1 as u_int),
+        &mut r,
     );
     i = 0 as u_int;
-    while i < (*r).used {
-        ri = &raw mut (&mut (*r).storage)[i as usize];
+    while (i as usize) < r.len() {
+        let ri = &r[i as usize];
         if !((*ri).nx == 0 as u_int) {
             screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
         }
@@ -3137,6 +3145,7 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u_int) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -3189,8 +3198,6 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
     let mut yoff: u_int = 0;
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     screen_write_initctx(
         ctx,
         &raw mut ttyctx,
@@ -3232,15 +3239,16 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
     y = 0 as u_int;
     while y < sy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
-        r = window_visible_ranges(
+        window_visible_ranges(
             (*ctx).wp as *mut window_pane,
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
+            &mut r,
         );
         i = 0 as u_int;
-        while i < (*r).used {
-            ri = &raw mut (&mut (*r).storage)[i as usize];
+        while (i as usize) < r.len() {
+            let ri = &r[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 screen_write_collect_insert_clear(ctx, (*ri).px.wrapping_sub(xoff), (*ri).nx, bg);
             }
@@ -3509,7 +3517,11 @@ unsafe fn screen_write_collect_flush_scrolled(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y: u_int) -> u_int {
+unsafe fn screen_write_collect_flush_line(
+    mut ctx: *mut screen_write_ctx,
+    mut y: u_int,
+    r: &mut Vec<visible_range>,
+) -> u_int {
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
     let mut s: *mut screen = (*ctx).s;
     let mut ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
@@ -3573,8 +3585,6 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
         wsx: 0,
         wsy: 0,
     };
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     if !wp.is_null() {
         wsx = (*(*wp).window).sx;
         wsy = (*(*wp).window).sy;
@@ -3589,11 +3599,12 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
     if y.wrapping_add(yoff as u_int) >= wsy {
         return 0 as u_int;
     }
-    r = window_visible_ranges(
+    window_visible_ranges(
         wp,
         0 as ::core::ffi::c_int,
         y.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         wsx,
+        r,
     );
     let mut index = 0;
     loop {
@@ -3621,8 +3632,8 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
         w_length = 0 as u_int;
         written = 0 as ::core::ffi::c_int;
         i = 0 as u_int;
-        while i < (*r).used {
-            ri = &raw mut (&mut (*r).storage)[i as usize];
+        while (i as usize) < r.len() {
+            let ri = &r[i as usize];
             if !((*ri).nx == 0 as u_int) {
                 r_start = (*ri).px as ::core::ffi::c_int;
                 r_end = (*ri).px.wrapping_add((*ri).nx) as ::core::ffi::c_int;
@@ -3704,6 +3715,7 @@ unsafe fn screen_write_collect_flush(
     mut scroll_only: ::core::ffi::c_int,
     mut from: *const ::core::ffi::c_char,
 ) {
+    let mut r = Vec::new();
     let mut current_block: u64;
     let mut s: *mut screen = (*ctx).s;
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
@@ -3753,7 +3765,7 @@ unsafe fn screen_write_collect_flush(
                     cy = (*s).cy;
                     y = 0 as u_int;
                     while y < (*(*s).grid).sy {
-                        items = items.wrapping_add(screen_write_collect_flush_line(ctx, y));
+                        items = items.wrapping_add(screen_write_collect_flush_line(ctx, y, &mut r));
                         y = y.wrapping_add(1);
                     }
                     (*s).cx = cx;
@@ -4066,6 +4078,7 @@ pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *
         (*gc).data.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_char;
 }
 pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const grid_cell) {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
     let mut gd: *mut grid = (*s).grid;
@@ -4156,8 +4169,6 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return;
     }
@@ -4278,11 +4289,12 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         xoff = (*wp).xoff;
         yoff = (*wp).yoff;
     }
-    r = window_visible_ranges(
+    window_visible_ranges(
         wp,
         (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
         (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         width,
+        &mut r,
     );
     not_wrap = ((*s).mode & MODE_WRAP == 0) as ::core::ffi::c_int as u_int;
     if (*s).cx <= sx.wrapping_sub(not_wrap).wrapping_sub(width) {
@@ -4316,7 +4328,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         return;
     }
     if redraw != 0 && !wp.is_null() {
-        screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy);
+        screen_write_redraw_line(ctx, &raw mut ttyctx, (*s).cy, &mut r);
         return;
     }
     if selected != 0 {
@@ -4331,8 +4343,8 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     ttyctx.cell = &raw mut tmp_gc;
     i = 0 as u_int;
     vis = 0 as u_int;
-    while i < (*r).used {
-        vis = vis.wrapping_add((&(*r).storage)[i as usize].nx);
+    while (i as usize) < r.len() {
+        vis = vis.wrapping_add(r[i as usize].nx);
         i = i.wrapping_add(1);
     }
     if vis >= width {
@@ -4349,8 +4361,8 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         return;
     }
     i = 0 as u_int;
-    while i < (*r).used {
-        ri = &raw mut (&mut (*r).storage)[i as usize];
+    while (i as usize) < r.len() {
+        let ri = &r[i as usize];
         if !((*ri).nx == 0 as u_int) {
             n = 0 as u_int;
             while n < (*ri).nx {
@@ -4370,6 +4382,7 @@ unsafe fn screen_write_combine(
     mut ctx: *mut screen_write_ctx,
     mut gc: *const grid_cell,
 ) -> ::core::ffi::c_int {
+    let mut r = Vec::new();
     let mut s: *mut screen = (*ctx).s;
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
     let mut gd: *mut grid = (*s).grid;
@@ -4441,7 +4454,6 @@ unsafe fn screen_write_combine(
     let mut zero_width: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     if utf8_is_hangul_filler(ud) != 0 {
         return 1 as ::core::ffi::c_int;
     }
@@ -4548,16 +4560,17 @@ unsafe fn screen_write_combine(
         xoff = (*wp).xoff;
         yoff = (*wp).yoff;
     }
-    r = window_visible_ranges(
+    window_visible_ranges(
         wp,
         (xoff as u_int).wrapping_add(cx).wrapping_sub(n) as ::core::ffi::c_int,
         cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         n,
+        &mut r,
     );
     i = 0 as u_int;
     vis = 0 as u_int;
-    while i < (*r).used {
-        vis = vis.wrapping_add((&(*r).storage)[i as usize].nx);
+    while (i as usize) < r.len() {
+        vis = vis.wrapping_add(r[i as usize].nx);
         i = i.wrapping_add(1);
     }
     if vis < n {

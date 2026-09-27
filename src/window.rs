@@ -78,7 +78,6 @@ use crate::src::shared::client::{
 use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::ctype::_ISspace;
-use crate::src::shared::display::visible_ranges;
 use crate::src::shared::display::*;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
@@ -2377,7 +2376,6 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
             default_type: STYLE_DEFAULT_BASE,
             link: 0,
         },
-        r: visible_ranges::default(),
         tree_entry: window_pane_tree_entry { owner: None },
     };
     wp.id = id;
@@ -2731,12 +2729,6 @@ pub(crate) fn window_pane_set_shell(wp: &mut window_pane, shell: Option<CString>
 /// Replace the pane-owned cwd string.
 pub(crate) fn window_pane_set_cwd(wp: &mut window_pane, cwd: Option<CString>) {
     wp.cwd = cwd;
-}
-
-/// A prior `pane.r.storage` element pointer is invalid after this function
-/// grows the vector. All callers consume the view before asking for new ranges.
-pub(crate) fn window_pane_ensure_visible_ranges(wp: &mut window_pane, n: u_int) {
-    wp.r.ensure(n);
 }
 
 unsafe fn window_pane_create(
