@@ -9,7 +9,7 @@ use super::format::format_tree;
 use super::grid::grid_cell;
 use super::key::key_code;
 use super::layout::layout_cell;
-use super::menu::MenuRef;
+use super::menu::MenuOwner;
 use super::mouse::mouse_event;
 use super::options::options;
 use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
@@ -100,7 +100,7 @@ pub struct window {
     pub new_xpixel: u_int,
     pub new_ypixel: u_int,
     pub redraw_scene_generation: uint64_t,
-    pub menu: Option<MenuRef>,
+    pub menu: Option<MenuOwner>,
     pub menu_last_px: u_int,
     pub menu_last_py: u_int,
     pub last_new_pane_x: u_int,

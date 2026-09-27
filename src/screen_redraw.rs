@@ -893,11 +893,11 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
     }
 }
 unsafe fn redraw_mark_menu(bctx: *mut redraw_build_ctx) {
-    let Some(owner) = (*(*bctx).w).menu.clone() else {
+    let Some(owner) = (*(*bctx).w).menu.as_ref().map(|menu| menu.downgrade()) else {
         return;
     };
-    let md = owner.borrow();
-    let observer = std::rc::Rc::downgrade(&owner);
+    let md = owner.try_borrow_mut().expect("live unborrowed menu");
+    let observer = owner.clone();
     for py in 0..menu_height(&md) {
         for px in 0..menu_width(&md) {
             let (mut x, mut y) = (0, 0);
@@ -928,7 +928,7 @@ fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
             a.wp == b.wp && a.offset.wrapping_add(1) == b.offset && a.cell_type == b.cell_type
         }
         (Scrollbar(a), Scrollbar(b)) => a == b,
-        (Menu(a), Menu(b)) => a.md.ptr_eq(&b.md) && a.py == b.py && a.px.wrapping_add(1) == b.px,
+        (Menu(a), Menu(b)) => a.md == b.md && a.py == b.py && a.px.wrapping_add(1) == b.px,
         (Outside, Outside) | (Empty, Empty) => true,
         _ => false,
     }
@@ -1549,10 +1549,11 @@ unsafe fn redraw_draw_menu_span(
     n: u_int,
 ) {
     let data = span.data.menu();
-    let Some(owner) = data.md.upgrade() else {
-        return;
+    let md = match data.md.try_borrow_mut() {
+        Ok(md) => md,
+        Err(refbox::BorrowError::Dropped) => return,
+        Err(refbox::BorrowError::Borrowed) => panic!("menu already borrowed during redraw"),
     };
-    let md = owner.borrow();
     if md.closed {
         return;
     }
@@ -1891,8 +1892,8 @@ unsafe fn redraw_draw_scene(
     let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut redraw: ::core::ffi::c_int = 0;
     let mut dctx = redraw_set_draw_context(scene);
-    if let Some(menu) = (*w).menu.clone() {
-        menu_update(&mut menu.borrow_mut());
+    if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
+        menu_update(&mut menu.try_borrow_mut().expect("live unborrowed menu"));
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
         loop_0 = window_pane_first(scene.w);
@@ -2114,17 +2115,20 @@ pub unsafe fn redraw_pane_scrollbar(mut c: *mut client, mut wp: *mut window_pane
 #[cfg(test)]
 mod menu_observer_tests {
     use super::*;
+    use crate::src::shared::menu::MenuOwner;
     use crate::src::shared::menu::{menu, menu_data};
     use crate::src::shared::redraw::RedrawMenuSpan;
-    use std::rc::Rc;
 
-    fn owned_scene(menu: &crate::src::shared::menu::MenuRef, generation: u64) -> Box<redraw_scene> {
+    fn owned_scene(
+        menu: &crate::src::shared::menu::MenuOwner,
+        generation: u64,
+    ) -> Box<redraw_scene> {
         let mut line = redraw_line::default();
         line.spans[REDRAW_SPAN_MENU as usize].push(redraw_span {
             x: 0,
             width: 1,
             data: redraw_span_data::Menu(RedrawMenuSpan {
-                md: Rc::downgrade(menu),
+                md: menu.downgrade(),
                 px: 0,
                 py: 0,
             }),
@@ -2143,12 +2147,12 @@ mod menu_observer_tests {
 
     #[test]
     fn active_scene_borrows_survive_nested_cache_replacement() {
-        let menu = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+        let menu = MenuOwner::new(menu_data::new(Box::new(menu {
             title: c"Scene".to_owned(),
             items: Vec::new(),
             count: 0,
             width: 1,
-        }))));
+        })));
         let mut client = client::empty();
         client.redraw_scene = Some(owned_scene(&menu, 1));
         let active = client.redraw_scene.take().unwrap();
@@ -2158,11 +2162,11 @@ mod menu_observer_tests {
             .next()
             .unwrap();
         client.redraw_scene = Some(owned_scene(&menu, 2));
-        assert_eq!(Rc::weak_count(&menu), 2);
+        assert_eq!(menu.weak_count(), 2);
         assert_eq!(active.generation, 1);
-        assert!(span.data.menu().md.upgrade().is_some());
+        assert!(span.data.menu().md.is_alive());
         redraw_restore_scene(&mut client, active);
-        assert_eq!(Rc::weak_count(&menu), 1);
+        assert_eq!(menu.weak_count(), 1);
         assert_eq!(client.redraw_scene.as_ref().unwrap().generation, 2);
         assert_ne!(
             client.redraw_scene.as_deref().unwrap() as *const redraw_scene as usize,
@@ -2170,17 +2174,17 @@ mod menu_observer_tests {
         );
         // Client teardown owns all remaining rows, spans and their observers.
         drop(client);
-        assert_eq!(Rc::weak_count(&menu), 0);
+        assert_eq!(menu.weak_count(), 0);
     }
 
     #[test]
     fn returning_an_active_scene_reuses_its_box_and_spans() {
-        let menu = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+        let menu = MenuOwner::new(menu_data::new(Box::new(menu {
             title: c"Scene".to_owned(),
             items: Vec::new(),
             count: 0,
             width: 1,
-        }))));
+        })));
         let mut client = client::empty();
         let scene = owned_scene(&menu, 7);
         let scene_address = scene.as_ref() as *const redraw_scene as usize;
@@ -2198,22 +2202,22 @@ mod menu_observer_tests {
             span_address
         );
         redraw_restore_scene(&mut client, active);
-        assert_eq!(Rc::weak_count(&menu), 1);
+        assert_eq!(menu.weak_count(), 1);
         drop(client.redraw_scene.take());
-        assert_eq!(Rc::weak_count(&menu), 0);
+        assert_eq!(menu.weak_count(), 0);
     }
 
     #[test]
     fn cached_spans_observe_menu_lifetimes_and_scratch_releases_observers() {
-        let owner = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+        let owner = MenuOwner::new(menu_data::new(Box::new(menu {
             title: c"Observed".to_owned(),
             items: Vec::new(),
             count: 0,
             width: 10,
-        }))));
+        })));
         let mut cell = redraw_build_cell {
             data: redraw_span_data::Menu(RedrawMenuSpan {
-                md: Rc::downgrade(&owner),
+                md: owner.downgrade(),
                 px: 0,
                 py: 0,
             }),
@@ -2226,14 +2230,14 @@ mod menu_observer_tests {
             width: 2,
             data: cell.data.clone(),
         };
-        assert_eq!(Rc::strong_count(&owner), 1);
-        let weak_count = Rc::weak_count(&owner);
+        assert!(cell.data.menu().md.is(&owner));
+        let weak_count = owner.weak_count();
         {
             let mut scratch = RedrawCellScratch::take();
             scratch.0.extend([cell.clone(), next.clone()]);
-            assert_eq!(Rc::weak_count(&owner), weak_count + 2);
+            assert_eq!(owner.weak_count(), weak_count + 2);
         }
-        assert_eq!(Rc::weak_count(&owner), weak_count);
+        assert_eq!(owner.weak_count(), weak_count);
         REDRAW_CELLS.with(|cache| assert!(cache.borrow().is_empty()));
         let scene = redraw_scene {
             c: std::ptr::null_mut(),
@@ -2254,13 +2258,13 @@ mod menu_observer_tests {
             default_gc: grid_cell::default(),
             flags: 0,
         };
-        owner.borrow_mut().closed = true;
+        owner.try_borrow_mut().unwrap().closed = true;
         // Closed and expired spans return before accessing the drawing context.
         unsafe {
             redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
         }
         drop(owner);
-        assert!(span.data.menu().md.upgrade().is_none());
+        assert!(!span.data.menu().md.is_alive());
         unsafe {
             redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
         }

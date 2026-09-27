@@ -1241,8 +1241,12 @@ pub unsafe fn window_resize(
     ));
     (*w).sx = sx;
     (*w).sy = sy;
-    if let Some(menu) = (*w).menu.clone() {
-        menu_resize(&mut menu.borrow_mut(), sx, sy);
+    if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
+        menu_resize(
+            &mut menu.try_borrow_mut().expect("live unborrowed menu"),
+            sx,
+            sy,
+        );
         server_redraw_window(w);
     }
     if xpixel != -(1 as ::core::ffi::c_int) {

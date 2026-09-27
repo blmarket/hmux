@@ -179,7 +179,7 @@ pub struct RedrawScrollbarSpan {
     pub flags: ::core::ffi::c_int,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct RedrawMenuSpan {
     pub md: MenuWeak,
     pub px: u_int,

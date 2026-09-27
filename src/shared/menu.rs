@@ -8,13 +8,13 @@ use super::layout::box_lines;
 use super::mouse::mouse_event;
 use super::screen::screen;
 use super::window::window;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::ffi::CStr;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 
 /// Windows own menus; redraw scenes only observe them.
-pub type MenuRef = Rc<RefCell<menu_data>>;
-pub type MenuWeak = Weak<RefCell<menu_data>>;
+pub type MenuOwner = refbox::RefBox<menu_data>;
+pub type MenuWeak = refbox::Weak<menu_data>;
 
 /// A borrowed menu definition. An empty name denotes a separator.
 #[derive(Copy, Clone)]
