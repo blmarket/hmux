@@ -201,8 +201,8 @@ pub unsafe fn cmdq_get_client(mut item: *mut cmdq_item) -> *mut client {
 pub unsafe fn cmdq_get_target_client(mut item: *mut cmdq_item) -> *mut client {
     return (*item).target_client;
 }
-pub unsafe fn cmdq_get_state(mut item: *mut cmdq_item) -> *mut cmdq_state {
-    (*item).state.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+pub fn cmdq_get_state(item: &cmdq_item) -> Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>> {
+    item.state.as_ref()
 }
 pub unsafe fn cmdq_get_target(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*item).target;
@@ -211,13 +211,13 @@ pub unsafe fn cmdq_get_source(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     return &raw mut (*item).source;
 }
 pub unsafe fn cmdq_get_event(mut item: *mut cmdq_item) -> *mut key_event {
-    return &raw mut (*cmdq_get_state(item)).event;
+    return &raw mut (*cmdq_get_state(&*item).expect("command queue state").get()).event;
 }
 pub unsafe fn cmdq_get_current(mut item: *mut cmdq_item) -> *mut cmd_find_state {
-    return &raw mut (*cmdq_get_state(item)).current;
+    return &raw mut (*cmdq_get_state(&*item).expect("command queue state").get()).current;
 }
 pub unsafe fn cmdq_get_flags(mut item: *mut cmdq_item) -> ::core::ffi::c_int {
-    return (*cmdq_get_state(item)).flags;
+    return (*cmdq_get_state(&*item).expect("command queue state").get()).flags;
 }
 pub unsafe fn cmdq_new_state(
     mut current: *mut cmd_find_state,
@@ -296,8 +296,8 @@ pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_t
             |out| write_cstr(out, entry.name.as_ptr()),
         );
     }
-    if (*cmdq_get_state(item)).formats.is_some() {
-        format_merge(ft, format_owner_ptr(&mut (*cmdq_get_state(item)).formats));
+    if (*cmdq_get_state(&*item).expect("command queue state").get()).formats.is_some() {
+        format_merge(ft, format_owner_ptr(&mut (*cmdq_get_state(&*item).expect("command queue state").get()).formats));
     }
 }
 pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut cmdq_item {
@@ -391,7 +391,7 @@ pub unsafe fn cmdq_insert_hook(
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if (*cmdq_get_state(item)).flags & CMDQ_STATE_NOHOOKS != 0 {
+    if (*cmdq_get_state(&*item).expect("command queue state").get()).flags & CMDQ_STATE_NOHOOKS != 0 {
         return;
     }
     let name = format_message_with(write);
@@ -551,7 +551,7 @@ unsafe fn cmdq_find_flag(
 }
 unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut c: *mut client = (*item).client;
-    let mut state: *mut cmdq_state = cmdq_get_state(item);
+    let mut state: *mut cmdq_state = cmdq_get_state(&*item).expect("command queue state").get();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let tmp = cmd_print_cstring(&*(*item).cmd);
@@ -612,7 +612,7 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
 unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let name = cmdq_name((*item).client);
-    let mut state: *mut cmdq_state = cmdq_get_state(item);
+    let mut state: *mut cmdq_state = cmdq_get_state(&*item).expect("command queue state").get();
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args: *mut args = cmd_get_args(cmd);
     let entry = cmd_get_entry(&*cmd);
@@ -697,8 +697,8 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                             if cmd_find_valid_state(&(*item).target) != 0 {
                                 fsp = &raw mut (*item).target;
                                 current_block = 8704759739624374314;
-                            } else if cmd_find_valid_state(&(*cmdq_get_state(item)).current) != 0 {
-                                fsp = &raw mut (*cmdq_get_state(item)).current;
+                            } else if cmd_find_valid_state(&(*cmdq_get_state(&*item).expect("command queue state").get()).current) != 0 {
+                                fsp = &raw mut (*cmdq_get_state(&*item).expect("command queue state").get()).current;
                                 current_block = 8704759739624374314;
                             } else if cmd_find_from_client(
                                 &raw mut fs,
@@ -732,8 +732,8 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         fsp = ::core::ptr::null_mut::<cmd_find_state>();
         if cmd_find_valid_state(&(*item).target) != 0 {
             fsp = &raw mut (*item).target;
-        } else if cmd_find_valid_state(&(*cmdq_get_state(item)).current) != 0 {
-            fsp = &raw mut (*cmdq_get_state(item)).current;
+        } else if cmd_find_valid_state(&(*cmdq_get_state(&*item).expect("command queue state").get()).current) != 0 {
+            fsp = &raw mut (*cmdq_get_state(&*item).expect("command queue state").get()).current;
         } else if cmd_find_from_client(&raw mut fs, (*item).client, 0 as ::core::ffi::c_int)
             == 0 as ::core::ffi::c_int
         {

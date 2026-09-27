@@ -244,7 +244,7 @@ pub unsafe fn load_cfg_from_buffer(
         return 0 as ::core::ffi::c_int;
     }
     if !item.is_null() {
-        state = cmdq_copy_state(cmdq_get_state(item), current);
+        state = cmdq_copy_state(cmdq_get_state(&*item).map_or(std::ptr::null_mut(), |owner| owner.get()), current);
     } else {
         state = cmdq_new_state(
             ::core::ptr::null_mut::<cmd_find_state>(),
