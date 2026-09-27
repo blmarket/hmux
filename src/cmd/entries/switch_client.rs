@@ -8,7 +8,7 @@ use crate::src::cmd::queue::{
 use crate::src::environ::environ_update;
 use crate::src::ffi::libc::{getuid, strcmp, strcspn};
 use crate::src::format::bytes::write_cstr;
-use crate::src::key_bindings::{key_bindings_get_table_owner, key_bindings_unref_table};
+use crate::src::key_bindings::{key_bindings_get_table};
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::server_client::{server_client_set_key_table, server_client_set_session};
 use crate::src::server_fn::server_redraw_window;
@@ -127,7 +127,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     tablename = args_get(args, 'T' as i32 as u_char);
     if !tablename.is_null() {
-        let Some(table) = key_bindings_get_table_owner(tablename, 0) else {
+        let Some(table) = key_bindings_get_table(tablename, 0) else {
             cmdq_error(item, |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;

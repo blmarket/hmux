@@ -58,7 +58,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
             }
         }
-        if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_null() {
+        if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item, |out| {
                     out.write_all(b"table ")?;
@@ -91,7 +91,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(args, 'T' as i32 as u_char);
-        if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_null() {
+        if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item, |out| {
                     out.write_all(b"table ")?;

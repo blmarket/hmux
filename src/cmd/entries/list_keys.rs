@@ -207,7 +207,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
+    let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -245,7 +245,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     tablename = args_get(args, 'T' as i32 as u_char);
     if !tablename.is_null() {
         table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
-        if table.is_null() {
+        if table.is_none() {
             cmdq_error(item, |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;
@@ -262,8 +262,8 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }
     let tables = key_bindings_tables();
-    let mut bindings = if !table.is_null() {
-        sort_get_key_bindings_table(table.as_ref(), &sort_crit)
+    let mut bindings = if let Some(table) = table.as_ref() {
+        sort_get_key_bindings_table(Some(&*crate::src::shared::rc::as_ptr(table)), &sort_crit)
     } else if notes_only != 0 {
         cmd_list_keys_get_root_and_prefix(&tables, &sort_crit)
     } else {

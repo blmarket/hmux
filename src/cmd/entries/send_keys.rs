@@ -6,7 +6,7 @@ use crate::src::ffi::libc::strtol;
 use crate::src::format::bytes::write_cstr;
 use crate::src::input::input_reset;
 use crate::src::key_bindings::{
-    key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
+    key_bindings_dispatch, key_bindings_get, key_bindings_get_table,
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
@@ -95,7 +95,6 @@ unsafe fn cmd_send_keys_inject_key(
     let mut wl: *mut winlink = (*target).wl;
     let mut wp: *mut window_pane = (*target).wp;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut new_after: *mut cmdq_item = after;
     if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_null() {
@@ -126,13 +125,12 @@ unsafe fn cmd_send_keys_inject_key(
         }
         return item;
     }
-    table = key_bindings_get_table(
+    let table = key_bindings_get_table(
         (*(*wme).mode).key_table.expect("non-null function pointer")(wme),
         1 as ::core::ffi::c_int,
-    );
-    let command = key_bindings_get(&*table, key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
+    ).expect("created key table");
+    let command = key_bindings_get(&*crate::src::shared::rc::as_ptr(&table), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
-        crate::src::shared::rc::retain(table);
         after = key_bindings_dispatch(
             command,
             after,
@@ -140,7 +138,6 @@ unsafe fn cmd_send_keys_inject_key(
             ::core::ptr::null_mut::<key_event>(),
             target,
         );
-        key_bindings_unref_table(table);
     }
     return after;
 }

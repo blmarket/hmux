@@ -39,7 +39,7 @@ use crate::src::format::{
 };
 use crate::src::input::input_cancel_requests;
 use crate::src::key_bindings::{
-    key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_get_table_owner, key_bindings_unref_table,
+    key_bindings_dispatch, key_bindings_get, key_bindings_get_table,
 };
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
@@ -1097,7 +1097,7 @@ pub unsafe fn server_client_set_key_table(
         name = server_client_get_key_table(c);
     }
     drop((*c).keytable.take());
-    (*c).keytable = key_bindings_get_table_owner(name, 1);
+    (*c).keytable = key_bindings_get_table(name, 1);
     if gettimeofday(&raw mut (*key_table_owner_ptr(&(*c).keytable)).activity_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
@@ -1178,7 +1178,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     (*c).theme = THEME_UNKNOWN;
     status_init(c);
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
-    (*c).keytable = key_bindings_get_table_owner(c"root".as_ptr(), 1);
+    (*c).keytable = key_bindings_get_table(c"root".as_ptr(), 1);
     event_set(
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),
@@ -2710,6 +2710,7 @@ unsafe fn server_client_key_callback(
         tv_usec: 0,
     };
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
+    let mut table_owner;
     let mut first: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: Option<KeyBindingCommand> = None;
     let mut repeat: u_int = 0;
@@ -2857,13 +2858,14 @@ unsafe fn server_client_key_callback(
                             }
                             && (*(*wme).mode).key_table.is_some()
                         {
-                            table = key_bindings_get_table(
+                            table_owner = key_bindings_get_table(
                                 (*(*wme).mode).key_table.expect("non-null function pointer")(wme),
                                 1 as ::core::ffi::c_int,
                             );
                         } else {
-                            table = key_table_owner_ptr(&(*c).keytable) as *mut key_table;
+                            table_owner = (*c).keytable.clone();
                         }
+                        table = key_table_owner_ptr(&table_owner);
                         first = table;
                         '_table_changed: loop {
                             prefix = options_get_number(
@@ -2944,7 +2946,8 @@ unsafe fn server_client_key_callback(
                                                 c,
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                             );
-                                            table = key_table_owner_ptr(&(*c).keytable) as *mut key_table;
+                                            table_owner = (*c).keytable.clone();
+                                        table = key_table_owner_ptr(&table_owner);
                                             first = table;
                                             server_status_client(c);
                                             continue '_table_changed;
@@ -3023,7 +3026,6 @@ unsafe fn server_client_key_callback(
                                                 (((*table).name).as_ptr().cast_mut()) as *const _
                                             )
                                         ));
-                                        crate::src::shared::rc::retain(table);
                                         let bd = bd.take().expect("matched binding");
                                         repeat = server_client_repeat_time(c, &bd);
                                         if repeat != 0 as u_int {
@@ -3046,7 +3048,6 @@ unsafe fn server_client_key_callback(
                                         }
                                         server_status_client(c);
                                         key_bindings_dispatch(bd, item, c, event, &raw mut fs);
-                                        key_bindings_unref_table(table);
                                         current_block = 1578459965781631232;
                                         break;
                                     }
@@ -3056,7 +3057,8 @@ unsafe fn server_client_key_callback(
                                             c,
                                             ::core::ptr::null::<::core::ffi::c_char>(),
                                         );
-                                        table = key_table_owner_ptr(&(*c).keytable) as *mut key_table;
+                                        table_owner = (*c).keytable.clone();
+                                        table = key_table_owner_ptr(&table_owner);
                                         if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
                                             first = table;
                                         }
@@ -3074,7 +3076,8 @@ unsafe fn server_client_key_callback(
                                             c,
                                             ::core::ptr::null::<::core::ffi::c_char>(),
                                         );
-                                        table = key_table_owner_ptr(&(*c).keytable) as *mut key_table;
+                                        table_owner = (*c).keytable.clone();
+                                        table = key_table_owner_ptr(&table_owner);
                                         first = table;
                                         (*c).flags &= !CLIENT_REPEAT as uint64_t;
                                         server_status_client(c);
