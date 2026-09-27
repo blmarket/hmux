@@ -2935,7 +2935,7 @@ unsafe fn window_customize_init(
     } else {
         CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
     };
-    data = crate::src::shared::rc::new(window_customize_modedata {
+    let owner = Rc::new(std::cell::UnsafeCell::new(window_customize_modedata {
         wp: window_pane_weak(wp),
         dead: 0,
         data: None,
@@ -2947,7 +2947,9 @@ unsafe fn window_customize_init(
         item_list: Vec::new(),
         fs: ::core::ptr::read(fs),
         change: WINDOW_CUSTOMIZE_UNSET,
-    });
+    }));
+    data = crate::src::shared::rc::as_ptr(&owner);
+    (*wme).data_owner = Some(owner);
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live customize mode data");
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -2987,9 +2989,6 @@ unsafe fn window_customize_init(
     mode_tree_draw((*data).data_ptr());
     return s;
 }
-unsafe fn window_customize_destroy(data: *mut window_customize_modedata) {
-    crate::src::shared::rc::release(data);
-}
 unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     if data.is_null() {
@@ -3000,7 +2999,8 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
         spawn_cancel_editor((*data).editor);
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    window_customize_destroy(data);
+    drop((*wme).data_owner.take());
+    (*wme).data = std::ptr::null_mut();
 }
 unsafe fn window_customize_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
@@ -5128,7 +5128,7 @@ mod item_owner_tests {
             PROMPT_CONTINUE
         }
         unsafe {
-            let data = crate::src::shared::rc::new(window_customize_modedata {
+            let owner = Rc::new(std::cell::UnsafeCell::new(window_customize_modedata {
                 wp: Weak::new(),
                 dead: 0,
                 data: None,
@@ -5148,7 +5148,8 @@ mod item_owner_tests {
                     idx: 0,
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,
-            });
+            }));
+            let data = crate::src::shared::rc::as_ptr(&owner);
             let first_owner = window_customize_add_item(
                 &mut (*data).item_list,
                 window_customize_itemdata {
@@ -5173,7 +5174,7 @@ mod item_owner_tests {
             });
             let prompt_observer = RefBox::downgrade(&prompt_owner);
             let (mut inputcb, freecb) = window_customize_prompt_callbacks(prompt_owner, read_item);
-            window_customize_destroy(data);
+            drop(owner);
             assert_eq!(
                 inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
                 PROMPT_CONTINUE
