@@ -4451,12 +4451,12 @@ unsafe fn screen_write_combine(
     let mut zero_width: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if utf8_is_hangul_filler(ud) != 0 {
+    if utf8_is_hangul_filler(&*ud) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if utf8_is_zwj(ud) != 0 {
+    if utf8_is_zwj(&*ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
-    } else if utf8_is_vs(ud) != 0 {
+    } else if utf8_is_vs(&*ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
         if options_get_number(
             oo,
@@ -4492,15 +4492,15 @@ unsafe fn screen_write_combine(
         return zero_width;
     }
     if zero_width == 0 {
-        match hanguljamo_check_state(&raw mut last.data, ud) as ::core::ffi::c_uint {
+        match hanguljamo_check_state(&last.data, &*ud) as ::core::ffi::c_uint {
             3 => return 1 as ::core::ffi::c_int,
             1 => return 0 as ::core::ffi::c_int,
             0 => {
-                if utf8_should_combine(&raw mut last.data, ud) != 0 {
+                if utf8_should_combine(&last.data, &*ud) != 0 {
                     force_wide = 1 as ::core::ffi::c_int;
-                } else if utf8_should_combine(ud, &raw mut last.data) != 0 {
+                } else if utf8_should_combine(&*ud, &last.data) != 0 {
                     force_wide = 1 as ::core::ffi::c_int;
-                } else if utf8_has_zwj(&raw mut last.data) == 0 {
+                } else if utf8_has_zwj(&last.data) == 0 {
                     return 0 as ::core::ffi::c_int;
                 }
             }

@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::memcmp;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::utf8::wchar_t;
@@ -27,81 +26,42 @@ pub const HANGULJAMO_SUBCLASS_OLD_CHOSEONG: hanguljamo_subclass = 2;
 pub const HANGULJAMO_SUBCLASS_CHOSEONG_FILLER: hanguljamo_subclass = 3;
 pub const HANGULJAMO_SUBCLASS_CHOSEONG: hanguljamo_subclass = 1;
 pub type hanguljamo_subclass = ::core::ffi::c_uint;
-pub unsafe fn utf8_has_zwj(mut ud: *const utf8_data) -> ::core::ffi::c_int {
-    if ((*ud).size as ::core::ffi::c_int) < 3 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (memcmp(
-        (&raw const (*ud).data as *const u_char)
-            .offset((*ud).size as ::core::ffi::c_int as isize)
-            .offset(-(3 as ::core::ffi::c_int as isize)) as *const ::core::ffi::c_void,
-        b"\xE2\x80\x8D\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-        3 as size_t,
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+pub fn utf8_has_zwj(ud: &utf8_data) -> ::core::ffi::c_int {
+    ud.data
+        .get(..ud.size as usize)
+        .is_some_and(|bytes| bytes.ends_with(b"\xe2\x80\x8d")) as i32
 }
-pub unsafe fn utf8_is_zwj(mut ud: *const utf8_data) -> ::core::ffi::c_int {
-    if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (memcmp(
-        &raw const (*ud).data as *const u_char as *const ::core::ffi::c_void,
-        b"\xE2\x80\x8D\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-        3 as size_t,
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+
+pub fn utf8_is_zwj(ud: &utf8_data) -> ::core::ffi::c_int {
+    (ud.size == 3 && ud.data[..3] == *b"\xe2\x80\x8d") as i32
 }
-pub unsafe fn utf8_is_vs(mut ud: *const utf8_data) -> ::core::ffi::c_int {
-    if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (memcmp(
-        &raw const (*ud).data as *const u_char as *const ::core::ffi::c_void,
-        b"\xEF\xB8\x8F\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-        3 as size_t,
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+
+pub fn utf8_is_vs(ud: &utf8_data) -> ::core::ffi::c_int {
+    (ud.size == 3 && ud.data[..3] == *b"\xef\xb8\x8f") as i32
 }
-pub unsafe fn utf8_is_hangul_filler(mut ud: *const utf8_data) -> ::core::ffi::c_int {
-    if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (memcmp(
-        &raw const (*ud).data as *const u_char as *const ::core::ffi::c_void,
-        b"\xE3\x85\xA4\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-        3 as size_t,
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+
+pub fn utf8_is_hangul_filler(ud: &utf8_data) -> ::core::ffi::c_int {
+    (ud.size == 3 && ud.data[..3] == *b"\xe3\x85\xa4") as i32
 }
+
 fn utf8_regional_count(ud: &utf8_data) -> u_int {
-    let mut count: u_int = 0 as u_int;
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i.wrapping_add(4 as u_int) <= ud.size as u_int {
-        if ud.data[i as usize] as ::core::ffi::c_int == 0xf0 as ::core::ffi::c_int
-            && ud.data[i.wrapping_add(1 as u_int) as usize] as ::core::ffi::c_int
-                == 0x9f as ::core::ffi::c_int
-            && ud.data[i.wrapping_add(2 as u_int) as usize] as ::core::ffi::c_int
-                == 0x87 as ::core::ffi::c_int
-            && ud.data[i.wrapping_add(3 as u_int) as usize] as ::core::ffi::c_int
-                >= 0xa6 as ::core::ffi::c_int
-            && ud.data[i.wrapping_add(3 as u_int) as usize] as ::core::ffi::c_int
-                <= 0xbf as ::core::ffi::c_int
-        {
-            count = count.wrapping_add(1);
-        }
-        i = i.wrapping_add(1);
-    }
-    return count;
+    let Some(bytes) = ud.data.get(..ud.size as usize) else {
+        return 0;
+    };
+    bytes
+        .windows(4)
+        .filter(|part| part[..3] == *b"\xf0\x9f\x87" && (0xa6..=0xbf).contains(&part[3]))
+        .count() as u_int
 }
-pub unsafe fn utf8_should_combine(
-    mut with: *const utf8_data,
-    mut add: *const utf8_data,
-) -> ::core::ffi::c_int {
+pub unsafe fn utf8_should_combine(with: &utf8_data, add: &utf8_data) -> ::core::ffi::c_int {
     let mut w: wchar_t = 0;
     let mut a: wchar_t = 0;
-    if utf8_towc(&*with, &mut w) as ::core::ffi::c_uint
+    if utf8_towc(with, &mut w) as ::core::ffi::c_uint
         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 0 as ::core::ffi::c_int;
     }
-    if utf8_towc(&*add, &mut a) as ::core::ffi::c_uint
+    if utf8_towc(add, &mut a) as ::core::ffi::c_uint
         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 0 as ::core::ffi::c_int;
@@ -110,10 +70,10 @@ pub unsafe fn utf8_should_combine(
         && a <= 0x1f1ff as wchar_t
         && (w >= 0x1f1e6 as wchar_t && w <= 0x1f1ff as wchar_t)
     {
-        if utf8_regional_count(&*with) != 1 as u_int {
+        if utf8_regional_count(with) != 1 as u_int {
             return 0 as ::core::ffi::c_int;
         }
-        if utf8_regional_count(&*add) != 1 as u_int {
+        if utf8_regional_count(add) != 1 as u_int {
             return 0 as ::core::ffi::c_int;
         }
         return 1 as ::core::ffi::c_int;
@@ -246,18 +206,15 @@ fn hanguljamo_last_three(ud: &utf8_data) -> Option<&[u_char; 3]> {
     let start = size.checked_sub(3)?;
     ud.data.get(start..size)?.try_into().ok()
 }
-pub unsafe fn hanguljamo_check_state(
-    mut p_ud: *const utf8_data,
-    mut ud: *const utf8_data,
-) -> hanguljamo_state {
-    if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
+pub fn hanguljamo_check_state(p_ud: &utf8_data, ud: &utf8_data) -> hanguljamo_state {
+    if ud.size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
         return HANGULJAMO_STATE_NOT_HANGULJAMO;
     }
-    let bytes: &[u_char; 3] = (&(*ud).data).get(..3).unwrap().try_into().unwrap();
+    let bytes: &[u_char; 3] = ud.data.get(..3).unwrap().try_into().unwrap();
     match hanguljamo_get_class(bytes) as ::core::ffi::c_uint {
         1 => return HANGULJAMO_STATE_CHOSEONG,
         2 => {
-            let Some(previous) = hanguljamo_last_three(&*p_ud) else {
+            let Some(previous) = hanguljamo_last_three(p_ud) else {
                 return HANGULJAMO_STATE_NOT_COMPOSABLE;
             };
             if hanguljamo_get_class(previous) as ::core::ffi::c_uint
@@ -268,7 +225,7 @@ pub unsafe fn hanguljamo_check_state(
             return HANGULJAMO_STATE_NOT_COMPOSABLE;
         }
         3 => {
-            let Some(previous) = hanguljamo_last_three(&*p_ud) else {
+            let Some(previous) = hanguljamo_last_three(p_ud) else {
                 return HANGULJAMO_STATE_NOT_COMPOSABLE;
             };
             if hanguljamo_get_class(previous) as ::core::ffi::c_uint
@@ -282,4 +239,83 @@ pub unsafe fn hanguljamo_check_state(
         _ => {}
     }
     return HANGULJAMO_STATE_NOT_HANGULJAMO;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cell(text: &str) -> utf8_data {
+        let mut cell = utf8_data::default();
+        cell.data[..text.len()].copy_from_slice(text.as_bytes());
+        cell.size = text.len() as u8;
+        cell.have = cell.size;
+        cell
+    }
+
+    #[test]
+    fn joiner_selector_and_filler_checks_respect_cell_boundaries() {
+        assert_eq!(utf8_has_zwj(&cell("👩\u{200d}")), 1);
+        assert_eq!(utf8_has_zwj(&cell("👩\u{200d}💻")), 0);
+        assert_eq!(utf8_is_zwj(&cell("\u{200d}")), 1);
+        assert_eq!(utf8_is_zwj(&cell("a\u{200d}")), 0);
+        assert_eq!(utf8_is_vs(&cell("\u{fe0f}")), 1);
+        assert_eq!(utf8_is_vs(&cell("\u{fe0e}")), 0);
+        assert_eq!(utf8_is_hangul_filler(&cell("\u{3164}")), 1);
+        assert_eq!(utf8_is_hangul_filler(&cell("\u{1160}")), 0);
+        let mut malformed = cell("\u{200d}");
+        malformed.size = 33;
+        assert_eq!(utf8_has_zwj(&malformed), 0);
+        assert_eq!(utf8_regional_count(&malformed), 0);
+    }
+
+    #[test]
+    fn combination_preserves_flag_pairing_and_skin_tone_direction() {
+        unsafe {
+            assert_eq!(utf8_should_combine(&cell("🇦"), &cell("🇧")), 1);
+            assert_eq!(utf8_should_combine(&cell("🇦🇧"), &cell("🇨")), 0);
+            assert_eq!(utf8_should_combine(&cell("🇦"), &cell("🇧🇨")), 0);
+            assert_eq!(utf8_should_combine(&cell("🏻"), &cell("👋")), 1);
+            assert_eq!(utf8_should_combine(&cell("👋"), &cell("🏻")), 0);
+            assert_eq!(utf8_should_combine(&cell("🏻"), &cell("a")), 0);
+            let mut invalid = cell("a");
+            invalid.data[0] = 0xff;
+            assert_eq!(utf8_should_combine(&invalid, &cell("🇦")), 0);
+        }
+    }
+
+    #[test]
+    fn hangul_composition_uses_the_last_component_and_keeps_filler_classes() {
+        for (leading, vowel, trailing) in [
+            ("ᄀ", "ᅡ", "ᆨ"),
+            ("\u{115f}", "\u{1160}", "\u{11c3}"),
+            ("\u{a960}", "\u{d7b0}", "\u{d7cb}"),
+        ] {
+            assert_eq!(
+                hanguljamo_check_state(&cell(""), &cell(leading)),
+                HANGULJAMO_STATE_CHOSEONG
+            );
+            assert_eq!(
+                hanguljamo_check_state(&cell(leading), &cell(vowel)),
+                HANGULJAMO_STATE_COMPOSABLE
+            );
+            let combined = cell(&format!("{leading}{vowel}"));
+            assert_eq!(
+                hanguljamo_check_state(&combined, &cell(trailing)),
+                HANGULJAMO_STATE_COMPOSABLE
+            );
+            assert_eq!(
+                hanguljamo_check_state(&cell(leading), &cell(trailing)),
+                HANGULJAMO_STATE_NOT_COMPOSABLE
+            );
+            assert_eq!(
+                hanguljamo_check_state(&cell("a"), &cell(vowel)),
+                HANGULJAMO_STATE_NOT_COMPOSABLE
+            );
+            assert_eq!(
+                hanguljamo_check_state(&cell(leading), &cell("漢")),
+                HANGULJAMO_STATE_NOT_HANGULJAMO
+            );
+        }
+    }
 }
