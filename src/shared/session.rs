@@ -9,6 +9,7 @@ use super::window::{winlink, winlink_stack, winlinks};
 
 #[repr(C)]
 pub struct session {
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub id: u_int,
     pub name: std::ffi::CString,
     pub cwd: Option<std::ffi::CString>,
@@ -31,8 +32,17 @@ pub struct session {
 }
 
 impl session {
+    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        std::rc::Rc::new_cyclic(|observer| {
+            let mut value = Self::empty();
+            value.observer = observer.clone();
+            std::cell::UnsafeCell::new(value)
+        })
+    }
+
     pub fn empty() -> Self {
         Self {
+            observer: std::rc::Weak::new(),
             id: Default::default(),
             name: Default::default(),
             cwd: Default::default(),
@@ -59,12 +69,12 @@ impl session {
 #[repr(C)]
 pub struct session_entry {
     /// Weak traversal handle into the session index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>>,
 }
 
 #[repr(C)]
 pub struct sessions {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>>,
 }
 
 #[repr(C)]

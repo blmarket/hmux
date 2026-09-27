@@ -1182,12 +1182,12 @@ mod last_owner_tests {
                 &raw mut sessions,
                 crate::src::shared::session::sessions { storage: None },
             );
-            let session = rc::new(session::empty());
+            let owner = session::new();
+            let session = rc::as_ptr(&owner);
             (*session).name = c"monitor-release-test".to_owned();
-            sessions_insert(&raw mut sessions, session);
+            sessions_insert(&raw mut sessions, owner);
             let observer = rc::downgrade(session);
             let set = monitor_create_session(session, std::rc::Rc::new(|_| {}));
-            rc::release(session);
             let mut item = monitor_item::empty();
             item.id = u32::MAX;
 
@@ -1197,9 +1197,9 @@ mod last_owner_tests {
             // Empty scans exercise the normal exit paths.
             monitor_check_all_panes(set);
             monitor_check_all_windows(set);
-            assert_eq!(observer.strong_count(), 5);
+            assert_eq!(observer.strong_count(), 6);
             event_loop();
-            assert_eq!(observer.strong_count(), 1);
+            assert_eq!(observer.strong_count(), 2);
 
             sessions_remove(&raw mut sessions, session);
             monitor_destroy(set);

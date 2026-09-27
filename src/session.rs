@@ -72,9 +72,10 @@ pub fn sessions_find(head: &sessions, elm: &session) -> *mut session {
         .try_borrow_mut()
         .expect("session index already borrowed");
     let key = elm.name.as_bytes();
-    map.get(key).copied().unwrap_or(std::ptr::null_mut())
+    map.get(key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
 }
-pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut session {
+pub unsafe fn sessions_insert(head: *mut sessions, session: Rc<UnsafeCell<session>>) -> *mut session {
+    let elm = crate::src::shared::rc::as_ptr(&session);
     let key = (*elm).name.as_bytes();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
@@ -82,37 +83,36 @@ pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut se
         .try_borrow_mut()
         .expect("session index already borrowed");
     match map.entry(key.to_vec()) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Occupied(entry) => return crate::src::shared::rc::as_ptr(entry.get()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(session);
             (*elm).entry.owner = Some(observer);
         }
     }
     std::ptr::null_mut()
 }
-pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut session {
+pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> Option<Rc<UnsafeCell<session>>> {
     if elm.is_null() {
-        return std::ptr::null_mut();
+        return None;
     }
     let key = (*elm).name.as_bytes();
     let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
+        return None;
     };
-    let empty = {
+    let (session, empty) = {
         let mut map = owner
             .try_borrow_mut()
             .expect("session index already borrowed");
-        if map.get(key).copied() != Some(elm) {
-            return std::ptr::null_mut();
+        if map.get(key).map(crate::src::shared::rc::as_ptr) != Some(elm) {
+            return None;
         }
-        map.remove(key);
-        map.is_empty()
+        (map.remove(key).expect("matching session"), map.is_empty())
     };
     (*elm).entry.owner = None;
     if empty {
         (*head).storage = None;
     }
-    elm
+    Some(session)
 }
 pub fn sessions_minmax(head: &sessions) -> *mut session {
     let Some(owner) = head.storage.as_ref() else {
@@ -122,7 +122,7 @@ pub fn sessions_minmax(head: &sessions) -> *mut session {
         .try_borrow_mut()
         .expect("session index already borrowed");
     let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    pair.map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
@@ -135,7 +135,7 @@ pub fn sessions_after(head: &sessions, name: &[u8]) -> *mut session {
         .expect("session index already borrowed");
     map.range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, &node)| node)
+        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
@@ -151,7 +151,7 @@ pub unsafe fn sessions_next(elm: &session) -> *mut session {
     let key = elm.name.as_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
 }
 pub fn session_groups_find(head: &session_groups, elm: &session_group) -> *mut session_group {
     let Some(owner) = head.storage.as_ref() else {
@@ -269,6 +269,7 @@ pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
 }
 pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session {
     let mut s: session = session {
+        observer: std::rc::Weak::new(),
         id: 0,
         name: Default::default(),
         cwd: Default::default(),
@@ -340,16 +341,15 @@ pub unsafe fn session_create(
     mut oo: *mut options,
     mut tio: *mut termios,
 ) -> *mut session {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut owner = session::empty();
-    owner.tio = if tio.is_null() {
+    let owner = session::new();
+    let s = crate::src::shared::rc::as_ptr(&owner);
+    (*s).tio = if tio.is_null() {
         None
     } else {
         Some(Box::new(*tio))
     };
-    owner.cwd = Some(CStr::from_ptr(cwd).to_owned());
+    (*s).cwd = Some(CStr::from_ptr(cwd).to_owned());
 
-    s = crate::src::shared::rc::new(owner);
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.storage = None;
     (*s).windows.storage = None;
@@ -391,7 +391,7 @@ pub unsafe fn session_create(
             }
         }
     }
-    sessions_insert(&raw mut sessions, s);
+    sessions_insert(&raw mut sessions, owner);
     log_debug(format_args!(
         "new session {} ${}",
         log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
@@ -403,8 +403,8 @@ pub unsafe fn session_create(
     session_update_activity(s, &raw mut (*s).creation_time);
     return s;
 }
-pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi::c_char) {
-    crate::src::shared::rc::retain(s);
+pub unsafe fn session_add_ref(s: *mut session, from: *const ::core::ffi::c_char) -> Rc<UnsafeCell<session>> {
+    let owner = (*s).observer.upgrade().expect("live Rc session");
     log_debug(format_args!(
         "{}: {} {}, now {}",
         "session_add_ref",
@@ -412,6 +412,7 @@ pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi:
         log_cstr((from) as *const _),
         crate::src::shared::rc::strong_count(s) as ::core::ffi::c_int
     ));
+    owner
 }
 /// Consume one session owner and defer its release until the event loop runs.
 pub unsafe fn session_remove_ref(s: Rc<UnsafeCell<session>>, from: &CStr) {
@@ -446,7 +447,7 @@ pub unsafe fn session_destroy(
         return;
     }
     (*s).curw = ::core::ptr::null_mut::<winlink>();
-    sessions_remove(&raw mut sessions, s);
+    let owner = sessions_remove(&raw mut sessions, s).expect("registered session owner");
     if notify != 0 {
         events_fire_session(
             b"session-closed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -473,7 +474,7 @@ pub unsafe fn session_destroy(
         winlink_remove(&raw mut (*s).windows, wl);
     }
     session_set_cwd(&mut *s, None);
-    session_remove_ref(crate::src::shared::rc::take(s), c"session_destroy");
+    session_remove_ref(owner, c"session_destroy");
 }
 unsafe fn session_lock_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut s: *mut session = arg as *mut session;

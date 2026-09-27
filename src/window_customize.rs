@@ -5283,7 +5283,8 @@ mod environment_lifetime_tests {
     #[test]
     fn detached_environment_rows_expire_after_their_session() {
         unsafe {
-            let session = rc::new(session::empty());
+            let owner = session::new();
+            let session = rc::as_ptr(&owner);
             (*session).environ = Some(environ_create());
             (*session)
                 .environ
@@ -5291,8 +5292,7 @@ mod environment_lifetime_tests {
                 .unwrap()
                 .set(b"NAME", 0, b"value")
                 .unwrap();
-            let owner = rc::take(session);
-            let target = CustomizeEnvironment::session(session);
+                        let target = CustomizeEnvironment::session(session);
             let mut row = window_customize_new_item();
             row.environ = Some(target.clone());
             let detached = window_customize_copy_item(&row);
@@ -5317,10 +5317,10 @@ mod environment_lifetime_tests {
     #[test]
     fn environment_guards_reborrow_the_current_box_and_detect_removal() {
         unsafe {
-            let session = rc::new(session::empty());
+            let owner = session::new();
+            let session = rc::as_ptr(&owner);
             (*session).environ = Some(environ_create());
-            let owner = rc::take(session);
-            let target = CustomizeEnvironment::session(session);
+                        let target = CustomizeEnvironment::session(session);
             let mut guard = target.resolve().unwrap();
             guard
                 .get_mut()

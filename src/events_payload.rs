@@ -52,9 +52,9 @@ pub fn event_payload_items(ep: &event_payload) -> impl Iterator<Item = &event_pa
 
 unsafe fn event_payload_free_target(ep: &mut event_payload) {
     let target = &mut ep.target;
-    if !target.s.is_null() {
+    if let Some(session) = ep.target_session.take() {
         session_remove_ref(
-            crate::src::shared::rc::take(target.s),
+            session,
             c"event_payload_free_target",
         );
     }
@@ -114,6 +114,7 @@ unsafe fn event_payload_set_item(
 
 pub fn event_payload_create() -> Box<event_payload> {
     Box::new(event_payload {
+        target_session: None,
         items: event_payload_tree::default(),
         target: cmd_find_state {
             idx: -1,
@@ -137,19 +138,19 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
     event_payload_free_target(ep);
     let target = &mut ep.target;
     if !fs.s.is_null() {
-        session_add_ref(
+        ep.target_session = Some(session_add_ref(
             fs.s,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        ));
         target.s = fs.s;
     }
     if !fs.wl.is_null() {
         target.idx = (*fs.wl).idx;
         if target.s.is_null() {
-            session_add_ref(
+            ep.target_session = Some(session_add_ref(
                 (*fs.wl).session,
                 b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            ));
             target.s = (*fs.wl).session;
         }
     } else {
@@ -284,11 +285,11 @@ pub unsafe fn event_payload_set_session(
     mut name: *const ::core::ffi::c_char,
     mut s: *mut session,
 ) {
-    session_add_ref(
+    let session = session_add_ref(
         s,
         b"event_payload_set_session\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Session(crate::src::shared::rc::take(s)));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Session(session));
 }
 pub unsafe fn event_payload_set_window(
     ep: &mut event_payload,
@@ -564,6 +565,7 @@ mod tests {
                 }),
             );
             let mut payload = event_payload {
+                target_session: None,
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };
@@ -586,6 +588,7 @@ mod tests {
     fn boxed_items_preserve_order_and_addresses_when_the_payload_moves() {
         unsafe {
             let mut payload = event_payload {
+                target_session: None,
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };

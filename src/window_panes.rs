@@ -1930,9 +1930,10 @@ mod session_observer_tests {
                 &raw mut sessions,
                 crate::src::shared::session::sessions { storage: None },
             );
-            let session = rc::new(session::empty());
+            let owner = session::new();
+            let session = rc::as_ptr(&owner);
             (*session).name = c"panes-mode-session".to_owned();
-            sessions_insert(&raw mut sessions, session);
+            sessions_insert(&raw mut sessions, owner);
             let observer = rc::downgrade(session);
             let mut mode = window_panes_modedata {
                 wp: Weak::new(),
@@ -1951,12 +1952,12 @@ mod session_observer_tests {
             assert_eq!(rc::strong_count(session), 1);
             let guard = window_panes_session(&mut mode).unwrap();
             assert_eq!(rc::as_ptr(&guard), session);
-            sessions_remove(&raw mut sessions, session);
+            let owner = sessions_remove(&raw mut sessions, session).unwrap();
             assert!(window_panes_session(&mut mode).is_none());
             assert_eq!(observer.strong_count(), 3, "rejected upgrade release is deferred");
             crate::src::reactor::event_loop();
             assert_eq!(observer.strong_count(), 2);
-            rc::release(session);
+            drop(owner);
             assert!(observer.upgrade().is_some(), "guard keeps allocation alive");
             session_remove_ref(guard, c"session-observer-test");
             assert!(observer.upgrade().is_some(), "guard cleanup is deferred");

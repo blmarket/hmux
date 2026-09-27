@@ -2,9 +2,9 @@ use hmux2::src::session::*;
 use hmux2::src::shared::session::{session, sessions};
 use std::ffi::CStr;
 
-fn node(name: &CStr) -> Box<session> {
-    let mut node: Box<session> = Box::new(session::empty());
-    node.name = name.to_owned();
+fn node(name: &CStr) -> std::rc::Rc<std::cell::UnsafeCell<session>> {
+    let node = session::new();
+    unsafe { (*node.get()).name = name.to_owned(); }
     node
 }
 
@@ -12,39 +12,39 @@ fn node(name: &CStr) -> Box<session> {
 fn saved_name_survives_removal_of_current_successor_and_entire_index() {
     unsafe {
         let mut head = sessions { storage: None };
-        let mut first = node(c"a1");
-        let mut second = node(c"a2");
-        let mut last = node(c"b1");
-        sessions_insert(&mut head, &mut *first);
-        sessions_insert(&mut head, &mut *second);
-        sessions_insert(&mut head, &mut *last);
-        let name = CStr::from_ptr((first.name).as_ptr().cast_mut())
+        let first = node(c"a1");
+        let second = node(c"a2");
+        let last = node(c"b1");
+        sessions_insert(&mut head, first.clone());
+        sessions_insert(&mut head, second.clone());
+        sessions_insert(&mut head, last.clone());
+        let name = CStr::from_ptr(((*first.get()).name).as_ptr().cast_mut())
             .to_bytes()
             .to_vec();
-        assert_eq!(sessions_next(&mut *first), &mut *second as *mut _);
+        assert_eq!(sessions_next(&mut *first.get()), &mut *second.get() as *mut _);
 
         // Group destruction removes the current session AND its cached successor.
-        sessions_remove(&mut head, &mut *first);
-        sessions_remove(&mut head, &mut *second);
+        sessions_remove(&mut head, &mut *first.get());
+        sessions_remove(&mut head, &mut *second.get());
         drop(first);
         drop(second);
-        assert_eq!(sessions_after(&head, &name), &mut *last as *mut _);
+        assert_eq!(sessions_after(&head, &name), &mut *last.get() as *mut _);
 
-        let last_name = CStr::from_ptr((last.name).as_ptr().cast_mut())
+        let last_name = CStr::from_ptr(((*last.get()).name).as_ptr().cast_mut())
             .to_bytes()
             .to_vec();
-        sessions_remove(&mut head, &mut *last);
+        sessions_remove(&mut head, &mut *last.get());
         drop(last);
         assert!(head.storage.is_none());
         assert!(sessions_after(&head, &last_name).is_null());
 
         // Resuming reads the head afresh even after its previous map was freed.
-        let mut replacement = node(c"z1");
-        sessions_insert(&mut head, &mut *replacement);
+        let replacement = node(c"z1");
+        sessions_insert(&mut head, replacement.clone());
         assert_eq!(
             sessions_after(&head, &last_name),
-            &mut *replacement as *mut _
+            &mut *replacement.get() as *mut _
         );
-        sessions_remove(&mut head, &mut *replacement);
+        sessions_remove(&mut head, &mut *replacement.get());
     }
 }
