@@ -212,8 +212,8 @@ pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct grid_reader {
-    pub gd: *mut grid,
+pub struct grid_reader<'a> {
+    pub gd: &'a grid,
     pub cx: u_int,
     pub cy: u_int,
 }

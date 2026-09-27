@@ -55,7 +55,6 @@ use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::grid_reader;
 use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::input_ctx;
@@ -2550,11 +2549,6 @@ unsafe fn window_copy_cmd_selection_mode(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut so: *mut options = (*(*cs).s).options;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut s: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
@@ -2611,16 +2605,16 @@ unsafe fn window_copy_cmd_selection_mode(
             sy = ey;
             ey = y;
         }
-        grid_reader_start(&raw mut gr, (*(*data).backing).grid, sx, sy);
-        grid_reader_cursor_start_of_line(&raw mut gr, 1 as ::core::ffi::c_int);
-        grid_reader_get_cursor(&raw mut gr, &raw mut sx, &raw mut sy);
-        grid_reader_start(&raw mut gr, (*(*data).backing).grid, ex, ey);
+        let mut gr = grid_reader_start(&*(*(*data).backing).grid, sx, sy);
+        grid_reader_cursor_start_of_line(&mut gr, 1 as ::core::ffi::c_int);
+        (sx, sy) = grid_reader_get_cursor(&gr);
+        let mut gr = grid_reader_start(&*(*(*data).backing).grid, ex, ey);
         grid_reader_cursor_end_of_line(
-            &raw mut gr,
+            &mut gr,
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        grid_reader_get_cursor(&raw mut gr, &raw mut ex, &raw mut ey);
+        (ex, ey) = grid_reader_get_cursor(&gr);
         (*data).rectflag = 0 as ::core::ffi::c_int;
         (*data).selx = sx;
         (*data).selrx = (*data).selx;
@@ -8300,11 +8294,6 @@ unsafe fn window_copy_cursor_limit(
 unsafe fn window_copy_cursor_start_of_line(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8313,19 +8302,14 @@ unsafe fn window_copy_cursor_start_of_line(mut wme: *mut window_mode_entry) {
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_start_of_line(&raw mut gr, 1 as ::core::ffi::c_int);
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_start_of_line(&mut gr, 1 as ::core::ffi::c_int);
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
 }
 unsafe fn window_copy_cursor_back_to_indentation(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8334,19 +8318,14 @@ unsafe fn window_copy_cursor_back_to_indentation(mut wme: *mut window_mode_entry
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_back_to_indentation(&raw mut gr);
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_back_to_indentation(&mut gr);
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
 }
 unsafe fn window_copy_cursor_end_of_line(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8355,21 +8334,21 @@ unsafe fn window_copy_cursor_end_of_line(mut wme: *mut window_mode_entry) {
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
     if !(*data).screen.sel.is_none() && (*data).rectflag != 0 {
         grid_reader_cursor_end_of_line(
-            &raw mut gr,
+            &mut gr,
             1 as ::core::ffi::c_int,
             1 as ::core::ffi::c_int,
         );
     } else {
         grid_reader_cursor_end_of_line(
-            &raw mut gr,
+            &mut gr,
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
     }
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    (px, py) = grid_reader_get_cursor(&gr);
     if (*data).screen.sel.is_none() || (*data).rectflag == 0 {
         px = window_copy_cursor_limit(wme, py, 0 as ::core::ffi::c_int);
     }
@@ -8457,11 +8436,6 @@ unsafe fn window_copy_other_end(mut wme: *mut window_mode_entry) {
 unsafe fn window_copy_cursor_left(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8470,9 +8444,9 @@ unsafe fn window_copy_cursor_left(mut wme: *mut window_mode_entry) {
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_left(&raw mut gr, 1 as ::core::ffi::c_int);
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_left(&mut gr, 1 as ::core::ffi::c_int);
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
 }
 unsafe fn window_copy_cursor_right(mut wme: *mut window_mode_entry, mut all: ::core::ffi::c_int) {
@@ -8480,11 +8454,6 @@ unsafe fn window_copy_cursor_right(mut wme: *mut window_mode_entry, mut all: ::c
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = (*(*wp).window).options;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8498,9 +8467,9 @@ unsafe fn window_copy_cursor_right(mut wme: *mut window_mode_entry, mut all: ::c
         oo,
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) != MODEKEY_VI as ::core::ffi::c_longlong) as ::core::ffi::c_int;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_right(&raw mut gr, 1 as ::core::ffi::c_int, all, onemore);
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_right(&mut gr, 1 as ::core::ffi::c_int, all, onemore);
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_down(
         wme,
         hsize,
@@ -8721,11 +8690,6 @@ unsafe fn window_copy_cursor_down(
 unsafe fn window_copy_cursor_jump(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8734,9 +8698,9 @@ unsafe fn window_copy_cursor_jump(mut wme: *mut window_mode_entry) {
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    if grid_reader_cursor_jump(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
-        grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    if grid_reader_cursor_jump(&mut gr, &(&(*data).jumpchar)[0]) != 0 {
+        (px, py) = grid_reader_get_cursor(&gr);
         window_copy_acquire_cursor_down(
             wme,
             hsize,
@@ -8752,11 +8716,6 @@ unsafe fn window_copy_cursor_jump(mut wme: *mut window_mode_entry) {
 unsafe fn window_copy_cursor_jump_back(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8765,21 +8724,16 @@ unsafe fn window_copy_cursor_jump_back(mut wme: *mut window_mode_entry) {
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_left(&raw mut gr, 0 as ::core::ffi::c_int);
-    if grid_reader_cursor_jump_back(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
-        grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_left(&mut gr, 0 as ::core::ffi::c_int);
+    if grid_reader_cursor_jump_back(&mut gr, &(&(*data).jumpchar)[0]) != 0 {
+        (px, py) = grid_reader_get_cursor(&gr);
         window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
     }
 }
 unsafe fn window_copy_cursor_jump_to(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8788,10 +8742,10 @@ unsafe fn window_copy_cursor_jump_to(mut wme: *mut window_mode_entry) {
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    if grid_reader_cursor_jump(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
-        grid_reader_cursor_left(&raw mut gr, 1 as ::core::ffi::c_int);
-        grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    if grid_reader_cursor_jump(&mut gr, &(&(*data).jumpchar)[0]) != 0 {
+        grid_reader_cursor_left(&mut gr, 1 as ::core::ffi::c_int);
+        (px, py) = grid_reader_get_cursor(&gr);
         window_copy_acquire_cursor_down(
             wme,
             hsize,
@@ -8808,11 +8762,6 @@ unsafe fn window_copy_cursor_jump_to_back(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = (*(*(*wme).wp).window).options;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8826,17 +8775,17 @@ unsafe fn window_copy_cursor_jump_to_back(mut wme: *mut window_mode_entry) {
         oo,
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) != MODEKEY_VI as ::core::ffi::c_longlong) as ::core::ffi::c_int;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_left(&raw mut gr, 0 as ::core::ffi::c_int);
-    grid_reader_cursor_left(&raw mut gr, 0 as ::core::ffi::c_int);
-    if grid_reader_cursor_jump_back(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_left(&mut gr, 0 as ::core::ffi::c_int);
+    grid_reader_cursor_left(&mut gr, 0 as ::core::ffi::c_int);
+    if grid_reader_cursor_jump_back(&mut gr, &(&(*data).jumpchar)[0]) != 0 {
         grid_reader_cursor_right(
-            &raw mut gr,
+            &mut gr,
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             onemore,
         );
-        grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+        (px, py) = grid_reader_get_cursor(&gr);
         window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
     }
 }
@@ -8846,11 +8795,6 @@ unsafe fn window_copy_cursor_next_word(
 ) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8859,9 +8803,9 @@ unsafe fn window_copy_cursor_next_word(
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_next_word(&raw mut gr, separators);
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_next_word(&mut gr, CStr::from_ptr(separators));
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_down(
         wme,
         hsize,
@@ -8883,37 +8827,32 @@ unsafe fn window_copy_cursor_next_word_end_pos(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = (*(*wp).window).options;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut hsize: u_int = 0;
     px = (*data).cx;
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
     if options_get_number(
         oo,
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == MODEKEY_VI as ::core::ffi::c_longlong
     {
-        if grid_reader_in_set(&raw mut gr, WHITESPACE.as_ptr()) == 0 {
+        if grid_reader_in_set(&gr, c"\t ") == 0 {
             grid_reader_cursor_right(
-                &raw mut gr,
+                &mut gr,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
         }
-        grid_reader_cursor_next_word_end(&raw mut gr, separators);
-        grid_reader_cursor_left(&raw mut gr, 1 as ::core::ffi::c_int);
+        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
+        grid_reader_cursor_left(&mut gr, 1 as ::core::ffi::c_int);
     } else {
-        grid_reader_cursor_next_word_end(&raw mut gr, separators);
+        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
     }
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    (px, py) = grid_reader_get_cursor(&gr);
     *ppx = px;
     *ppy = py;
 }
@@ -8926,11 +8865,6 @@ unsafe fn window_copy_cursor_next_word_end(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = (*(*wp).window).options;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -8939,26 +8873,26 @@ unsafe fn window_copy_cursor_next_word_end(
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
     if options_get_number(
         oo,
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == MODEKEY_VI as ::core::ffi::c_longlong
     {
-        if grid_reader_in_set(&raw mut gr, WHITESPACE.as_ptr()) == 0 {
+        if grid_reader_in_set(&gr, c"\t ") == 0 {
             grid_reader_cursor_right(
-                &raw mut gr,
+                &mut gr,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
         }
-        grid_reader_cursor_next_word_end(&raw mut gr, separators);
-        grid_reader_cursor_left(&raw mut gr, 1 as ::core::ffi::c_int);
+        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
+        grid_reader_cursor_left(&mut gr, 1 as ::core::ffi::c_int);
     } else {
-        grid_reader_cursor_next_word_end(&raw mut gr, separators);
+        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
     }
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_down(
         wme,
         hsize,
@@ -8978,25 +8912,20 @@ unsafe fn window_copy_cursor_previous_word_pos(
 ) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut hsize: u_int = 0;
     px = (*data).cx;
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
     grid_reader_cursor_previous_word(
-        &raw mut gr,
-        separators,
+        &mut gr,
+        CStr::from_ptr(separators),
         0 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    (px, py) = grid_reader_get_cursor(&gr);
     *ppx = px;
     *ppy = py;
 }
@@ -9008,11 +8937,6 @@ unsafe fn window_copy_cursor_previous_word(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut w: *mut window = (*(*wme).wp).window as *mut window;
     let mut back_s: *mut screen = (*data).backing;
-    let mut gr: grid_reader = grid_reader {
-        gd: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-    };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut oldy: u_int = 0;
@@ -9031,9 +8955,9 @@ unsafe fn window_copy_cursor_previous_word(
     hsize = (*(*back_s).grid).hsize;
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
-    grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    grid_reader_cursor_previous_word(&raw mut gr, separators, already, stop_at_eol);
-    grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
+    let mut gr = grid_reader_start(&*(*back_s).grid, px, py);
+    grid_reader_cursor_previous_word(&mut gr, CStr::from_ptr(separators), already, stop_at_eol);
+    (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
 }
 unsafe fn window_copy_cursor_prompt(
