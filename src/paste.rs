@@ -8,8 +8,10 @@ use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::tmux::{clean_name_cstring, global_options};
+use refbox::RefBox;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
+#[cfg(test)]
 use std::rc::Rc;
 
 fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], name: &CStr) {
@@ -23,7 +25,7 @@ fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], name: &C
 
 #[derive(Default)]
 pub struct paste_time_tree {
-    entries: std::collections::BTreeMap<std::cmp::Reverse<u_int>, PasteBufferRef>,
+    entries: std::collections::BTreeMap<std::cmp::Reverse<u_int>, RefBox<paste_buffer>>,
 }
 #[derive(Default)]
 pub struct paste_name_tree {
@@ -38,11 +40,11 @@ thread_local! {
     static paste_by_time: RefCell<paste_time_tree> = RefCell::new(paste_time_tree::default());
 }
 
-fn paste_new_owned(name: CString) -> PasteBufferRef {
-    Rc::new(RefCell::new(paste_buffer {
+fn paste_new_owned(name: CString) -> RefBox<paste_buffer> {
+    RefBox::new(paste_buffer {
         name,
         ..paste_buffer::empty()
-    }))
+    })
 }
 
 fn paste_store_data(pb: &mut paste_buffer, data: Option<Box<[u8]>>) {
@@ -92,13 +94,13 @@ fn paste_time_key(pb: &paste_buffer) -> std::cmp::Reverse<u_int> {
 
 fn paste_time_tree_insert(
     head: &mut paste_time_tree,
-    elm: &PasteBufferRef,
+    elm: RefBox<paste_buffer>,
 ) -> Option<PasteBufferRef> {
-    let key = paste_time_key(&elm.borrow());
+    let key = paste_time_key(&elm.try_borrow_mut().unwrap());
     match head.entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
+        std::collections::btree_map::Entry::Occupied(entry) => Some(PasteBufferRef::observe(entry.get())),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm.clone());
+            entry.insert(elm);
             None
         }
     }
@@ -110,7 +112,7 @@ fn paste_time_tree_minmax(head: &paste_time_tree, val: i32) -> Option<PasteBuffe
     } else {
         head.entries.values().next_back()
     }
-    .cloned()
+    .map(PasteBufferRef::observe)
 }
 
 fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> Option<PasteBufferRef> {
@@ -120,7 +122,7 @@ fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> Option<Pa
             std::ops::Bound::Unbounded,
         ))
         .next()
-        .map(|(_, entry)| entry.clone())
+        .map(|(_, entry)| PasteBufferRef::observe(entry))
 }
 
 fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> Option<PasteBufferRef> {
@@ -130,13 +132,13 @@ fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> Option<Pa
             std::ops::Bound::Excluded(paste_time_key(elm)),
         ))
         .next_back()
-        .map(|(_, entry)| entry.clone())
+        .map(|(_, entry)| PasteBufferRef::observe(entry))
 }
 
 fn paste_time_tree_remove(
     head: &mut paste_time_tree,
     elm: &paste_buffer,
-) -> Option<PasteBufferRef> {
+) -> Option<RefBox<paste_buffer>> {
     head.entries.remove(&paste_time_key(elm))
 }
 
@@ -149,7 +151,7 @@ fn paste_name_tree_insert_local(elm: &PasteBufferRef) -> Option<PasteBufferRef> 
 fn paste_name_tree_remove_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
     paste_by_name.with(|head| paste_name_tree_remove(&mut head.borrow_mut(), elm))
 }
-fn paste_time_tree_insert_local(elm: &PasteBufferRef) -> Option<PasteBufferRef> {
+fn paste_time_tree_insert_local(elm: RefBox<paste_buffer>) -> Option<PasteBufferRef> {
     paste_by_time.with(|head| paste_time_tree_insert(&mut head.borrow_mut(), elm))
 }
 fn paste_time_tree_minmax_local(val: i32) -> Option<PasteBufferRef> {
@@ -161,7 +163,7 @@ fn paste_time_tree_next_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
 fn paste_time_tree_prev_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
     paste_by_time.with(|head| paste_time_tree_prev(&head.borrow(), elm))
 }
-fn paste_time_tree_remove_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+fn paste_time_tree_remove_local(elm: &paste_buffer) -> Option<RefBox<paste_buffer>> {
     paste_by_time.with(|head| paste_time_tree_remove(&mut head.borrow_mut(), elm))
 }
 fn paste_time_tree_is_empty_local() -> bool {
@@ -229,7 +231,7 @@ pub fn paste_buffer_data(pb: &paste_buffer) -> Option<&[u8]> {
 }
 pub fn paste_walk(pb: Option<&PasteBufferRef>) -> Option<PasteBufferRef> {
     match pb {
-        Some(pb) => paste_time_tree_next_local(&pb.borrow()),
+        Some(pb) => paste_time_tree_next_local(&*pb.try_borrow()?),
         None => paste_time_tree_minmax_local(RB_NEGINF),
     }
 }
@@ -257,7 +259,8 @@ pub fn paste_get_name(name: &CStr) -> Option<PasteBufferRef> {
     }
 }
 fn paste_is_registered(pb: &PasteBufferRef) -> bool {
-    paste_get_name(&pb.borrow().name).is_some_and(|current| Rc::ptr_eq(&current, pb))
+    pb.try_borrow()
+        .is_some_and(|buffer| paste_get_name(&buffer.name).is_some_and(|current| current == *pb))
 }
 pub unsafe fn paste_free(pb: &PasteBufferRef) {
     // A retained reader must never delete a replacement with the same name.
@@ -287,15 +290,23 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     let limit = options_get_number(global_options, c"buffer-limit".as_ptr()) as u_int;
     let mut next = paste_time_tree_minmax_local(RB_INF);
     while let Some(pb) = next {
-        next = paste_time_tree_prev_local(&pb.borrow());
         if paste_automatic_count() < limit {
             break;
         }
-        if pb.borrow().automatic != 0 {
+        let Some(buffer) = pb.try_borrow() else {
+            // A deletion listener removed our next candidate. Restart at the
+            // oldest remaining entry, without retaining stale buffer data.
+            next = paste_time_tree_minmax_local(RB_INF);
+            continue;
+        };
+        next = paste_time_tree_prev_local(&buffer);
+        let automatic = buffer.automatic != 0;
+        drop(buffer);
+        if automatic {
             paste_free(&pb);
         }
     }
-    let pb = loop {
+    let owner = loop {
         let mut bytes = Vec::with_capacity(prefix_bytes.len() + 10);
         bytes.extend_from_slice(prefix_bytes);
         bytes.extend_from_slice(paste_next_index_take().to_string().as_bytes());
@@ -304,6 +315,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
             break paste_new_owned(name);
         }
     };
+    let pb = PasteBufferRef::observe(&owner);
     {
         let mut buffer = pb.borrow_mut();
         paste_store_data(&mut buffer, Some(data));
@@ -313,7 +325,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
         buffer.order = paste_next_order_take();
     }
     paste_name_tree_insert_local(&pb);
-    paste_time_tree_insert_local(&pb);
+    paste_time_tree_insert_local(owner);
     paste_fire_event(c"paste-buffer-changed", |out| {
         out.write_all(pb.borrow().name.as_bytes())
     });
@@ -343,10 +355,15 @@ pub unsafe fn paste_rename(
         return -1;
     };
     if let Some(replaced) = paste_get_name(&name) {
-        if Rc::ptr_eq(&pb, &replaced) {
+        if pb == replaced {
             return 0;
         }
         paste_free(&replaced);
+        // A deletion listener may also have removed or replaced the source.
+        if !paste_is_registered(&pb) {
+            paste_name_cause(cause, b"no buffer ", oldname);
+            return -1;
+        }
     }
     paste_name_tree_remove_local(&pb.borrow());
     let previous = {
@@ -359,11 +376,12 @@ pub unsafe fn paste_rename(
         previous
     };
     paste_name_tree_insert_local(&pb);
+    let changed_name = pb.borrow().name.clone();
     paste_fire_event(c"paste-buffer-deleted", |out| {
         out.write_all(previous.as_bytes())
     });
     paste_fire_event(c"paste-buffer-changed", |out| {
-        out.write_all(pb.borrow().name.as_bytes())
+        out.write_all(changed_name.as_bytes())
     });
     0
 }
@@ -390,7 +408,8 @@ pub(crate) unsafe fn paste_set_owned(
         paste_name_cause(cause, b"invalid buffer name: ", name);
         return -1;
     };
-    let pb = paste_new_owned(newname);
+    let owner = paste_new_owned(newname);
+    let pb = PasteBufferRef::observe(&owner);
     {
         let mut buffer = pb.borrow_mut();
         paste_store_data(&mut buffer, Some(data));
@@ -402,7 +421,7 @@ pub(crate) unsafe fn paste_set_owned(
         paste_free(&old);
     }
     paste_name_tree_insert_local(&pb);
-    paste_time_tree_insert_local(&pb);
+    paste_time_tree_insert_local(owner);
     paste_fire_event(c"paste-buffer-changed", |out| {
         out.write_all(pb.borrow().name.as_bytes())
     });
@@ -410,9 +429,14 @@ pub(crate) unsafe fn paste_set_owned(
 }
 /// Replace the bytes while preserving the buffer identity and creation order.
 pub(crate) unsafe fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
-    paste_store_data(&mut pb.borrow_mut(), Some(data));
+    let Some(mut buffer) = pb.try_borrow() else {
+        return;
+    };
+    paste_store_data(&mut buffer, Some(data));
+    let name = buffer.name.clone();
+    drop(buffer);
     paste_fire_event(c"paste-buffer-changed", |out| {
-        out.write_all(pb.borrow().name.as_bytes())
+        out.write_all(name.as_bytes())
     });
 }
 
@@ -498,13 +522,13 @@ mod tests {
         }
     }
 
-    fn named_buffer(name: &CString) -> PasteBufferRef {
+    fn named_buffer(name: &CString) -> RefBox<paste_buffer> {
         paste_new_owned(name.clone())
     }
 
-    fn ordered_buffer(name: &CString, order: u_int) -> PasteBufferRef {
+    fn ordered_buffer(name: &CString, order: u_int) -> RefBox<paste_buffer> {
         let buffer = named_buffer(name);
-        buffer.borrow_mut().order = order;
+        buffer.try_borrow_mut().unwrap().order = order;
         buffer
     }
 
@@ -516,27 +540,31 @@ mod tests {
             CString::new(vec![b'a', 0xff]).unwrap(),
             CString::new("a0").unwrap(),
         ];
-        let items = names.iter().map(named_buffer).collect::<Vec<_>>();
+        let owners = names.iter().map(named_buffer).collect::<Vec<_>>();
+        let items = owners
+            .iter()
+            .map(PasteBufferRef::observe)
+            .collect::<Vec<_>>();
         let [z, a, a_high, a0] = [&items[0], &items[1], &items[2], &items[3]];
         let duplicate = named_buffer(&CString::new("a").unwrap());
         let mut tree = paste_name_tree::default();
         for item in [z, a_high, a, a0] {
             assert!(paste_name_tree_insert(&mut tree, item).is_none());
         }
-        assert!(Rc::ptr_eq(
-            &paste_name_tree_insert(&mut tree, &duplicate).unwrap(),
+        assert!(PartialEq::eq(
+            &paste_name_tree_insert(&mut tree, &PasteBufferRef::observe(&duplicate)).unwrap(),
             a
         ));
         assert_eq!(
             tree.entries.keys().map(Vec::as_slice).collect::<Vec<_>>(),
             vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
         );
-        assert!(Rc::ptr_eq(
+        assert!(PartialEq::eq(
             &paste_name_tree_find(&tree, &names[2]).unwrap(),
             a_high
         ));
         assert!(paste_name_tree_find(&tree, c"missing").is_none());
-        assert!(Rc::ptr_eq(
+        assert!(PartialEq::eq(
             &paste_name_tree_remove(&mut tree, &a_high.borrow()).unwrap(),
             a_high
         ));
@@ -545,16 +573,19 @@ mod tests {
 
     #[test]
     fn paste_time_tree_matches_reverse_order_and_duplicate_semantics() {
-        let oldest = ordered_buffer(&CString::new("oldest").unwrap(), 4);
-        let middle = ordered_buffer(&CString::new("middle").unwrap(), 7);
-        let newest = ordered_buffer(&CString::new("newest").unwrap(), 12);
+        let oldest_owner = ordered_buffer(&CString::new("oldest").unwrap(), 4);
+        let middle_owner = ordered_buffer(&CString::new("middle").unwrap(), 7);
+        let newest_owner = ordered_buffer(&CString::new("newest").unwrap(), 12);
         let duplicate = ordered_buffer(&CString::new("duplicate").unwrap(), 7);
+        let oldest = PasteBufferRef::observe(&oldest_owner);
+        let middle = PasteBufferRef::observe(&middle_owner);
+        let newest = PasteBufferRef::observe(&newest_owner);
         let mut tree = paste_time_tree::default();
-        for item in [&oldest, &newest, &middle] {
+        for item in [oldest_owner, newest_owner, middle_owner] {
             assert!(paste_time_tree_insert(&mut tree, item).is_none());
         }
-        assert!(Rc::ptr_eq(
-            &paste_time_tree_insert(&mut tree, &duplicate).unwrap(),
+        assert!(PartialEq::eq(
+            &paste_time_tree_insert(&mut tree, duplicate).unwrap(),
             &middle
         ));
         assert_eq!(
@@ -601,8 +632,8 @@ mod tests {
             12
         );
         assert!(paste_time_tree_prev(&tree, &newest.borrow()).is_none());
-        assert!(Rc::ptr_eq(
-            &paste_time_tree_remove(&mut tree, &middle.borrow()).unwrap(),
+        assert!(PartialEq::eq(
+            &PasteBufferRef::observe(&paste_time_tree_remove(&mut tree, &middle.borrow()).unwrap()),
             &middle
         ));
         assert_eq!(
@@ -615,13 +646,13 @@ mod tests {
     }
 
     #[test]
-    fn retained_buffers_preserve_identity_and_cannot_delete_replacements() {
+    fn weak_buffers_preserve_identity_and_cannot_delete_replacements() {
         unsafe {
             let data = b"original\0bytes".to_vec().into_boxed_slice();
             let bytes_address = data.as_ptr();
             assert_eq!(paste_set_owned(data, Some(c"original"), None), 0);
             let original = paste_get_name(c"original").unwrap();
-            let weak = Rc::downgrade(&original);
+            let weak = original.clone();
             assert_eq!(
                 paste_buffer_data(&original.borrow()).unwrap().as_ptr(),
                 bytes_address
@@ -629,7 +660,10 @@ mod tests {
             let order = original.borrow().order;
             assert_eq!(paste_rename(Some(c"original"), Some(c"renamed"), None), 0);
             assert!(paste_get_name(c"original").is_none());
-            assert!(Rc::ptr_eq(&original, &paste_get_name(c"renamed").unwrap()));
+            assert!(PartialEq::eq(
+                &original,
+                &paste_get_name(c"renamed").unwrap()
+            ));
             assert_eq!(original.borrow().order, order);
             assert_eq!(
                 paste_set_owned(
@@ -640,23 +674,64 @@ mod tests {
                 0
             );
             let replacement = paste_get_name(c"renamed").unwrap();
-            assert!(!Rc::ptr_eq(&original, &replacement));
-            assert_eq!(
-                paste_buffer_data(&original.borrow()).unwrap(),
-                b"original\0bytes"
-            );
+            assert!(!PartialEq::eq(&original, &replacement));
+            assert!(!original.is_alive());
+            assert!(original.try_borrow().is_none());
             paste_free(&original);
-            assert!(Rc::ptr_eq(
+            assert!(PartialEq::eq(
                 &replacement,
                 &paste_get_name(c"renamed").unwrap()
             ));
             drop(original);
-            assert!(weak.upgrade().is_none());
-            let replacement_weak = Rc::downgrade(&replacement);
+            assert!(!weak.is_alive());
+            let replacement_weak = replacement.clone();
             paste_free(&replacement);
             assert!(paste_get_name(c"renamed").is_none());
             drop(replacement);
-            assert!(replacement_weak.upgrade().is_none());
+            assert!(!replacement_weak.is_alive());
+        }
+    }
+
+    #[test]
+    fn rename_listeners_can_remove_the_source_or_the_renamed_buffer() {
+        use crate::src::events::{events_add_sink, events_remove_sink};
+        use crate::src::events_payload::event_payload_get_string;
+        unsafe {
+            for remove_before_rename in [false, true] {
+                paste_set_owned(
+                    b"source".to_vec().into_boxed_slice(),
+                    Some(c"rename-source"),
+                    None,
+                );
+                paste_set_owned(
+                    b"target".to_vec().into_boxed_slice(),
+                    Some(c"rename-target"),
+                    None,
+                );
+                let original = paste_get_name(c"rename-source").unwrap();
+                let sink = events_add_sink(
+                    c"paste-buffer-deleted",
+                    Rc::new(move |_, payload| {
+                        let name = event_payload_get_string(payload).unwrap();
+                        let victim = if remove_before_rename && name == c"rename-target" {
+                            Some(c"rename-source")
+                        } else if !remove_before_rename && name == c"rename-source" {
+                            Some(c"rename-target")
+                        } else {
+                            None
+                        };
+                        if let Some(buffer) = victim.and_then(paste_get_name) {
+                            paste_free(&buffer);
+                        }
+                    }),
+                );
+                let result = paste_rename(Some(c"rename-source"), Some(c"rename-target"), None);
+                assert_eq!(result, if remove_before_rename { -1 } else { 0 });
+                assert!(!original.is_alive());
+                assert!(paste_get_name(c"rename-source").is_none());
+                assert!(paste_get_name(c"rename-target").is_none());
+                events_remove_sink(sink);
+            }
         }
     }
 

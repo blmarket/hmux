@@ -986,13 +986,15 @@ unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CStri
     return None;
 }
 unsafe fn format_cb_buffer_name(ft: *mut format_tree) -> Option<CString> {
-    Some(paste_buffer_name(&(*ft).pb.as_ref()?.borrow()).to_owned())
+    Some(paste_buffer_name(&*(*ft).pb.as_ref()?.try_borrow()?).to_owned())
 }
 unsafe fn format_cb_buffer_sample(ft: *mut format_tree) -> Option<CString> {
-    Some(paste_make_sample_cstring(&(*ft).pb.as_ref()?.borrow()))
+    Some(paste_make_sample_cstring(
+        &*(*ft).pb.as_ref()?.try_borrow()?,
+    ))
 }
 unsafe fn format_cb_buffer_full(ft: *mut format_tree) -> Option<CString> {
-    let buffer = (*ft).pb.as_ref()?.borrow();
+    let buffer = (*ft).pb.as_ref()?.try_borrow()?;
     let bytes = paste_buffer_data(&buffer)?;
     let end = bytes
         .iter()
@@ -1001,7 +1003,7 @@ unsafe fn format_cb_buffer_full(ft: *mut format_tree) -> Option<CString> {
     Some(CString::new(&bytes[..end]).expect("bounded buffer contains no NUL"))
 }
 unsafe fn format_cb_buffer_size(ft: *mut format_tree) -> Option<CString> {
-    let buffer = (*ft).pb.as_ref()?.borrow();
+    let buffer = (*ft).pb.as_ref()?.try_borrow()?;
     Some(CString::new(buffer.size.to_string()).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_client_cell_height(mut ft: *mut format_tree) -> Option<CString> {
@@ -2816,7 +2818,7 @@ unsafe fn format_cb_wrap_flag(mut ft: *mut format_tree) -> Option<CString> {
     return None;
 }
 unsafe fn format_cb_buffer_created(ft: *mut format_tree) -> Option<time_t> {
-    Some(paste_buffer_created(&(*ft).pb.as_ref()?.borrow()) as __time_t as time_t)
+    Some(paste_buffer_created(&*(*ft).pb.as_ref()?.try_borrow()?) as __time_t as time_t)
 }
 unsafe fn format_cb_client_activity(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).c.is_null() {
@@ -3781,9 +3783,8 @@ mod owned_callback_tests {
 
     #[test]
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {
-        let buffer = std::rc::Rc::new(std::cell::RefCell::new(
-            crate::src::shared::paste::paste_buffer::empty(),
-        ));
+        let owner = refbox::RefBox::new(crate::src::shared::paste::paste_buffer::empty());
+        let buffer = crate::src::shared::paste::PasteBufferRef::observe(&owner);
         unsafe {
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
             (*ft).pb = Some(buffer.clone());
@@ -3860,13 +3861,13 @@ mod owned_callback_tests {
             let old_created = pb.borrow().created;
             pb.borrow_mut().created = 0;
             assert_eq!(format_cb_buffer_created(ft), Some(0));
-            let weak = std::rc::Rc::downgrade(&pb);
+            let weak = pb.clone();
             paste_free(&pb);
             drop(pb);
-            assert!(weak.upgrade().is_some(), "format tree retains the buffer");
-            assert_eq!(format_cb_buffer_full(ft).unwrap().as_bytes(), b"A\xff");
+            assert!(!weak.is_alive(), "format tree only observes the buffer");
+            assert!(format_cb_buffer_full(ft).is_none());
             format_free(ft);
-            assert!(weak.upgrade().is_none());
+            assert!(!weak.is_alive());
             assert_eq!(full.as_bytes(), b"A\xff");
             assert!(!sample.as_bytes().is_empty());
             assert_eq!(created, old_created);

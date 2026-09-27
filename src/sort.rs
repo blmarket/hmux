@@ -448,7 +448,11 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
         buffers.push(pb);
     }
     sort_by_criteria(&mut buffers, sort_crit, |a, b, criteria| {
-        sort_buffer_cmp(&a.borrow(), &b.borrow(), criteria)
+        if a == b {
+            Ordering::Equal
+        } else {
+            sort_buffer_cmp(&a.borrow(), &b.borrow(), criteria)
+        }
     });
     buffers
 }

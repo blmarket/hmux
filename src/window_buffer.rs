@@ -697,11 +697,7 @@ unsafe fn window_buffer_edit_close_cb(
     let Some(pb) = ed.name.as_deref().and_then(paste_get_name) else {
         return;
     };
-    if !ed
-        .pb
-        .upgrade()
-        .is_some_and(|original| Rc::ptr_eq(&original, &pb))
-    {
+    if ed.pb != pb {
         return;
     }
     let strip_newline = {
@@ -747,7 +743,7 @@ unsafe fn window_buffer_start_edit(
     let ed = Box::new(window_buffer_editdata {
         wp_id: (*(*data).wp).id,
         name: Some(name),
-        pb: Rc::downgrade(&pb),
+        pb: pb.clone(),
     });
     let editor = spawn_editor(
         c,
@@ -879,7 +875,7 @@ mod tests {
                 let edit = Box::new(window_buffer_editdata {
                     wp_id: u_int::MAX,
                     name: Some(name.to_owned()),
-                    pb: Rc::downgrade(&original),
+                    pb: original.clone(),
                             });
                 let buffer_observer = edit.pb.clone();
                 drop(original);
@@ -902,7 +898,7 @@ mod tests {
                         ),
                         0,
                     );
-                    assert!(buffer_observer.upgrade().is_none());
+                    assert!(!buffer_observer.is_alive());
                 }
                 assert!(observer.upgrade().is_some());
                 if finish == "cancel" {

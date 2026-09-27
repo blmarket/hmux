@@ -1,13 +1,40 @@
 //! Authoritative paste model declarations.
 
 use super::abi::{size_t, time_t, u_int};
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use refbox::{Borrow, BorrowError, RefBox, Weak};
 
-/// Shared owners keep the existing heap allocation alive across lookups and formatting.
-pub type PasteBufferRef = Rc<RefCell<paste_buffer>>;
-/// Editors remember identity without retaining deleted buffer contents.
-pub type PasteBufferWeak = Weak<RefCell<paste_buffer>>;
+/// An observer of a registry-owned buffer. Cloning never retains its contents.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PasteBufferRef(Weak<paste_buffer>);
+/// Editors and format contexts use the same nonowning identity as lookups.
+pub type PasteBufferWeak = PasteBufferRef;
+
+impl PasteBufferRef {
+    pub fn observe(owner: &RefBox<paste_buffer>) -> Self {
+        Self(owner.downgrade())
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.0.is_alive()
+    }
+
+    pub fn try_borrow(&self) -> Option<Borrow<'_, paste_buffer>> {
+        match self.0.try_borrow_mut() {
+            Ok(value) => Some(value),
+            Err(BorrowError::Dropped) => None,
+            Err(BorrowError::Borrowed) => panic!("paste buffer already borrowed"),
+        }
+    }
+
+    /// Use only for an immediate lookup with no intervening callback dispatch.
+    pub fn borrow(&self) -> Borrow<'_, paste_buffer> {
+        self.try_borrow().expect("live paste buffer")
+    }
+
+    pub fn borrow_mut(&self) -> Borrow<'_, paste_buffer> {
+        self.borrow()
+    }
+}
 
 #[repr(C)]
 pub struct paste_buffer {
