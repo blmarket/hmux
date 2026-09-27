@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
@@ -73,7 +74,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     repeat = args_has(args, 'r' as i32 as u_char);
     if count == 1 as u_int {
         key_bindings_add(
-            tablename,
+            CStr::from_ptr(tablename),
             key,
             note,
             repeat,
@@ -83,7 +84,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     if count == 2 {
         if let Some(commands) = (&(*args).values)[1].as_commands() {
-            key_bindings_add(tablename, key, note, repeat, Some(commands.clone()));
+            key_bindings_add(CStr::from_ptr(tablename), key, note, repeat, Some(commands.clone()));
             return CMD_RETURN_NORMAL;
         }
     }
@@ -112,6 +113,6 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         }
         1 | _ => {}
     }
-    key_bindings_add(tablename, key, note, repeat, pr.take_cmdlist());
+    key_bindings_add(CStr::from_ptr(tablename), key, note, repeat, pr.take_cmdlist());
     return CMD_RETURN_NORMAL;
 }

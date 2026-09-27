@@ -4410,9 +4410,7 @@ unsafe fn window_customize_add_key_callback(
         }
         1 | _ => {
             key_bindings_add(
-                (item.table)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                item.table.as_deref().expect("key binding table name"),
                 key,
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,

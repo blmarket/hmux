@@ -85,13 +85,13 @@ pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::UnsafeCell<key
 }
 
 pub unsafe fn key_bindings_add(
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
     key: key_code,
     note: *const ::core::ffi::c_char,
     repeat: ::core::ffi::c_int,
     cmdlist: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
 ) {
-    let owner = key_bindings_get_table(name, 1).expect("created key table");
+    let owner = key_bindings_get_table(name.as_ptr(), 1).expect("created key table");
     let table = &mut *crate::src::shared::rc::as_ptr(&owner);
     let key = key & !KEYC_MASK_FLAGS;
     let Some(cmdlist) = cmdlist else {
@@ -1034,14 +1034,14 @@ mod ownership_tests {
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
             let original_ptr = rc::as_ptr(&original);
-            key_bindings_add(name.as_ptr(), 65, c"original".as_ptr(), 1, Some(original));
+            key_bindings_add(name, 65, c"original".as_ptr(), 1, Some(original));
             let table_owner = key_bindings_get_table(name.as_ptr(), 0).unwrap();
             let table = rc::as_ptr(&table_owner);
             key_bindings_init_done();
             assert_eq!(original_lifetime.strong_count(), 2);
             let replacement = cmd_list_new();
             let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
-            key_bindings_add(name.as_ptr(), 65, c"replacement".as_ptr(), 0, Some(replacement));
+            key_bindings_add(name, 65, c"replacement".as_ptr(), 0, Some(replacement));
             assert_eq!(original_lifetime.strong_count(), 1);
             key_bindings_reset(name.as_ptr(), 65);
             assert!(replacement_lifetime.upgrade().is_none());
@@ -1051,7 +1051,7 @@ mod ownership_tests {
             assert_eq!(bd.cmdlist(), original_ptr);
             assert_eq!(original_lifetime.strong_count(), 2);
             key_bindings_add(
-                name.as_ptr(),
+                name,
                 65,
                 c"note only".as_ptr(),
                 0,
@@ -1059,7 +1059,7 @@ mod ownership_tests {
             );
             assert_eq!(key_bindings_get(&*table, 65).unwrap().cmdlist(), original_ptr);
             assert_eq!(original_lifetime.strong_count(), 2);
-            key_bindings_add(name.as_ptr(), 66, std::ptr::null(), 0, Some(cmd_list_new()));
+            key_bindings_add(name, 66, std::ptr::null(), 0, Some(cmd_list_new()));
             key_bindings_reset(name.as_ptr(), 66);
             assert!(key_bindings_get(&*table, 66).is_none());
             drop(table_owner);
@@ -1075,13 +1075,13 @@ mod ownership_tests {
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
             let original_ptr = rc::as_ptr(&original);
-            key_bindings_add(name.as_ptr(), 65, std::ptr::null(), 1, Some(original));
+            key_bindings_add(name, 65, std::ptr::null(), 1, Some(original));
             let table_owner = key_bindings_get_table(name.as_ptr(), 0).unwrap();
             let table = rc::as_ptr(&table_owner);
             let table_lifetime = rc::downgrade(table);
             let retained_table = table_lifetime.upgrade().unwrap();
             let command = key_bindings_get(&*table, 65).unwrap().command();
-            key_bindings_add(name.as_ptr(), 65, std::ptr::null(), 0, Some(cmd_list_new()));
+            key_bindings_add(name, 65, std::ptr::null(), 0, Some(cmd_list_new()));
             assert_eq!(command.cmdlist(), original_ptr);
             assert_eq!(command.key, 65);
             assert_eq!(command.flags, KEY_BINDING_REPEAT);
