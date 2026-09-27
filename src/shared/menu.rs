@@ -26,10 +26,10 @@ pub struct MenuRow {
 }
 
 impl MenuRow {
-    pub fn name_ptr(&self) -> *const ::core::ffi::c_char {
+    pub fn is_selectable(&self) -> bool {
         self.name
             .as_ref()
-            .map_or(std::ptr::null(), |name| name.as_ptr())
+            .is_some_and(|name| !name.as_bytes().starts_with(b"-"))
     }
 }
 

@@ -3090,7 +3090,7 @@ unsafe fn server_client_handle_menu_key(
             (*m).y = (*m).y.wrapping_add(oy);
         }
     }
-    if menu_key(c, (*w).menu, &raw mut new_event) == 1 as ::core::ffi::c_int {
+    if menu_key(c, (*w).menu, &new_event) == 1 as ::core::ffi::c_int {
         menu_close(w);
     }
     return 1 as ::core::ffi::c_int;

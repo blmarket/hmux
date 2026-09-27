@@ -365,1718 +365,249 @@ pub unsafe fn menu_x(mut md: *mut menu_data) -> u_int {
 pub unsafe fn menu_y(mut md: *mut menu_data) -> u_int {
     return (*md).py;
 }
-pub unsafe fn menu_key(
-    mut c: *mut client,
-    mut md: *mut menu_data,
-    mut event: *mut key_event,
-) -> ::core::ffi::c_int {
-    let mut current_block: u64;
-    let menu = &(*md).menu;
-    let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut i: u_int = 0;
-    let mut n: ::core::ffi::c_int = (*menu).count as ::core::ffi::c_int;
-    let mut old: ::core::ffi::c_int = (*md).choice;
-    let mut move_0: ::core::ffi::c_int = 0;
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut item: *const MenuRow = ::core::ptr::null::<MenuRow>();
-    let mut saved_event = key_event {
-        client: ::core::ptr::null_mut(),
-        key: 0,
-        m: Default::default(),
-        bytes: None,
+#[derive(Debug, PartialEq, Eq)]
+enum MenuKeyAction {
+    Unchanged,
+    Redraw,
+    Close,
+    Chosen { index: usize, key: key_code },
+}
+
+fn menu_initial_choice(menu: &menu, starting_choice: i32) -> i32 {
+    if starting_choice < 0 || menu.items.is_empty() {
+        return -1;
+    }
+    let count = menu.items.len();
+    if starting_choice as usize >= count {
+        return menu
+            .items
+            .iter()
+            .rposition(MenuRow::is_selectable)
+            .map_or(-1, |index| index as i32);
+    }
+    let start = starting_choice as usize;
+    (start..count)
+        .chain(0..start)
+        .find(|&index| menu.items[index].is_selectable())
+        .map_or(-1, |index| index as i32)
+}
+
+fn menu_chosen(md: &menu_data) -> MenuKeyAction {
+    let Some(row) = md.menu.items.get(md.choice as usize) else {
+        return MenuKeyAction::Close;
     };
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let mut key: key_code = 0;
-    if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-        == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-        || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-            >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                << 32 as ::core::ffi::c_int
-            && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int
-    {
-        move_0 = ((*m).b & MOUSE_MASK_DRAG as u_int != 0
-            && (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
-            as ::core::ffi::c_int;
-        if (*md).flags & MENU_NOMOUSE != 0 {
-            if (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int {
-                return 1 as ::core::ffi::c_int;
-            }
-            return 0 as ::core::ffi::c_int;
-        }
-        if (*m).x < (*md).px
-            || (*m).x
-                > (*md)
-                    .px
-                    .wrapping_add(4 as u_int)
-                    .wrapping_add((*menu).width)
-            || (*m).y < (*md).py.wrapping_add(1 as u_int)
-            || (*m).y
-                > (*md)
-                    .py
-                    .wrapping_add(1 as u_int)
-                    .wrapping_add(n as u_int)
-                    .wrapping_sub(1 as u_int)
-        {
-            if !(*md).flags & MENU_STAYOPEN != 0 {
-                if move_0 == 0 && (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int {
-                    return 1 as ::core::ffi::c_int;
-                }
-            } else if !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
-                && !((*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
-                    || (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int)
-                && (*m).b & MOUSE_MASK_DRAG as u_int == 0
-            {
-                return 1 as ::core::ffi::c_int;
-            }
-            if (*md).choice != -(1 as ::core::ffi::c_int) {
-                (*md).choice = -(1 as ::core::ffi::c_int);
-                server_redraw_window_menu((*md).w);
-            }
-            return 0 as ::core::ffi::c_int;
-        }
-        if !(*md).flags & MENU_STAYOPEN != 0 {
-            if move_0 == 0 && (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int {
-                current_block = 4062906366992634423;
-            } else {
-                current_block = 11194104282611034094;
-            }
-        } else if !((*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int)
-            && (*m).b & MOUSE_MASK_DRAG as u_int == 0
-        {
-            current_block = 4062906366992634423;
+    if !row.is_selectable() {
+        return if md.flags & MENU_STAYOPEN != 0 {
+            MenuKeyAction::Unchanged
         } else {
-            current_block = 11194104282611034094;
+            MenuKeyAction::Close
+        };
+    }
+    MenuKeyAction::Chosen {
+        index: md.choice as usize,
+        key: row.key,
+    }
+}
+
+fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
+    let rows = &md.menu.items;
+    if rows.is_empty() {
+        return MenuKeyAction::Close;
+    }
+    let n = rows.len() as i32;
+    let old = md.choice;
+    let key_type = event.key & KEYC_MASK_TYPE;
+    if event.key & KEYC_MASK_KEY == KEYC_MOUSE
+        || (key_type >= (KEYC_TYPE_MOUSEMOVE as key_code) << 32
+            && key_type <= (KEYC_TYPE_TRIPLECLICK as key_code) << 32)
+    {
+        let m = &event.m;
+        let buttons = m.b & MOUSE_MASK_BUTTONS as u_int;
+        let drag = m.b & MOUSE_MASK_DRAG as u_int != 0;
+        let release = buttons == 3;
+        let wheel = buttons == MOUSE_WHEEL_UP as u_int || buttons == MOUSE_WHEEL_DOWN as u_int;
+        let movement = drag && release;
+        if md.flags & MENU_NOMOUSE != 0 {
+            return if buttons != MOUSE_BUTTON_1 as u_int {
+                MenuKeyAction::Close
+            } else {
+                MenuKeyAction::Unchanged
+            };
         }
-        match current_block {
-            4062906366992634423 => {}
-            _ => {
-                (*md).choice =
-                    (*m).y.wrapping_sub((*md).py.wrapping_add(1 as u_int)) as ::core::ffi::c_int;
-                if (*md).choice != old {
-                    server_redraw_window_menu((*md).w);
-                }
-                return 0 as ::core::ffi::c_int;
+        if m.x < md.px
+            || m.x > md.px.wrapping_add(4).wrapping_add(md.menu.width)
+            || m.y < md.py.wrapping_add(1)
+            || m.y
+                > md.py
+                    .wrapping_add(1)
+                    .wrapping_add(n as u_int)
+                    .wrapping_sub(1)
+        {
+            if (md.flags & MENU_STAYOPEN == 0 && !movement && release)
+                || (md.flags & MENU_STAYOPEN != 0 && !release && !wheel && !drag)
+            {
+                return MenuKeyAction::Close;
             }
+            md.choice = -1;
+            return if old != -1 {
+                MenuKeyAction::Redraw
+            } else {
+                MenuKeyAction::Unchanged
+            };
         }
-    } else {
-        i = 0 as u_int;
-        loop {
-            if !(i < n as u_int) {
-                current_block = 14434620278749266018;
-                break;
-            }
-            name = (*(*menu).items.as_ptr().offset(i as isize)).name_ptr();
-            if !(name.is_null() || *name as ::core::ffi::c_int == '-' as i32) {
-                key = ((*event).key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS) as key_code;
-                if key
-                    == (*(*menu).items.as_ptr().offset(i as isize)).key
-                        as ::core::ffi::c_ulonglong
-                        & !KEYC_MASK_FLAGS
-                {
-                    (*md).choice = i as ::core::ffi::c_int;
-                    current_block = 4062906366992634423;
+        if (md.flags & MENU_STAYOPEN == 0 && !movement && release)
+            || (md.flags & MENU_STAYOPEN != 0 && !wheel && !drag)
+        {
+            // A release selects the previously highlighted row, not its own coordinates.
+            return menu_chosen(md);
+        }
+        md.choice = m.y.wrapping_sub(md.py.wrapping_add(1)) as i32;
+        return if md.choice != old {
+            MenuKeyAction::Redraw
+        } else {
+            MenuKeyAction::Unchanged
+        };
+    }
+    let key = event.key & !KEYC_MASK_FLAGS;
+    if let Some(index) = rows
+        .iter()
+        .position(|row| row.is_selectable() && key == row.key & !KEYC_MASK_FLAGS)
+    {
+        md.choice = index as i32;
+        return menu_chosen(md);
+    }
+    const CTRL_B: key_code = b'b' as key_code | KEYC_CTRL;
+    const CTRL_C: key_code = b'c' as key_code | KEYC_CTRL;
+    const CTRL_G: key_code = b'g' as key_code | KEYC_CTRL;
+    const CTRL_BRACKET: key_code = b'[' as key_code | KEYC_CTRL;
+    match key {
+        KEYC_BTAB | KEYC_UP | 107 => {
+            let stop = if old == -1 { 0 } else { old };
+            loop {
+                md.choice = if md.choice <= 0 { n - 1 } else { md.choice - 1 };
+                if rows[md.choice as usize].is_selectable() || md.choice == stop {
                     break;
                 }
             }
-            i = i.wrapping_add(1);
         }
-        match current_block {
-            4062906366992634423 => {}
-            _ => match (*event).key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS {
-                8589934618 | 8589934619 | 107 => {
-                    current_block = 18228927260028731949;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                8589934599 => {
-                    current_block = 5908772614365292188;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                9 => {
-                    current_block = 6621853080098874574;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                8589934620 | 106 => {
-                    current_block = 17659224811226724223;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                8589934617 | 35184372088930 => {
-                    current_block = 11150558847591123549;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                8589934616 => {
-                    current_block = 5459197107747055838;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                103 | 8589934614 => {
-                    current_block = 10426959295196933295;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                71 | 8589934615 => {
-                    current_block = 4678245943260944876;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                13 => {}
-                27 | 35184372088923 | 35184372088931 | 35184372088935 | 113 => {
-                    current_block = 16418760376262495662;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-                35184372088934 | _ => {
-                    current_block = 12369290732426379360;
-                    match current_block {
-                        10426959295196933295 => {
-                            (*md).choice = 0 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != n - 1 as ::core::ffi::c_int
-                            {
-                                (*md).choice += 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        5459197107747055838 => {
-                            if (*md).choice > n - 6 as ::core::ffi::c_int {
-                                (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice += 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != n - 1 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        11150558847591123549 => {
-                            if (*md).choice < 6 as ::core::ffi::c_int {
-                                (*md).choice = 0 as ::core::ffi::c_int;
-                            } else {
-                                i = 5 as u_int;
-                                while i > 0 as u_int {
-                                    (*md).choice -= 1;
-                                    name =
-                                        (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                            .name_ptr();
-                                    if (*md).choice != 0 as ::core::ffi::c_int
-                                        && (!name.is_null()
-                                            && *name as ::core::ffi::c_int != '-' as i32)
-                                    {
-                                        i = i.wrapping_sub(1);
-                                    } else if (*md).choice == 0 as ::core::ffi::c_int {
-                                        break;
-                                    }
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        6621853080098874574 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                if (*md).choice == n - 1 as ::core::ffi::c_int {
-                                    return 1 as ::core::ffi::c_int;
-                                }
-                                current_block = 17659224811226724223;
-                            }
-                        }
-                        5908772614365292188 => {
-                            if !(*md).flags & MENU_TAB != 0 {
-                                current_block = 12369290732426379360;
-                            } else {
-                                return 1 as ::core::ffi::c_int;
-                            }
-                        }
-                        18228927260028731949 => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == 0 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = n - 1 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice -= 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                        4678245943260944876 => {
-                            (*md).choice = n - 1 as ::core::ffi::c_int;
-                            name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                .name_ptr();
-                            while (name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                && (*md).choice != 0 as ::core::ffi::c_int
-                            {
-                                (*md).choice -= 1;
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                            }
-                            server_redraw_window_menu((*md).w);
-                            current_block = 12369290732426379360;
-                        }
-                        16418760376262495662 => return 1 as ::core::ffi::c_int,
-                        _ => {}
-                    }
-                    match current_block {
-                        12369290732426379360 => return 0 as ::core::ffi::c_int,
-                        _ => {
-                            if old == -(1 as ::core::ffi::c_int) {
-                                old = 0 as ::core::ffi::c_int;
-                            }
-                            loop {
-                                if (*md).choice == -(1 as ::core::ffi::c_int)
-                                    || (*md).choice == n - 1 as ::core::ffi::c_int
-                                {
-                                    (*md).choice = 0 as ::core::ffi::c_int;
-                                } else {
-                                    (*md).choice += 1;
-                                }
-                                name = (*(*menu).items.as_ptr().offset((*md).choice as isize))
-                                    .name_ptr();
-                                if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
-                                    && (*md).choice != old)
-                                {
-                                    break;
-                                }
-                            }
-                            server_redraw_window_menu((*md).w);
-                            return 0 as ::core::ffi::c_int;
-                        }
-                    }
-                }
-            },
+        KEYC_BSPACE => {
+            return if md.flags & MENU_TAB != 0 {
+                MenuKeyAction::Close
+            } else {
+                MenuKeyAction::Unchanged
+            };
         }
-    }
-    if (*md).choice == -(1 as ::core::ffi::c_int) {
-        return 1 as ::core::ffi::c_int;
-    }
-    item = (*menu).items.as_ptr().offset((*md).choice as isize) as *mut MenuRow;
-    if (*item).name_ptr().is_null() || *(*item).name_ptr() as ::core::ffi::c_int == '-' as i32 {
-        if (*md).flags & MENU_STAYOPEN != 0 {
-            return 0 as ::core::ffi::c_int;
+        9 | KEYC_DOWN | 106 => {
+            if key == 9 {
+                if md.flags & MENU_TAB == 0 {
+                    return MenuKeyAction::Unchanged;
+                }
+                if md.choice == n - 1 {
+                    return MenuKeyAction::Close;
+                }
+            }
+            let stop = if old == -1 { 0 } else { old };
+            loop {
+                md.choice = if md.choice == -1 || md.choice == n - 1 {
+                    0
+                } else {
+                    md.choice + 1
+                };
+                if rows[md.choice as usize].is_selectable() || md.choice == stop {
+                    break;
+                }
+            }
         }
-        return 1 as ::core::ffi::c_int;
+        KEYC_PPAGE | CTRL_B => {
+            if md.choice < 6 {
+                md.choice = 0;
+            } else {
+                let mut remaining = 5;
+                while remaining > 0 {
+                    md.choice -= 1;
+                    if md.choice == 0 {
+                        break;
+                    }
+                    if rows[md.choice as usize].is_selectable() {
+                        remaining -= 1;
+                    }
+                }
+            }
+        }
+        KEYC_NPAGE => {
+            if md.choice > n - 6 {
+                md.choice = n - 1;
+            } else {
+                let mut remaining = 5;
+                while remaining > 0 {
+                    md.choice += 1;
+                    if md.choice == n - 1 {
+                        break;
+                    }
+                    if rows[md.choice as usize].is_selectable() {
+                        remaining -= 1;
+                    }
+                }
+            }
+            while md.choice != 0 && !rows[md.choice as usize].is_selectable() {
+                md.choice -= 1;
+            }
+        }
+        103 | KEYC_HOME => {
+            md.choice = 0;
+            while md.choice != n - 1 && !rows[md.choice as usize].is_selectable() {
+                md.choice += 1;
+            }
+        }
+        71 | KEYC_END => {
+            md.choice = n - 1;
+            while md.choice != 0 && !rows[md.choice as usize].is_selectable() {
+                md.choice -= 1;
+            }
+        }
+        13 => return menu_chosen(md),
+        27 | 113 | CTRL_BRACKET | CTRL_C | CTRL_G => return MenuKeyAction::Close,
+        _ => return MenuKeyAction::Unchanged,
     }
+    MenuKeyAction::Redraw
+}
+
+pub unsafe fn menu_key(
+    c: *mut client,
+    md: *mut menu_data,
+    event: &key_event,
+) -> ::core::ffi::c_int {
+    let (index, key) = match menu_handle_key(&mut *md, event) {
+        MenuKeyAction::Unchanged => return 0,
+        MenuKeyAction::Redraw => {
+            server_redraw_window_menu((*md).w);
+            return 0;
+        }
+        MenuKeyAction::Close => return 1,
+        MenuKeyAction::Chosen { index, key } => (index, key),
+    };
+    // No row or menu-state borrow spans a user callback.
     if let Some(callback) = (*md).cb.take() {
         callback(MenuSelection::Selected {
-            index: (*md).choice as u_int,
-            key: (*item).key,
+            index: index as u_int,
+            key,
         });
-        return 1 as ::core::ffi::c_int;
+        return 1;
     }
-    if (*md).key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
-        saved_event.key = (*md).key;
-        saved_event.m = (*md).m;
-        event = &raw mut saved_event;
+    let mut saved_event = key_event {
+        client: std::ptr::null_mut(),
+        key: (*md).key,
+        m: (*md).m,
+        bytes: None,
+    };
+    let event = if (*md).key != KEYC_NONE {
+        &mut saved_event
     } else {
-        event = ::core::ptr::null_mut::<key_event>();
-    }
-    state = cmdq_new_state(&raw mut (*md).fs, event, 0 as ::core::ffi::c_int);
+        std::ptr::null_mut()
+    };
+    let state = cmdq_new_state(&raw mut (*md).fs, event, 0);
     if let Err(error) = cmd_parse_and_append(
-        (*item)
+        (&(*md).menu.items)[index]
             .command
             .as_deref()
             .expect("menu command row has a command"),
@@ -2088,12 +619,12 @@ pub unsafe fn menu_key(
             cmdq_get_error(
                 error
                     .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                    .map_or(std::ptr::null(), |cause| cause.as_ptr()),
             ),
         );
     }
     cmdq_free_state(state);
-    return 1 as ::core::ffi::c_int;
+    1
 }
 pub unsafe fn menu_resize(mut md: *mut menu_data, mut w: *mut window) {
     let mut nx: u_int = 0;
@@ -2141,8 +672,6 @@ pub unsafe fn menu_display(
 ) {
     let mut md: *mut menu_data = ::core::ptr::null_mut::<menu_data>();
     let mut event: *mut key_event = ::core::ptr::null_mut::<key_event>();
-    let mut choice: ::core::ffi::c_int = 0;
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -2209,55 +738,209 @@ pub unsafe fn menu_display(
     (*md).s.mode &= !MODE_CURSOR;
     (*md).px = px;
     (*md).py = py;
-    let menu = &(*md).menu;
-    (*md).choice = -(1 as ::core::ffi::c_int);
+    (*md).choice = if flags & MENU_NOMOUSE != 0 {
+        menu_initial_choice(&(*md).menu, starting_choice)
+    } else {
+        -1
+    };
     (*md).cb = cb;
-    if (*md).flags & MENU_NOMOUSE != 0 {
-        if starting_choice >= (*menu).count as ::core::ffi::c_int {
-            starting_choice = (*menu).count.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-            choice = starting_choice + 1 as ::core::ffi::c_int;
-            loop {
-                name = (*(*menu)
-                    .items
-                    .as_ptr()
-                    .offset((choice - 1 as ::core::ffi::c_int) as isize))
-                .name_ptr();
-                if !name.is_null() && *name as ::core::ffi::c_int != '-' as i32 {
-                    (*md).choice = choice - 1 as ::core::ffi::c_int;
-                    break;
-                } else {
-                    choice -= 1;
-                    if choice == 0 as ::core::ffi::c_int {
-                        choice = (*menu).count as ::core::ffi::c_int;
-                    }
-                    if choice == starting_choice + 1 as ::core::ffi::c_int {
-                        break;
-                    }
-                }
-            }
-        } else if starting_choice >= 0 as ::core::ffi::c_int {
-            choice = starting_choice;
-            loop {
-                name = (*(*menu).items.as_ptr().offset(choice as isize)).name_ptr();
-                if !name.is_null() && *name as ::core::ffi::c_int != '-' as i32 {
-                    (*md).choice = choice;
-                    break;
-                } else {
-                    choice += 1;
-                    if choice == (*menu).count as ::core::ffi::c_int {
-                        choice = 0 as ::core::ffi::c_int;
-                    }
-                    if choice == starting_choice {
-                        break;
-                    }
-                }
-            }
-        }
-    }
     menu_close((*md).w);
     let md = Box::into_raw(owner).cast::<menu_data>();
     (*(*md).w).menu = md;
     redraw_invalidate_scene((*md).w);
     window_update_focus((*md).w);
     server_redraw_window((*md).w);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    fn state(names: &[Option<&CStr>]) -> menu_data {
+        menu_data::new(Box::new(menu {
+            title: c"Navigation".to_owned(),
+            items: names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| MenuRow {
+                    name: name.map(CStr::to_owned),
+                    key: b'a' as key_code + index as key_code,
+                    command: None,
+                })
+                .collect(),
+            count: names.len() as u_int,
+            width: 20,
+        }))
+    }
+
+    fn event(key: key_code) -> key_event {
+        key_event {
+            client: std::ptr::null_mut(),
+            key,
+            m: mouse_event::default(),
+            bytes: None,
+        }
+    }
+
+    #[test]
+    fn navigation_skips_unselectable_rows_and_shortcuts_take_priority() {
+        let mut md = state(&[
+            None,
+            Some(c"-disabled"),
+            Some(c"first"),
+            None,
+            Some(c"last"),
+        ]);
+        md.choice = -1;
+        for (key, choice) in [
+            // With no highlight, Down stops at row zero even if it is a separator.
+            (KEYC_DOWN, 0),
+            (KEYC_DOWN, 2),
+            (KEYC_DOWN, 4),
+            (KEYC_DOWN, 2),
+            (KEYC_UP, 4),
+            (KEYC_HOME, 2),
+            (KEYC_END, 4),
+            // Page up lands on row zero even when it is a separator.
+            (KEYC_PPAGE, 0),
+            (KEYC_NPAGE, 4),
+        ] {
+            assert_eq!(menu_handle_key(&mut md, &event(key)), MenuKeyAction::Redraw);
+            assert_eq!(md.choice, choice);
+        }
+        // Flags are ignored for matching, but the callback receives the row's key.
+        md.menu.items[2].key = KEYC_UP | KEYC_VI;
+        md.menu.items[4].key = KEYC_UP;
+        assert_eq!(
+            menu_handle_key(&mut md, &event(KEYC_UP | KEYC_SENT)),
+            MenuKeyAction::Chosen {
+                index: 2,
+                key: KEYC_UP | KEYC_VI
+            }
+        );
+        md.menu.items[2].key = b'q' as key_code;
+        assert_eq!(
+            menu_handle_key(&mut md, &event(b'q' as key_code)),
+            MenuKeyAction::Chosen {
+                index: 2,
+                key: b'q' as key_code
+            }
+        );
+    }
+
+    #[test]
+    fn hover_only_highlights_and_release_uses_the_previous_row() {
+        for flags in [0, MENU_STAYOPEN] {
+            let mut md = state(&[Some(c"first"), None, Some(c"-disabled"), Some(c"last")]);
+            md.flags = flags;
+            md.choice = -1;
+            md.px = 10;
+            md.py = 5;
+            let mut mouse = event(KEYC_MOUSE);
+            mouse.m.x = 12;
+            mouse.m.y = 6;
+            mouse.m.b = MOUSE_MASK_DRAG as u_int | 3;
+            assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Redraw);
+            assert_eq!(md.choice, 0);
+            assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Unchanged);
+            mouse.m.y = 9;
+            mouse.m.b = 3;
+            assert_eq!(
+                menu_handle_key(&mut md, &mouse),
+                MenuKeyAction::Chosen {
+                    index: 0,
+                    key: b'a' as key_code
+                }
+            );
+            // Hovering outside clears the highlight and keeps both menu styles open.
+            mouse.m.x = 9;
+            mouse.m.b = MOUSE_MASK_DRAG as u_int | 3;
+            assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Redraw);
+            assert_eq!(md.choice, -1);
+            assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Unchanged);
+            // A separator or disabled row never invokes its command.
+            mouse.m.x = 12;
+            for y in [7, 8] {
+                mouse.m.y = y;
+                mouse.m.b = MOUSE_MASK_DRAG as u_int | 3;
+                assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Redraw);
+                mouse.m.b = 3;
+                assert_eq!(
+                    menu_handle_key(&mut md, &mouse),
+                    if flags == MENU_STAYOPEN {
+                        MenuKeyAction::Unchanged
+                    } else {
+                        MenuKeyAction::Close
+                    }
+                );
+            }
+            md.flags = MENU_NOMOUSE;
+            mouse.m.b = 0;
+            assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Unchanged);
+            mouse.m.b = 3;
+            assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Close);
+        }
+    }
+
+    #[test]
+    fn starting_choice_wraps_or_searches_backwards_without_selecting_disabled_rows() {
+        let md = state(&[
+            None,
+            Some(c"first"),
+            Some(c"-disabled"),
+            None,
+            Some(c"last"),
+            None,
+        ]);
+        for (start, choice) in [
+            (-1, -1),
+            (0, 1),
+            (1, 1),
+            (2, 4),
+            (5, 1),
+            (6, 4),
+            (i32::MAX, 4),
+        ] {
+            assert_eq!(menu_initial_choice(&md.menu, start), choice);
+        }
+        for names in [&[][..], &[None, Some(c"-disabled")][..]] {
+            let mut md = state(names);
+            for start in [-1, 0, 1, 10] {
+                assert_eq!(menu_initial_choice(&md.menu, start), -1);
+            }
+            md.choice = -1;
+            assert_eq!(menu_handle_key(&mut md, &event(13)), MenuKeyAction::Close);
+        }
+    }
+
+    #[test]
+    fn selected_callback_can_destroy_its_menu_data() {
+        let owner = Rc::new(RefCell::new(None));
+        let weak_owner = Rc::downgrade(&owner);
+        let called = Rc::new(Cell::new(false));
+        let callback_called = Rc::clone(&called);
+        let mut md = Box::new(state(&[Some(c"close myself")]));
+        md.cb = Some(Box::new(move |selection| {
+            assert_eq!(
+                selection,
+                MenuSelection::Selected {
+                    index: 0,
+                    key: b'a' as key_code
+                }
+            );
+            let owner = weak_owner.upgrade().unwrap();
+            let data: Box<menu_data> = owner.borrow_mut().take().unwrap();
+            assert!(data.cb.is_none());
+            drop(data);
+            callback_called.set(true);
+        }));
+        let data = &raw mut *md;
+        *owner.borrow_mut() = Some(md);
+        let event = event(b'a' as key_code);
+        assert_eq!(unsafe { menu_key(std::ptr::null_mut(), data, &event) }, 1);
+        assert!(called.get());
+        assert!(owner.borrow().is_none());
+    }
 }
