@@ -4779,9 +4779,9 @@ pub unsafe fn screen_write_rawstring(
     );
 }
 pub unsafe fn screen_write_alternateon(
-    mut ctx: *mut screen_write_ctx,
-    mut gc: *mut grid_cell,
-    mut cursor: ::core::ffi::c_int,
+    ctx: &mut screen_write_ctx,
+    gc: &grid_cell,
+    cursor: ::core::ffi::c_int,
 ) {
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -4826,7 +4826,7 @@ pub unsafe fn screen_write_alternateon(
         wsx: 0,
         wsy: 0,
     };
-    let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
+    let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     if !wp.is_null()
         && options_get_number(
             (*wp).options,
@@ -4840,7 +4840,7 @@ pub unsafe fn screen_write_alternateon(
         0 as ::core::ffi::c_int,
         b"screen_write_alternateon\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if screen_alternate_on((*ctx).s, gc, cursor) == 0 {
+    if screen_alternate_on(&mut *ctx.s, gc, cursor) == 0 {
         return;
     }
     if !wp.is_null() {
@@ -4869,9 +4869,9 @@ pub unsafe fn screen_write_alternateon(
     }
 }
 pub unsafe fn screen_write_alternateoff(
-    mut ctx: *mut screen_write_ctx,
-    mut gc: *mut grid_cell,
-    mut cursor: ::core::ffi::c_int,
+    ctx: &mut screen_write_ctx,
+    gc: &mut grid_cell,
+    cursor: ::core::ffi::c_int,
 ) {
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
@@ -4916,7 +4916,7 @@ pub unsafe fn screen_write_alternateoff(
         wsx: 0,
         wsy: 0,
     };
-    let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
+    let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     if !wp.is_null()
         && options_get_number(
             (*wp).options,
@@ -4930,7 +4930,7 @@ pub unsafe fn screen_write_alternateoff(
         0 as ::core::ffi::c_int,
         b"screen_write_alternateoff\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if screen_alternate_off((*ctx).s, gc, cursor) == 0 {
+    if screen_alternate_off(&mut *ctx.s, Some(gc), cursor) == 0 {
         return;
     }
     if !wp.is_null() {

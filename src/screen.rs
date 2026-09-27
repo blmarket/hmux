@@ -67,11 +67,7 @@ pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     if (*s).saved_grid.is_some() {
-        screen_alternate_off(
-            s,
-            ::core::ptr::null_mut::<grid_cell>(),
-            0 as ::core::ffi::c_int,
-        );
+        screen_alternate_off(&mut *s, None, 0);
     }
     (*s).saved_cx = UINT_MAX as u_int;
     (*s).saved_cy = UINT_MAX as u_int;
@@ -613,94 +609,86 @@ unsafe fn screen_reflow(
     (cx, cy)
 }
 pub unsafe fn screen_alternate_on(
-    mut s: *mut screen,
-    mut gc: *mut grid_cell,
-    mut cursor: ::core::ffi::c_int,
+    s: &mut screen,
+    gc: &grid_cell,
+    cursor: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    if (*s).saved_grid.is_some() {
+    if s.saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
-    sx = (*s).grid().sx;
-    sy = (*s).grid().sy;
-    (*s).saved_grid = Some(grid_create(sx, sy, 0));
+    sx = s.grid().sx;
+    sy = s.grid().sy;
+    s.saved_grid = Some(grid_create(sx, sy, 0));
     grid_duplicate_lines(
-        (*s).saved_grid
+        s.saved_grid
             .as_deref_mut()
             .expect("saved grid was just created"),
         0 as u_int,
-        (*s).grid.as_deref().expect("screen is initialized"),
-        (*s).grid.as_deref().expect("screen is initialized").hsize,
+        s.grid.as_deref().expect("screen is initialized"),
+        s.grid.as_deref().expect("screen is initialized").hsize,
         sy,
     );
     if cursor != 0 {
-        (*s).saved_cx = (*s).cx;
-        (*s).saved_cy = (*s).cy;
+        s.saved_cx = s.cx;
+        s.saved_cy = s.cy;
     }
-    memcpy(
-        &raw mut (*s).saved_cell as *mut ::core::ffi::c_void,
-        gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    grid_view_clear((*s).grid_mut(), 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
-    (*s).saved_flags = (*s).grid().flags;
-    (*s).grid_mut().flags &= !GRID_HISTORY;
+    s.saved_cell = *gc;
+    grid_view_clear(s.grid_mut(), 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
+    s.saved_flags = s.grid().flags;
+    s.grid_mut().flags &= !GRID_HISTORY;
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn screen_alternate_off(
-    mut s: *mut screen,
-    mut gc: *mut grid_cell,
-    mut cursor: ::core::ffi::c_int,
+    s: &mut screen,
+    gc: Option<&mut grid_cell>,
+    cursor: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut sx: u_int = (*s).grid().sx;
-    let mut sy: u_int = (*s).grid().sy;
-    if let Some(saved) = (*s).saved_grid.as_deref() {
+    let mut sx: u_int = s.grid().sx;
+    let mut sy: u_int = s.grid().sy;
+    if let Some(saved) = s.saved_grid.as_deref() {
         let (width, height) = (saved.sx, saved.sy);
-        screen_resize(&mut *s, width, height, 0);
+        screen_resize(s, width, height, 0);
     }
-    if cursor != 0 && (*s).saved_cx != UINT_MAX && (*s).saved_cy != UINT_MAX {
-        (*s).cx = (*s).saved_cx;
-        (*s).cy = (*s).saved_cy;
-        if !gc.is_null() {
-            memcpy(
-                gc as *mut ::core::ffi::c_void,
-                &raw mut (*s).saved_cell as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<grid_cell>() as size_t,
-            );
+    if cursor != 0 && s.saved_cx != UINT_MAX && s.saved_cy != UINT_MAX {
+        s.cx = s.saved_cx;
+        s.cy = s.saved_cy;
+        if let Some(gc) = gc {
+            *gc = s.saved_cell;
         }
     }
-    if (*s).saved_grid.is_none() {
-        if (*s).cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
-            (*s).cx = (*s).grid().sx.wrapping_sub(1 as u_int);
+    if s.saved_grid.is_none() {
+        if s.cx > s.grid().sx.wrapping_sub(1 as u_int) {
+            s.cx = s.grid().sx.wrapping_sub(1 as u_int);
         }
-        if (*s).cy > (*s).grid().sy.wrapping_sub(1 as u_int) {
-            (*s).cy = (*s).grid().sy.wrapping_sub(1 as u_int);
+        if s.cy > s.grid().sy.wrapping_sub(1 as u_int) {
+            s.cy = s.grid().sy.wrapping_sub(1 as u_int);
         }
         return 0 as ::core::ffi::c_int;
     }
-    let history = (*s).grid().hsize;
-    let saved = (*s)
+    let history = s.grid().hsize;
+    let saved = s
         .saved_grid
         .as_deref()
         .expect("alternate screen has a saved grid");
     grid_duplicate_lines(
-        (*s).grid.as_deref_mut().expect("screen is initialized"),
+        s.grid.as_deref_mut().expect("screen is initialized"),
         history,
         saved,
         0 as u_int,
         saved.sy,
     );
-    if (*s).saved_flags & GRID_HISTORY != 0 {
-        (*s).grid_mut().flags |= GRID_HISTORY;
+    if s.saved_flags & GRID_HISTORY != 0 {
+        s.grid_mut().flags |= GRID_HISTORY;
     }
-    screen_resize(&mut *s, sx, sy, 1 as ::core::ffi::c_int);
-    drop((*s).saved_grid.take());
-    if (*s).cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
-        (*s).cx = (*s).grid().sx.wrapping_sub(1 as u_int);
+    screen_resize(s, sx, sy, 1 as ::core::ffi::c_int);
+    drop(s.saved_grid.take());
+    if s.cx > s.grid().sx.wrapping_sub(1 as u_int) {
+        s.cx = s.grid().sx.wrapping_sub(1 as u_int);
     }
-    if (*s).cy > (*s).grid().sy.wrapping_sub(1 as u_int) {
-        (*s).cy = (*s).grid().sy.wrapping_sub(1 as u_int);
+    if s.cy > s.grid().sy.wrapping_sub(1 as u_int) {
+        s.cy = s.grid().sy.wrapping_sub(1 as u_int);
     }
     return 1 as ::core::ffi::c_int;
 }

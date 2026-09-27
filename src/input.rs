@@ -3612,10 +3612,10 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
                 screen_write_mode_clear(sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
-                screen_write_alternateoff(sctx, gc, 0 as ::core::ffi::c_int);
+                screen_write_alternateoff(&mut *sctx, &mut *gc, 0 as ::core::ffi::c_int);
             }
             1049 => {
-                screen_write_alternateoff(sctx, gc, 1 as ::core::ffi::c_int);
+                screen_write_alternateoff(&mut *sctx, &mut *gc, 1 as ::core::ffi::c_int);
             }
             2004 => {
                 screen_write_mode_clear(sctx, MODE_BRACKETPASTE);
@@ -3725,10 +3725,10 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
                 screen_write_mode_set(sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
-                screen_write_alternateon(sctx, gc, 0 as ::core::ffi::c_int);
+                screen_write_alternateon(&mut *sctx, &*gc, 0 as ::core::ffi::c_int);
             }
             1049 => {
-                screen_write_alternateon(sctx, gc, 1 as ::core::ffi::c_int);
+                screen_write_alternateon(&mut *sctx, &*gc, 1 as ::core::ffi::c_int);
             }
             2004 => {
                 screen_write_mode_set(sctx, MODE_BRACKETPASTE);

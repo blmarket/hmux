@@ -26,7 +26,7 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         s.cx = 3;
         s.cy = 1;
 
-        assert_eq!(screen_alternate_on(&mut s, &mut cell, 1), 1);
+        assert_eq!(screen_alternate_on(&mut s, &cell, 1), 1);
         let snapshot = s.saved_grid.as_deref().unwrap();
         assert_eq!((snapshot.sx, snapshot.sy, snapshot.hsize), (8, 3, 0));
         assert_eq!(cell_at(snapshot, 0, 0).data.data[0], b'A');
@@ -40,7 +40,7 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         grid_set_cell(s.grid_mut(), 0, 1, &cell);
         s.cx = 1;
         s.cy = 0;
-        assert_eq!(screen_alternate_on(&mut s, &mut cell, 1), 0);
+        assert_eq!(screen_alternate_on(&mut s, &cell, 1), 0);
         assert_eq!(
             cell_at(s.saved_grid.as_deref().unwrap(), 0, 0).data.data[0],
             b'A'
@@ -48,7 +48,7 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         assert_eq!((s.saved_cx, s.saved_cy), (3, 1));
 
         screen_resize(&mut s, 12, 5, 0);
-        assert_eq!(screen_alternate_off(&mut s, &mut cell, 1), 1);
+        assert_eq!(screen_alternate_off(&mut s, Some(&mut cell), 1), 1);
         assert!(s.saved_grid.is_none());
         assert_eq!((s.grid().sx, s.grid().sy, s.grid().hsize), (12, 5, 0));
         // Growing the restored screen pulls the history row into the viewport.
@@ -60,7 +60,7 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         assert_ne!(s.grid().flags & GRID_HISTORY, 0);
 
         // Reenter and free while the snapshot is still owned by the screen.
-        assert_eq!(screen_alternate_on(&mut s, &mut cell, 0), 1);
+        assert_eq!(screen_alternate_on(&mut s, &cell, 0), 1);
         screen_free(&mut s);
         assert!(s.saved_grid.is_none());
         assert!(s.grid.is_none());
@@ -68,7 +68,7 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         // A moved screen record also owns both allocations through ordinary drop.
         s.grid = Some(grid_create(8, 3, 0));
         grid_set_cell(s.grid_mut(), 0, 0, &cell);
-        assert_eq!(screen_alternate_on(&mut s, &mut cell, 0), 1);
+        assert_eq!(screen_alternate_on(&mut s, &cell, 0), 1);
         let moved = s;
         assert_eq!(
             cell_at(moved.saved_grid.as_deref().unwrap(), 0, 0).fg,
@@ -88,7 +88,7 @@ fn leaving_without_a_snapshot_still_restores_and_clamps_the_saved_cursor() {
         s.saved_cell = grid_default_cell;
         s.saved_cell.fg = 4;
         let mut cell = grid_default_cell;
-        assert_eq!(screen_alternate_off(&mut s, &mut cell, 1), 0);
+        assert_eq!(screen_alternate_off(&mut s, Some(&mut cell), 1), 0);
         assert_eq!((s.cx, s.cy), (7, 2));
         assert_eq!(cell.fg, 4);
         screen_free(&mut s);
