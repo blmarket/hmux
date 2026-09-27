@@ -412,7 +412,6 @@ unsafe fn window_copy_clone_screen(
     mut trim: ::core::ffi::c_int,
 ) -> *mut screen {
     let mut dst: *mut screen = ::core::ptr::null_mut::<screen>();
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     let mut sy: u_int = 0;
     let mut wx: u_int = 0;
     let mut wy: u_int = 0;
@@ -421,8 +420,10 @@ unsafe fn window_copy_clone_screen(
     sy = (*(*src).grid).hsize.wrapping_add((*(*src).grid).sy);
     if trim != 0 {
         while sy > (*(*src).grid).hsize {
-            gl = grid_peek_line((*src).grid, sy.wrapping_sub(1 as u_int));
-            if gl.is_null() || (*gl).cellused as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+            let Some(gl) = grid_peek_line(&*(*src).grid, sy.wrapping_sub(1 as u_int)) else {
+                break;
+            };
+            if gl.cellused != 0 {
                 break;
             }
             sy = sy.wrapping_sub(1);
@@ -1151,9 +1152,9 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
     let mut hsize: u_int = (*(*(*data).backing).grid).hsize;
     let mut position: u_int = 0;
     let mut limit: u_int = 0;
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut t: time_t = 0;
-    gl = grid_get_line((*(*data).backing).grid, hsize.wrapping_sub((*data).oy));
+    let gd = &*(*(*data).backing).grid;
+    let gl = &gd.linedata[hsize.wrapping_sub((*data).oy) as usize];
     t = grid_line_time(gl);
     format_add(
         ft,
@@ -6229,11 +6230,12 @@ unsafe fn window_copy_visible_lines(
     mut end: *mut u_int,
 ) {
     let mut gd: *mut grid = (*(*data).backing).grid;
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     *start = (*gd).hsize.wrapping_sub((*data).oy);
     while *start > 0 as u_int {
-        gl = grid_peek_line(gd, (*start).wrapping_sub(1 as u_int));
-        if gl.is_null() || !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+        let Some(gl) = grid_peek_line(&*gd, (*start).wrapping_sub(1 as u_int)) else {
+            break;
+        };
+        if !(gl.flags as i32) & GRID_LINE_WRAPPED != 0 {
             break;
         }
         *start = (*start).wrapping_sub(1);

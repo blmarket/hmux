@@ -298,7 +298,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
     mut py: u_int,
     links: &mut Vec<u_int>,
 ) -> Vec<u8> {
-    let mut gl: *const grid_line = grid_peek_line(gd, py);
+    let gl = grid_peek_line(&*gd, py).expect("capture line is in the grid");
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -316,12 +316,12 @@ unsafe fn cmd_capture_pane_hyperlinks(
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line = Vec::new();
     let mut i: u_int = 0;
-    if (*s).hyperlinks.is_null() || !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
+    if (*s).hyperlinks.is_null() || !(gl.flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
     {
         return line;
     }
     i = 0 as u_int;
-    while i < (*gl).cellused as u_int {
+    while i < gl.cellused as u_int {
         grid_get_cell(&*gd, i, py, &mut gc);
         if !(gc.link == 0 as u_int) {
             if !links.contains(&gc.link) {
@@ -354,7 +354,6 @@ unsafe fn cmd_capture_pane_history(
     wp: &mut window_pane,
 ) -> Option<Vec<u8>> {
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut gc = grid_default_cell;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -499,7 +498,7 @@ unsafe fn cmd_capture_pane_history(
             line
         };
         if hyperlinks == 0 || !line.is_empty() {
-            gl = grid_peek_line(gd, i);
+            let gl = grid_peek_line(&*gd, i).expect("capture range is in the grid");
             if number_lines != 0 {
                 if i >= (*gd).hsize {
                     n = i.wrapping_sub((*gd).hsize) as ::core::ffi::c_int;
@@ -536,32 +535,32 @@ unsafe fn cmd_capture_pane_history(
             if show_flags != 0 {
                 cp = &raw mut b as *mut ::core::ffi::c_char;
                 *cp = '\0' as i32 as ::core::ffi::c_char;
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_DEAD != 0 {
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_DEAD != 0 {
                     let fresh0 = cp;
                     cp = cp.offset(1);
                     *fresh0 = 'D' as i32 as ::core::ffi::c_char;
                 }
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_HYPERLINK != 0 {
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_HYPERLINK != 0 {
                     let fresh1 = cp;
                     cp = cp.offset(1);
                     *fresh1 = 'H' as i32 as ::core::ffi::c_char;
                 }
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_START_OUTPUT != 0 {
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_START_OUTPUT != 0 {
                     let fresh2 = cp;
                     cp = cp.offset(1);
                     *fresh2 = 'O' as i32 as ::core::ffi::c_char;
                 }
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_START_PROMPT != 0 {
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_START_PROMPT != 0 {
                     let fresh3 = cp;
                     cp = cp.offset(1);
                     *fresh3 = 'P' as i32 as ::core::ffi::c_char;
                 }
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
                     let fresh4 = cp;
                     cp = cp.offset(1);
                     *fresh4 = 'W' as i32 as ::core::ffi::c_char;
                 }
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_EXTENDED != 0 {
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_EXTENDED != 0 {
                     let fresh5 = cp;
                     cp = cp.offset(1);
                     *fresh5 = 'X' as i32 as ::core::ffi::c_char;
@@ -578,7 +577,7 @@ unsafe fn cmd_capture_pane_history(
                 cmd_capture_pane_append(&mut buf, CStr::from_ptr(b.as_ptr()).to_bytes());
             }
             cmd_capture_pane_append(&mut buf, &line);
-            if join_lines == 0 || (*gl).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED == 0 {
+            if join_lines == 0 || gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED == 0 {
                 buf.push(b'\n');
             }
         }

@@ -522,7 +522,6 @@ pub(crate) unsafe fn format_grid_word_cstring(
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -558,8 +557,8 @@ pub(crate) unsafe fn format_grid_word_cstring(
                 if y == 0 as u_int {
                     break;
                 }
-                gl = grid_peek_line(gd, y.wrapping_sub(1 as u_int));
-                if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                let gl = grid_peek_line(&*gd, y.wrapping_sub(1 as u_int))?;
+                if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
                 y = y.wrapping_sub(1);
@@ -578,8 +577,8 @@ pub(crate) unsafe fn format_grid_word_cstring(
                 if y == (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
                     break;
                 }
-                gl = grid_peek_line(gd, y);
-                if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                let gl = grid_peek_line(&*gd, y)?;
+                if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
                 y = y.wrapping_add(1);

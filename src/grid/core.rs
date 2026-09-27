@@ -318,11 +318,11 @@ unsafe fn grid_compact_line(mut gl: *mut grid_line) {
 pub unsafe fn grid_get_line(mut gd: *mut grid, mut line: u_int) -> *mut grid_line {
     return (*gd).linedata.as_mut_ptr().offset(line as isize) as *mut grid_line;
 }
-pub unsafe fn grid_line_time(mut gl: *const grid_line) -> time_t {
-    if (*gl).time == 0 as u_int {
-        return 0 as time_t;
+pub unsafe fn grid_line_time(gl: &grid_line) -> time_t {
+    if gl.time == 0 {
+        return 0;
     }
-    return start_time.tv_sec as time_t + (*gl).time as time_t - 1 as time_t;
+    start_time.tv_sec as time_t + gl.time as time_t - 1
 }
 unsafe fn grid_line_set_time(mut gl: *mut grid_line) {
     if current_time == 0 as time_t {
@@ -576,16 +576,11 @@ pub unsafe fn grid_empty_line(mut gd: *mut grid, mut py: u_int, mut bg: u_int) {
         grid_expand_line(gd, py, (*gd).sx, bg);
     }
 }
-pub unsafe fn grid_peek_line(mut gd: *mut grid, mut py: u_int) -> *const grid_line {
-    if grid_check_y(
-        &*gd,
-        "grid_peek_line",
-        py,
-    ) != 0 as ::core::ffi::c_int
-    {
-        return ::core::ptr::null::<grid_line>();
+pub unsafe fn grid_peek_line(gd: &grid, py: u_int) -> Option<&grid_line> {
+    if grid_check_y(gd, "grid_peek_line", py) != 0 {
+        return None;
     }
-    return (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
+    Some(&gd.linedata[py as usize])
 }
 unsafe fn grid_get_cell1(gl: &grid_line, px: u_int, gc: &mut grid_cell) {
     let entry = &gl.celldata[px as usize];
@@ -1550,15 +1545,13 @@ pub unsafe fn grid_string_cells_bytes(
     let mut xx: u_int = 0;
     let mut end: u_int = 0;
     let mut has_link: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
-    gl = grid_peek_line(gd, py);
-    if gl.is_null() {
+    let Some(gl) = grid_peek_line(&*gd, py) else {
         return buf;
-    }
+    };
     if flags & GRID_STRING_EMPTY_CELLS != 0 {
-        end = (*gl).cellsize as u_int;
+        end = gl.cellsize as u_int;
     } else {
-        end = (*gl).cellused as u_int;
+        end = gl.cellused as u_int;
     }
     xx = px;
     while xx < px.wrapping_add(nx) {
@@ -2413,6 +2406,26 @@ pub unsafe fn grid_cell_attr_string(mut attr: ::core::ffi::c_int) -> *const ::co
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn borrowed_line_lookup_covers_history_and_rejects_spare_storage() {
+        unsafe {
+            let mut owner = grid_create_box(8, 2, 10);
+            grid_scroll_history(&mut *owner, 8);
+            grid_adjust_lines(&mut *owner, 4);
+            owner.linedata[0].time = 1;
+            owner.linedata[1].time = 9;
+            owner.linedata[3].time = 77;
+            let history = grid_peek_line(&owner, 0).unwrap();
+            assert_eq!(history.time, 1);
+            assert_eq!(grid_line_time(history), start_time.tv_sec);
+            let visible = grid_peek_line(&owner, 1).unwrap();
+            assert_eq!(grid_line_time(visible), start_time.tv_sec + 8);
+            assert_eq!(grid_line_time(grid_peek_line(&owner, 2).unwrap()), 0);
+            assert!(grid_peek_line(&owner, 3).is_none());
+            assert!(grid_peek_line(&owner, u_int::MAX).is_none());
+        }
+    }
 
     #[test]
     fn cell_comparison_preserves_ignored_fields_and_exact_glyph_bytes() {
