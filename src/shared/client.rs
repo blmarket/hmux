@@ -121,7 +121,7 @@ pub struct client {
     pub name: Option<std::ffi::CString>,
     pub peer: *mut tmuxpeer,
     pub user: Option<std::ffi::CString>,
-    pub queue: *mut cmdq_list,
+    pub queue: Option<Box<cmdq_list>>,
     pub control_state: Option<Box<control_state>>,
     pub pause_age: u_int,
     pub pid: pid_t,

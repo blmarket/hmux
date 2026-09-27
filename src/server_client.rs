@@ -3,8 +3,8 @@ use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
-    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback_owned,
-    cmdq_get_client, cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new,
+    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
+    cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
@@ -54,9 +54,7 @@ use crate::src::reactor::{
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
 use crate::src::screen::screen_mode_display;
-use crate::src::screen_redraw::{
-    redraw_pane, redraw_pane_scrollbar, redraw_screen,
-};
+use crate::src::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
 use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::src::server_fn::{
     server_check_unattached, server_destroy_pane, server_kill_pane, server_redraw_client,
@@ -1072,7 +1070,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     (*c).environ = environ_create();
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
-    (*c).queue = cmdq_new();
+    (*c).queue = Some(cmdq_new());
     (*c).files.storage = None;
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
@@ -1489,16 +1487,15 @@ unsafe fn server_client_free(c: *mut client) {
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
     drop((*c).redraw_scene.take());
-    if !(*c).queue.is_null() {
-        cmdq_free((*c).queue);
-    }
+    let had_queue = (*c).queue.is_some();
+    drop((*c).queue.take());
     assert!(
         (*c).files.storage.is_none(),
         "client file index still contains live records at client teardown"
     );
     // Server-created clients have a queue before joining the global registry.
     // Empty standalone records must not touch that registry on drop.
-    if !(*c).queue.is_null() {
+    if had_queue {
         clients.release(c);
     }
 }

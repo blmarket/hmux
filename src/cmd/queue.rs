@@ -121,7 +121,7 @@ pub(crate) fn cmdq_clear_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
 /// callback data first, then remove the waiting item and its queued suffix.
 /// Other wait families need their own cancellation before they can be drained.
 pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
-    let queue = (*c).queue;
+    let queue = cmdq_get(c);
     let first = (*queue).first_ptr();
     if first.is_null() || (*first).flags & CMDQ_WAITING == 0 {
         return;
@@ -168,28 +168,29 @@ unsafe fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char {
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-unsafe fn cmdq_get(mut c: *mut client) -> *mut cmdq_list {
-    static mut global_queue: *mut cmdq_list = ::core::ptr::null::<cmdq_list>() as *mut cmdq_list;
+unsafe fn cmdq_get(c: *mut client) -> *mut cmdq_list {
+    static mut GLOBAL_QUEUE: Option<Box<cmdq_list>> = None;
     if c.is_null() {
-        if global_queue.is_null() {
-            global_queue = cmdq_new();
-        }
-        return global_queue;
+        return &mut **(&mut *(&raw mut GLOBAL_QUEUE)).get_or_insert_with(cmdq_new);
     }
-    return (*c).queue;
+    (*c).queue.as_deref_mut().expect("client command queue")
 }
-pub unsafe fn cmdq_new() -> *mut cmdq_list {
-    Box::into_raw(Box::new(cmdq_list {
+
+pub fn cmdq_new() -> Box<cmdq_list> {
+    Box::new(cmdq_list {
         item: std::ptr::null_mut(),
         list: std::collections::VecDeque::new(),
-    }))
+    })
 }
-pub unsafe fn cmdq_free(mut queue: *mut cmdq_list) {
-    if !(*queue).list.is_empty() {
-        fatalx(|out| out.write_all(b"queue not empty"));
+
+impl Drop for cmdq_list {
+    fn drop(&mut self) {
+        if !self.list.is_empty() {
+            unsafe { fatalx(|out| out.write_all(b"queue not empty")) };
+        }
     }
-    drop(Box::from_raw(queue));
 }
+
 pub unsafe fn cmdq_get_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
     return ((*item).name)
         .as_ref()
@@ -1064,6 +1065,29 @@ mod cancellation_tests {
     impl Drop for Payload {
         fn drop(&mut self) {
             DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn client_owns_queue_while_cancelled_items_release_their_payloads() {
+        let before = DROPPED.load(Ordering::SeqCst);
+        unsafe {
+            let mut queue = cmdq_new();
+            let address = &mut *queue as *mut cmdq_list;
+            let item = cmdq_get_callback_owned(c"queued-cancel".as_ptr(), None);
+            let payload = Payload;
+            cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
+            (*item).queue = address;
+            // Detached item transfer remains the next queue ownership boundary.
+            queue.list.push_back(Box::from_raw(item));
+            let mut client = client::empty();
+            client.queue = Some(queue);
+            assert_eq!(cmdq_get(&mut client), address);
+            cmdq_remove(item);
+            assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);
+            assert!(client.queue.as_ref().unwrap().list.is_empty());
+            drop(client.queue.take());
+            drop(client);
         }
     }
 
