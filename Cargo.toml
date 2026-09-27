@@ -3,6 +3,7 @@ members = [
     "hmux-buffer",
     "hmux-cmdparse",
     "hmux-rt",
+    "hmux-refbox",
 ]
 [package]
 name = "hmux2"
@@ -25,7 +26,7 @@ hmux-rt = { path = "hmux-rt" }
 hmux-buffer = { path = "hmux-buffer" }
 c2rust-bitfields = "0.22.1"
 libc = "0.2"
-refbox = "0.4.1"
+refbox = { package = "hmux-refbox", path = "hmux-refbox" }
 
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }

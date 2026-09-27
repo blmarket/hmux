@@ -196,6 +196,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hmux-refbox"
+version = "0.4.1"
+
+[[package]]
 name = "hmux-rt"
 version = "0.1.0"
 dependencies = [
@@ -212,9 +216,9 @@ dependencies = [
  "c2rust-bitfields",
  "hmux-buffer",
  "hmux-cmdparse",
+ "hmux-refbox",
  "hmux-rt",
  "libc",
- "refbox",
  "syn",
 ]
 
@@ -396,12 +400,6 @@ checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags",
 ]
-
-[[package]]
-name = "refbox"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4b83a3ac9d428983eaa915443752b0bda2670517834b686dc5f72701b106a35"
 
 [[package]]
 name = "regex"
