@@ -414,7 +414,7 @@ pub unsafe fn cmdq_insert_hook(
         b"_cmdq_item\0" as *const u8 as *const ::core::ffi::c_char,
         crate::src::shared::events::EventPayloadPointer::Raw(item as *mut ::core::ffi::c_void),
     );
-    let arguments = args_print_cstring(args_0);
+    let arguments = args_print_cstring(&*args_0);
     event_payload_set_string(
         ep,
         b"arguments\0" as *const u8 as *const ::core::ffi::c_char,

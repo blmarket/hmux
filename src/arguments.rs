@@ -137,15 +137,14 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
         _ => fatalx(|out| out.write_all(b"unexpected argument type")),
     }
 }
-pub unsafe fn args_create() -> *mut args {
-    let owner = Box::new(args {
+pub fn args_create() -> Box<args> {
+    Box::new(args {
         tree: args_tree {
             entries: Box::default(),
         },
         count: 0,
         values: Vec::new(),
-    });
-    Box::into_raw(owner).cast::<args>()
+    })
 }
 fn args_push_positional_owned(args: &mut args, value: args_value) {
     args.values.push(value);
@@ -324,8 +323,7 @@ pub unsafe fn args_parse(
     mut parse: *const args_parse,
     mut values: *mut args_value,
     mut count: u_int,
-) -> Result<*mut args, ArgsParseError> {
-    let mut args: *mut args = ::core::ptr::null_mut::<args>();
+) -> Result<Box<args>, ArgsParseError> {
     let mut i: u_int = 0;
     let mut type_0: args_parse_type = ARGS_PARSE_INVALID;
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
@@ -333,13 +331,12 @@ pub unsafe fn args_parse(
     if count == 0 as u_int {
         return Ok(args_create());
     }
-    args = args_create();
+    let mut args = args_create();
     i = 1 as u_int;
     while i < count {
-        stop = match args_parse_flags(parse, values, count, args, &raw mut i) {
+        stop = match args_parse_flags(parse, values, count, &mut *args, &raw mut i) {
             Ok(stop) => stop,
             Err(error) => {
-                args_free(args);
                 return Err(error);
             }
         };
@@ -369,14 +366,12 @@ pub unsafe fn args_parse(
                 type_0 = match (*parse).cb.expect("non-null function pointer")(&mut *args, idx) {
                     Ok(type_0) => type_0,
                     Err(error) => {
-                        args_free(args);
                         return Err(error);
                     }
                 };
                 if type_0 as ::core::ffi::c_uint
                     == ARGS_PARSE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    args_free(args);
                     return Err(ArgsParseError::Usage);
                 }
             } else {
@@ -394,7 +389,6 @@ pub unsafe fn args_parse(
                             "argument {} must be \"string\"",
                             (*args).count.wrapping_add(1)
                         ));
-                        args_free(args);
                         return Err(ArgsParseError::Message(error));
                     }
                     args_copy_value(&*value)
@@ -408,7 +402,6 @@ pub unsafe fn args_parse(
                             "argument {} must be {{ commands }}",
                             (*args).count.wrapping_add(1)
                         ));
-                        args_free(args);
                         return Err(ArgsParseError::Message(error));
                     }
                     args_copy_value(&*value)
@@ -424,7 +417,6 @@ pub unsafe fn args_parse(
             "too few arguments (need at least {})",
             (*parse).lower as u_int
         ));
-        args_free(args);
         return Err(ArgsParseError::Message(error));
     }
     if (*parse).upper != -(1 as ::core::ffi::c_int) && (*args).count > (*parse).upper as u_int {
@@ -432,7 +424,6 @@ pub unsafe fn args_parse(
             "too many arguments (need at most {})",
             (*parse).upper as u_int
         ));
-        args_free(args);
         return Err(ArgsParseError::Message(error));
     }
     return Ok(args);
@@ -458,14 +449,13 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
         0 | _ => args_value::empty(),
     }
 }
-pub unsafe fn args_copy(args: *mut args, argv: &Vec<CString>) -> *mut args {
-    let args = &*args;
+pub unsafe fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
     cmd_log_argv(argv, c"args_copy");
-    let new_args = args_create();
+    let mut new_args = args_create();
     for entry in args.tree.entries.entries.values() {
         if entry.values.storage.values.is_empty() {
             for _ in 0..entry.count {
-                args_set_flag(new_args, entry.flag, 0);
+                args_set_flag(&mut *new_args, entry.flag, 0);
             }
         } else {
             for value in &entry.values.storage.values {
@@ -482,10 +472,6 @@ pub unsafe fn args_copy(args: *mut args, argv: &Vec<CString>) -> *mut args {
         args_push_positional_owned(&mut *new_args, args_copy_copy_value(value, argv));
     }
     new_args
-}
-pub unsafe fn args_free(args: *mut args) {
-    // The argument set owns the map, entries, and values; Drop releases them.
-    drop(Box::from_raw(args));
 }
 pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
     let mut argv = Vec::new();
@@ -525,12 +511,11 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
         0 | _ => {}
     }
 }
-pub unsafe fn args_print(args: *mut args) -> CString {
+pub unsafe fn args_print(args: &args) -> CString {
     args_print_cstring(args)
 }
 
-pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
-    let args = &*args;
+pub(crate) unsafe fn args_print_cstring(args: &args) -> CString {
     let mut buf = Vec::new();
     for entry in args.tree.entries.entries.values() {
         if entry.flags & ARGS_ENTRY_OPTIONAL_VALUE == 0 && entry.values.storage.values.is_empty() {
@@ -693,6 +678,46 @@ mod ownership_tests {
     use super::*;
 
     #[test]
+    fn argument_root_transfers_to_command_and_failed_parse_releases_partial_values() {
+        fn allow_commands(_args: &mut args, _index: u_int) -> Result<args_parse_type, ArgsParseError> {
+            Ok(ARGS_PARSE_COMMANDS_OR_STRING)
+        }
+        unsafe {
+            let commands = crate::src::cmd::cmd_list_new();
+            let observer = rc::downgrade(commands);
+            let mut values = vec![
+                args_value::string(c"test".to_owned()),
+                args_value::commands(commands),
+                args_value::string(c"extra".to_owned()),
+            ];
+            let mut spec = args_parse {
+                template: c"".as_ptr(),
+                lower: 0,
+                upper: 1,
+                cb: Some(allow_commands),
+            };
+            assert!(args_parse(&spec, values.as_mut_ptr(), values.len() as u_int).is_err());
+            assert_eq!(
+                observer.strong_count(),
+                1,
+                "failed parse drops copied references"
+            );
+            spec.upper = 2;
+            let parsed = args_parse(&spec, values.as_mut_ptr(), values.len() as u_int).unwrap();
+            let address = &*parsed as *const args;
+            assert_eq!(observer.strong_count(), 2);
+            let mut command = cmd::empty();
+            command.args = Some(parsed);
+            assert_eq!(cmd_get_args(&mut command).cast_const(), address);
+            drop(values);
+            assert_eq!(observer.strong_count(), 1);
+            assert_eq!(args_count(cmd_get_args(&mut command)), 2);
+            drop(command);
+            assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
     fn prepared_commands_keep_their_list_after_source_and_state_drop() {
         unsafe {
             let commands = crate::src::cmd::cmd_list_new();
@@ -700,13 +725,13 @@ mod ownership_tests {
             let mut source = Box::new(args::empty());
             args_push_positional_commands(&mut *source, commands);
             let mut command = cmd::empty();
-            command.args = &mut *source;
+            command.args = Some(source);
             let mut item = cmdq_item::empty();
             let mut state =
                 args_make_commands_prepare(&mut command, &mut item, 0, std::ptr::null(), 0, 0);
             assert_eq!(observer.strong_count(), 2);
             assert!(state.client.is_none());
-            drop(source);
+            drop(command.args.take());
             assert_eq!(observer.strong_count(), 1);
             assert_eq!(
                 args_make_commands_get_command_cstring(&state).as_bytes(),
@@ -782,7 +807,7 @@ mod ownership_tests {
             let observer = std::rc::Rc::downgrade(&client);
             let mut source = Box::new(args::empty());
             let mut command = cmd::empty();
-            command.args = &mut *source;
+            command.args = Some(source);
             command.file = Some(CString::new(b"source\xff.conf".as_slice()).unwrap());
             command.line = 17;
             let mut item = cmdq_item::empty();
@@ -796,7 +821,7 @@ mod ownership_tests {
                 0,
             );
             command.file = None;
-            drop(source);
+            drop(command.args.take());
             drop(client);
             assert_eq!(observer.strong_count(), 1);
             assert_eq!(

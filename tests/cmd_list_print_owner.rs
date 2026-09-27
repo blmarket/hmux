@@ -1,5 +1,5 @@
 use hmux2::src::arguments::{
-    args_create, args_free, args_print, args_push_positional_commands, args_set_flag,
+    args_create, args_print, args_push_positional_commands, args_set_flag,
     args_set_owned_commands, args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
 };
 use hmux2::src::cmd::{
@@ -13,17 +13,17 @@ use std::ffi::CString;
 #[test]
 fn argument_printer_preserves_flag_groups_values_and_optional_separator() {
     unsafe {
-        let args = args_create();
-        args_set_flag(args, b'a', 0);
-        args_set_flag(args, b'a', 0);
-        args_set_owned_string(args, CString::new("two words").unwrap());
-        args_set_owned_string(args, CString::new("").unwrap());
-        args_set_flag(args, b'z', ARGS_ENTRY_OPTIONAL_VALUE);
+        let mut args = args_create();
+        args_set_flag(&mut *args, b'a', 0);
+        args_set_flag(&mut *args, b'a', 0);
+        args_set_owned_string(&mut *args, CString::new("two words").unwrap());
+        args_set_owned_string(&mut *args, CString::new("").unwrap());
+        args_set_flag(&mut *args, b'z', ARGS_ENTRY_OPTIONAL_VALUE);
         assert_eq!(
-            args_print(args).as_bytes(),
+            args_print(&args).as_bytes(),
             b"-aa -f \"two words\" -f '' -z --"
         );
-        args_free(args);
+        drop(args);
     }
 }
 
@@ -31,21 +31,21 @@ fn argument_printer_preserves_flag_groups_values_and_optional_separator() {
 fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
     unsafe {
         for (flag, expected) in [(0, b"-".as_slice()), (0xff, b"-\xff".as_slice())] {
-            let args = args_create();
-            args_set_flag(args, flag, 0);
-            assert_eq!(args_print(args).as_bytes(), expected);
-            args_free(args);
+            let mut args = args_create();
+            args_set_flag(&mut *args, flag, 0);
+            assert_eq!(args_print(&args).as_bytes(), expected);
+            drop(args);
         }
 
-        let args = args_create();
-        args_set_flag(args, 0, ARGS_ENTRY_OPTIONAL_VALUE);
-        assert_eq!(args_print(args).as_bytes(), b"- --");
-        args_free(args);
+        let mut args = args_create();
+        args_set_flag(&mut *args, 0, ARGS_ENTRY_OPTIONAL_VALUE);
+        assert_eq!(args_print(&args).as_bytes(), b"- --");
+        drop(args);
 
-        let args = args_create();
-        args_set_owned_commands(args, 0, cmd_list_new(), 0);
-        assert_eq!(args_print(args).as_bytes(), b"- {  }");
-        args_free(args);
+        let mut args = args_create();
+        args_set_owned_commands(&mut *args, 0, cmd_list_new(), 0);
+        assert_eq!(args_print(&args).as_bytes(), b"- {  }");
+        drop(args);
     }
 }
 
@@ -108,10 +108,10 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             let printed = cmd_list_print(&*list, flags);
             assert_eq!(printed.as_bytes(), expected);
         }
-        let args = args_create();
-        args_push_positional_commands(args, list);
+        let mut args = args_create();
+        args_push_positional_commands(&mut *args, list);
 
-        let printed = args_print(args);
+        let printed = args_print(&args);
         assert_eq!(
             printed.as_bytes(),
             b"{ display-message ; display-message ;; display-message }"
@@ -123,7 +123,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             argv[0].as_bytes(),
             b"display-message ; display-message ;; display-message"
         );
-        args_free(args);
+        drop(args);
     }
 }
 

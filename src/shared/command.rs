@@ -230,7 +230,7 @@ pub struct cmd_list {
 #[repr(C)]
 pub struct cmd {
     pub entry: *const cmd_entry,
-    pub args: *mut args,
+    pub args: Option<Box<args>>,
     pub group: u_int,
     pub file: Option<std::ffi::CString>,
     pub line: u_int,

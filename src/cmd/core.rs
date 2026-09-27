@@ -1,6 +1,6 @@
 pub use crate::src::arguments::args_parse;
 use crate::src::arguments::ArgsParseError;
-use crate::src::arguments::{args_copy, args_escape_cstring, args_free, args_print_cstring};
+use crate::src::arguments::{args_copy, args_escape_cstring, args_print_cstring};
 use crate::src::cmd::entries::attach_session::cmd_attach_session_entry;
 use crate::src::cmd::entries::bind_key::cmd_bind_key_entry;
 use crate::src::cmd::entries::break_pane::cmd_break_pane_entry;
@@ -277,7 +277,10 @@ pub unsafe fn cmd_get_entry(mut cmd: *mut cmd) -> *const cmd_entry {
     return (*cmd).entry;
 }
 pub unsafe fn cmd_get_args(mut cmd: *mut cmd) -> *mut args {
-    return (*cmd).args;
+    return (*cmd)
+        .args
+        .as_deref_mut()
+        .map_or(std::ptr::null_mut(), |args| args);
 }
 pub unsafe fn cmd_get_group(mut cmd: *mut cmd) -> u_int {
     return (*cmd).group;
@@ -421,7 +424,6 @@ pub unsafe fn cmd_parse(
 ) -> Result<*mut cmd, CString> {
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut args: *mut args = ::core::ptr::null_mut::<args>();
     if count == 0 as u_int
         || (*values.offset(0 as ::core::ffi::c_int as isize)).type_0() as ::core::ffi::c_uint
             != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -431,7 +433,7 @@ pub unsafe fn cmd_parse(
     entry = cmd_find(CStr::from_ptr(
         (*values.offset(0 as ::core::ffi::c_int as isize)).string_ptr(),
     ))?;
-    args = match args_parse(&raw const (*entry).args, values, count) {
+    let args = match args_parse(&raw const (*entry).args, values, count) {
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {
             let mut error = b"usage: ".to_vec();
@@ -450,20 +452,23 @@ pub unsafe fn cmd_parse(
     };
     cmd = cmd_new_owned(file);
     (*cmd).entry = entry;
-    (*cmd).args = args;
+    (*cmd).args = Some(args);
     (*cmd).parse_flags = parse_flags;
     (*cmd).line = line;
     return Ok(cmd);
 }
 pub unsafe fn cmd_free(mut cmd: *mut cmd) {
-    args_free((*cmd).args);
+    drop((*cmd).args.take());
     drop(Box::from_raw(cmd));
 }
 pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     new_cmd = cmd_new_owned(cmd.file.as_deref());
     (*new_cmd).entry = cmd.entry;
-    (*new_cmd).args = args_copy(cmd.args, argv);
+    (*new_cmd).args = Some(args_copy(
+        cmd.args.as_deref().expect("parsed command arguments"),
+        argv,
+    ));
     (*new_cmd).line = cmd.line;
     return new_cmd;
 }
@@ -472,7 +477,7 @@ pub unsafe fn cmd_print(cmd: &cmd) -> CString {
 }
 
 pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
-    let args = args_print_cstring(cmd.args);
+    let args = args_print_cstring(cmd.args.as_deref().expect("parsed command arguments"));
     let arguments = args.as_bytes();
     let name = (*cmd.entry).name.to_bytes();
     let mut buf = Vec::with_capacity(

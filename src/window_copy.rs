@@ -1,5 +1,5 @@
 use crate::src::arguments::args_parse;
-use crate::src::arguments::{args_count, args_free, args_has, args_string, args_values};
+use crate::src::arguments::{args_count, args_has, args_string, args_values};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
@@ -68,7 +68,6 @@ use crate::src::shared::mouse::{
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES};
-use libc::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -85,6 +84,7 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_pane_set_searchstr, window_set_active_pane,
 };
+use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -245,16 +245,21 @@ pub const WINDOW_COPY_CMD_CLEAR_NEVER: window_copy_cmd_clear = 1;
 pub type window_copy_cmd_clear = ::core::ffi::c_uint;
 pub const WINDOW_COPY_CMD_CLEAR_EMACS_ONLY: window_copy_cmd_clear = 2;
 pub const WINDOW_COPY_CMD_CLEAR_ALWAYS: window_copy_cmd_clear = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_copy_cmd_state {
     pub wme: *mut window_mode_entry,
     pub args: *mut args,
-    pub wargs: *mut args,
+    pub wargs: Option<Box<args>>,
     pub m: *mut mouse_event,
     pub c: *mut client,
     pub s: *mut session,
     pub wl: *mut winlink,
+}
+impl window_copy_cmd_state {
+    fn parsed_args(&mut self) -> &mut args {
+        self.wargs
+            .as_deref_mut()
+            .expect("parsed copy-mode arguments")
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1429,7 +1434,7 @@ unsafe fn window_copy_expand_search_string(
 ) -> ::core::ffi::c_int {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut ss: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut ss: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if ss.is_null() || *ss as ::core::ffi::c_int == '\0' as i32 {
         return 0 as ::core::ffi::c_int;
     }
@@ -1536,7 +1541,7 @@ unsafe fn window_copy_do_copy_end_of_line(
     let mut s: *mut session = (*cs).s;
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
-    let mut count: u_int = args_count((*cs).wargs);
+    let mut count: u_int = args_count((*cs).parsed_args());
     let mut np: u_int = (*wme).prefix;
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
@@ -1544,12 +1549,12 @@ unsafe fn window_copy_do_copy_end_of_line(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut prefix: Option<CString> = None;
     let mut command: Option<CString> = None;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut arg1: *const ::core::ffi::c_char = args_string((*cs).wargs, 1 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
+    let mut arg1: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 1 as u_int);
     let mut set_paste: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut set_clip: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if pipe != 0 {
         if count == 2 as u_int {
             prefix = Some(format_single_cstring(
@@ -1655,19 +1660,19 @@ unsafe fn window_copy_do_copy_line(
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut count: u_int = args_count((*cs).wargs);
+    let mut count: u_int = args_count((*cs).parsed_args());
     let mut np: u_int = (*wme).prefix;
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
     let mut ooy: u_int = 0;
     let mut prefix: Option<CString> = None;
     let mut command: Option<CString> = None;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut arg1: *const ::core::ffi::c_char = args_string((*cs).wargs, 1 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
+    let mut arg1: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 1 as u_int);
     let mut set_paste: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut set_clip: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if pipe != 0 {
         if count == 2 as u_int {
             prefix = Some(format_single_cstring(
@@ -1771,11 +1776,11 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
     let mut prefix: Option<CString> = None;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     let mut set_paste: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut set_clip: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg0.is_null() {
         prefix = Some(format_single_cstring(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -1916,7 +1921,7 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut c: *mut client = (*cs).c;
     let mut m: *mut mouse_event = (*cs).m;
-    let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).wargs, 'e' as i32 as u_char);
+    let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
     let tty_oy = tty_window_offset(&(*c).tty).oy;
     window_copy_scroll(wp, (*c).tty.mouse_slider_mpos, (*m).y, tty_oy, scroll_exit);
     return WINDOW_COPY_CMD_MOVE;
@@ -2540,7 +2545,7 @@ unsafe fn window_copy_cmd_selection_mode(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut so: *mut options = (*(*cs).s).options;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut s: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut s: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut ex: u_int = 0;
@@ -2600,11 +2605,7 @@ unsafe fn window_copy_cmd_selection_mode(
         grid_reader_cursor_start_of_line(&mut gr, 1 as ::core::ffi::c_int);
         (sx, sy) = grid_reader_get_cursor(&gr);
         let mut gr = grid_reader_start((*(*data).backing).grid(), ex, ey);
-        grid_reader_cursor_end_of_line(
-            &mut gr,
-            1 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
+        grid_reader_cursor_end_of_line(&mut gr, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
         (ex, ey) = grid_reader_get_cursor(&gr);
         (*data).rectflag = 0 as ::core::ffi::c_int;
         (*data).selx = sx;
@@ -2616,7 +2617,8 @@ unsafe fn window_copy_cmd_selection_mode(
         (*data).endsely = ey;
         (*data).endselry = (*data).endsely;
         x = (*data).cx;
-        y = (*(*data).backing).grid()
+        y = (*(*data).backing)
+            .grid()
             .hsize
             .wrapping_add((*data).cy)
             .wrapping_sub((*data).oy);
@@ -3021,12 +3023,12 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut command: Option<CString> = None;
     let mut prefix: Option<CString> = None;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut arg1: *const ::core::ffi::c_char = args_string((*cs).wargs, 1 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
+    let mut arg1: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 1 as u_int);
     let mut set_paste: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut set_clip: ::core::ffi::c_int =
-        (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has((*cs).parsed_args(), 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg1.is_null() {
         prefix = Some(format_single_cstring(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -3084,7 +3086,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
     let mut command: Option<CString> = None;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
         command = Some(format_single_cstring(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -3120,7 +3122,7 @@ unsafe fn window_copy_cmd_pipe_and_cancel(
 }
 unsafe fn window_copy_cmd_goto_line(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         window_copy_goto_line(wme, arg0);
     }
@@ -3132,7 +3134,7 @@ unsafe fn window_copy_cmd_jump_backward(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut np: u_int = (*wme).prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPBACKWARD as ::core::ffi::c_int;
         (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
@@ -3149,7 +3151,7 @@ unsafe fn window_copy_cmd_jump_forward(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut np: u_int = (*wme).prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPFORWARD as ::core::ffi::c_int;
         (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
@@ -3166,7 +3168,7 @@ unsafe fn window_copy_cmd_jump_to_backward(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut np: u_int = (*wme).prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPTOBACKWARD as ::core::ffi::c_int;
         (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
@@ -3183,7 +3185,7 @@ unsafe fn window_copy_cmd_jump_to_forward(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut np: u_int = (*wme).prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPTOFORWARD as ::core::ffi::c_int;
         (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
@@ -3208,7 +3210,7 @@ unsafe fn window_copy_cmd_next_prompt(
     window_copy_cursor_prompt(
         wme,
         1 as ::core::ffi::c_int,
-        args_has((*cs).wargs, 'o' as i32 as u_char),
+        args_has((*cs).parsed_args(), 'o' as i32 as u_char),
     );
     return WINDOW_COPY_CMD_MOVE;
 }
@@ -3219,7 +3221,7 @@ unsafe fn window_copy_cmd_previous_prompt(
     window_copy_cursor_prompt(
         wme,
         0 as ::core::ffi::c_int,
-        args_has((*cs).wargs, 'o' as i32 as u_char),
+        args_has((*cs).parsed_args(), 'o' as i32 as u_char),
     );
     return WINDOW_COPY_CMD_MOVE;
 }
@@ -3308,7 +3310,7 @@ unsafe fn window_copy_cmd_search_backward_incremental(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
@@ -3333,7 +3335,8 @@ unsafe fn window_copy_cmd_search_backward_incremental(
         (*data).oy = (*data).searcho as u_int;
         (*data).cx = window_copy_cursor_limit(
             wme,
-            (*(*data).backing).grid()
+            (*(*data).backing)
+                .grid()
                 .hsize
                 .wrapping_add((*data).cy)
                 .wrapping_sub((*data).oy),
@@ -3373,7 +3376,7 @@ unsafe fn window_copy_cmd_search_forward_incremental(
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
+    let mut arg0: *const ::core::ffi::c_char = args_string((*cs).parsed_args(), 0 as u_int);
     let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
@@ -3398,7 +3401,8 @@ unsafe fn window_copy_cmd_search_forward_incremental(
         (*data).oy = (*data).searcho as u_int;
         (*data).cx = window_copy_cursor_limit(
             wme,
-            (*(*data).backing).grid()
+            (*(*data).backing)
+                .grid()
                 .hsize
                 .wrapping_add((*data).cy)
                 .wrapping_sub((*data).oy),
@@ -5045,7 +5049,7 @@ unsafe fn window_copy_command(
     let mut cs: window_copy_cmd_state = window_copy_cmd_state {
         wme: ::core::ptr::null_mut::<window_mode_entry>(),
         args: ::core::ptr::null_mut::<args>(),
-        wargs: ::core::ptr::null_mut::<args>(),
+        wargs: None,
         m: ::core::ptr::null_mut::<mouse_event>(),
         c: ::core::ptr::null_mut::<client>(),
         s: ::core::ptr::null_mut::<session>(),
@@ -5071,7 +5075,7 @@ unsafe fn window_copy_command(
     }
     cs.wme = wme;
     cs.args = args;
-    cs.wargs = ::core::ptr::null_mut::<args>();
+    cs.wargs = None;
     cs.m = m;
     cs.c = c;
     cs.s = s;
@@ -5105,16 +5109,15 @@ unsafe fn window_copy_command(
                 args_values(args),
                 count,
             )
-            .unwrap_or(::core::ptr::null_mut::<args>());
-            if cs.wargs.is_null() {
+            .ok();
+            if cs.wargs.is_none() {
                 break;
             }
             clear = window_copy_cmd_table[i as usize].clear;
             action = window_copy_cmd_table[i as usize]
                 .f
                 .expect("non-null function pointer")(&raw mut cs);
-            args_free(cs.wargs);
-            cs.wargs = ::core::ptr::null_mut::<args>();
+            drop(cs.wargs.take());
             break;
         } else {
             i = i.wrapping_add(1);

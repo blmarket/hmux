@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_copy, args_create, args_first_value, args_free, args_parse as parse_args,
+    args_copy, args_create, args_first_value, args_parse as parse_args,
     args_percentage_result, args_push_positional_commands, args_set_owned_commands, args_string,
     args_string_percentage_result, args_strtonum_result, parse_number, parse_percentage,
     ArgumentValueError,
@@ -160,31 +160,31 @@ fn detached_error_callback_keeps_its_message_after_input_changes() {
 #[test]
 fn command_values_and_cached_strings_keep_their_storage_ownership() {
     unsafe {
-        let args = args_create();
+        let mut args = args_create();
         let cmdlist = cmd_list_new();
-        args_set_owned_commands(args, b'c', cmdlist, 0);
+        args_set_owned_commands(&mut *args, b'c', cmdlist, 0);
+
+        assert_eq!(
+            args_strtonum_result(&mut *args, b'c', 0, 100),
+            Err(ArgumentValueError::Missing)
+        );
+        assert_eq!(
+            args_percentage_result(&mut *args, b'c', 0, 100, 100),
+            Err(ArgumentValueError::Missing)
+        );
+
         let value = args_first_value(&*args, b'c').unwrap();
-
-        assert_eq!(
-            args_strtonum_result(args, b'c', 0, 100),
-            Err(ArgumentValueError::Missing)
-        );
-        assert_eq!(
-            args_percentage_result(args, b'c', 0, 100, 100),
-            Err(ArgumentValueError::Missing)
-        );
-
         let rendered = cmd_list_print(&*value.cmdlist(), 0);
         assert_eq!(rendered.as_bytes(), b"");
-        args_free(args);
+        drop(args);
 
-        let args = args_create();
-        args_push_positional_commands(args, cmd_list_new());
-        let first = args_string(args, 0);
-        let second = args_string(args, 0);
+        let mut args = args_create();
+        args_push_positional_commands(&mut *args, cmd_list_new());
+        let first = args_string(&mut *args, 0);
+        let second = args_string(&mut *args, 0);
         assert_eq!(first, second);
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
-        args_free(args);
+        drop(args);
     }
 }
 
@@ -211,7 +211,7 @@ fn borrowed_parser_command_retains_only_while_stored() {
         };
         let stored = parse_args(&spec, values.as_mut_ptr(), 2).expect("valid command argument");
         assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 2);
-        args_free(stored);
+        drop(stored);
         assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
 
         spec.lower = 2;
@@ -228,7 +228,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         count: core::ffi::c_uint,
     ) -> Result<core::ffi::c_uint, hmux2::src::shared::arguments::ArgsParseError> {
         if count == 1 {
-            unsafe { args_string(args, 0) };
+            unsafe { args_string(&mut *args, 0) };
         }
         Ok(ARGS_PARSE_COMMANDS)
     }
@@ -247,7 +247,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             upper: -1,
             cb: Some(command_argument),
         };
-        let args = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
+        let mut args = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
             .expect("valid command arguments");
         for cmdlist in command_lists {
             cmd_list_free(cmdlist);
@@ -256,20 +256,20 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         let first = (&(*args).values)[0].cached.as_ref().unwrap().as_ptr();
         assert!(!first.is_null());
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
-        assert_eq!(args_string(args, 0), first);
-        let second = args_string(args, 1);
+        assert_eq!(args_string(&mut *args, 0), first);
+        let second = args_string(&mut *args, 1);
         assert_ne!(first, second);
 
-        let copied = args_copy(args, &Vec::new());
-        let copied_first = args_string(copied, 0);
-        let copied_second = args_string(copied, 1);
+        let mut copied = args_copy(&args, &Vec::new());
+        let copied_first = args_string(&mut *copied, 0);
+        let copied_second = args_string(&mut *copied, 1);
         assert_ne!(copied_first, first);
         assert_ne!(copied_second, second);
         assert_eq!(CStr::from_ptr(copied_first).to_bytes(), b"");
         assert_eq!(CStr::from_ptr(copied_second).to_bytes(), b"");
-        args_free(args);
+        drop(args);
         assert_eq!(CStr::from_ptr(copied_first).to_bytes(), b"");
-        args_free(copied);
+        drop(copied);
     }
 }
 
@@ -289,7 +289,7 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             cb: None,
         };
         let error = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
-            .expect_err("command value must be rejected");
+            .err().expect("command value must be rejected");
         let error = match error {
             hmux2::src::arguments::ArgsParseError::Message(error) => error,
             hmux2::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),

@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_create, args_free, args_has, args_set_flag, args_set_owned_string, args_string,
+    args_create, args_has, args_set_flag, args_set_owned_string, args_string,
 };
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::cmdq_get_target;
@@ -38,7 +38,6 @@ pub static mut cmd_find_window_entry: cmd_entry = {
 };
 unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut new_args: *mut args = ::core::ptr::null_mut::<args>();
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut s: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
@@ -74,20 +73,20 @@ unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         N != 0,
         T != 0,
     );
-    new_args = args_create();
+    let mut new_args = args_create();
     if args_has(args, 'Z' as i32 as u_char) != 0 {
-        args_set_flag(new_args, 'Z' as i32 as u_char, 0);
+        args_set_flag(&mut *new_args, 'Z' as i32 as u_char, 0);
     }
-    args_set_owned_string(new_args, filter_value);
+    args_set_owned_string(&mut *new_args, filter_value);
     window_pane_set_mode(
         wp,
         ::core::ptr::null_mut::<window_pane>(),
         &raw const window_tree_mode,
         item,
         target,
-        new_args,
+        &mut *new_args,
     );
-    args_free(new_args);
+    drop(new_args);
     return CMD_RETURN_NORMAL;
 }
 
