@@ -3776,7 +3776,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     if (*c).overlay_draw.is_none() && prompt != 0 {
         mode &= !MODE_BRACKETPASTE;
     }
-    tty_update_mode(tty, mode, s);
+    tty_update_mode(tty, mode, s.as_ref());
     tty_reset(tty);
     tty_sync_end(tty);
     (*tty).flags |= flags;
@@ -4141,7 +4141,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         redraw_screen(c);
     }
     (*tty).flags = (*tty).flags & !TTY_NOCURSOR | tflags & TTY_NOCURSOR;
-    tty_update_mode(tty, mode, ::core::ptr::null_mut::<screen>());
+    tty_update_mode(tty, mode, None);
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR) | tflags;
     (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
         & !(CLIENT_ALLREDRAWFLAGS as ::core::ffi::c_ulonglong

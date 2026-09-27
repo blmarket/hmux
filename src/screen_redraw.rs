@@ -1295,7 +1295,7 @@ unsafe fn redraw_draw_pane_span(
         .px
         .wrapping_add(x.wrapping_sub((*span).x));
     py = (*span).data.c2rust_unnamed.p.py;
-    tty_draw_line(tty, s, px, py, n, x, y, &raw mut style_ctx);
+    tty_draw_line(tty, &*s, px, py, n, x, y, Some(&style_ctx));
 }
 unsafe fn redraw_get_default_border_style(
     mut dctx: *mut redraw_draw_ctx,
@@ -1514,16 +1514,7 @@ unsafe fn redraw_draw_status_span(
         if n > sx.wrapping_sub(px) {
             n = sx.wrapping_sub(px);
         }
-        tty_draw_line(
-            tty,
-            s,
-            px,
-            0 as u_int,
-            n,
-            x,
-            y,
-            ::core::ptr::null::<tty_style_ctx>(),
-        );
+        tty_draw_line(tty, &*s, px, 0 as u_int, n, x, y, None);
     }
 }
 unsafe fn redraw_draw_scrollbar_span(
@@ -1693,13 +1684,13 @@ unsafe fn redraw_draw_menu_span(
         .wrapping_add(x.wrapping_sub((*span).x));
     tty_draw_line(
         tty,
-        s,
+        &*s,
         px,
         (*span).data.c2rust_unnamed.m.py,
         n,
         x,
         y,
-        ::core::ptr::null::<tty_style_ctx>(),
+        None,
     );
 }
 unsafe fn redraw_draw_span(
@@ -2398,13 +2389,13 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
     screen_write_stop(&mut ctx);
     tty_draw_line(
         tty,
-        &raw mut screen,
+        &screen,
         0 as u_int,
         offset as u_int,
         width as u_int,
         px as u_int,
         cy as u_int,
-        ::core::ptr::null::<tty_style_ctx>(),
+        None,
     );
     screen_free(&mut screen);
 }
@@ -2544,11 +2535,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
         }
     }
     tty_sync_start(tty);
-    tty_update_mode(
-        tty,
-        (*tty).mode & !CURSOR_MODES,
-        ::core::ptr::null_mut::<screen>(),
-    );
+    tty_update_mode(tty, (*tty).mode & !CURSOR_MODES, None);
     if !wp.is_null() {
         redraw_draw_pane_lines(&raw mut dctx, wp, flags);
     } else {
@@ -2594,13 +2581,13 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
                 if !((*rr).nx == 0 as u_int) {
                     tty_draw_line(
                         tty,
-                        sl,
+                        &*sl,
                         (*rr).px,
                         i,
                         (*rr).nx,
                         (*rr).px,
                         y.wrapping_add(i),
-                        ::core::ptr::null::<tty_style_ctx>(),
+                        None,
                     );
                 }
                 j = j.wrapping_add(1);

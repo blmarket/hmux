@@ -1,12 +1,9 @@
-use crate::src::ffi::libc::memcpy;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
-use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
+use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::screen::screen_select_cell;
 use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::screen::screen;
 use crate::src::shared::tty::TTY_NOCURSOR;
 use crate::src::shared::tty::*;
@@ -26,21 +23,14 @@ pub const TTY_DRAW_LINE_NEW2: tty_draw_line_state = 3;
 pub const TTY_DRAW_LINE_NEW1: tty_draw_line_state = 2;
 pub const TTY_DRAW_LINE_FLUSH: tty_draw_line_state = 1;
 pub const TTY_DRAW_LINE_FIRST: tty_draw_line_state = 0;
-static mut tty_draw_line_states: [*const ::core::ffi::c_char; 7] = [
-    b"FIRST\0" as *const u8 as *const ::core::ffi::c_char,
-    b"FLUSH\0" as *const u8 as *const ::core::ffi::c_char,
-    b"NEW1\0" as *const u8 as *const ::core::ffi::c_char,
-    b"NEW2\0" as *const u8 as *const ::core::ffi::c_char,
-    b"EMPTY\0" as *const u8 as *const ::core::ffi::c_char,
-    b"SAME\0" as *const u8 as *const ::core::ffi::c_char,
-    b"DONE\0" as *const u8 as *const ::core::ffi::c_char,
-];
+const TTY_DRAW_LINE_STATES: [&str; 7] = ["FIRST", "FLUSH", "NEW1", "NEW2", "EMPTY", "SAME", "DONE"];
+
 unsafe fn tty_draw_line_clear(
     mut tty: *mut tty,
     mut px: u_int,
     mut py: u_int,
     mut nx: u_int,
-    mut defaults: *const grid_cell,
+    defaults: &grid_cell,
     mut bg: u_int,
     mut wrapped: ::core::ffi::c_int,
 ) {
@@ -79,30 +69,26 @@ unsafe fn tty_draw_line_clear(
         tty_repeat_space(tty, nx);
     };
 }
-unsafe fn tty_draw_line_get_empty(
-    mut gc: *const grid_cell,
-    mut last: *const grid_cell,
-    mut nx: u_int,
-) -> u_int {
+fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u_int {
     let mut empty: u_int = 0 as u_int;
-    if (*gc).data.width as u_int > nx {
+    if gc.data.width as u_int > nx {
         empty = nx;
-    } else if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+    } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         empty = 1 as u_int;
-    } else if (*gc).data.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+    } else if gc.data.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         empty = 1 as u_int;
-    } else if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
+    } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
         empty = 0 as u_int;
-    } else if (*gc).bg == (*last).bg
-        && (*gc).attr as ::core::ffi::c_int == 0 as ::core::ffi::c_int
-        && (*gc).link == 0 as u_int
+    } else if gc.bg == last.bg
+        && gc.attr as ::core::ffi::c_int == 0 as ::core::ffi::c_int
+        && gc.link == 0 as u_int
     {
-        if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_CLEARED != 0 {
+        if gc.flags as ::core::ffi::c_int & GRID_FLAG_CLEARED != 0 {
             empty = 1 as u_int;
-        } else if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-            empty = (*gc).data.width as u_int;
-        } else if (*gc).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-            && *(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int == ' ' as i32
+        } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+            empty = gc.data.width as u_int;
+        } else if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+            && gc.data.data[0] as ::core::ffi::c_int == ' ' as i32
         {
             empty = 1 as u_int;
         }
@@ -111,17 +97,16 @@ unsafe fn tty_draw_line_get_empty(
 }
 pub unsafe fn tty_draw_line(
     mut tty: *mut tty,
-    mut s: *mut screen,
+    s: &screen,
     mut px: u_int,
     mut py: u_int,
     mut nx: u_int,
     mut atx: u_int,
     mut aty: u_int,
-    mut style_ctx: *const tty_style_ctx,
+    style_ctx: Option<&tty_style_ctx>,
 ) {
     let mut current_block: u64;
-    let mut gd: *mut grid = (*s).grid_mut();
-    let mut gcp: *const grid_cell = ::core::ptr::null::<grid_cell>();
+    let gd = s.grid();
     let mut converted = grid_cell::default();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -180,19 +165,13 @@ pub unsafe fn tty_draw_line(
     let mut len: size_t = 0;
     let mut current_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
     let mut next_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
-    let mut default_style_ctx: tty_style_ctx = tty_style_ctx {
-        defaults: grid_cell::default(),
-        palette: ::core::ptr::null_mut::<colour_palette>(),
-        dim: 0,
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
+    let default_style_ctx = tty_style_ctx {
+        defaults: grid_default_cell,
+        hyperlinks: s.hyperlinks,
+        ..Default::default()
     };
-    let mut defaults: *const grid_cell = ::core::ptr::null::<grid_cell>();
-    if style_ctx.is_null() {
-        default_style_ctx.defaults = grid_default_cell;
-        default_style_ctx.hyperlinks = (*s).hyperlinks;
-        style_ctx = &raw mut default_style_ctx;
-    }
-    defaults = &raw const (*style_ctx).defaults;
+    let style_ctx = style_ctx.unwrap_or(&default_style_ctx);
+    let defaults = &style_ctx.defaults;
     log_debug(format_args!(
         "{}: px={} py={} nx={} atx={} aty={}",
         "tty_draw_line",
@@ -211,11 +190,11 @@ pub unsafe fn tty_draw_line(
     if nx == 0 as u_int {
         return;
     }
-    cellsize = (*grid_get_line(&*gd, (*gd).hsize.wrapping_add(py))).cellsize as u_int;
-    if (*s).grid().sx > cellsize {
+    cellsize = (*grid_get_line(gd, gd.hsize.wrapping_add(py))).cellsize as u_int;
+    if s.grid().sx > cellsize {
         ex = cellsize;
     } else {
-        ex = (*s).grid().sx;
+        ex = s.grid().sx;
     }
     log_debug(format_args!(
         "{}: drawing {}-{},{} (end {}) at {},{}; defaults: fg={}, bg={}",
@@ -226,25 +205,21 @@ pub unsafe fn tty_draw_line(
         (ex) as u32,
         (atx) as u32,
         (aty) as u32,
-        ((*defaults).fg) as i32,
-        ((*defaults).bg) as i32
+        (defaults.fg) as i32,
+        (defaults.bg) as i32
     ));
     flags = (*tty).flags & TTY_NOCURSOR;
     (*tty).flags |= TTY_NOCURSOR;
-    tty_update_mode(tty, (*tty).mode, s);
+    tty_update_mode(tty, (*tty).mode, Some(s));
     tty_region_off(tty);
     tty_margin_off(tty);
-    memcpy(
-        &raw mut last as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    last.bg = (*defaults).bg;
-    tty_default_attributes(tty, 8 as u_int, style_ctx.as_ref());
+    last = grid_default_cell;
+    last.bg = defaults.bg;
+    tty_default_attributes(tty, 8 as u_int, Some(style_ctx));
     cx = 0 as u_int;
     i = px;
     while i < px.wrapping_add(nx) {
-        grid_view_get_cell(&*gd, i, py, &mut gc);
+        grid_view_get_cell(gd, i, py, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
@@ -254,29 +229,25 @@ pub unsafe fn tty_draw_line(
     if cx != 0 as u_int {
         i = px.wrapping_add(1 as u_int);
         while i > 0 as u_int {
-            grid_view_get_cell(&*gd, i.wrapping_sub(1 as u_int), py, &mut gc);
+            grid_view_get_cell(gd, i.wrapping_sub(1 as u_int), py, &mut gc);
             if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
             i = i.wrapping_sub(1);
         }
         if i == 0 as u_int {
-            bg = (*defaults).bg as u_int;
+            bg = defaults.bg as u_int;
         } else {
             bg = gc.bg as u_int;
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
-                memcpy(
-                    &raw mut ngc as *mut ::core::ffi::c_void,
-                    &raw mut gc as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
-                if let Some(selected) = screen_select_cell(&*s, &gc) {
+                ngc = gc;
+                if let Some(selected) = screen_select_cell(s, &gc) {
                     ngc = selected;
                     bg = ngc.bg as u_int;
                 }
             }
         }
-        tty_attributes(tty, &last, style_ctx.as_ref());
+        tty_attributes(tty, &last, Some(style_ctx));
         log_debug(format_args!(
             "{}: clearing {} padding cells",
             "tty_draw_line",
@@ -297,7 +268,7 @@ pub unsafe fn tty_draw_line(
     match current_block {
         16799951812150840583 => {
             if py != 0 as u_int && atx == 0 as u_int && (*tty).cx >= (*tty).sx && nx == (*tty).sx {
-                let gl = grid_get_line(&*gd, (*gd).hsize.wrapping_add(py).wrapping_sub(1 as u_int));
+                let gl = grid_get_line(gd, gd.hsize.wrapping_add(py).wrapping_sub(1 as u_int));
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
                     wrapped = 1 as ::core::ffi::c_int;
                 }
@@ -308,10 +279,11 @@ pub unsafe fn tty_draw_line(
             width = 0 as u_int;
             current_state = TTY_DRAW_LINE_FIRST;
             loop {
+                let mut gcp: &grid_cell;
                 if i == nx {
                     empty = 0 as ::core::ffi::c_int;
                     next_state = TTY_DRAW_LINE_DONE;
-                    gcp = &raw const grid_default_cell;
+                    gcp = &grid_default_cell;
                 } else {
                     if i > nx {
                         fatalx(|out| {
@@ -320,26 +292,21 @@ pub unsafe fn tty_draw_line(
                     }
                     if px >= ex || i >= ex.wrapping_sub(px) {
                         empty = nx.wrapping_sub(i) as ::core::ffi::c_int;
-                        gcp = &raw const grid_default_cell;
+                        gcp = &grid_default_cell;
                     } else {
-                        grid_view_get_cell(&*gd, px.wrapping_add(i), py, &mut gc);
-                        empty =
-                            tty_draw_line_get_empty(&raw mut gc, &raw mut last, nx.wrapping_sub(i))
-                                as ::core::ffi::c_int;
+                        grid_view_get_cell(gd, px.wrapping_add(i), py, &mut gc);
+                        empty = tty_draw_line_get_empty(&gc, &last, nx.wrapping_sub(i))
+                            as ::core::ffi::c_int;
                         if empty != 0 as ::core::ffi::c_int {
-                            gcp = &raw mut gc;
+                            gcp = &gc;
                         } else {
                             converted = tty_check_codeset(&*tty, &gc);
                             gcp = &converted;
-                            if (*gcp).flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
-                                memcpy(
-                                    &raw mut ngc as *mut ::core::ffi::c_void,
-                                    gcp as *const ::core::ffi::c_void,
-                                    ::core::mem::size_of::<grid_cell>() as size_t,
-                                );
-                                if let Some(selected) = screen_select_cell(&*s, &*gcp) {
+                            if gcp.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
+                                ngc = *gcp;
+                                if let Some(selected) = screen_select_cell(s, gcp) {
                                     ngc = selected;
-                                    gcp = &raw mut ngc;
+                                    gcp = &ngc;
                                 }
                             }
                         }
@@ -350,8 +317,8 @@ pub unsafe fn tty_draw_line(
                         == TTY_DRAW_LINE_FIRST as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
                         next_state = TTY_DRAW_LINE_SAME;
-                    } else if grid_cells_look_equal(&*gcp, &last) {
-                        if (*gcp).data.size as usize
+                    } else if grid_cells_look_equal(gcp, &last) {
+                        if gcp.data.size as usize
                             > (::core::mem::size_of::<[::core::ffi::c_char; 1000]>() as usize)
                                 .wrapping_sub(len as usize)
                         {
@@ -373,16 +340,16 @@ pub unsafe fn tty_draw_line(
                         "tty_draw_line",
                         (px.wrapping_add(i)) as u32,
                         (empty) as u32,
-                        ((*gcp).bg) as u32,
-                        log_cstr((tty_draw_line_states[current_state as usize]) as *const _),
-                        log_cstr((tty_draw_line_states[next_state as usize]) as *const _)
+                        (gcp.bg) as u32,
+                        TTY_DRAW_LINE_STATES[current_state as usize],
+                        TTY_DRAW_LINE_STATES[next_state as usize]
                     ));
                 }
                 if next_state as ::core::ffi::c_uint != current_state as ::core::ffi::c_uint {
                     if current_state as ::core::ffi::c_uint
                         == TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        tty_attributes(tty, &last, style_ctx.as_ref());
+                        tty_attributes(tty, &last, Some(style_ctx));
                         tty_draw_line_clear(
                             tty,
                             atx.wrapping_add(last_i),
@@ -397,7 +364,7 @@ pub unsafe fn tty_draw_line(
                         != TTY_DRAW_LINE_SAME as ::core::ffi::c_int as ::core::ffi::c_uint
                         && len != 0 as size_t
                     {
-                        tty_attributes(tty, &last, style_ctx.as_ref());
+                        tty_attributes(tty, &last, Some(style_ctx));
                         if atx.wrapping_add(i).wrapping_sub(width) != 0 as u_int || wrapped == 0 {
                             tty_cursor(tty, atx.wrapping_add(i).wrapping_sub(width), aty);
                         }
@@ -419,7 +386,7 @@ pub unsafe fn tty_draw_line(
                 if next_state as ::core::ffi::c_uint
                     != TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    let data = &(*gcp).data;
+                    let data = &gcp.data;
                     let size = data.size as usize;
                     buf[len..len + size].copy_from_slice(&data.data[..size]);
                     len += size;
@@ -431,20 +398,16 @@ pub unsafe fn tty_draw_line(
                     break;
                 }
                 current_state = next_state;
-                memcpy(
-                    &raw mut last as *mut ::core::ffi::c_void,
-                    gcp as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
+                last = *gcp;
                 if empty != 0 as ::core::ffi::c_int {
                     i = i.wrapping_add(empty as u_int);
                 } else {
-                    i = i.wrapping_add((*gcp).data.width as u_int);
+                    i = i.wrapping_add(gcp.data.width as u_int);
                 }
             }
         }
         _ => {}
     }
     (*tty).flags = (*tty).flags & !TTY_NOCURSOR | flags;
-    tty_update_mode(tty, (*tty).mode, s);
+    tty_update_mode(tty, (*tty).mode, Some(s));
 }

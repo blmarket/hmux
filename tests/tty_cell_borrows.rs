@@ -118,3 +118,128 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
         assert_eq!((defaults.fg, defaults.bg), (2, 4));
     }
 }
+
+#[test]
+fn line_rendering_preserves_source_cells_through_selection_conversion_and_clipping() {
+    use hmux2::src::grid::{grid_get_cell, grid_set_cell};
+    use hmux2::src::screen::screen_set_selection;
+    use hmux2::src::shared::grid::GRID_FLAG_SELECTED;
+    use hmux2::src::shared::key::MODEKEY_VI;
+    use hmux2::src::tty_draw::tty_draw_line;
+
+    unsafe {
+        for (utf8, start, width, expected) in [
+            (true, 0, 6, "漢AB界".as_bytes()),
+            (false, 0, 6, b"__AB__".as_slice()),
+            (true, 1, 4, b" AB ".as_slice()),
+        ] {
+            let mut client = client::empty();
+            client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
+            let mut term = tty_term::empty();
+            term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
+            let mut terminal = tty {
+                client: &raw mut client,
+                term: &raw mut term,
+                out: Some(evbuffer_new()),
+                cell: grid_default_cell,
+                last_cell: grid_default_cell,
+                ccolour: -1,
+                sx: 20,
+                sy: 2,
+                ..Default::default()
+            };
+            let mut screen = screen::empty();
+            screen.grid = Some(grid_create(6, 2, 0));
+            screen.ccolour = -1;
+            screen.default_ccolour = -1;
+            let padding = grid_cell {
+                flags: GRID_FLAG_PADDING as u8,
+                ..grid_default_cell
+            };
+            let selected = grid_cell {
+                flags: GRID_FLAG_SELECTED as u8,
+                ..character(b"B", 1)
+            };
+            let source = [
+                character("漢".as_bytes(), 2),
+                padding,
+                character(b"A", 1),
+                selected,
+                character("界".as_bytes(), 2),
+                padding,
+            ];
+            for (x, cell) in source.iter().enumerate() {
+                grid_set_cell(screen.grid_mut(), x as u32, 0, cell);
+            }
+            let selection_style = grid_cell {
+                fg: 2,
+                bg: 4,
+                ..grid_default_cell
+            };
+            screen_set_selection(&mut screen, 3, 0, 3, 0, 0, 6, MODEKEY_VI, &selection_style);
+            tty_draw_line(&raw mut terminal, &screen, start, 0, width, 0, 0, None);
+            assert_eq!(
+                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+                expected
+            );
+            assert_eq!(terminal.cx, width);
+            for (x, before) in source.iter().enumerate() {
+                let mut after = grid_default_cell;
+                grid_get_cell(screen.grid(), x as u32, 0, &mut after);
+                assert!(grid_cells_equal(before, &after), "cell {x} was changed");
+            }
+            assert!(grid_cells_equal(
+                &screen.sel.as_ref().unwrap().cell,
+                &selection_style
+            ));
+        }
+    }
+}
+
+#[test]
+fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
+    use hmux2::src::shared::display::{SCREEN_CURSOR_BAR, SCREEN_CURSOR_UNDERLINE};
+    use hmux2::src::shared::screen::{MODE_CURSOR, MODE_CURSOR_BLINKING};
+    use hmux2::src::shared::tty::{TTYC_CIVIS, TTYC_CNORM, TTYC_SS};
+    use hmux2::src::tty::tty_update_mode;
+
+    unsafe {
+        let mut client = client::empty();
+        let mut term = tty_term::empty();
+        term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
+        term.codes[TTYC_CNORM as usize] = tty_code::String(c"N".to_owned());
+        term.codes[TTYC_CIVIS as usize] = tty_code::String(c"I".to_owned());
+        term.codes[TTYC_SS as usize] = tty_code::String(c"S%p1%d".to_owned());
+        let mut terminal = tty {
+            client: &raw mut client,
+            term: &raw mut term,
+            out: Some(evbuffer_new()),
+            ccolour: -1,
+            ..Default::default()
+        };
+        let mut screen = screen::empty();
+        screen.ccolour = -1;
+        screen.default_ccolour = -1;
+        screen.default_cstyle = SCREEN_CURSOR_UNDERLINE;
+        screen.default_mode = MODE_CURSOR_BLINKING;
+        tty_update_mode(&raw mut terminal, MODE_CURSOR, Some(&screen));
+        assert_eq!(terminal.cstyle, SCREEN_CURSOR_UNDERLINE);
+        assert_eq!(terminal.mode, MODE_CURSOR | MODE_CURSOR_BLINKING);
+
+        // Without a screen, retain the previous style but use the requested blink mode.
+        tty_update_mode(&raw mut terminal, MODE_CURSOR, None);
+        assert_eq!(terminal.cstyle, SCREEN_CURSOR_UNDERLINE);
+        assert_eq!(terminal.mode, MODE_CURSOR);
+
+        screen.cstyle = SCREEN_CURSOR_BAR;
+        tty_update_mode(&raw mut terminal, MODE_CURSOR, Some(&screen));
+        assert_eq!(terminal.cstyle, SCREEN_CURSOR_BAR);
+        assert_eq!(terminal.mode, MODE_CURSOR);
+        tty_update_mode(&raw mut terminal, 0, None);
+        assert_eq!(terminal.mode, 0);
+        assert_eq!(
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            b"NS3NS4NS6I"
+        );
+    }
+}

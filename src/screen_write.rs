@@ -2453,10 +2453,6 @@ unsafe fn screen_write_collect_flush_line(
 ) -> u_int {
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     let mut s: *mut screen = ctx.s;
-    let cl = &mut (*s)
-        .write_list
-        .as_deref_mut()
-        .expect("screen write rows are initialized")[y as usize];
     let mut last: u_int = UINT_MAX;
     let mut items: u_int = 0 as u_int;
     let mut wsx: u_int = 0;
@@ -2496,6 +2492,7 @@ unsafe fn screen_write_collect_flush_line(
     );
     let mut index = 0;
     loop {
+        let cl = &(*s).write_rows()[y as usize];
         let Some(ci) = cl.items.get(index) else {
             break;
         };
@@ -2579,7 +2576,7 @@ unsafe fn screen_write_collect_flush_line(
         }
         if written != 0 {
             last = ci.x;
-            screen_write_free_citem(cl.items.remove_at(index));
+            screen_write_free_citem((*s).write_rows_mut()[y as usize].items.remove_at(index));
         } else {
             index += 1;
         }

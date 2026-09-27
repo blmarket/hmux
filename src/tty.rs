@@ -1078,16 +1078,16 @@ unsafe fn tty_force_cursor_colour(mut tty: *mut tty, mut c: ::core::ffi::c_int) 
 unsafe fn tty_update_cursor(
     mut tty: *mut tty,
     mut mode: ::core::ffi::c_int,
-    mut s: *mut screen,
+    s: Option<&screen>,
 ) -> ::core::ffi::c_int {
     let mut cstyle: screen_cursor_style = SCREEN_CURSOR_DEFAULT;
     let mut ccolour: ::core::ffi::c_int = 0;
     let mut changed: ::core::ffi::c_int = 0;
     let mut cmode: ::core::ffi::c_int = mode;
-    if !s.is_null() {
-        ccolour = (*s).ccolour;
-        if (*s).ccolour == -(1 as ::core::ffi::c_int) {
-            ccolour = (*s).default_ccolour;
+    if let Some(s) = s {
+        ccolour = s.ccolour;
+        if s.ccolour == -(1 as ::core::ffi::c_int) {
+            ccolour = s.default_ccolour;
         }
         tty_force_cursor_colour(tty, ccolour);
     }
@@ -1097,22 +1097,22 @@ unsafe fn tty_update_cursor(
         }
         return cmode;
     }
-    if s.is_null() {
-        cstyle = (*tty).cstyle;
-    } else {
-        cstyle = (*s).cstyle;
+    if let Some(s) = s {
+        cstyle = s.cstyle;
         if cstyle as ::core::ffi::c_uint
             == SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if !cmode & MODE_CURSOR_BLINKING_SET != 0 {
-                if (*s).default_mode & MODE_CURSOR_BLINKING != 0 {
+                if s.default_mode & MODE_CURSOR_BLINKING != 0 {
                     cmode |= MODE_CURSOR_BLINKING;
                 } else {
                     cmode &= !MODE_CURSOR_BLINKING;
                 }
             }
-            cstyle = (*s).default_cstyle;
+            cstyle = s.default_cstyle;
         }
+    } else {
+        cstyle = (*tty).cstyle;
     }
     changed = cmode ^ (*tty).mode;
     if changed & CURSOR_MODES == 0 as ::core::ffi::c_int
@@ -1174,7 +1174,7 @@ unsafe fn tty_update_cursor(
     (*tty).cstyle = cstyle;
     return cmode;
 }
-pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, mut s: *mut screen) {
+pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, s: Option<&screen>) {
     let mut term: *mut tty_term = (*tty).term;
     let mut c: *mut client = (*tty).client;
     let mut changed: ::core::ffi::c_int = 0;
@@ -1847,13 +1847,13 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
-                    s,
+                    &*s,
                     (*rr).px.wrapping_sub(ctx.xoff as u_int),
                     py,
                     (*rr).nx,
                     (*rr).px,
                     (ctx.yoff as u_int).wrapping_add(py),
-                    &raw const ctx.style_ctx,
+                    Some(&ctx.style_ctx),
                 );
             }
             j = j.wrapping_add(1);
@@ -1878,13 +1878,13 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
-                    s,
+                    &*s,
                     i.wrapping_add((*rr).px).wrapping_sub(x),
                     py,
                     (*rr).nx,
                     (*rr).px,
                     ry,
-                    &raw const ctx.style_ctx,
+                    Some(&ctx.style_ctx),
                 );
             }
             j = j.wrapping_add(1);
@@ -1917,7 +1917,7 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx) {
             if !((*rr).nx == 0 as u_int) {
                 tty_draw_line(
                     tty,
-                    ctx.s,
+                    &*ctx.s,
                     ctx.ocx
                         .wrapping_add(i)
                         .wrapping_add((*rr).px)
@@ -1926,7 +1926,7 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx) {
                     (*rr).nx,
                     (*rr).px,
                     ry,
-                    &raw const ctx.style_ctx,
+                    Some(&ctx.style_ctx),
                 );
             }
             j = j.wrapping_add(1);
@@ -2351,13 +2351,13 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
         if vis < gc.data.width as u_int {
             tty_draw_line(
                 tty,
-                s,
+                &*s,
                 (*s).cx,
                 (*s).cy,
                 gc.data.width as u_int,
                 px,
                 py,
-                &raw const ctx.style_ctx,
+                Some(&ctx.style_ctx),
             );
             return;
         }
@@ -2558,7 +2558,7 @@ pub unsafe fn tty_invalidate(mut tty: *mut tty) {
         }
         tty_putcode(tty, TTYC_SGR0);
         (*tty).mode = ALL_MODES;
-        tty_update_mode(tty, MODE_CURSOR, ::core::ptr::null_mut::<screen>());
+        tty_update_mode(tty, MODE_CURSOR, None);
         tty_cursor(tty, 0 as u_int, 0 as u_int);
         tty_region_off(tty);
         tty_margin_off(tty);

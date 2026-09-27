@@ -426,13 +426,13 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     while i < (*pd).sy {
         tty_draw_line(
             tty,
-            &raw mut s,
+            &s,
             0 as u_int,
             i,
             (*pd).sx,
             px,
             py.wrapping_add(i),
-            &raw mut style_ctx,
+            Some(&style_ctx),
         );
         i = i.wrapping_add(1);
     }
