@@ -301,7 +301,7 @@ unsafe fn window_tree_pull_item(
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         *wlp = (**sp).curw;
-        *wp = (*(**wlp).window).active;
+        *wp = (*(**wlp).window_ptr()).active;
         return;
     }
     *wlp = winlink_find_by_index(&raw mut (**sp).windows, item.winlink);
@@ -312,11 +312,11 @@ unsafe fn window_tree_pull_item(
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        *wp = (*(**wlp).window).active;
+        *wp = (*(**wlp).window_ptr()).active;
         return;
     }
     *wp = window_pane_find_by_id(item.pane as u_int);
-    if window_has_pane((**wlp).window, *wp) == 0 {
+    if window_has_pane((**wlp).window_ptr(), *wp) == 0 {
         *wp = ::core::ptr::null_mut::<window_pane>();
     }
     if (*wp).is_null() {
@@ -431,8 +431,8 @@ unsafe fn window_tree_build_window(
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !(*wl).window.is_null() && !(*(*wl).window).active.is_null() {
-        tag = (FORMAT_PANE | (*(*(*wl).window).active).id) as uint64_t;
+    if !(*wl).window_ptr().is_null() && !(*(*wl).window_ptr()).active.is_null() {
+        tag = (FORMAT_PANE | (*(*(*wl).window_ptr()).active).id) as uint64_t;
     }
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
@@ -469,7 +469,7 @@ unsafe fn window_tree_build_window(
         expanded,
     );
     mode_tree_align(&mti);
-    let l = sort_get_panes_window((*wl).window, sort_crit);
+    let l = sort_get_panes_window((*wl).window_ptr(), sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
     found = 0 as u_int;
     i = 0 as u_int;
@@ -510,8 +510,8 @@ unsafe fn window_tree_build_session(
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !wl.is_null() && !(*wl).window.is_null() && !(*(*wl).window).active.is_null() {
-        tag = (FORMAT_PANE | (*(*(*wl).window).active).id) as uint64_t;
+    if !wl.is_null() && !(*wl).window_ptr().is_null() && !(*(*wl).window_ptr()).active.is_null() {
+        tag = (FORMAT_PANE | (*(*(*wl).window_ptr()).active).id) as uint64_t;
     }
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
@@ -619,7 +619,7 @@ unsafe fn window_tree_build(
             }
         }
         3 => {
-            if window_count_panes((*(*data).fs.wl).window, 1 as ::core::ffi::c_int) == 1 as u_int {
+            if window_count_panes((*(*data).fs.wl).window_ptr(), 1 as ::core::ffi::c_int) == 1 as u_int {
                 *tag = (*data).fs.wl as uint64_t;
             } else {
                 *tag = (*data).fs.wp as uint64_t;
@@ -896,7 +896,7 @@ unsafe fn window_tree_draw_session(
         if loop_0 < start {
             loop_0 = loop_0.wrapping_add(1);
         } else {
-            w = (*wl).window;
+            w = (*wl).window_ptr();
             oo = options_owner_ptr(&mut (*w).options);
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
@@ -984,7 +984,7 @@ unsafe fn window_tree_draw_window(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut cx: u_int = (*(*ctx).s).cx;
     let mut cy: u_int = (*(*ctx).s).cy;
@@ -1454,11 +1454,11 @@ unsafe fn window_tree_search(
                 return 0 as ::core::ffi::c_int;
             }
             if icase != 0 {
-                return (strcasestr((*(*wl).window).name.as_ptr().cast_mut(), ss)
+                return (strcasestr((*(*wl).window_ptr()).name.as_ptr().cast_mut(), ss)
                     != NULL as *mut ::core::ffi::c_char)
                     as ::core::ffi::c_int;
             }
-            return (strstr((*(*wl).window).name.as_ptr().cast_mut(), ss)
+            return (strstr((*(*wl).window_ptr()).name.as_ptr().cast_mut(), ss)
                 != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
         }
         3 => {
@@ -1597,13 +1597,14 @@ unsafe fn window_tree_swap(
     if sort_would_window_tree_swap(sort_crit, cur_winlink, other_winlink) != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    other_window = (*other_winlink).window;
-    cur_window = (*cur_winlink).window;
+    other_window = (*other_winlink).window_ptr();
+    cur_window = (*cur_winlink).window_ptr();
     window_winlinks_remove(other_window, other_winlink);
     window_winlinks_remove(cur_window, cur_winlink);
-    (*other_winlink).window = cur_window;
+    if other_winlink != cur_winlink {
+        std::mem::swap(&mut (*other_winlink).window_owner, &mut (*cur_winlink).window_owner);
+    }
     window_winlinks_append(cur_window, other_winlink);
-    (*cur_winlink).window = other_window;
     window_winlinks_append(other_window, cur_winlink);
     if (*cur_session).curw == cur_winlink {
         session_set_current(cur_session, other_winlink);
@@ -1915,7 +1916,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
         }
         2 => {
             if !wl.is_null() {
-                server_kill_window((*wl).window, 0 as ::core::ffi::c_int);
+                server_kill_window((*wl).window_ptr(), 0 as ::core::ffi::c_int);
             }
         }
         3 => {
@@ -2092,7 +2093,7 @@ unsafe fn window_tree_mouse(
         }
         mode_tree_expand_current((*data).data);
         loop_0 = 0 as u_int;
-        wp = window_pane_first((*wl).window);
+        wp = window_pane_first((*wl).window_ptr());
         while !wp.is_null() {
             if loop_0 == (*data).start.wrapping_add(x) {
                 break;

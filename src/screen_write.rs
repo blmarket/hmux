@@ -182,7 +182,7 @@ fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
             }
             return 0;
         }
-        if (*(*(*c).session).curw).window != (*wp).window {
+        if (*(*(*c).session).curw).window_ptr() != (*wp).window {
             return 0;
         }
         if (*wp).layout_cell.is_null() {

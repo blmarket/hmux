@@ -1457,7 +1457,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
             out.write_all(change.value.to_bytes())
         });
     } else if !wl.is_null() {
-        w = (*wl).window;
+        w = (*wl).window_ptr();
         control_notify_write(c, |out| {
             out.write_all(b"%subscription-changed ")?;
             out.write_all(change.name.to_bytes())?;

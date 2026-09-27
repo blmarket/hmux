@@ -163,10 +163,10 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
         target.w = fs.w;
     } else if !fs.wl.is_null() {
         window_add_ref(
-            (*fs.wl).window,
+            (*fs.wl).window_ptr(),
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        target.w = (*fs.wl).window;
+        target.w = (*fs.wl).window_ptr();
     }
     if !fs.wp.is_null() {
         window_pane_add_ref(
@@ -189,7 +189,7 @@ pub unsafe fn event_payload_get_target(
         && session_alive(t.s) != 0
     {
         wl = winlink_find_by_index(&raw mut (*t.s).windows, t.idx);
-        if !wl.is_null() && (*wl).window != t.w {
+        if !wl.is_null() && (*wl).window_ptr() != t.w {
             wl = ::core::ptr::null_mut::<winlink>();
         }
     }
@@ -206,7 +206,7 @@ pub unsafe fn event_payload_get_target(
     if cmd_find_valid_state(&*fs) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if !wl.is_null() && !t.wp.is_null() && window_has_pane((*wl).window, t.wp) != 0 {
+    if !wl.is_null() && !t.wp.is_null() && window_has_pane((*wl).window_ptr(), t.wp) != 0 {
         cmd_find_from_winlink_pane(fs, wl, t.wp, flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;

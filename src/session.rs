@@ -765,12 +765,12 @@ unsafe fn session_fire_window_changed(
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wl).window,
+        (*wl).window_ptr(),
     );
     event_payload_set_window(
         &mut *ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wl).window,
+        (*wl).window_ptr(),
     );
     event_payload_set_int(
         &mut *ep,
@@ -786,7 +786,7 @@ unsafe fn session_fire_window_changed(
         event_payload_set_window(
             &mut *ep,
             b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*old).window,
+            (*old).window_ptr(),
         );
         event_payload_set_int(
             &mut *ep,
@@ -816,13 +816,13 @@ pub unsafe fn session_set_current(mut s: *mut session, mut wl: *mut winlink) -> 
     ) != 0
     {
         if !old.is_null() {
-            window_update_focus((*old).window);
+            window_update_focus((*old).window_ptr());
         }
-        window_update_focus((*wl).window);
+        window_update_focus((*wl).window_ptr());
     }
     winlink_clear_flags(wl);
-    window_update_activity((*wl).window);
-    tty_update_window_offset((*wl).window);
+    window_update_activity((*wl).window_ptr());
+    tty_update_window_offset((*wl).window_ptr());
     session_fire_window_changed(s, wl, old);
     return 0 as ::core::ffi::c_int;
 }
@@ -990,7 +990,7 @@ unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut sessi
     while !wl.is_null() {
         wl2 = winlink_add(&raw mut (*s).windows, (*wl).idx);
         (*wl2).session = s;
-        winlink_set_window(wl2, (*wl).window);
+        winlink_set_window(wl2, (*wl).window_ptr());
         events_fire_winlink(
             b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
             wl2,
@@ -1022,7 +1022,7 @@ unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut sessi
     crate::src::window::winlink_stack_clear(&mut old_lastw);
     while old_windows.storage.is_some() {
         wl = winlinks_minmax(&old_windows, RB_NEGINF);
-        wl2 = winlink_find_by_window_id(&raw mut (*s).windows, (*(*wl).window).id);
+        wl2 = winlink_find_by_window_id(&raw mut (*s).windows, (*(*wl).window_ptr()).id);
         if wl2.is_null() {
             events_fire_winlink(
                 b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1050,7 +1050,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
     while !wl.is_null() {
         wl_new = winlink_add(&raw mut (*s).windows, new_idx);
         (*wl_new).session = s;
-        winlink_set_window(wl_new, (*wl).window);
+        winlink_set_window(wl_new, (*wl).window_ptr());
         (*wl_new).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
         if wl == marked_pane.wl {
             marked_idx = (*wl_new).idx;
@@ -1077,7 +1077,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
             continue;
         }
         (*wl).flags &= !WINLINK_VISITED;
-        wl_new = winlink_find_by_window(&raw mut (*s).windows, (*wl).window);
+        wl_new = winlink_find_by_window(&raw mut (*s).windows, (*wl).window_ptr());
         if !wl_new.is_null() {
             crate::src::window::winlink_stack_append(&mut (*s).lastw, wl_new);
         }
@@ -1105,7 +1105,7 @@ pub unsafe fn session_theme_changed(mut s: *mut session) {
     if !s.is_null() {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
-            wp = window_pane_first((*wl).window);
+            wp = window_pane_first((*wl).window_ptr());
             while !wp.is_null() {
                 (*wp).flags |= PANE_THEMECHANGED;
                 wp = window_pane_next(wp);
@@ -1126,7 +1126,7 @@ pub unsafe fn session_update_history(mut s: *mut session) {
     ) as u_int;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = window_pane_first((*wl).window);
+        wp = window_pane_first((*wl).window_ptr());
         while !wp.is_null() {
             gd = (*wp).base.grid_mut();
             osize = (*gd).hsize;

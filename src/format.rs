@@ -453,7 +453,7 @@ pub unsafe fn format_defaults(
         wl = (*s).curw;
     }
     if wp.is_null() && !wl.is_null() {
-        wp = (*(*wl).window).active;
+        wp = (*(*wl).window_ptr()).active;
     }
     if !c.is_null() {
         format_defaults_client(ft, c);
@@ -485,7 +485,7 @@ pub unsafe fn format_defaults_window(mut ft: *mut format_tree, mut w: *mut windo
 }
 unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: *mut winlink) {
     if (*ft).w.is_null() {
-        format_defaults_window(ft, (*wl).window);
+        format_defaults_window(ft, (*wl).window_ptr());
     }
     (*ft).wl = wl;
 }

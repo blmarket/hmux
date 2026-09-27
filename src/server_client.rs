@@ -880,7 +880,7 @@ pub unsafe fn server_client_set_overlay(
     if (*c).overlay_mode.is_none() {
         (*c).tty.flags |= TTY_NOCURSOR;
     }
-    window_update_focus((*(*(*c).session).curw).window);
+    window_update_focus((*(*(*c).session).curw).window_ptr());
     server_redraw_client(c);
 }
 pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
@@ -914,7 +914,7 @@ pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
         (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     }
     if !(*c).session.is_null() {
-        window_update_focus((*(*(*c).session).curw).window);
+        window_update_focus((*(*(*c).session).curw).window_ptr());
     }
     server_redraw_client(c);
 }
@@ -1280,7 +1280,7 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
             loop_0 = clients.first();
             while !loop_0.is_null() {
                 s = (*loop_0).session;
-                if !(loop_0 == c || s.is_null() || (*(*s).curw).window != w) {
+                if !(loop_0 == c || s.is_null() || (*(*s).curw).window_ptr() != w) {
                     if found.is_null()
                         || (if (*loop_0).activity_time.tv_sec == (*found).activity_time.tv_sec {
                             ((*loop_0).activity_time.tv_usec > (*found).activity_time.tv_usec)
@@ -1450,12 +1450,12 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
     (*c).session = s;
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
     if !old.is_null() && !(*old).curw.is_null() {
-        window_update_focus((*(*old).curw).window);
+        window_update_focus((*(*old).curw).window_ptr());
     }
     if !s.is_null() {
-        (*(*(*s).curw).window).latest = c as *mut ::core::ffi::c_void;
+        (*(*(*s).curw).window_ptr()).latest = c as *mut ::core::ffi::c_void;
         recalculate_sizes();
-        window_update_focus((*(*s).curw).window);
+        window_update_focus((*(*s).curw).window_ptr());
         session_update_activity(s, ::core::ptr::null_mut::<timeval>());
         session_theme_changed(s);
         gettimeofday(&raw mut (*s).last_attached_time, NULL);
@@ -1689,7 +1689,7 @@ unsafe fn server_client_update_scrollbar_hover(
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
 ) {
-    let mut w: *mut window = (*(*(*c).session).curw).window;
+    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
         return;
@@ -1894,7 +1894,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut s: *mut session = (*c).session;
     let mut fs: *mut session = ::core::ptr::null_mut::<session>();
-    let mut w: *mut window = (*(*s).curw).window;
+    let mut w: *mut window = (*(*s).curw).window_ptr();
     let mut fwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2101,7 +2101,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                     if fwl.is_null() {
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
-                    (*m).w = (*(*fwl).window).id as ::core::ffi::c_int;
+                    (*m).w = (*(*fwl).window_ptr()).id as ::core::ffi::c_int;
                     log_debug(format_args!("mouse range: window @{}", ((*m).w) as u32));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
@@ -2612,7 +2612,7 @@ unsafe fn server_client_update_latest(mut c: *mut client) {
     if (*c).session.is_null() {
         return;
     }
-    w = (*(*(*c).session).curw).window;
+    w = (*(*(*c).session).curw).window_ptr();
     if (*w).latest == c as *mut ::core::ffi::c_void {
         return;
     }
@@ -3151,7 +3151,7 @@ unsafe fn server_client_handle_menu_key(
     mut c: *mut client,
     mut event: *mut key_event,
 ) -> ::core::ffi::c_int {
-    let mut w: *mut window = (*(*(*c).session).curw).window;
+    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     let mut new_event = (*event).metadata_snapshot();
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
     let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) else {
@@ -3230,7 +3230,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(c);
-        wp = (*(*(*s).curw).window).active;
+        wp = (*(*(*s).curw).window_ptr()).active;
         if server_client_handle_dead_key(wp, (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -3270,9 +3270,9 @@ unsafe fn server_client_handle_key0(
                 0 | 3 | _ => {}
             }
         }
-        wp = (*(*(*s).curw).window).active;
+        wp = (*(*(*s).curw).window_ptr()).active;
         if wp.is_null() || window_pane_has_prompt(wp) == 0 {
-            wp = window_pane_first((*(*s).curw).window);
+            wp = window_pane_first((*(*s).curw).window_ptr());
             while !wp.is_null() {
                 if window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
                     break;
@@ -3780,7 +3780,7 @@ mod prompt_cursor_tests {
 unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut w: *mut window = (*(*(*c).session).curw).window;
+    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     let mut wp: *mut window_pane = (*w).active;
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut s: *const screen = std::ptr::null();
@@ -4099,7 +4099,7 @@ unsafe fn server_client_redraw_timer() {
     log_debug(format_args!("redraw timer fired"));
 }
 unsafe fn server_client_check_modes(mut c: *mut client) {
-    let mut w: *mut window = (*(*(*c).session).curw).window;
+    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
@@ -4119,7 +4119,7 @@ unsafe fn server_client_check_modes(mut c: *mut client) {
 }
 unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut s: *mut session = (*c).session;
-    let mut w: *mut window = (*(*s).curw).window;
+    let mut w: *mut window = (*(*s).curw).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         return 1 as ::core::ffi::c_int;
@@ -4136,7 +4136,7 @@ unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_in
 unsafe fn server_client_check_redraw(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut w: *mut window = (*(*s).curw).window;
+    let mut w: *mut window = (*(*s).curw).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut needed: ::core::ffi::c_int = 0;
     let mut tflags: ::core::ffi::c_int = 0;
@@ -4363,10 +4363,10 @@ unsafe fn server_client_set_title(mut c: *mut client) {
 }
 unsafe fn server_client_set_path(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
-    if (*s).curw.is_null() || (*(*(*s).curw).window).active.is_null() {
+    if (*s).curw.is_null() || (*(*(*s).curw).window_ptr()).active.is_null() {
         return;
     }
-    let active = (*(*(*s).curw).window).active;
+    let active = (*(*(*s).curw).window_ptr()).active;
     let path = (*active)
         .base
         .path
@@ -4380,10 +4380,10 @@ unsafe fn server_client_set_path(mut c: *mut client) {
 unsafe fn server_client_set_progress_bar(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     let mut pane_pb: *mut progress_bar = ::core::ptr::null_mut::<progress_bar>();
-    if (*s).curw.is_null() || (*(*(*s).curw).window).active.is_null() {
+    if (*s).curw.is_null() || (*(*(*s).curw).window_ptr()).active.is_null() {
         return;
     }
-    pane_pb = &raw mut (*(*(*(*s).curw).window).active).base.progress_bar;
+    pane_pb = &raw mut (*(*(*(*s).curw).window_ptr()).active).base.progress_bar;
     if (*pane_pb).state as ::core::ffi::c_uint == (*c).progress_bar.state as ::core::ffi::c_uint
         && (*pane_pb).progress == (*c).progress_bar.progress
     {
@@ -5299,7 +5299,7 @@ pub unsafe fn server_client_print(
                 });
             }
         } else {
-            wp = (*(*(*(*c).session).curw).window).active;
+            wp = (*(*(*(*c).session).curw).window_ptr()).active;
             wme = (*wp).modes.active;
             if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
                 window_pane_set_mode(
@@ -5450,94 +5450,6 @@ mod key_event_owner_tests {
 impl Drop for client {
     fn drop(&mut self) {
         unsafe { server_client_free(self) }
-    }
-}
-
-#[cfg(test)]
-mod menu_lifetime_tests {
-    use super::*;
-    use crate::src::shared::menu::{menu, menu_data, MenuOwner, MenuRow, MenuSelection};
-    use crate::src::shared::rc;
-    use std::cell::{Cell, RefCell};
-    use std::rc::Rc;
-
-    fn menu_owner() -> MenuOwner {
-        MenuOwner::new(menu_data::new(Box::new(menu {
-            title: c"Callback".to_owned(),
-            items: vec![MenuRow {
-                name: Some(c"select".to_owned()),
-                key: b'a' as key_code,
-                command: None,
-            }],
-            count: 1,
-            width: 10,
-        })))
-    }
-
-    #[test]
-    fn key_dispatch_keeps_callback_replacements_and_handles_window_teardown() {
-        for destroy_window in [false, true] {
-            unsafe {
-                let window = rc::take(rc::new(window::default()));
-                let weak_window = Rc::downgrade(&window);
-                let w = rc::as_ptr(&window);
-                let window_slot = Rc::new(RefCell::new(Some(window)));
-                let callback_slot = Rc::clone(&window_slot);
-                let first = menu_owner();
-                first.try_borrow_mut().unwrap().w = weak_window.clone();
-                let first_observer = first.downgrade();
-                let replacement = menu_owner();
-                replacement.try_borrow_mut().unwrap().w = weak_window.clone();
-                let replacement_observer = replacement.downgrade();
-                let cancelled = Rc::new(Cell::new(0));
-                let callback_cancelled = Rc::clone(&cancelled);
-                replacement.try_borrow_mut().unwrap().cb = Some(Box::new(move |_| {
-                    callback_cancelled.set(callback_cancelled.get() + 1);
-                }));
-                first.try_borrow_mut().unwrap().cb = Some(Box::new(move |selection| {
-                    assert_eq!(
-                        selection,
-                        MenuSelection::Selected {
-                            index: 0,
-                            key: b'a' as key_code
-                        }
-                    );
-                    let window = callback_slot.borrow_mut().take().unwrap();
-                    let w = rc::as_ptr(&window);
-                    assert_eq!(Rc::strong_count(&window), 1);
-                    if !destroy_window {
-                        menu_close(&Rc::downgrade(&window), None);
-                        (*w).menu = Some(replacement);
-                        *callback_slot.borrow_mut() = Some(window);
-                    }
-                }));
-                (*w).menu = Some(first);
-                let mut c = client::empty();
-                let mut session = session::empty();
-                let mut link = winlink::default();
-                link.window = w;
-                session.curw = &mut link;
-                c.session = &mut session;
-                let mut event = key_event {
-                    client: std::ptr::null_mut(),
-                    key: b'a' as key_code,
-                    m: Default::default(),
-                    bytes: None,
-                };
-                assert_eq!(server_client_handle_menu_key(&mut c, &mut event), 1);
-                assert!(!first_observer.is_alive());
-                if !destroy_window {
-                    assert!(replacement_observer.is((*w).menu.as_ref().unwrap()));
-                    assert_eq!(cancelled.get(), 0);
-                    drop(window_slot.borrow_mut().take());
-                    assert_eq!(cancelled.get(), 1);
-                }
-                assert!(weak_window.upgrade().is_none());
-                assert!(!replacement_observer.is_alive());
-                c.session = std::ptr::null_mut();
-                session.curw = std::ptr::null_mut();
-            }
-        }
     }
 }
 

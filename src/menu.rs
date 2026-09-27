@@ -617,7 +617,7 @@ pub unsafe fn menu_display(
     cb: menu_choice_cb,
 ) {
     let w = if fs.is_null() {
-        (*(*(*c).session).curw).window
+        (*(*(*c).session).curw).window_ptr()
     } else {
         (*fs).w
     };

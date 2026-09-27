@@ -681,7 +681,7 @@ pub unsafe fn winlink_find_by_window(mut wwl: *mut winlinks, mut w: *mut window)
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
-        if (*wl).window == w {
+        if (*wl).window_ptr() == w {
             return wl;
         }
         wl = winlinks_next(&*wl);
@@ -695,7 +695,7 @@ pub unsafe fn winlink_find_by_index(
     let mut wl: winlink = winlink {
         idx: 0,
         session: ::core::ptr::null_mut::<session>(),
-        window: ::core::ptr::null_mut::<window>(),
+        window_owner: None,
         flags: 0,
         entry: winlink_entry { owner: None },
     };
@@ -709,7 +709,7 @@ pub unsafe fn winlink_find_by_window_id(mut wwl: *mut winlinks, mut id: u_int) -
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
-        if (*(*wl).window).id == id {
+        if (*(*wl).window_ptr()).id == id {
             return wl;
         }
         wl = winlinks_next(&*wl);
@@ -761,7 +761,7 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
     let owner = refbox::RefBox::new(winlink {
         idx,
         session: std::ptr::null_mut(),
-        window: std::ptr::null_mut(),
+        window_owner: None,
         flags: 0,
         entry: winlink_entry { owner: None },
     });
@@ -782,32 +782,34 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
     (*wl).entry.owner = Some(observer);
     return wl;
 }
-pub unsafe fn winlink_set_window(mut wl: *mut winlink, mut w: *mut window) {
-    if !(*wl).window.is_null() {
-        window_winlinks_remove((*wl).window, wl);
-        window_remove_ref(
-            (*wl).window,
-            b"winlink_set_window\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+// Keep the field published through the close notification. Its callback can
+// inspect the winlink or retain the window. Detach only after that notification,
+// then drop the consumed Rc without firing the notification twice.
+unsafe fn winlink_release_window(wl: *mut winlink, from: &CStr) {
+    let w = (*wl).window_ptr();
+    window_before_release(w, from.as_ptr());
+    let mut owner = (*wl).window_owner.take().expect("winlink window owner");
+    drop(owner.0.take());
+}
+
+pub unsafe fn winlink_set_window(wl: *mut winlink, w: *mut window) {
+    if !(*wl).window_ptr().is_null() {
+        window_winlinks_remove((*wl).window_ptr(), wl);
+        winlink_release_window(wl, c"winlink_set_window");
     }
-    (*wl).window = w;
+    (*wl).window_owner = Some(crate::src::shared::window::WindowOwner::retain(
+        w, c"winlink_set_window",
+    ));
     window_winlinks_append(w, wl);
-    window_add_ref(
-        w,
-        b"winlink_set_window\0" as *const u8 as *const ::core::ffi::c_char,
-    );
 }
 pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
     if !(*wl).session.is_null() {
         winlink_stack_remove(&raw mut (*(*wl).session).lastw, wl);
     }
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     if !w.is_null() {
         window_winlinks_remove(w, wl);
-        window_remove_ref(
-            w,
-            b"winlink_remove\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        winlink_release_window(wl, c"winlink_remove");
     }
     // Window teardown above may reenter; borrow the owning map only afterward.
     let idx = (*wl).idx;
@@ -1169,7 +1171,7 @@ pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) {
         log_cstr((from) as *const _)
     ));
 }
-pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char) {
+unsafe fn window_before_release(w: *mut window, from: *const ::core::ffi::c_char) {
     // Notify while a strong reference still exists: callbacks may retain w.
     if crate::src::shared::rc::strong_count(w) == 1 {
         events_fire_window(c"window-closed".as_ptr(), w);
@@ -1179,6 +1181,9 @@ pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char
         ((*w).id) as u32,
         log_cstr((from) as *const _)
     ));
+}
+pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char) {
+    window_before_release(w, from);
     crate::src::shared::rc::release(w);
 }
 pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
@@ -1369,7 +1374,7 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
                 if !(*c).session.is_null()
                     && (*(*c).session).attached != 0 as u_int
                     && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
-                    && (*(*(*c).session).curw).window == (*wp).window
+                    && (*(*(*c).session).curw).window_ptr() == (*wp).window
                     && (*c).overlay_draw.is_none()
                     && (*(*wp).window).menu.is_none()
                 {
@@ -2191,12 +2196,12 @@ pub unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh9 as usize] = 'M' as i32 as ::core::ffi::c_char;
     }
-    if !(*(*wl).window).modal.is_null() {
+    if !(*(*wl).window_ptr()).modal.is_null() {
         let fresh10 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh10 as usize] = 'O' as i32 as ::core::ffi::c_char;
     }
-    if (*(*wl).window).flags & WINDOW_ZOOMED != 0 {
+    if (*(*wl).window_ptr()).flags & WINDOW_ZOOMED != 0 {
         let fresh11 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh11 as usize] = 'Z' as i32 as ::core::ffi::c_char;
@@ -3982,7 +3987,7 @@ pub unsafe fn window_pane_stack_remove(
 }
 pub unsafe fn winlink_clear_flags(mut wl: *mut winlink) {
     let mut loop_0: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let w = (*wl).window;
+    let w = (*wl).window_ptr();
     (*w).flags &= !WINDOW_ALERTFLAGS;
     loop_0 = window_winlinks_first(w);
     while !loop_0.is_null() {

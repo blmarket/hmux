@@ -8,8 +8,8 @@ Tests and foreign ABI records are included. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields, their disposition, and the lifecycle reason. **67 fields were migrated;
-253 remain raw.** A skipped candidate is not a claim that its current raw API is
+fields, their disposition, and the lifecycle reason. **69 fields were migrated;
+251 remain raw.** A skipped candidate is not a claim that its current raw API is
 safe, nor that migration is impossible. It means this review did not establish
 the ownership, aliasing, and callback guarantees needed for that substitution.
 
@@ -72,6 +72,9 @@ disposition for every remaining field and rejects stale skipped entries.
 | `cmd_run_shell_data.s`, `monitor_set.session` | `Option<SessionOwner>` holds the existing retained session reference and preserves deferred session release and diagnostic labels. Teardown takes it at the same point as before. Current/last-session observers in clients remain raw. |
 | `window_switch_modedata.matches` | Row indices into the mode-owned list. Rebuild clears the indices before replacing rows; bounded filtering/sorting borrows end before rendering or commands. Filtering, ranking, list growth and replacement are covered by a regression. |
 
+| `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
+| `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |
+
 Prompt option setup now takes a mutable session borrow because style application
 updates the option cache. It previously hid that mutation behind a shared session
 reference and raw option pointer.
@@ -95,8 +98,8 @@ The TSV gives a separate decision for every field. The main blockers are:
 
 ## Validation
 
-`cargo test --workspace`: **599 passed**. The inventory coverage check passes
-for all **253** remaining fields, and `git diff --check` is clean.
+`cargo test --workspace`: **597 passed**. The inventory coverage check passes
+for all **251** remaining fields, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -106,6 +109,8 @@ ownership changes also pass their focused Valgrind groups. The retained-client
 follow-up passes **19** focused Valgrind tests covering deferred dispatch/cancellation,
 popup cleanup, format callbacks/jobs, and load-buffer cancellation. Session-owner
 dispatch/cancellation and monitor teardown also pass focused Valgrind checks.
+The three window-link lifecycle tests pass under Valgrind after the test-only
+ownership follow-up, including last-close inspection and retaining from callbacks.
 
 New regressions cover constructor-failure and out-of-order terminal unlinking,
 stream callback captures accessing retained state during cleanup, and a queue
@@ -131,9 +136,10 @@ or belong to the mixed mode-payload and intrusive job protocols documented in th
 inventory. No remaining field has a proven uniform Box transfer left unmigrated.
 The retained-model review also distinguishes actual retained references from
 indexes and observers: file, pane and window indexes acquire no independent
-reference; session indexes accept caller-owned Boxes; winlinks can also observe
-stack-owned windows. Their ownership cannot be inferred from the runtime model's
-usual Rc allocation alone.
+reference; session index removal and rename are separate from session release.
+The follow-up review excludes test-only ownership inconsistencies: runtime
+winlinks consistently own retained windows and option entries use static metadata,
+so those fields are now migrated and the conflicting fixtures removed.
 
 Every original field has a migration or skip decision in the TSV. The generated
 external report contains a reason for each remaining field. The scanner checks
@@ -141,3 +147,10 @@ that these decisions cover the current declarations exactly; it is a coverage
 check, not proof that raw observers are safe. The skips use the requested rule:
 leave the field raw where its existing ownership and callback behavior do not
 establish a valid replacement. `src/compat/` is unchanged.
+
+The test-only inconsistency follow-up removes the synthetic option-array descriptor
+regression, the stack-window viewport fixture, and the menu-dispatch fixture that
+installed an unretained window and destroyed it while a winlink still pointed to it.
+Session-index tests remain: the index's nonowning contract is also used by production
+rename and destruction, so their external ownership does not block a migration
+that would otherwise be justified.

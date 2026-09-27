@@ -73,8 +73,8 @@ unsafe fn cmd_kill_pane_all(
     let mut wp: *mut window_pane = (*target).wp;
     let mut loopwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut tmpwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    server_unzoom_window((*wl).window);
-    loopwp = window_pane_first((*wl).window);
+    server_unzoom_window((*wl).window_ptr());
+    loopwp = window_pane_first((*wl).window_ptr());
     while !loopwp.is_null() && {
         tmpwp = window_pane_next(loopwp);
         1 as ::core::ffi::c_int != 0
@@ -83,12 +83,12 @@ unsafe fn cmd_kill_pane_all(
             if !(cmd_kill_pane_filter(item, s, wl, loopwp, filter) == 0) {
                 server_client_remove_pane(loopwp);
                 layout_close_pane(loopwp);
-                window_remove_pane((*wl).window, loopwp);
+                window_remove_pane((*wl).window_ptr(), loopwp);
             }
         }
         loopwp = tmpwp;
     }
-    server_redraw_window((*wl).window);
+    server_redraw_window((*wl).window_ptr());
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_pane_filter(

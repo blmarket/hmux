@@ -161,7 +161,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             );
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
-                if !(strcmp((*(*wl).window).name.as_ptr(), expanded.as_ptr())
+                if !(strcmp((*(*wl).window_ptr()).name.as_ptr(), expanded.as_ptr())
                     != 0 as ::core::ffi::c_int)
                 {
                     if new_wl.is_null() {
@@ -186,7 +186,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             server_redraw_session(s);
         }
         if !c.is_null() && !(*c).session.is_null() {
-            (*(*(*s).curw).window).latest = c as *mut ::core::ffi::c_void;
+            (*(*(*s).curw).window_ptr()).latest = c as *mut ::core::ffi::c_void;
         }
         recalculate_sizes();
         return CMD_RETURN_NORMAL;
@@ -253,7 +253,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 template = NEW_WINDOW_TEMPLATE.as_ptr();
             }
             let cp =
-                format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window).active);
+                format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window_ptr()).active);
             cmdq_print(item, |out| out.write_all(cp.as_bytes()));
         }
         cmd_find_from_winlink(&raw mut fs, new_wl, 0 as ::core::ffi::c_int);

@@ -179,7 +179,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         });
     }
     if !c.is_null() && !(*c).session.is_null() {
-        (*(*(*s).curw).window).latest = c as *mut ::core::ffi::c_void;
+        (*(*(*s).curw).window_ptr()).latest = c as *mut ::core::ffi::c_void;
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

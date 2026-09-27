@@ -132,7 +132,7 @@ unsafe fn cmd_list_panes_window(
     filter = args_get(args, 'f' as i32 as u_char);
     sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let l = sort_get_panes_window((*wl).window, &raw mut sort_crit);
+    let l = sort_get_panes_window((*wl).window_ptr(), &raw mut sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
     while i < n {

@@ -521,7 +521,7 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
                 return true;
             }
             if current != 0 {
-                (*(*session).curw).window != w
+                (*(*session).curw).window_ptr() != w
             } else {
                 session_has(session, w) == 0
             }

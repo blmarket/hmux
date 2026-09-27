@@ -237,8 +237,8 @@ unsafe fn sort_winlink_cmp(
     wlb: *mut winlink,
     sort_crit: &sort_criteria,
 ) -> Ordering {
-    let mut wa: *mut window = (*wla).window;
-    let mut wb: *mut window = (*wlb).window;
+    let mut wa: *mut window = (*wla).window_ptr();
+    let mut wb: *mut window = (*wlb).window_ptr();
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {

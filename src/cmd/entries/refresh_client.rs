@@ -265,7 +265,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         if args_has(args, 'c' as i32 as u_char) != 0 {
             (*tc).pan_window = NULL;
         } else {
-            w = (*(*(*tc).session).curw).window;
+            w = (*(*(*tc).session).curw).window_ptr();
             if (*tc).pan_window != w as *mut ::core::ffi::c_void {
                 (*tc).pan_window = w as *mut ::core::ffi::c_void;
                 (*tc).pan_ox = (*tty).oox;

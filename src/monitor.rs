@@ -336,7 +336,7 @@ unsafe fn monitor_check_all_windows_one(
     mut wl: *mut winlink,
 ) {
     let mut s: *mut session = monitor_get_session(ms);
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
     let mut find: monitor_window = monitor_window {
         window: 0,
@@ -441,7 +441,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     }
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = window_pane_first((*wl).window);
+        wp = window_pane_first((*wl).window_ptr());
         while !wp.is_null() {
             ft = monitor_create_formats(c, s, wl, wp);
             me = monitor_items_minmax(&(*ms).items);

@@ -644,17 +644,17 @@ pub unsafe fn cmd_mouse_pane(
         return ::core::ptr::null_mut::<window_pane>();
     }
     if (*m).wp == -(1 as ::core::ffi::c_int) {
-        wp = (*(*wl).window).active;
+        wp = (*(*wl).window_ptr()).active;
     } else {
         wp = window_pane_find_by_id((*m).wp as u_int);
         if wp.is_null() {
             return ::core::ptr::null_mut::<window_pane>();
         }
-        if window_has_pane((*wl).window, wp) == 0 {
+        if window_has_pane((*wl).window_ptr(), wp) == 0 {
             return ::core::ptr::null_mut::<window_pane>();
         }
     }
-    if !(*(*wl).window).modal.is_null() && wp != (*(*wl).window).modal {
+    if !(*(*wl).window_ptr()).modal.is_null() && wp != (*(*wl).window_ptr()).modal {
         return ::core::ptr::null_mut::<window_pane>();
     }
     if !wlp.is_null() {

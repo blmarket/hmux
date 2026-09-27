@@ -78,10 +78,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut yoff: u_int = 0;
     let mut src_idx: ::core::ffi::c_int = 0;
     let mut dst_idx: ::core::ffi::c_int = 0;
-    dst_w = (*(*target).wl).window;
+    dst_w = (*(*target).wl).window_ptr();
     dst_wp = (*target).wp;
     dst_idx = (*(*target).wl).idx;
-    src_w = (*(*source).wl).window;
+    src_w = (*(*source).wl).window_ptr();
     src_wp = (*source).wp;
     src_idx = (*(*source).wl).idx;
     if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {

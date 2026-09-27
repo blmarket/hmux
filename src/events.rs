@@ -244,7 +244,7 @@ pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: 
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wl).window,
+        (*wl).window_ptr(),
     );
     event_payload_set_int(
         &mut *ep,

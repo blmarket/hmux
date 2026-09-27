@@ -1258,7 +1258,7 @@ pub unsafe fn tty_repeat_space(tty: *mut tty, mut n: u_int) {
 }
 pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
     let mut c: *mut client = (*tty).client;
-    let mut w: *mut window = (*(*(*c).session).curw).window;
+    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(&*c)) < (*w).sy)
         as ::core::ffi::c_int;
 }
@@ -1272,7 +1272,7 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     }
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
-    let w = (*(*c.session).curw).window;
+    let w = (*(*c.session).curw).window_ptr();
     let wp = (*w).active;
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
@@ -1334,7 +1334,7 @@ pub unsafe fn tty_update_window_offset(mut w: *mut window) {
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window == w
+            && (*(*(*c).session).curw).window_ptr() == w
         {
             tty_update_client_offset(c);
         }

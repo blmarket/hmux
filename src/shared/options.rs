@@ -83,7 +83,7 @@ pub struct options_array_item {
 pub struct options_entry {
     pub owner: *mut options,
     pub name: ::std::ffi::CString,
-    pub tableentry: *const options_table_entry,
+    pub tableentry: Option<&'static options_table_entry>,
     pub value: options_value,
     pub cached: ::core::ffi::c_int,
     pub style: style,
@@ -215,5 +215,11 @@ impl options_table_entry {
     }
     pub fn unit_ptr(&self) -> *const std::ffi::c_char {
         self.unit.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
+    }
+}
+
+impl options_entry {
+    pub fn tableentry_ptr(&self) -> *const options_table_entry {
+        self.tableentry.map_or(std::ptr::null(), |entry| entry)
     }
 }

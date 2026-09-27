@@ -179,7 +179,7 @@ pub unsafe fn server_redraw_window(mut w: *mut window) {
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window == w
+            && (*(*(*c).session).curw).window_ptr() == w
         {
             server_redraw_client(c);
         }
@@ -192,7 +192,7 @@ pub unsafe fn server_redraw_window_menu(mut w: *mut window) {
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window == w
+            && (*(*(*c).session).curw).window_ptr() == w
         {
             (*c).flags |= CLIENT_REDRAWMENU as uint64_t;
         }
@@ -205,7 +205,7 @@ pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window == w
+            && (*(*(*c).session).curw).window_ptr() == w
         {
             (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
         }
@@ -376,7 +376,7 @@ pub unsafe fn server_link_window(
         dstwl = winlink_find_by_index(&raw mut (*dst).windows, dstidx);
     }
     if !dstwl.is_null() {
-        if (*dstwl).window == (*srcwl).window {
+        if (*dstwl).window_ptr() == (*srcwl).window_ptr() {
             return Err(std::ffi::CString::new(format!("same index: {dstidx}"))
                 .expect("numeric diagnostic contains no NUL"));
         }
@@ -401,7 +401,7 @@ pub unsafe fn server_link_window(
                 b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
             )) as ::core::ffi::c_int;
     }
-    dstwl = session_attach(dst, (*srcwl).window, dstidx)?;
+    dstwl = session_attach(dst, (*srcwl).window_ptr(), dstidx)?;
     if marked_pane.wl == srcwl {
         marked_pane.wl = dstwl;
     }

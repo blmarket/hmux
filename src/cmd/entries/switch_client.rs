@@ -177,8 +177,8 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         if cmdq_get_client(item).is_null() {
             return CMD_RETURN_NORMAL;
         }
-        if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window).active {
-            w = (*wl).window;
+        if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window_ptr()).active {
+            w = (*wl).window_ptr();
             if !(*w).modal.is_null() && wp != (*w).modal {
                 visible = 1 as ::core::ffi::c_int;
             } else {

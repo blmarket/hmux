@@ -52,7 +52,7 @@ pub struct winlinks {
 pub struct winlink {
     pub idx: ::core::ffi::c_int,
     pub session: *mut session,
-    pub window: *mut window,
+    pub window_owner: Option<WindowOwner>,
     pub flags: ::core::ffi::c_int,
     pub entry: winlink_entry,
 }
@@ -236,5 +236,39 @@ impl window {
         self.saved_layout_root
             .as_deref_mut()
             .map_or(std::ptr::null_mut(), |root| root)
+    }
+}
+
+/// One existing window reference, including its last-close notification policy.
+pub struct WindowOwner(pub(crate) Option<std::rc::Rc<std::cell::UnsafeCell<window>>>);
+
+impl WindowOwner {
+    /// # Safety
+    /// The pointer must name a live Rc-owned window.
+    pub unsafe fn retain(ptr: *mut window, from: &std::ffi::CStr) -> Self {
+        crate::src::window::window_add_ref(ptr, from.as_ptr());
+        Self(Some(super::rc::take(ptr)))
+    }
+
+    pub fn as_ptr(&self) -> *mut window {
+        super::rc::as_ptr(self.0.as_ref().expect("live window owner"))
+    }
+}
+
+impl Drop for WindowOwner {
+    fn drop(&mut self) {
+        if let Some(owner) = self.0.take() {
+            unsafe {
+                crate::src::window::window_remove_ref(
+                    super::rc::into_raw(owner), c"WindowOwner::drop".as_ptr(),
+                );
+            }
+        }
+    }
+}
+
+impl winlink {
+    pub fn window_ptr(&self) -> *mut window {
+        self.window_owner.as_ref().map_or(std::ptr::null_mut(), WindowOwner::as_ptr)
     }
 }

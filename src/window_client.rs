@@ -416,7 +416,7 @@ unsafe fn window_client_draw_info(
 ) {
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut s: *mut screen = (*ctx).s;
-    let mut w: *mut window = (*(*(*c).session).curw).window;
+    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -546,7 +546,7 @@ unsafe fn window_client_draw(
         window_client_draw_info(item, ctx, sx, sy);
         return;
     }
-    w = (*(*session).curw).window;
+    w = (*(*session).curw).window_ptr();
     wp = (*w).active;
     if (*data).hide_preview_this_pane != 0 && wp == (*data).wp {
         if !window_pane_stack_first(w).is_null() {

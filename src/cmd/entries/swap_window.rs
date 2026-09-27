@@ -59,16 +59,17 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         });
         return CMD_RETURN_ERROR;
     }
-    if (*wl_dst).window == (*wl_src).window {
+    if (*wl_dst).window_ptr() == (*wl_src).window_ptr() {
         return CMD_RETURN_NORMAL;
     }
-    w_dst = (*wl_dst).window;
-    w_src = (*wl_src).window;
+    w_dst = (*wl_dst).window_ptr();
+    w_src = (*wl_src).window_ptr();
     window_winlinks_remove(w_dst, wl_dst);
     window_winlinks_remove(w_src, wl_src);
-    (*wl_dst).window = w_src;
+    if wl_dst != wl_src {
+        std::mem::swap(&mut (*wl_dst).window_owner, &mut (*wl_src).window_owner);
+    }
     window_winlinks_append(w_src, wl_dst);
-    (*wl_src).window = w_dst;
     window_winlinks_append(w_dst, wl_src);
     if marked_pane.wl == wl_src {
         marked_pane.wl = wl_dst;

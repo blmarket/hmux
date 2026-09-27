@@ -229,7 +229,7 @@ unsafe fn redraw_get_window_offset(c: &mut client) -> tty_window_view {
 }
 unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx) {
     let mut s: *mut session = (*c).session;
-    let mut w: *mut window = (*(*s).curw).window;
+    let mut w: *mut window = (*(*s).curw).window_ptr();
     (*bctx).c = c;
     (*bctx).w = w;
     let view = redraw_get_window_offset(&mut *c);
@@ -978,7 +978,7 @@ unsafe fn redraw_build_cells<'a>(mut bctx: *mut redraw_build_ctx<'a>, cells: &'a
 }
 unsafe fn redraw_make_scene(mut c: *mut client) -> Option<Box<redraw_scene>> {
     let mut s: *mut session = (*c).session;
-    let mut w: *mut window = (*(*s).curw).window;
+    let mut w: *mut window = (*(*s).curw).window_ptr();
     let mut bctx: redraw_build_ctx = redraw_build_ctx {
         c: ::core::ptr::null_mut::<client>(),
         w: ::core::ptr::null_mut::<window>(),
@@ -1088,7 +1088,7 @@ pub unsafe fn redraw_invalidate_all_scenes() {
     }
 }
 unsafe fn redraw_get_scene(c: *mut client) -> Option<Box<redraw_scene>> {
-    let w = (*(*(*c).session).curw).window;
+    let w = (*(*(*c).session).curw).window_ptr();
     let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(&mut *c);
     let scene = (*c).redraw_scene.take();
     let reason = match scene.as_deref() {
@@ -1727,7 +1727,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> redraw_draw_ctx<'_> {
     let s = (*c).session;
     let mut dctx = redraw_draw_ctx {
         scene,
-        active: (*(*(*s).curw).window).active,
+        active: (*(*(*s).curw).window_ptr()).active,
         marked: std::ptr::null_mut(),
         status_lines: status_line_size(&*c),
         pane_lines: PANE_LINES_SINGLE,
@@ -1827,7 +1827,7 @@ unsafe fn redraw_draw_pane_prompt(dctx: &mut redraw_draw_ctx<'_>, mut wp: *mut w
 }
 unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: ::core::ffi::c_int) {
     let s = (*c).session;
-    let w = (*(*s).curw).window;
+    let w = (*(*s).curw).window_ptr();
     let mut redraw = 0;
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
         return;
@@ -1874,7 +1874,7 @@ unsafe fn redraw_draw_scene(
     scene: &redraw_scene,
 ) {
     let mut s: *mut session = (*c).session;
-    let mut w: *mut window = (*(*s).curw).window;
+    let mut w: *mut window = (*(*s).curw).window_ptr();
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2088,7 +2088,7 @@ pub unsafe fn redraw_screen(mut c: *mut client) {
         if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if (*(*(*(*c).session).curw).window).menu.is_some() {
+        if (*(*(*(*c).session).curw).window_ptr()).menu.is_some() {
             flags |= REDRAW_MENU;
         }
         if flags != 0 as ::core::ffi::c_int {
@@ -2098,7 +2098,7 @@ pub unsafe fn redraw_screen(mut c: *mut client) {
 }
 pub unsafe fn redraw_pane(mut c: *mut client, mut wp: *mut window_pane) {
     redraw_draw(c, wp, REDRAW_PANE | REDRAW_PANE_SCROLLBAR);
-    if (*(*(*(*c).session).curw).window).menu.is_some() {
+    if (*(*(*(*c).session).curw).window_ptr()).menu.is_some() {
         redraw_draw(c, ::core::ptr::null_mut::<window_pane>(), REDRAW_MENU);
     }
 }

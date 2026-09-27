@@ -134,7 +134,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut src_s: *mut session = (*source).s;
     let mut dst_s: *mut session = (*target).s;
     let mut wp: *mut window_pane = (*source).wp;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut old_w: *mut window = w;
     let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = (*target).idx;

@@ -222,7 +222,7 @@ pub unsafe fn window_pane_get_border_style(
     let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
-    if wp == (*(*(*(*c).session).curw).window).active {
+    if wp == (*(*(*(*c).session).curw).window_ptr()).active {
         flag = &raw mut (*wp).active_border_gc_set;
         saved = &raw mut (*wp).active_border_gc;
         option = b"pane-active-border-style\0" as *const u8 as *const ::core::ffi::c_char;

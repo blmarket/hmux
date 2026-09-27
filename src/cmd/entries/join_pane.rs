@@ -107,7 +107,7 @@ unsafe fn cmd_join_pane_place(
     mut wp: *mut window_pane,
     mut position: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wx: ::core::ffi::c_int = (*w).sx as ::core::ffi::c_int;
@@ -360,7 +360,7 @@ unsafe fn cmd_join_pane_move(
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
 ) -> cmd_retval {
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut argval: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -490,7 +490,7 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     if window_pane_is_floating(wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
-    w = (*wl).window;
+    w = (*wl).window_ptr();
     window_redraw_active_switch(w, wp);
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
@@ -514,7 +514,7 @@ unsafe fn cmd_join_pane_mouse_move(mut c: *mut client, mut m: *mut mouse_event) 
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window;
+    w = (*wl).window_ptr();
     lc = (*wp).layout_cell as *mut layout_cell;
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
     x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
@@ -545,7 +545,7 @@ unsafe fn cmd_join_pane_zindex(
     mut wp: *mut window_pane,
     mut s: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;
@@ -649,7 +649,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     dst_s = (*target).s;
     dst_wl = (*target).wl;
     dst_wp = (*target).wp;
-    dst_w = (*dst_wl).window;
+    dst_w = (*dst_wl).window_ptr();
     dst_idx = (*dst_wl).idx;
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_pane_entry) {
         if args_has(args, 'M' as i32 as u_char) != 0 {
@@ -682,7 +682,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     src_wl = (*source).wl;
     src_wp = (*source).wp;
-    src_w = (*src_wl).window;
+    src_w = (*src_wl).window_ptr();
     if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;

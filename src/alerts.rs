@@ -109,7 +109,7 @@ pub unsafe fn alerts_check_session(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        alerts_check_all((*wl).window);
+        alerts_check_all((*wl).window_ptr());
         wl = winlinks_next(&*wl);
     }
 }

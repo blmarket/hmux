@@ -49,7 +49,7 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wl: *mut winlink = (*target).wl;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut s: *mut session = (*target).s;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;

@@ -70,7 +70,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut wl: *mut winlink = (*target).wl;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -268,7 +268,7 @@ unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut wl: *mut winlink = (*target).wl;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut c: *mut client = cmdq_get_client(item);
     let mut s: *mut session = (*target).s;
     if (*event).m.valid == 0 {
@@ -322,7 +322,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(mut c: *mut client, mut m: 
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window;
+    w = (*wl).window_ptr();
     lc = (*wp).layout_cell as *mut layout_cell;
     sx = (*wp).sx as ::core::ffi::c_int;
     sy = (*wp).sy as ::core::ffi::c_int;
@@ -466,7 +466,7 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(mut c: *mut client, mut m: *mut mou
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window;
+    w = (*wl).window_ptr();
     y = (*m).y.wrapping_add((*m).oy);
     x = (*m).x.wrapping_add((*m).ox);
     if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {

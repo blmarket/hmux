@@ -231,7 +231,7 @@ unsafe fn format_cb_window_linked_sessions_list(mut ft: *mut format_tree) -> Opt
     if (*ft).wl.is_null() {
         return None;
     }
-    w = (*(*ft).wl).window;
+    w = (*(*ft).wl).window_ptr();
     wl = window_winlinks_first(w);
     while !wl.is_null() {
         if !names.is_empty() {
@@ -253,7 +253,7 @@ unsafe fn format_cb_window_active_sessions(mut ft: *mut format_tree) -> Option<C
     if (*ft).wl.is_null() {
         return None;
     }
-    w = (*(*ft).wl).window;
+    w = (*(*ft).wl).window_ptr();
     wl = window_winlinks_first(w);
     while !wl.is_null() {
         if (*(*wl).session).curw == wl {
@@ -271,7 +271,7 @@ unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Opt
     if (*ft).wl.is_null() {
         return None;
     }
-    w = (*(*ft).wl).window;
+    w = (*(*ft).wl).window_ptr();
     let mut names = Vec::<u8>::new();
     wl = window_winlinks_first(w);
     while !wl.is_null() {
@@ -297,12 +297,12 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
     if (*ft).wl.is_null() {
         return None;
     }
-    w = (*(*ft).wl).window;
+    w = (*(*ft).wl).window_ptr();
     loop_0 = clients.first();
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
-            if w == (*(*client_session).curw).window {
+            if w == (*(*client_session).curw).window_ptr() {
                 n = n.wrapping_add(1);
             }
         }
@@ -319,13 +319,13 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
     if (*ft).wl.is_null() {
         return None;
     }
-    w = (*(*ft).wl).window;
+    w = (*(*ft).wl).window_ptr();
     let mut names = Vec::<u8>::new();
     loop_0 = clients.first();
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
-            if w == (*(*client_session).curw).window {
+            if w == (*(*client_session).curw).window_ptr() {
                 if !names.is_empty() {
                     names.push(b',');
                 }
@@ -2656,7 +2656,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
         while !s.is_null() {
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
-                if (*wl).window == (*(*ft).wl).window {
+                if (*wl).window_ptr() == (*(*ft).wl).window_ptr() {
                     if found != 0 {
                         return Some(c"1".to_owned());
                     }
@@ -2678,7 +2678,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     if (*ft).wl.is_null() {
         return None;
     }
-    w = (*(*ft).wl).window;
+    w = (*(*ft).wl).window_ptr();
     sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
     while !sg.is_null() {
         s = crate::src::session::session_group_members(sg)

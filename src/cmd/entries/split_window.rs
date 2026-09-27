@@ -144,7 +144,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = (*target).wp;
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();

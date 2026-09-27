@@ -73,7 +73,7 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wl: *mut winlink = (*target).wl;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut s: *mut session = (*target).s;
     let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
@@ -94,7 +94,7 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_window_all(item, filter);
     }
-    server_kill_window((*wl).window, 1 as ::core::ffi::c_int);
+    server_kill_window((*wl).window_ptr(), 1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_window_all(
@@ -114,10 +114,10 @@ unsafe fn cmd_kill_window_all(
         found = 0 as u_int;
         loop_0 = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !loop_0.is_null() {
-            if (*loop_0).window != (*wl).window
+            if (*loop_0).window_ptr() != (*wl).window_ptr()
                 && cmd_kill_window_filter(item, s, loop_0, filter) != 0
             {
-                server_kill_window((*loop_0).window, 0 as ::core::ffi::c_int);
+                server_kill_window((*loop_0).window_ptr(), 0 as ::core::ffi::c_int);
                 found = found.wrapping_add(1);
                 break;
             } else {
@@ -132,7 +132,7 @@ unsafe fn cmd_kill_window_all(
     found = kill_current;
     loop_0 = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !loop_0.is_null() {
-        if (*loop_0).window == (*wl).window {
+        if (*loop_0).window_ptr() == (*wl).window_ptr() {
             found = found.wrapping_add(1);
             if cmd_kill_window_filter(item, s, loop_0, filter) != 0 {
                 kill_current = 1 as u_int;
@@ -141,7 +141,7 @@ unsafe fn cmd_kill_window_all(
         loop_0 = winlinks_next(&*loop_0);
     }
     if kill_current != 0 && found > 1 as u_int {
-        server_kill_window((*wl).window, 0 as ::core::ffi::c_int);
+        server_kill_window((*wl).window_ptr(), 0 as ::core::ffi::c_int);
     }
     server_renumber_all();
     return CMD_RETURN_NORMAL;

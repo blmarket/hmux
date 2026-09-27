@@ -132,7 +132,7 @@ pub unsafe fn server_set_marked(
     marked_pane.s = s;
     marked_pane.wl = wl;
     if !wl.is_null() {
-        marked_pane.w = (*wl).window;
+        marked_pane.w = (*wl).window_ptr();
     }
     marked_pane.wp = wp;
 }

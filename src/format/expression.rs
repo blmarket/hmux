@@ -1013,7 +1013,7 @@ pub(super) unsafe fn format_window_name(
     let name = format_expand1_cstring(es, fmt);
     wl = winlinks_minmax(&(*(*ft).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strcmp((*(*wl).window).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if strcmp((*(*wl).window_ptr()).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return Some(c"1".to_owned());
         }
         wl = winlinks_next(&*wl);
@@ -1037,7 +1037,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     format_add(nft, key.as_ptr(), |out| {
         write!(out, "{}", ((wl == (*s).curw) as ::core::ffi::c_int) as i32)
     });
-    o = options_first(options_owner_ptr(&mut (*(*wl).window).options));
+    o = options_first(options_owner_ptr(&mut (*(*wl).window_ptr()).options));
     while !o.is_null() {
         oname = options_name(o);
         if *oname as ::core::ffi::c_int == '@' as i32 {
@@ -1101,7 +1101,7 @@ pub(super) unsafe fn format_loop_windows(
     i = 0 as ::core::ffi::c_int;
     while i < n {
         wl = l[i as usize];
-        w = (*wl).window;
+        w = (*wl).window_ptr();
         format_log1(
             es,
             b"format_loop_windows\0" as *const u8 as *const ::core::ffi::c_char,

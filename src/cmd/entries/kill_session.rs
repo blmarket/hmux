@@ -64,7 +64,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
-            (*(*wl).window).flags &= !WINDOW_ALERTFLAGS;
+            (*(*wl).window_ptr()).flags &= !WINDOW_ALERTFLAGS;
             (*wl).flags &= !WINLINK_ALERTFLAGS;
             wl = winlinks_next(&*wl);
         }

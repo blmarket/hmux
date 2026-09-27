@@ -281,7 +281,7 @@ pub unsafe fn spawn_window(
         sc,
     );
     if (*sc).flags & SPAWN_RESPAWN != 0 {
-        w = (*(*sc).wl).window;
+        w = (*(*sc).wl).window_ptr();
         if !(*sc).flags & SPAWN_KILL != 0 {
             wp = window_pane_first(w);
             while !wp.is_null() {
@@ -434,7 +434,7 @@ pub unsafe fn spawn_pane(
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = (*sc).s;
     let mut ts: *mut session = ::core::ptr::null_mut::<session>();
-    let mut w: *mut window = (*(*sc).wl).window;
+    let mut w: *mut window = (*(*sc).wl).window_ptr();
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ee: Option<&environ_entry> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -1085,7 +1085,7 @@ pub(crate) unsafe fn spawn_editor(
     };
     let mut s: *mut session = (*c).session;
     let mut wl: *mut winlink = (*s).curw;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lg: layout_geometry = layout_geometry {

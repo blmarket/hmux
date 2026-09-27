@@ -99,10 +99,10 @@ unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
     c = clients.first();
     while !c.is_null() {
         if !((*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-            if (*(*(*c).session).curw).window == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
+            if (*(*(*c).session).curw).window_ptr() == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
                 server_redraw_client(c);
             } else {
-                if (*(*(*c).session).curw).window == w {
+                if (*(*(*c).session).curw).window_ptr() == w {
                     (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
                 }
                 if session_has((*c).session, w) != 0 {
@@ -240,7 +240,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         idx: 0,
     };
     let mut wl: *mut winlink = (*target).wl;
-    let mut w: *mut window = (*wl).window;
+    let mut w: *mut window = (*wl).window_ptr();
     let mut s: *mut session = (*target).s;
     let mut wp: *mut window_pane = (*target).wp;
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
