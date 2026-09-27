@@ -248,7 +248,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         a = options_array_first(o);
         while !a.is_null() {
             if (*hd).expand != 0 {
-                value = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr();
+                value = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
                 pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
                 match pr.status as ::core::ffi::c_uint {
                     0 => {

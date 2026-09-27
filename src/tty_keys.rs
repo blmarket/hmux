@@ -1357,7 +1357,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
             if !ov.is_null() {
                 tty_keys_add(
                     tty,
-                    (*ov).string_ptr(),
+                    (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(i as ::core::ffi::c_ulong)
                         as key_code,
                 );

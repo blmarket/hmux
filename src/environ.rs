@@ -195,7 +195,7 @@ pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut envi
         found = 0 as ::core::ffi::c_int;
         for envent in environ_iter(src) {
             if fnmatch(
-                (*ov).string_ptr(),
+                (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 ((*envent).name).as_ptr().cast_mut(),
                 0 as ::core::ffi::c_int,
             ) == 0 as ::core::ffi::c_int
@@ -217,7 +217,7 @@ pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut envi
             }
         }
         if found == 0 {
-            environ_clear(dst, (*ov).string_ptr());
+            environ_clear(dst, (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         }
         a = options_array_next(a);
     }

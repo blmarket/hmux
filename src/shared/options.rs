@@ -105,10 +105,10 @@ pub enum options_value {
 }
 
 impl options_value {
-    pub fn string_ptr(&self) -> *mut ::core::ffi::c_char {
+    pub fn string_ptr(&self) -> Option<&std::ffi::CStr> {
         match self {
-            Self::String(value) => value.as_ptr().cast_mut(),
-            Self::Empty => ::core::ptr::null_mut(),
+            Self::String(value) => Some(value.as_c_str()),
+            Self::Empty => None,
             _ => panic!("option value is not a string"),
         }
     }

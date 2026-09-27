@@ -34,7 +34,7 @@ fn ordered_names_survive_updates_and_removal() {
         for name in &names {
             assert!(!entry.is_null());
             assert_eq!(CStr::from_ptr(options_name(&*(entry)).as_ptr()).to_bytes(), name);
-            assert_eq!(CStr::from_ptr((*entry).value.string_ptr()), c"updated");
+            assert_eq!(CStr::from_ptr((*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())), c"updated");
             let next = options_next(entry);
             assert_eq!(options_remove_or_default(entry, null(), null_mut()), 0);
             entry = next;
@@ -102,26 +102,26 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             write_cstr(out, c"\xff".as_ptr())
         });
         let name = options_name(&*(entry)).as_ptr();
-        let previous = (*entry).value.string_ptr();
+        let previous = (*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         assert_eq!(
             options_set_string(oo, name, 1, |out| { write_cstr(out, previous) }),
             entry
         );
         assert_eq!(
-            CStr::from_ptr((*entry).value.string_ptr()).to_bytes(),
+            CStr::from_ptr((*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
             b"\xff\xff"
         );
-        let previous = (*entry).value.string_ptr();
+        let previous = (*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         assert_eq!(
             options_set_string(oo, name, 0, |out| { write_cstr(out, previous) }),
             entry
         );
         assert_eq!(
-            CStr::from_ptr((*entry).value.string_ptr()).to_bytes(),
+            CStr::from_ptr((*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
             b"\xff\xff"
         );
         options_set_string(oo, name, 0, |out| out.write_all(b""));
-        assert_eq!(CStr::from_ptr((*entry).value.string_ptr()), c"");
+        assert_eq!(CStr::from_ptr((*entry).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())), c"");
 
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
@@ -130,7 +130,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .unwrap();
         let default = options_default(oo, definition);
         assert_eq!(
-            CStr::from_ptr((*default).value.string_ptr()),
+            CStr::from_ptr((*default).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())),
             definition.default_str.unwrap()
         );
         assert_eq!(options_get_only(oo, definition.name_ptr()), default);
@@ -140,11 +140,11 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .find(|oe| oe.name == Some(c"status-right"))
             .unwrap();
         let empty = options_empty(oo, empty_definition);
-        assert!((*empty).value.string_ptr().is_null());
+        assert!((*empty).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()).is_null());
         options_set_string(oo, empty_definition.name_ptr(), 1, |out| {
             write_cstr(out, c"tail".as_ptr())
         });
-        assert_eq!(CStr::from_ptr((*empty).value.string_ptr()), c"(null)tail");
+        assert_eq!(CStr::from_ptr((*empty).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())), c"(null)tail");
         options_free(oo);
     }
 }
@@ -204,7 +204,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         assert!(!non_utf8_value.is_null());
         assert!(options_array_get(array, c"".as_ptr()).is_null());
         assert_eq!(
-            CStr::from_ptr((*(hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)).string_ptr()),
+            CStr::from_ptr((*(hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())),
             c"updated"
         );
         for (key, expected) in [
@@ -293,7 +293,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             let key = CString::new(index.to_string()).unwrap();
             let value = options_array_get(strings, key.as_ptr());
             assert!(!value.is_null());
-            assert_eq!(CStr::from_ptr((*value).string_ptr()).to_bytes(), *expected);
+            assert_eq!(CStr::from_ptr((*value).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(), *expected);
         }
         assert!(options_array_get(strings, c"3".as_ptr()).is_null());
 

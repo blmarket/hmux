@@ -380,7 +380,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
             } else {
                 sle = (&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)
                     as *mut style_line_entry;
-                let expanded = format_expand_time_cstring(ft, (*ov).string_ptr());
+                let expanded = format_expand_time_cstring(ft, (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
                 if force != 0
                     || (*c).status.entries[i as usize].expanded.as_ref() != Some(&expanded)
                 {

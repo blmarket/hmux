@@ -226,7 +226,7 @@ unsafe fn options_value_to_cstring(
         || (*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return CStr::from_ptr(ov.string_ptr()).to_owned();
+        return CStr::from_ptr(ov.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned();
     }
     c"".to_owned()
 }
@@ -601,7 +601,7 @@ pub unsafe fn options_array_set(
     {
         a = options_array_item(o, new_key.as_ptr());
         let owned_value = if !a.is_null() && append != 0 {
-            let previous = CStr::from_ptr((*a).value.string_ptr()).to_bytes();
+            let previous = CStr::from_ptr((*a).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes();
             let suffix = CStr::from_ptr(value).to_bytes();
             let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
             bytes.extend_from_slice(previous);
@@ -889,7 +889,7 @@ pub unsafe fn options_get_string(
             out.write_all(b" is not a string")
         });
     }
-    return (*o).value.string_ptr();
+    return (*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
 pub unsafe fn options_get_number(
     mut oo: *mut options,
@@ -971,10 +971,10 @@ pub unsafe fn options_set_string(
         }
         // glibc printf renders a null %s argument as "(null)". An entry
         // created by options_empty can reach this append path with no value.
-        let previous = if (*o).value.string_ptr().is_null() {
+        let previous = if (*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()).is_null() {
             b"(null)".as_slice()
         } else {
-            CStr::from_ptr((*o).value.string_ptr()).to_bytes()
+            CStr::from_ptr((*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes()
         };
         let separator = CStr::from_ptr(separator).to_bytes();
         let mut bytes =
@@ -1296,7 +1296,7 @@ pub unsafe fn options_string_to_style(
     if (*o).cached != 0 {
         return &raw mut (*o).style;
     }
-    s = (*o).value.string_ptr();
+    s = (*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     oe = (*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     log_debug(format_args!(
         "{}: {} is '{}'",

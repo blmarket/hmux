@@ -300,11 +300,11 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     a = options_array_first(o);
     while !a.is_null() {
         ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
-        equals = strchr((*ov).string_ptr(), '=' as i32);
+        equals = strchr((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()), '=' as i32);
         if !equals.is_null() {
-            n = equals.offset_from((*ov).string_ptr()) as ::core::ffi::c_long as size_t;
+            n = equals.offset_from((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())) as ::core::ffi::c_long as size_t;
             if n == wanted
-                && strncmp(name.as_ptr(), (*ov).string_ptr(), n) == 0 as ::core::ffi::c_int
+                && strncmp(name.as_ptr(), (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()), n) == 0 as ::core::ffi::c_int
             {
                 return Some(
                     CStr::from_ptr(equals.offset(1 as ::core::ffi::c_int as isize)).to_owned(),
