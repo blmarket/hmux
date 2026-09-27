@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{memcpy, snprintf, strlen};
+use crate::src::ffi::libc::{memcpy, snprintf};
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create,
@@ -23,7 +23,6 @@ pub use crate::src::shared::screen::{
     MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
-use crate::src::shared::tty::tty;
 use crate::src::style::style_apply;
 use crate::src::text::utf8::{utf8_copy, utf8_to_data};
 use crate::src::tmux::{clean_name_cstring, global_options};
@@ -790,12 +789,9 @@ pub unsafe fn screen_print(
                         last = last.wrapping_add(1);
                         *buf.offset(fresh2 as isize) = '\t' as i32 as ::core::ffi::c_char;
                     } else if (*gce).flags as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
-                        acs = tty_acs_get(
-                            ::core::ptr::null_mut::<tty>(),
-                            (*gce).c2rust_unnamed.data.data,
-                        );
-                        if !acs.is_null() {
-                            n = strlen(acs) as ::core::ffi::c_int;
+                        if let Some(text) = tty_acs_get(None, (*gce).c2rust_unnamed.data.data) {
+                            acs = text.as_ptr();
+                            n = text.to_bytes().len() as ::core::ffi::c_int;
                         } else {
                             acs = &raw mut (*gce).c2rust_unnamed.data.data
                                 as *const ::core::ffi::c_char;

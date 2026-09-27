@@ -387,7 +387,7 @@ pub struct tty_term {
     pub name: std::ffi::CString,
     pub tty: *mut tty,
     pub applied_features: ::core::ffi::c_int,
-    pub acs: [[::core::ffi::c_char; 2]; 256],
+    pub acs: [[u8; 2]; 256],
     pub codes: Box<[tty_code]>,
     pub flags: ::core::ffi::c_int,
     pub entry: tty_term_entry,

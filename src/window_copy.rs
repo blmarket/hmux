@@ -8186,7 +8186,6 @@ unsafe fn window_copy_copy_line(
     let mut i: u_int = 0;
     let mut xx: u_int = 0;
     let mut wrapped: u_int = 0 as u_int;
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if sx > ex {
         return;
     }
@@ -8220,18 +8219,12 @@ unsafe fn window_copy_copy_line(
                 if ud.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                     && gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0
                 {
-                    s = tty_acs_get(
-                        ::core::ptr::null_mut::<tty>(),
-                        ud.data[0 as ::core::ffi::c_int as usize],
-                    );
-                    if !s.is_null() && strlen(s) <= ::core::mem::size_of::<[u_char; 32]>() as usize
-                    {
-                        ud.size = strlen(s) as u_char;
-                        memcpy(
-                            &raw mut ud.data as *mut u_char as *mut ::core::ffi::c_void,
-                            s as *const ::core::ffi::c_void,
-                            ud.size as size_t,
-                        );
+                    if let Some(acs) = tty_acs_get(None, ud.data[0]) {
+                        let bytes = acs.to_bytes();
+                        if bytes.len() <= ud.data.len() {
+                            ud.size = bytes.len() as u_char;
+                            ud.data[..bytes.len()].copy_from_slice(bytes);
+                        }
                     }
                 }
                 buf.extend_from_slice(&ud.data[..ud.size as usize]);

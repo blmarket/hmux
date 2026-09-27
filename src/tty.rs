@@ -86,6 +86,8 @@ use crate::src::tty_term::{
     tty_term_string_s, tty_term_string_ss,
 };
 
+use std::ffi::CStr;
+
 pub const TIOCGWINSZ: ::core::ffi::c_int = 0x5413 as ::core::ffi::c_int;
 
 pub const F_SETFD: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
@@ -561,7 +563,7 @@ pub unsafe fn tty_start_tty(mut tty: *mut tty) {
         }
     }
     tty_putcode(tty, TTYC_SMKX);
-    if tty_acs_needed(tty) != 0 {
+    if tty_acs_needed(tty.as_ref()) != 0 {
         log_debug(format_args!(
             "{}: using capabilities for ACS",
             log_cstr(
@@ -724,7 +726,7 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
             ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
         ),
     );
-    if tty_acs_needed(tty) != 0 {
+    if tty_acs_needed(tty.as_ref()) != 0 {
         tty_raw(tty, tty_term_string((*tty).term, TTYC_RMACS));
     }
     tty_raw(tty, tty_term_string((*tty).term, TTYC_SGR0));
@@ -955,7 +957,6 @@ pub unsafe fn tty_puts(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
     }
 }
 pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
-    let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if (*(*tty).term).flags & TERM_NOAM != 0
         && ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
         && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
@@ -965,9 +966,8 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
         return;
     }
     if (*tty).cell.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
-        acs = tty_acs_get(tty, ch);
-        if !acs.is_null() {
-            tty_add(tty, acs, strlen(acs));
+        if let Some(acs) = tty_acs_get(Some(&*tty), ch) {
+            tty_add(tty, acs.as_ptr(), acs.to_bytes().len());
         } else {
             tty_add(tty, &raw mut ch as *const ::core::ffi::c_char, 1 as size_t);
         }
@@ -1975,7 +1975,6 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     }
 }
 pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const grid_cell) -> grid_cell {
-    let mut c: ::core::ffi::c_int = 0;
     if (*gc).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
         && (*(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int)
             < 0x7f as ::core::ffi::c_int
@@ -1989,12 +1988,11 @@ pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const grid_cell) -> grid_cel
         return *gc;
     }
     let mut new = *gc;
-    c = tty_acs_reverse_get(
-        &raw const (*gc).data.data as *const u_char as *const ::core::ffi::c_char,
-        (*gc).data.size as size_t,
-    );
-    if c != -(1 as ::core::ffi::c_int) {
-        utf8_set(&mut new.data, c as u_char);
+    if let Some(ch) = CStr::from_bytes_until_nul(&(*gc).data.data)
+        .ok()
+        .and_then(|text| tty_acs_reverse_get(text, (*gc).data.size as usize))
+    {
+        utf8_set(&mut new.data, ch);
         new.attr = (new.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
         return new;
     }
@@ -2611,7 +2609,7 @@ pub unsafe fn tty_reset(mut tty: *mut tty) {
                 b"\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        if (*gc).attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty) != 0 {
+        if (*gc).attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty.as_ref()) != 0 {
             tty_putcode(tty, TTYC_RMACS);
         }
         tty_putcode(tty, TTYC_SGR0);
@@ -3114,7 +3112,7 @@ pub unsafe fn tty_attributes(
     if changed & GRID_ATTR_OVERLINE != 0 {
         tty_putcode(tty, TTYC_SMOL);
     }
-    if changed & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty) != 0 {
+    if changed & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty.as_ref()) != 0 {
         tty_putcode(tty, TTYC_SMACS);
     }
     tty_hyperlink(tty, gc, (*style_ctx).hyperlinks);

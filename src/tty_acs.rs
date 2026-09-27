@@ -299,7 +299,7 @@ static tty_acs_reverse3: [tty_acs_reverse_entry; 32] = [
         key: 'n' as i32 as u_char,
     },
 ];
-static mut tty_acs_double_borders_list: [utf8_data; 13] = unsafe {
+static tty_acs_double_borders_list: [utf8_data; 13] = unsafe {
     [
         utf8_data {
             data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
@@ -407,7 +407,7 @@ static mut tty_acs_double_borders_list: [utf8_data; 13] = unsafe {
         },
     ]
 };
-static mut tty_acs_heavy_borders_list: [utf8_data; 13] = unsafe {
+static tty_acs_heavy_borders_list: [utf8_data; 13] = unsafe {
     [
         utf8_data {
             data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
@@ -515,7 +515,7 @@ static mut tty_acs_heavy_borders_list: [utf8_data; 13] = unsafe {
         },
     ]
 };
-static mut tty_acs_rounded_borders_list: [utf8_data; 13] = unsafe {
+static tty_acs_rounded_borders_list: [utf8_data; 13] = unsafe {
     [
         utf8_data {
             data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
@@ -623,72 +623,49 @@ static mut tty_acs_rounded_borders_list: [utf8_data; 13] = unsafe {
         },
     ]
 };
-pub unsafe fn tty_acs_double_borders(mut cell_type: ::core::ffi::c_int) -> *const utf8_data {
-    return (&raw const tty_acs_double_borders_list as *const utf8_data).offset(cell_type as isize)
-        as *const utf8_data;
+pub fn tty_acs_double_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_data {
+    &tty_acs_double_borders_list[cell_type as usize]
 }
-pub unsafe fn tty_acs_heavy_borders(mut cell_type: ::core::ffi::c_int) -> *const utf8_data {
-    return (&raw const tty_acs_heavy_borders_list as *const utf8_data).offset(cell_type as isize)
-        as *const utf8_data;
+pub fn tty_acs_heavy_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_data {
+    &tty_acs_heavy_borders_list[cell_type as usize]
 }
-pub unsafe fn tty_acs_rounded_borders(mut cell_type: ::core::ffi::c_int) -> *const utf8_data {
-    return (&raw const tty_acs_rounded_borders_list as *const utf8_data).offset(cell_type as isize)
-        as *const utf8_data;
+pub fn tty_acs_rounded_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_data {
+    &tty_acs_rounded_borders_list[cell_type as usize]
 }
-pub unsafe fn tty_acs_needed(mut tty: *mut tty) -> ::core::ffi::c_int {
-    if tty.is_null() {
-        return 0 as ::core::ffi::c_int;
+pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
+    let Some(terminal) = terminal else {
+        return 0;
+    };
+    if tty_term_has(terminal.term, TTYC_U8) != 0 && tty_term_number(terminal.term, TTYC_U8) == 0 {
+        return 1;
     }
-    if tty_term_has((*tty).term, TTYC_U8) != 0
-        && tty_term_number((*tty).term, TTYC_U8) == 0 as ::core::ffi::c_int
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*(*tty).client).flags & CLIENT_UTF8 as uint64_t != 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+    ((*terminal.client).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
 }
-pub unsafe fn tty_acs_get(mut tty: *mut tty, mut ch: u_char) -> *const ::core::ffi::c_char {
-    let mut entry: *const tty_acs_entry = ::core::ptr::null::<tty_acs_entry>();
-    if tty_acs_needed(tty) != 0 {
-        if (*(*tty).term).acs[ch as usize][0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
-            == '\0' as i32
-        {
-            return ::core::ptr::null::<::core::ffi::c_char>();
+
+/// The terminal and its capabilities must remain valid while the result is borrowed.
+pub unsafe fn tty_acs_get(terminal: Option<&tty>, ch: u_char) -> Option<&CStr> {
+    if tty_acs_needed(terminal) != 0 {
+        let term = &*terminal.expect("legacy ACS requires a terminal").term;
+        let bytes = &term.acs[ch as usize];
+        if bytes[0] == 0 {
+            return None;
         }
-        return (&raw mut *(&raw mut (*(*tty).term).acs as *mut [::core::ffi::c_char; 2])
-            .offset(ch as isize) as *mut ::core::ffi::c_char)
-            .offset(0 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_char;
+        return Some(CStr::from_bytes_with_nul(bytes).expect("ACS entries are terminated"));
     }
-    entry = tty_acs_table
+    tty_acs_table
         .binary_search_by_key(&ch, |entry| entry.key)
         .ok()
-        .map_or(::core::ptr::null(), |index| {
-            &tty_acs_table[index] as *const tty_acs_entry
-        });
-    if entry.is_null() {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    return (*entry).string.as_ptr();
+        .map(|index| tty_acs_table[index].string)
 }
-pub unsafe fn tty_acs_reverse_get(
-    mut s: *const ::core::ffi::c_char,
-    mut slen: size_t,
-) -> ::core::ffi::c_int {
-    let needle = CStr::from_ptr(s).to_bytes();
-    let entry = if slen == 2 as size_t {
-        tty_acs_reverse2
-            .binary_search_by(|entry| entry.string.to_bytes().cmp(needle))
-            .ok()
-            .map(|index| &tty_acs_reverse2[index])
-    } else if slen == 3 as size_t {
-        tty_acs_reverse3
-            .binary_search_by(|entry| entry.string.to_bytes().cmp(needle))
-            .ok()
-            .map(|index| &tty_acs_reverse3[index])
-    } else {
-        return -(1 as ::core::ffi::c_int);
+
+pub fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {
+    let table = match slen {
+        2 => &tty_acs_reverse2[..],
+        3 => &tty_acs_reverse3[..],
+        _ => return None,
     };
-    entry.map_or(-1, |entry| entry.key as ::core::ffi::c_int)
+    table
+        .binary_search_by(|entry| entry.string.to_bytes().cmp(s.to_bytes()))
+        .ok()
+        .map(|index| table[index].key)
 }

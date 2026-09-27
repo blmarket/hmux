@@ -924,15 +924,15 @@ unsafe fn screen_write_box_border_set(
     match lines as ::core::ffi::c_int {
         1 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            (*gc).data = utf8_copy(&*(tty_acs_double_borders(cell_type)));
+            (*gc).data = utf8_copy(tty_acs_double_borders(cell_type));
         }
         2 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            (*gc).data = utf8_copy(&*(tty_acs_heavy_borders(cell_type)));
+            (*gc).data = utf8_copy(tty_acs_heavy_borders(cell_type));
         }
         4 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            (*gc).data = utf8_copy(&*(tty_acs_rounded_borders(cell_type)));
+            (*gc).data = utf8_copy(tty_acs_rounded_borders(cell_type));
         }
         3 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;

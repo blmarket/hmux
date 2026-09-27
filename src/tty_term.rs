@@ -1164,7 +1164,6 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
     o = options_get_only(
         global_options,
@@ -1227,23 +1226,14 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         "NOAM flag is {}",
         ((*term).flags & TERM_NOAM != 0) as ::core::ffi::c_int
     ));
-    memset(
-        &raw mut (*term).acs as *mut [::core::ffi::c_char; 2] as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<[[::core::ffi::c_char; 2]; 256]>() as size_t,
-    );
-    if tty_term_has(term, TTYC_ACSC) != 0 {
-        acs = tty_term_string(term, TTYC_ACSC);
+    (*term).acs.fill([0; 2]);
+    let acs = if tty_term_has(term, TTYC_ACSC) != 0 {
+        CStr::from_ptr(tty_term_string(term, TTYC_ACSC))
     } else {
-        acs =
-            b"a#j+k+l+m+n+o-p-q-r-s-t+u+v+w+x|y<z>~.\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    while *acs.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-        && *acs.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-    {
-        (*term).acs[*acs.offset(0 as ::core::ffi::c_int as isize) as u_char as usize]
-            [0 as ::core::ffi::c_int as usize] = *acs.offset(1 as ::core::ffi::c_int as isize);
-        acs = acs.offset(2 as ::core::ffi::c_int as isize);
+        c"a#j+k+l+m+n+o-p-q-r-s-t+u+v+w+x|y<z>~."
+    };
+    for pair in acs.to_bytes().chunks_exact(2) {
+        (*term).acs[pair[0] as usize][0] = pair[1];
     }
     tty_term_validate(term);
 }
