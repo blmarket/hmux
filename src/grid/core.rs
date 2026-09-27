@@ -883,8 +883,6 @@ unsafe fn grid_string_cells_code(
     let mut attr: u_int = (*gc).attr as u_int;
     let mut lastattr: u_int = (*lastgc).attr as u_int;
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut id: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     static mut attrs: [C2RustUnnamed_1; 13] = [
         C2RustUnnamed_1 {
             mask: GRID_ATTR_BRIGHT as u_int,
@@ -1067,15 +1065,8 @@ unsafe fn grid_string_cells_code(
         }
     }
     if !sc.is_null() && !(*sc).hyperlinks.is_null() && (*lastgc).link != (*gc).link {
-        if hyperlinks_get(
-            (*sc).hyperlinks,
-            (*gc).link,
-            &raw mut uri,
-            &raw mut id,
-            ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-        ) != 0
-        {
-            *has_link = grid_string_cells_add_hyperlink(buf, len, id, uri, flags);
+        if let Some(link) = hyperlinks_get(&*(*sc).hyperlinks, (*gc).link) {
+            *has_link = grid_string_cells_add_hyperlink(buf, len, link.internal_id.as_ptr(), link.uri.as_ptr(), flags);
         } else if *has_link != 0 {
             grid_string_cells_add_hyperlink(
                 buf,

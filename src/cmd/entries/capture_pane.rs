@@ -114,8 +114,6 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
         us: 0,
         link: 0,
     };
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut iid: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flags: u_int = 0;
     grid_get_cell(&*gd, xx, yy, &mut gc);
     let bytes = &gc.data.data[..gc.data.size as usize];
@@ -126,22 +124,18 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     let mut data = vec![0u8; 4 * (source.len() + 1)];
     let data_len = utf8_strvis(&mut data, source, VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL);
     data.truncate(data_len);
-    let (link, linkid) = if gc.link != 0 as u_int
-        && hyperlinks_get(
-            hl,
-            gc.link,
-            &raw mut uri,
-            &raw mut iid,
-            ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-        ) != 0
-    {
-        let link = CStr::from_ptr(uri).to_owned();
-        let linkid = if !iid.is_null() && *iid as ::core::ffi::c_int != '\0' as i32 {
-            CStr::from_ptr(iid).to_owned()
+    let entry = if gc.link == 0 {
+        None
+    } else {
+        hyperlinks_get(&*hl, gc.link)
+    };
+    let (link, linkid) = if let Some(link) = entry {
+        let id = if link.internal_id.as_bytes().is_empty() {
+            c"NONE"
         } else {
-            c"NONE".to_owned()
+            link.internal_id.as_c_str()
         };
-        (link, linkid)
+        (link.uri.clone(), id.to_owned())
     } else {
         (c"NONE".to_owned(), c"NONE".to_owned())
     };
@@ -317,7 +311,6 @@ unsafe fn cmd_capture_pane_hyperlinks(
         us: 0,
         link: 0,
     };
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line = Vec::new();
     let mut i: u_int = 0;
     if (*s).hyperlinks.is_null() || !(gl.flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
@@ -329,14 +322,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
         grid_get_cell(&*gd, i, py, &mut gc);
         if !(gc.link == 0 as u_int) {
             if !links.contains(&gc.link) {
-                if !(hyperlinks_get(
-                    (*s).hyperlinks,
-                    gc.link,
-                    &raw mut uri,
-                    ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-                    ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-                ) == 0)
-                {
+                if let Some(link) = hyperlinks_get(&*(*s).hyperlinks, gc.link) {
                     if links.len() == (*gd).sx as usize {
                         break;
                     }
@@ -344,7 +330,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
                     if !line.is_empty() {
                         cmd_capture_pane_append(&mut line, b" ");
                     }
-                    cmd_capture_pane_append(&mut line, CStr::from_ptr(uri).to_bytes());
+                    cmd_capture_pane_append(&mut line, link.uri.as_bytes());
                 }
             }
         }

@@ -108,36 +108,18 @@ pub unsafe fn hyperlinks_put(
     }
     return (*hlu).inner;
 }
-pub unsafe fn hyperlinks_get(
-    mut hl: *mut hyperlinks,
-    mut inner: u_int,
-    mut uri_out: *mut *const ::core::ffi::c_char,
-    mut internal_id_out: *mut *const ::core::ffi::c_char,
-    mut external_id_out: *mut *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let mut find: hyperlinks_uri = hyperlinks_uri {
-        tree: ::core::ptr::null_mut::<hyperlinks>(),
-        inner: 0,
-        internal_id: Default::default(),
-        external_id: Default::default(),
-        uri: Default::default(),
-        by_inner_entry: hyperlink_inner_entry { owner: None },
-        by_uri_entry: hyperlink_uri_entry { owner: None },
-    };
-    let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    find.inner = inner;
-    hlu = hyperlinks_by_inner_tree_find(&(*hl).by_inner, &find);
-    if hlu.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    if !internal_id_out.is_null() {
-        *internal_id_out = ((*hlu).internal_id).as_ptr().cast_mut();
-    }
-    if !external_id_out.is_null() {
-        *external_id_out = ((*hlu).external_id).as_ptr().cast_mut();
-    }
-    *uri_out = ((*hlu).uri).as_ptr().cast_mut();
-    return 1 as ::core::ffi::c_int;
+/// Borrow a stored hyperlink until the next mutation of any hyperlink table.
+///
+/// # Safety
+/// Callers must not retain this borrow across table mutations: insertion into
+/// another table can evict this record through the global history limit.
+pub unsafe fn hyperlinks_get(hl: &hyperlinks, inner: u_int) -> Option<&hyperlinks_uri> {
+    let owner = hl.by_inner.storage.as_ref()?;
+    let index = owner
+        .try_borrow_mut()
+        .expect("hyperlink inner index already borrowed");
+    let node = *index.get(&inner)?;
+    node.as_ref()
 }
 pub unsafe fn hyperlinks_init() -> *mut hyperlinks {
     let mut value = hyperlinks::empty();

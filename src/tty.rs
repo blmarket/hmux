@@ -2926,9 +2926,7 @@ pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
     (*tty).cx = cx;
     (*tty).cy = cy;
 }
-unsafe fn tty_hyperlink(mut tty: *mut tty, mut gc: *const grid_cell, mut hl: *mut hyperlinks) {
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut id: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+unsafe fn tty_hyperlink(tty: *mut tty, gc: *const grid_cell, hl: *mut hyperlinks) {
     if (*gc).link == (*tty).cell.link {
         return;
     }
@@ -2936,24 +2934,16 @@ unsafe fn tty_hyperlink(mut tty: *mut tty, mut gc: *const grid_cell, mut hl: *mu
     if hl.is_null() {
         return;
     }
-    if (*gc).link == 0 as u_int
-        || hyperlinks_get(
-            hl,
-            (*gc).link,
-            &raw mut uri,
-            ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-            &raw mut id,
-        ) == 0
-    {
-        tty_putcode_ss(
-            tty,
-            TTYC_HLS,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+    let link = if (*gc).link == 0 {
+        None
     } else {
-        tty_putcode_ss(tty, TTYC_HLS, id, uri);
+        hyperlinks_get(&*hl, (*gc).link)
     };
+    if let Some(link) = link {
+        tty_putcode_ss(tty, TTYC_HLS, link.external_id.as_ptr(), link.uri.as_ptr());
+    } else {
+        tty_putcode_ss(tty, TTYC_HLS, c"".as_ptr(), c"".as_ptr());
+    }
 }
 unsafe fn tty_dim_default_colour(
     mut tty: *mut tty,

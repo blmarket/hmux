@@ -745,7 +745,6 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     let mut off: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut comma: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut tmp: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     static mut s: [::core::ffi::c_char; 2048] = [0; 2048];
     let mut b: [::core::ffi::c_char; 21] = [0; 21];
     *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
@@ -951,12 +950,11 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    uri = style_link(sy);
-    if !uri.is_null() {
+    if let Some(uri) = style_link(&*sy) {
         xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"link=")?;
-            out.write_all(std::ffi::CStr::from_ptr(uri).to_bytes())
+            out.write_all(uri.to_bytes())
         });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -965,23 +963,12 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub unsafe fn style_link(mut sy: *mut style) -> *const ::core::ffi::c_char {
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let style_hyperlinks = style_hyperlinks(false);
-    if (*sy).link == 0 as u_int || style_hyperlinks.is_null() {
-        return ::core::ptr::null::<::core::ffi::c_char>();
+pub unsafe fn style_link(sy: &style) -> Option<&std::ffi::CStr> {
+    let table = style_hyperlinks(false);
+    if sy.link == 0 || table.is_null() {
+        return None;
     }
-    if hyperlinks_get(
-        style_hyperlinks,
-        (*sy).link,
-        &raw mut uri,
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-    ) == 0
-    {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    return uri;
+    hyperlinks_get(&*table, sy.link).map(|link| link.uri.as_c_str())
 }
 pub unsafe fn style_add(
     mut gc: *mut grid_cell,

@@ -661,7 +661,6 @@ pub(crate) unsafe fn format_grid_hyperlink_cstring(
     mut y: u_int,
     s: &screen,
 ) -> Option<CString> {
-    let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -689,17 +688,7 @@ pub(crate) unsafe fn format_grid_hyperlink_cstring(
     if s.hyperlinks.is_null() || gc.link == 0 as u_int {
         return None;
     }
-    if hyperlinks_get(
-        s.hyperlinks,
-        gc.link,
-        &raw mut uri,
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
-    ) == 0
-    {
-        return None;
-    }
-    return Some(CStr::from_ptr(uri).to_owned());
+    hyperlinks_get(&*s.hyperlinks, gc.link).map(|link| link.uri.clone())
 }
 
 pub const FORMAT_TYPE_PANE: format_type = 3;

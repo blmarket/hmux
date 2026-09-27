@@ -1045,7 +1045,6 @@ pub unsafe fn format_draw(
     let mut ud: *mut utf8_data = &raw mut sy.gc.data;
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut link_uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut more: utf8_state = UTF8_MORE;
     let mut fr: Option<format_range> = None;
     let mut frs: format_ranges = Vec::new();
@@ -1232,12 +1231,10 @@ pub unsafe fn format_draw(
                         sy.gc.bg = (*base).bg;
                         sy.gc.fg = (*base).fg;
                     }
-                    link_uri = style_link(&raw mut sy);
-                    if !link_uri.is_null() && !hl.is_null() {
-                        sy.gc.link = hyperlinks_put(hl, link_uri, link_uri);
-                    } else {
-                        sy.gc.link = 0 as u_int;
-                    }
+                    sy.gc.link = match style_link(&sy).filter(|_| !hl.is_null()) {
+                        Some(uri) => hyperlinks_put(hl, uri.as_ptr(), uri.as_ptr()),
+                        None => 0,
+                    };
                     if sy.fill != 8 as ::core::ffi::c_int {
                         fill = sy.fill;
                     }
