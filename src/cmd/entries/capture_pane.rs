@@ -117,7 +117,7 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut iid: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flags: u_int = 0;
-    grid_get_cell(gd, xx, yy, &raw mut gc);
+    grid_get_cell(&*gd, xx, yy, &mut gc);
     let bytes = &gc.data.data[..gc.data.size as usize];
     let source = &bytes[..bytes
         .iter()
@@ -265,7 +265,7 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &window_pane) -> Vec<u8>
     line =
         evbuffer_pullup(pending, -1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
-    linelen = evbuffer_get_length(&*(pending));
+    linelen = evbuffer_get_length(&*pending);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;
         while (i as size_t) < linelen {
@@ -322,7 +322,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
     }
     i = 0 as u_int;
     while i < (*gl).cellused as u_int {
-        grid_get_cell(gd, i, py, &raw mut gc);
+        grid_get_cell(&*gd, i, py, &mut gc);
         if !(gc.link == 0 as u_int) {
             if !links.contains(&gc.link) {
                 if !(hyperlinks_get(

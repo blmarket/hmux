@@ -943,7 +943,7 @@ mod status_screen_tests {
             status_pop_screen(&mut *c);
             assert_eq!(c.status.screen_users, 1);
             assert_eq!(c.status.active_screen().grid, temporary_grid);
-            grid_get_cell(temporary_grid, 0, 0, &mut cell);
+            grid_get_cell(&*temporary_grid, 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'T');
 
             status_pop_screen(&mut *c);
@@ -951,7 +951,7 @@ mod status_screen_tests {
             assert!(c.status.active.is_none());
             assert_eq!(c.status.active_screen() as *mut screen, base);
             assert_eq!(c.status.screen.grid, base_grid);
-            grid_get_cell(base_grid, 0, 0, &mut cell);
+            grid_get_cell(&*base_grid, 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'B');
             status_free(&mut *c);
             assert!(c.status.screen.grid.is_null());

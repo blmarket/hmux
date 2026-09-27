@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use crate::src::ffi::libc::memcmp;
 use crate::src::grid::{
     grid_get_cell, grid_get_line, grid_in_set, grid_line_length, grid_line_limit,
@@ -25,7 +26,7 @@ pub unsafe fn grid_reader_get_cursor(
     *cy = (*gr).cy;
 }
 pub unsafe fn grid_reader_line_length(mut gr: *mut grid_reader) -> u_int {
-    return grid_line_length((*gr).gd, (*gr).cy);
+    return grid_line_length(&*(*gr).gd, (*gr).cy);
 }
 pub unsafe fn grid_reader_cursor_right(
     mut gr: *mut grid_reader,
@@ -53,7 +54,7 @@ pub unsafe fn grid_reader_cursor_right(
     } else if onemore != 0 {
         px = grid_reader_line_length(gr);
     } else {
-        px = grid_line_limit((*gr).gd, (*gr).cy);
+        px = grid_line_limit(&*(*gr).gd, (*gr).cy);
     }
     if wrap != 0
         && (*gr).cx >= px
@@ -68,7 +69,7 @@ pub unsafe fn grid_reader_cursor_right(
     } else if (*gr).cx < px {
         (*gr).cx = (*gr).cx.wrapping_add(1);
         while (*gr).cx < px {
-            grid_get_cell((*gr).gd, (*gr).cx, (*gr).cy, &raw mut gc);
+            grid_get_cell(&*(*gr).gd, (*gr).cx, (*gr).cy, &mut gc);
             if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
@@ -92,7 +93,7 @@ pub unsafe fn grid_reader_cursor_left(mut gr: *mut grid_reader, mut wrap: ::core
         link: 0,
     };
     while (*gr).cx > 0 as u_int {
-        grid_get_cell((*gr).gd, (*gr).cx, (*gr).cy, &raw mut gc);
+        grid_get_cell(&*(*gr).gd, (*gr).cx, (*gr).cy, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
@@ -136,7 +137,7 @@ pub unsafe fn grid_reader_cursor_down(mut gr: *mut grid_reader) {
         (*gr).cy = (*gr).cy.wrapping_add(1);
     }
     while (*gr).cx > 0 as u_int {
-        grid_get_cell((*gr).gd, (*gr).cx, (*gr).cy, &raw mut gc);
+        grid_get_cell(&*(*gr).gd, (*gr).cx, (*gr).cy, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
@@ -162,7 +163,7 @@ pub unsafe fn grid_reader_cursor_up(mut gr: *mut grid_reader) {
         (*gr).cy = (*gr).cy.wrapping_sub(1);
     }
     while (*gr).cx > 0 as u_int {
-        grid_get_cell((*gr).gd, (*gr).cx, (*gr).cy, &raw mut gc);
+        grid_get_cell(&*(*gr).gd, (*gr).cx, (*gr).cy, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
@@ -233,7 +234,7 @@ pub unsafe fn grid_reader_in_set(
     mut gr: *mut grid_reader,
     mut set: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    return grid_in_set((*gr).gd, (*gr).cx, (*gr).cy, set);
+    return grid_in_set(&*(*gr).gd, (*gr).cx, (*gr).cy, CStr::from_ptr(set));
 }
 pub unsafe fn grid_reader_cursor_next_word(
     mut gr: *mut grid_reader,
@@ -451,9 +452,9 @@ pub unsafe fn grid_reader_cursor_jump(
         .wrapping_sub(1 as u_int);
     py = (*gr).cy;
     while py <= yy {
-        xx = grid_line_length((*gr).gd, py);
+        xx = grid_line_length(&*(*gr).gd, py);
         while px < xx {
-            grid_get_cell((*gr).gd, px, py, &raw mut gc);
+            grid_get_cell(&*(*gr).gd, px, py, &mut gc);
             if grid_reader_cell_equals_data(&raw mut gc, jc) != 0 {
                 (*gr).cx = px;
                 (*gr).cy = py;
@@ -498,10 +499,10 @@ pub unsafe fn grid_reader_cursor_jump_back(
         px = xx;
         while px > 0 as u_int {
             grid_get_cell(
-                (*gr).gd,
+                &*(*gr).gd,
                 px.wrapping_sub(1 as u_int),
                 py.wrapping_sub(1 as u_int),
-                &raw mut gc,
+                &mut gc,
             );
             if grid_reader_cell_equals_data(&raw mut gc, jc) != 0 {
                 (*gr).cx = px.wrapping_sub(1 as u_int);
@@ -517,7 +518,7 @@ pub unsafe fn grid_reader_cursor_jump_back(
         {
             return 0 as ::core::ffi::c_int;
         }
-        xx = grid_line_length((*gr).gd, py.wrapping_sub(2 as u_int));
+        xx = grid_line_length(&*(*gr).gd, py.wrapping_sub(2 as u_int));
         py = py.wrapping_sub(1);
     }
     return 0 as ::core::ffi::c_int;
@@ -552,10 +553,10 @@ pub unsafe fn grid_reader_cursor_back_to_indentation(mut gr: *mut grid_reader) {
     grid_reader_cursor_start_of_line(gr, 1 as ::core::ffi::c_int);
     py = (*gr).cy;
     while py <= yy {
-        xx = grid_line_length((*gr).gd, py);
+        xx = grid_line_length(&*(*gr).gd, py);
         px = 0 as u_int;
         while px < xx {
-            grid_get_cell((*gr).gd, px, py, &raw mut gc);
+            grid_get_cell(&*(*gr).gd, px, py, &mut gc);
             if (gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                 || *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int != ' ' as i32)
                 && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_TAB != 0

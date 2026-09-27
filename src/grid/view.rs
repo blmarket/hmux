@@ -5,13 +5,8 @@ use crate::src::grid::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-pub unsafe fn grid_view_get_cell(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut gc: *mut grid_cell,
-) {
-    grid_get_cell(gd, px, (*gd).hsize.wrapping_add(py), gc);
+pub unsafe fn grid_view_get_cell(gd: &grid, px: u_int, py: u_int, gc: &mut grid_cell) {
+    grid_get_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
 pub unsafe fn grid_view_set_cell(
     mut gd: *mut grid,

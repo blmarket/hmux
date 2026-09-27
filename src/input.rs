@@ -2488,7 +2488,7 @@ unsafe fn input_ground(mut ictx: *mut input_ctx) {
     event_del(&raw mut (*ictx).ground_timer);
     evbuffer_drain(
         &mut *(*ictx).since_ground,
-        evbuffer_get_length(&*((*ictx).since_ground)),
+        evbuffer_get_length(&*(*ictx).since_ground),
     );
     (*ictx).shrink_buffer();
 }
@@ -2619,10 +2619,10 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             cx = (*s).cx;
             if !(cx >= (*(*s).grid).sx.wrapping_sub(1 as u_int)) {
                 line = (*s).cy.wrapping_add((*(*s).grid).hsize);
-                grid_get_cell((*s).grid, cx, line, &raw mut first_gc);
+                grid_get_cell(&*(*s).grid, cx, line, &mut first_gc);
                 loop {
                     if has_content == 0 {
-                        grid_get_cell((*s).grid, cx, line, &raw mut gc);
+                        grid_get_cell(&*(*s).grid, cx, line, &mut gc);
                         if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                             || *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
                                 != ' ' as i32
@@ -2645,8 +2645,8 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 {
                     (*s).cx = cx;
                 } else {
-                    grid_get_cell((*s).grid, (*s).cx, line, &raw mut gc);
-                    grid_set_tab(&raw mut gc, width);
+                    grid_get_cell(&*(*s).grid, (*s).cx, line, &mut gc);
+                    grid_set_tab(&mut gc, width);
                     screen_write_collect_add(sctx, &raw mut gc);
                 }
             }

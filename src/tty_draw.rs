@@ -250,7 +250,7 @@ pub unsafe fn tty_draw_line(
     cx = 0 as u_int;
     i = px;
     while i < px.wrapping_add(nx) {
-        grid_view_get_cell(gd, i, py, &raw mut gc);
+        grid_view_get_cell(&*gd, i, py, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
@@ -260,7 +260,7 @@ pub unsafe fn tty_draw_line(
     if cx != 0 as u_int {
         i = px.wrapping_add(1 as u_int);
         while i > 0 as u_int {
-            grid_view_get_cell(gd, i.wrapping_sub(1 as u_int), py, &raw mut gc);
+            grid_view_get_cell(&*gd, i.wrapping_sub(1 as u_int), py, &mut gc);
             if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
@@ -327,7 +327,7 @@ pub unsafe fn tty_draw_line(
                         empty = nx.wrapping_sub(i) as ::core::ffi::c_int;
                         gcp = &raw const grid_default_cell;
                     } else {
-                        grid_view_get_cell(gd, px.wrapping_add(i), py, &raw mut gc);
+                        grid_view_get_cell(&*gd, px.wrapping_add(i), py, &mut gc);
                         empty =
                             tty_draw_line_get_empty(&raw mut gc, &raw mut last, nx.wrapping_sub(i))
                                 as ::core::ffi::c_int;

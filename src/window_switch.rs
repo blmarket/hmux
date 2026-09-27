@@ -428,7 +428,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)
                 {
-                    grid_get_cell((*s).grid, j, i, &raw mut gc);
+                    grid_get_cell(&*(*s).grid, j, i, &mut gc);
                     gc.attr = mgc.attr;
                     gc.fg = mgc.fg;
                     gc.bg = mgc.bg;

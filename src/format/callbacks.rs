@@ -749,7 +749,7 @@ unsafe fn format_cb_cursor_character(mut ft: *mut format_tree) -> Option<CString
     if wp.is_null() {
         return None;
     }
-    grid_view_get_cell((*wp).base.grid, (*wp).base.cx, (*wp).base.cy, &raw mut gc);
+    grid_view_get_cell(&*(*wp).base.grid, (*wp).base.cx, (*wp).base.cy, &mut gc);
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
         value = Some(
             CString::new(std::slice::from_raw_parts(

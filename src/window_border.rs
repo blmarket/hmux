@@ -113,7 +113,7 @@ unsafe fn window_set_fill_cell(
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    grid_view_get_cell(s.grid, 0 as u_int, 0 as u_int, &raw mut new_gc);
+    grid_view_get_cell(&*s.grid, 0 as u_int, 0 as u_int, &mut new_gc);
     if new_gc.data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
         memcpy(
             gc as *mut ::core::ffi::c_void,

@@ -2213,7 +2213,7 @@ unsafe fn window_copy_cmd_previous_matching_bracket(
         }
         tried = 0 as ::core::ffi::c_char;
         loop {
-            grid_get_cell((*s).grid, px, py, &raw mut gc);
+            grid_get_cell(&*(*s).grid, px, py, &mut gc);
             if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                 || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
             {
@@ -2268,7 +2268,7 @@ unsafe fn window_copy_cmd_previous_matching_bracket(
                     } else {
                         px = px.wrapping_sub(1);
                     }
-                    grid_get_cell((*s).grid, px, py, &raw mut gc);
+                    grid_get_cell(&*(*s).grid, px, py, &mut gc);
                     if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                         && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
                     {
@@ -2350,7 +2350,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
         }
         tried = 0 as ::core::ffi::c_char;
         loop {
-            grid_get_cell((*s).grid, px, py, &raw mut gc);
+            grid_get_cell(&*(*s).grid, px, py, &mut gc);
             if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                 || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
             {
@@ -2374,7 +2374,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                         .hsize
                         .wrapping_add((*data).cy)
                         .wrapping_sub((*data).oy);
-                    grid_get_cell((*s).grid, px, py, &raw mut gc);
+                    grid_get_cell(&*(*s).grid, px, py, &mut gc);
                     if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                         && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
                         && !strchr(
@@ -2441,7 +2441,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                     } else {
                         px = px.wrapping_add(1);
                     }
-                    grid_get_cell((*s).grid, px, py, &raw mut gc);
+                    grid_get_cell(&*(*s).grid, px, py, &mut gc);
                     if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                         && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
                     {
@@ -5264,9 +5264,9 @@ unsafe fn window_copy_search_compare(
     };
     let mut ud: *const utf8_data = ::core::ptr::null::<utf8_data>();
     let mut sud: *const utf8_data = ::core::ptr::null::<utf8_data>();
-    grid_get_cell(gd, px, py, &raw mut gc);
+    grid_get_cell(&*gd, px, py, &mut gc);
     ud = &raw mut gc.data;
-    grid_get_cell(sgd, spx, 0 as u_int, &raw mut sgc);
+    grid_get_cell(&*sgd, spx, 0 as u_int, &mut sgc);
     sud = &raw mut sgc.data;
     if *(&raw const (*sud).data as *const u_char) as ::core::ffi::c_int == '\t' as i32
         && (*sud).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
@@ -5361,7 +5361,7 @@ unsafe fn window_copy_search_lr(
             if px.wrapping_sub(padding) >= (*gd).sx {
                 break;
             }
-            grid_get_cell(gd, px, pywrap, &raw mut gc);
+            grid_get_cell(&*gd, px, pywrap, &mut gc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 padding = padding.wrapping_add(
                     (gc.data.width as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as u_int,
@@ -5434,7 +5434,7 @@ unsafe fn window_copy_search_rl(
             if px.wrapping_sub(padding) >= (*gd).sx {
                 break;
             }
-            grid_get_cell(gd, px, pywrap, &raw mut gc);
+            grid_get_cell(&*gd, px, pywrap, &mut gc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 padding = padding.wrapping_add(
                     (gc.data.width as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as u_int,
@@ -6317,7 +6317,7 @@ unsafe fn window_copy_search_mark_match(
         i = b;
         while i < b.wrapping_add(w) {
             if regex == 0 {
-                grid_get_cell(gd, px.wrapping_add(i.wrapping_sub(b)), py, &raw mut gc);
+                grid_get_cell(&*gd, px.wrapping_add(i.wrapping_sub(b)), py, &mut gc);
                 if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                     w = w.wrapping_add(
                         (gc.data.width as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as u_int,
@@ -6482,10 +6482,10 @@ unsafe fn window_copy_search_marks(
                             .expect("regex search has a compiled pattern"),
                     );
                     grid_get_cell(
-                        gd,
+                        &*gd,
                         px.wrapping_add(width).wrapping_sub(1 as u_int),
                         py,
-                        &raw mut gc,
+                        &mut gc,
                     );
                     if gc.data.width as ::core::ffi::c_int > 2 as ::core::ffi::c_int {
                         width = width.wrapping_add(
@@ -6682,10 +6682,10 @@ unsafe fn window_copy_match_at_cursor_bytes(
         py = at.wrapping_div(sx);
         px = at.wrapping_sub(py.wrapping_mul(sx));
         grid_get_cell(
-            gd,
+            &*gd,
             px,
             (*gd).hsize.wrapping_add(py).wrapping_sub((*data).oy),
-            &raw mut gc,
+            &mut gc,
         );
         if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
             output.push(b'\t');
@@ -6846,7 +6846,7 @@ unsafe fn window_copy_write_one(
     );
     fx = 0 as u_int;
     while fx < nx {
-        grid_get_cell(gd, fx, fy, &raw mut gc);
+        grid_get_cell(&*gd, fx, fy, &mut gc);
         if fx.wrapping_add(gc.data.width as u_int) <= nx {
             window_copy_update_style(wme, fx, fy, &raw mut gc, mgc, cgc, mkgc, clgc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
@@ -8217,7 +8217,7 @@ unsafe fn window_copy_copy_line(
     if sx < ex {
         i = sx;
         while i < ex {
-            grid_get_cell(gd, i, sy, &raw mut gc);
+            grid_get_cell(&*gd, i, sy, &mut gc);
             if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
                 if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                     utf8_set(&mut ud, '\t' as i32 as u_char);
@@ -8274,11 +8274,11 @@ unsafe fn window_copy_in_set(
     mut set: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return grid_in_set((*(*data).backing).grid, px, py, set);
+    return grid_in_set(&*((*(*data).backing).grid), px, py, CStr::from_ptr(set));
 }
 unsafe fn window_copy_find_length(mut wme: *mut window_mode_entry, mut py: u_int) -> u_int {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return grid_line_length((*(*data).backing).grid, py);
+    return grid_line_length(&*((*(*data).backing).grid), py);
 }
 unsafe fn window_copy_cursor_limit(
     mut wme: *mut window_mode_entry,
@@ -8295,7 +8295,7 @@ unsafe fn window_copy_cursor_limit(
     {
         return window_copy_find_length(wme, py);
     }
-    return grid_line_limit((*(*data).backing).grid, py);
+    return grid_line_limit(&*((*(*data).backing).grid), py);
 }
 unsafe fn window_copy_cursor_start_of_line(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
