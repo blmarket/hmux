@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{memcpy, memset, strlen};
+use crate::src::ffi::libc::{memcpy, strlen};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::view::{
@@ -323,77 +323,68 @@ unsafe fn screen_write_should_draw_line(
     return screen_write_should_draw_lines(ctx, y, 1 as u_int);
 }
 unsafe fn screen_write_initctx(
-    mut ctx: *mut screen_write_ctx,
-    mut ttyctx: *mut tty_ctx,
+    ctx: &mut screen_write_ctx,
+    ttyctx: &mut tty_ctx,
     mut is_sync: ::core::ffi::c_int,
     mut check_obscured: ::core::ffi::c_int,
 ) {
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = ctx.s;
     let mut palette: *mut colour_palette = ::core::ptr::null_mut::<colour_palette>();
-    memset(
-        ttyctx as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<tty_ctx>() as size_t,
-    );
-    (*ttyctx).s = s;
-    (*ttyctx).sx = (*s).grid().sx;
-    (*ttyctx).sy = (*s).grid().sy;
-    (*ttyctx).ocx = (*s).cx;
-    (*ttyctx).ocy = (*s).cy;
-    (*ttyctx).orlower = (*s).rlower;
-    (*ttyctx).orupper = (*s).rupper;
+    *ttyctx = tty_ctx::default();
+    ttyctx.s = s;
+    ttyctx.sx = (*s).grid().sx;
+    ttyctx.sy = (*s).grid().sy;
+    ttyctx.ocx = (*s).cx;
+    ttyctx.ocy = (*s).cy;
+    ttyctx.orlower = (*s).rlower;
+    ttyctx.orupper = (*s).rupper;
     if check_obscured != 0 && screen_write_pane_is_obscured(ctx) != 0 {
-        (*ttyctx).flags |= TTY_CTX_PANE_OBSCURED;
+        ttyctx.flags |= TTY_CTX_PANE_OBSCURED;
     }
-    memcpy(
-        &raw mut (*ttyctx).defaults as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    (*ttyctx).style_ctx.defaults = &raw mut (*ttyctx).defaults;
-    (*ttyctx).style_ctx.hyperlinks = (*(*ctx).s).hyperlinks;
-    if let Some(callback) = (*ctx).init_ctx_cb.as_mut() {
-        callback(&mut *ttyctx);
-        if !(*ttyctx).style_ctx.palette.is_null() {
-            palette = (*ttyctx).style_ctx.palette;
-            if (*ttyctx).defaults.fg == 8 as ::core::ffi::c_int {
-                (*ttyctx).defaults.fg = (*palette).fg;
+    ttyctx.defaults = grid_default_cell;
+    ttyctx.style_ctx.defaults = &raw mut ttyctx.defaults;
+    ttyctx.style_ctx.hyperlinks = (*ctx.s).hyperlinks;
+    if let Some(callback) = ctx.init_ctx_cb.as_mut() {
+        callback(ttyctx);
+        if !ttyctx.style_ctx.palette.is_null() {
+            palette = ttyctx.style_ctx.palette;
+            if ttyctx.defaults.fg == 8 as ::core::ffi::c_int {
+                ttyctx.defaults.fg = (*palette).fg;
             }
-            if (*ttyctx).defaults.bg == 8 as ::core::ffi::c_int {
-                (*ttyctx).defaults.bg = (*palette).bg;
+            if ttyctx.defaults.bg == 8 as ::core::ffi::c_int {
+                ttyctx.defaults.bg = (*palette).bg;
             }
         }
     } else {
-        (*ttyctx).redraw_cb = screen_write_redraw_cb((*ctx).wp);
-        if !(*ctx).wp.is_null() {
+        ttyctx.redraw_cb = screen_write_redraw_cb(ctx.wp);
+        if !ctx.wp.is_null() {
             tty_default_colours(
-                &raw mut (*ttyctx).defaults,
-                (*ctx).wp as *mut window_pane,
-                &raw mut (*ttyctx).style_ctx.dim,
+                &raw mut ttyctx.defaults,
+                ctx.wp as *mut window_pane,
+                &raw mut ttyctx.style_ctx.dim,
             );
-            (*ttyctx).style_ctx.palette = &raw mut (*(*ctx).wp).palette;
-            (*ttyctx).set_client_cb = screen_write_set_client_cb((*ctx).wp);
+            ttyctx.style_ctx.palette = &raw mut (*ctx.wp).palette;
+            ttyctx.set_client_cb = screen_write_set_client_cb(ctx.wp);
         }
     }
-    if !(*ctx).flags & SCREEN_WRITE_SYNC != 0 {
-        if !(*ctx).wp.is_null()
-            && ((*ctx).wp != (*(*(*ctx).wp).window).active
-                || (*(*ctx).wp).screen != &raw mut (*(*ctx).wp).base)
+    if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
+        if !ctx.wp.is_null()
+            && (ctx.wp != (*(*ctx.wp).window).active || (*ctx.wp).screen != &raw mut (*ctx.wp).base)
         {
-            (*ttyctx).flags |= TTY_CTX_SYNC;
+            ttyctx.flags |= TTY_CTX_SYNC;
         } else {
-            if (*ctx).wp.is_null() {
-                (*ttyctx).flags |= TTY_CTX_OVERLAY_SYNC;
+            if ctx.wp.is_null() {
+                ttyctx.flags |= TTY_CTX_OVERLAY_SYNC;
             }
             if is_sync != 0 {
-                (*ttyctx).flags |= TTY_CTX_SYNC;
+                ttyctx.flags |= TTY_CTX_SYNC;
             }
         }
         tty_write(
             Some(tty_cmd_syncstart as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             ttyctx,
         );
-        (*ctx).flags |= SCREEN_WRITE_SYNC;
+        ctx.flags |= SCREEN_WRITE_SYNC;
     }
 }
 pub unsafe fn screen_write_make_list(s: &mut screen) {
@@ -882,8 +873,8 @@ pub unsafe fn screen_write_fast_copy(
         }
         (*s).cx = cx;
         screen_write_initctx(
-            ctx,
-            &raw mut ttyctx,
+            &mut *ctx,
+            &mut ttyctx,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
@@ -1729,8 +1720,8 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
     }
     screen_write_start_pane(&raw mut ctx, wp, s);
     screen_write_initctx(
-        &raw mut ctx,
-        &raw mut ttyctx,
+        &mut ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -1857,8 +1848,8 @@ pub unsafe fn screen_write_alignmenttest(mut ctx: *mut screen_write_ctx) {
     (*s).rlower = (*s).grid().sy.wrapping_sub(1 as u_int);
     screen_write_collect_clear(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -1937,8 +1928,8 @@ pub unsafe fn screen_write_insertcharacter(
         return;
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2025,8 +2016,8 @@ pub unsafe fn screen_write_deletecharacter(
         return;
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2113,8 +2104,8 @@ pub unsafe fn screen_write_clearcharacter(
         return;
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2200,8 +2191,8 @@ pub unsafe fn screen_write_insertline(
             return;
         }
         screen_write_initctx(
-            ctx,
-            &raw mut ttyctx,
+            &mut *ctx,
+            &mut ttyctx,
             1 as ::core::ffi::c_int,
             1 as ::core::ffi::c_int,
         );
@@ -2233,8 +2224,8 @@ pub unsafe fn screen_write_insertline(
         return;
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2330,8 +2321,8 @@ pub unsafe fn screen_write_deleteline(
             return;
         }
         screen_write_initctx(
-            ctx,
-            &raw mut ttyctx,
+            &mut *ctx,
+            &mut ttyctx,
             1 as ::core::ffi::c_int,
             1 as ::core::ffi::c_int,
         );
@@ -2368,8 +2359,8 @@ pub unsafe fn screen_write_deleteline(
         return;
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2573,8 +2564,8 @@ pub unsafe fn screen_write_reverseindex(mut ctx: *mut screen_write_ctx, mut bg: 
         b"screen_write_reverseindex\0" as *const u8 as *const ::core::ffi::c_char,
     );
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2753,8 +2744,8 @@ pub unsafe fn screen_write_scrolldown(
     let mut i: u_int = 0;
     let mut ry: u_int = 0;
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -2858,8 +2849,8 @@ pub unsafe fn screen_write_clearendofscreen(mut ctx: *mut screen_write_ctx, mut 
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -3016,8 +3007,8 @@ pub unsafe fn screen_write_clearstartofscreen(mut ctx: *mut screen_write_ctx, mu
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -3155,8 +3146,8 @@ pub unsafe fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx, mut bg: u
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -3267,8 +3258,8 @@ pub unsafe fn screen_write_fullredraw(mut ctx: *mut screen_write_ctx) {
         b"screen_write_fullredraw\0" as *const u8 as *const ::core::ffi::c_char,
     );
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -3401,8 +3392,8 @@ unsafe fn screen_write_collect_flush_scrolled(
         wsy: 0,
     };
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -3591,8 +3582,8 @@ unsafe fn screen_write_collect_flush_line(
                                 == CLEAR as ::core::ffi::c_int as ::core::ffi::c_uint
                             {
                                 screen_write_initctx(
-                                    ctx,
-                                    &raw mut ttyctx,
+                                    &mut *ctx,
+                                    &mut ttyctx,
                                     1 as ::core::ffi::c_int,
                                     0 as ::core::ffi::c_int,
                                 );
@@ -3607,8 +3598,8 @@ unsafe fn screen_write_collect_flush_line(
                                 );
                             } else {
                                 screen_write_initctx(
-                                    ctx,
-                                    &raw mut ttyctx,
+                                    &mut *ctx,
+                                    &mut ttyctx,
                                     0 as ::core::ffi::c_int,
                                     0 as ::core::ffi::c_int,
                                 );
@@ -4110,8 +4101,8 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         return;
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -4457,8 +4448,8 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         cy as ::core::ffi::c_int,
     );
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -4602,8 +4593,8 @@ pub unsafe fn screen_write_setselection(
         wsy: 0,
     };
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -4665,8 +4656,8 @@ pub unsafe fn screen_write_rawstring(
         wsy: 0,
     };
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -4761,8 +4752,8 @@ pub unsafe fn screen_write_alternateon(
         server_redraw_window_borders((*wp).window as *mut window);
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -4843,13 +4834,62 @@ pub unsafe fn screen_write_alternateoff(
         server_redraw_window_borders((*wp).window as *mut window);
     }
     screen_write_initctx(
-        ctx,
-        &raw mut ttyctx,
+        &mut *ctx,
+        &mut ttyctx,
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
         ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
+    }
+}
+
+#[cfg(test)]
+mod write_ctx_tests {
+    use super::*;
+    use std::{cell::Cell, rc::Rc};
+
+    struct DropCounter(Rc<Cell<usize>>);
+
+    impl Drop for DropCounter {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    #[test]
+    fn resetting_a_terminal_context_drops_both_owned_callbacks() {
+        unsafe {
+            let mut s = screen::empty();
+            s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            s.cx = 3;
+            s.cy = 1;
+            s.rlower = 1;
+            let mut ctx = screen_write_ctx {
+                s: &mut s,
+                flags: SCREEN_WRITE_SYNC,
+                ..Default::default()
+            };
+            let drops = Rc::new(Cell::new(0));
+            let mut ttyctx = tty_ctx::default();
+            for reset in 1..=3 {
+                let redraw_owner = DropCounter(drops.clone());
+                ttyctx.redraw_cb = Some(Box::new(move |_| {
+                    let _ = &redraw_owner;
+                }));
+                let client_owner = DropCounter(drops.clone());
+                ttyctx.set_client_cb = Some(Box::new(move |_, _| {
+                    let _ = &client_owner;
+                    0
+                }));
+                screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+                assert_eq!(drops.get(), reset * 2);
+                assert_eq!((ttyctx.sx, ttyctx.sy, ttyctx.ocx, ttyctx.ocy), (8, 2, 3, 1));
+                assert!(grid_cells_equal(&ttyctx.defaults, &grid_default_cell));
+                assert!(ttyctx.set_client_cb.is_none());
+                assert!(std::ptr::eq(ttyctx.style_ctx.defaults, &ttyctx.defaults));
+            }
+        }
     }
 }
 

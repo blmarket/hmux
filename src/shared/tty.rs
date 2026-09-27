@@ -414,6 +414,7 @@ pub struct tty_term_entry {
     pub le_prev: *mut *mut tty_term,
 }
 
+#[derive(Default)]
 pub struct tty_ctx {
     pub s: *mut screen,
     pub redraw_cb: tty_ctx_redraw_cb,
@@ -440,7 +441,7 @@ pub struct tty_ctx {
     pub wsy: u_int,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct tty_style_ctx {
     pub defaults: *const grid_cell,
@@ -455,6 +456,19 @@ pub union tty_ctx_c2rust_unnamed {
     pub n: u_int,
     pub data: tty_ctx_c2rust_unnamed_data,
     pub sel: tty_ctx_c2rust_unnamed_sel,
+}
+
+impl Default for tty_ctx_c2rust_unnamed {
+    fn default() -> Self {
+        // Initialize the largest union member so every variant starts empty.
+        Self {
+            sel: tty_ctx_c2rust_unnamed_sel {
+                clip: std::ptr::null(),
+                data: std::ptr::null(),
+                size: 0,
+            },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
