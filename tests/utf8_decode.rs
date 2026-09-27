@@ -102,3 +102,102 @@ fn helper_keeps_trailing_bytes_for_the_next_decode() {
         }
     );
 }
+
+#[test]
+fn copied_cells_clear_unused_bytes_and_allow_self_assignment() {
+    use hmux2::src::text::utf8::{utf8_copy, utf8_set};
+    let mut cell = utf8_data {
+        data: [0xab; 32],
+        have: 2,
+        size: 2,
+        width: 1,
+    };
+    cell.data[..2].copy_from_slice("é".as_bytes());
+    let original = cell;
+    cell = utf8_copy(&cell);
+    assert_eq!(&cell.data[..2], "é".as_bytes());
+    assert!(cell.data[2..].iter().all(|&byte| byte == 0));
+    assert_eq!((cell.have, cell.size, cell.width), (2, 2, 1));
+    assert!(original.data[2..].iter().all(|&byte| byte == 0xab));
+
+    // Copying preserves oversized metadata, as the original memcpy helper did.
+    let oversized = utf8_data {
+        data: [0xcd; 32],
+        size: 33,
+        ..empty_data()
+    };
+    assert_eq!(utf8_copy(&oversized).data, [0xcd; 32]);
+    utf8_set(&mut cell, 0xff);
+    assert_eq!((cell.have, cell.size, cell.width), (1, 1, 1));
+    assert_eq!(cell.data[0], 0xff);
+    assert!(cell.data[1..].iter().all(|&byte| byte == 0));
+}
+
+#[test]
+fn codepoint_encoding_preserves_failure_outputs_and_unused_bytes() {
+    use hmux2::src::text::utf8::utf8_fromwc;
+    unsafe {
+        for codepoint in [-1, 0xd800, 0x110000] {
+            let mut cell = utf8_data {
+                data: [0xaa; 32],
+                have: 7,
+                size: 8,
+                width: 9,
+            };
+            assert_eq!(utf8_fromwc(codepoint, &mut cell), UTF8_ERROR);
+            assert_eq!(cell.data, [0xaa; 32]);
+            assert_eq!((cell.have, cell.size, cell.width), (7, 8, 9));
+        }
+        for (codepoint, bytes, width) in [
+            (0, &b"\0"[..], 0),
+            (0xe9, "é".as_bytes(), 1),
+            (0x6f22, "漢".as_bytes(), 2),
+            (0x1f600, "😀".as_bytes(), 2),
+        ] {
+            let mut cell = utf8_data {
+                data: [0xaa; 32],
+                ..empty_data()
+            };
+            assert_eq!(utf8_fromwc(codepoint, &mut cell), UTF8_DONE);
+            assert_eq!(&cell.data[..bytes.len()], bytes);
+            assert!(cell.data[bytes.len()..].iter().all(|&byte| byte == 0xaa));
+            assert_eq!(
+                (cell.have, cell.size, cell.width),
+                (bytes.len() as u8, bytes.len() as u8, width)
+            );
+        }
+        for bytes in [&b"\xe2\x82"[..], &b"\xff"[..]] {
+            let mut cell = empty_data();
+            cell.data[..bytes.len()].copy_from_slice(bytes);
+            cell.size = bytes.len() as u8;
+            let mut codepoint = 123;
+            assert_eq!(utf8_towc(&cell, &mut codepoint), UTF8_ERROR);
+            assert_eq!(codepoint, 123);
+        }
+    }
+}
+
+#[test]
+fn whitespace_scanning_respects_decode_order_and_cell_bounds() {
+    use hmux2::src::text::utf8::utf8_has_whitespace;
+    for (bytes, expected) in [
+        (&b"a\xc2\xa0"[..], 1),
+        (&b"a\xe3\x80\x80"[..], 1),
+        (&b" \xff"[..], 1),
+        (&b"\xff "[..], 0),
+        (&b"a\xe2\x82"[..], 0),
+        ("é".as_bytes(), 0),
+    ] {
+        let mut cell = empty_data();
+        cell.data[..bytes.len()].copy_from_slice(bytes);
+        cell.size = bytes.len() as u8;
+        assert_eq!(utf8_has_whitespace(&cell), expected);
+    }
+    assert_eq!(
+        utf8_has_whitespace(&utf8_data {
+            size: 33,
+            ..empty_data()
+        }),
+        0
+    );
+}

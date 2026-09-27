@@ -1475,7 +1475,7 @@ unsafe fn tty_keys_next1(
         *key = tk.key;
         return 0;
     }
-    more = utf8_open(&raw mut ud, *buf as u_char);
+    more = utf8_open(&mut ud, *buf as u_char);
     if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
         *size = ud.size as size_t;
         if len < ud.size as size_t {
@@ -1486,7 +1486,7 @@ unsafe fn tty_keys_next1(
         }
         i = 1 as u_int;
         while i < ud.size as u_int {
-            more = utf8_append(&raw mut ud, *buf.offset(i as isize) as u_char);
+            more = utf8_append(&mut ud, *buf.offset(i as isize) as u_char);
             i = i.wrapping_add(1);
         }
         if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -2321,7 +2321,7 @@ unsafe fn tty_keys_extended_key(
     if nkey != KEYC_BSPACE as ::core::ffi::c_ulong as key_code
         && nkey & !(0x7f as ::core::ffi::c_int) as key_code != 0
     {
-        if utf8_fromwc(nkey as wchar_t, &raw mut ud) as ::core::ffi::c_uint
+        if utf8_fromwc(nkey as wchar_t, &mut ud) as ::core::ffi::c_uint
             == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             && utf8_from_data(&ud, &mut uc) as ::core::ffi::c_uint
                 == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint

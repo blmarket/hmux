@@ -881,7 +881,7 @@ unsafe fn format_leading_hashes(
 unsafe fn format_draw_many(mut ctx: *mut screen_write_ctx, mut sy: *mut style, mut n: u_int) {
     let mut ch: ::core::ffi::c_char = '#' as i32 as ::core::ffi::c_char;
     let mut i: u_int = 0;
-    utf8_set(&raw mut (*sy).gc.data, ch as u_char);
+    utf8_set(&mut (*sy).gc.data, ch as u_char);
     i = 0 as u_int;
     while i < n {
         screen_write_cell(ctx, &raw mut (*sy).gc);
@@ -1132,7 +1132,7 @@ pub unsafe fn format_draw(
                 width[current as usize] =
                     width[current as usize].wrapping_add(n.wrapping_div(2 as u_int));
                 if even != 0 {
-                    utf8_set(ud, '[' as i32 as u_char);
+                    utf8_set(&mut *ud, '[' as i32 as u_char);
                     screen_write_cell(
                         (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
                             as *mut screen_write_ctx,
@@ -1145,7 +1145,7 @@ pub unsafe fn format_draw(
             || *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '[' as i32
             || sy.ignore != 0
         {
-            more = utf8_open(ud, *cp as u_char);
+            more = utf8_open(&mut *ud, *cp as u_char);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
@@ -1156,7 +1156,7 @@ pub unsafe fn format_draw(
                     {
                         break;
                     }
-                    more = utf8_append(ud, *cp as u_char);
+                    more = utf8_append(&mut *ud, *cp as u_char);
                 }
                 if more as ::core::ffi::c_uint
                     != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1172,7 +1172,7 @@ pub unsafe fn format_draw(
                     cp = cp.offset(1);
                     continue;
                 } else {
-                    utf8_set(ud, *cp as u_char);
+                    utf8_set(&mut *ud, *cp as u_char);
                     cp = cp.offset(1);
                 }
             }
@@ -1703,7 +1703,7 @@ pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
                 cp = end.offset(1 as ::core::ffi::c_int as isize);
             }
         } else {
-            more = utf8_open(&raw mut ud, *cp as u_char);
+            more = utf8_open(&mut ud, *cp as u_char);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
@@ -1714,7 +1714,7 @@ pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
                     {
                         break;
                     }
-                    more = utf8_append(&raw mut ud, *cp as u_char);
+                    more = utf8_append(&mut ud, *cp as u_char);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1776,7 +1776,7 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
             out.extend_from_slice(::core::slice::from_raw_parts(cp.cast::<u8>(), span));
             cp = end.offset(1 as ::core::ffi::c_int as isize);
         } else {
-            more = utf8_open(&raw mut ud, *cp as u_char);
+            more = utf8_open(&mut ud, *cp as u_char);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
@@ -1787,7 +1787,7 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
                     {
                         break;
                     }
-                    more = utf8_append(&raw mut ud, *cp as u_char);
+                    more = utf8_append(&mut ud, *cp as u_char);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1868,7 +1868,7 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
             out.extend_from_slice(::core::slice::from_raw_parts(cp.cast::<u8>(), span));
             cp = end.offset(1 as ::core::ffi::c_int as isize);
         } else {
-            more = utf8_open(&raw mut ud, *cp as u_char);
+            more = utf8_open(&mut ud, *cp as u_char);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
@@ -1879,7 +1879,7 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
                     {
                         break;
                     }
-                    more = utf8_append(&raw mut ud, *cp as u_char);
+                    more = utf8_append(&mut ud, *cp as u_char);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint

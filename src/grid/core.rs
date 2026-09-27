@@ -704,7 +704,7 @@ unsafe fn grid_get_cell1(mut gl: *mut grid_line, mut px: u_int, mut gc: *mut gri
         (*gc).bg |= COLOUR_FLAG_256;
     }
     (*gc).us = 8 as ::core::ffi::c_int;
-    utf8_set(&raw mut (*gc).data, (*gce).c2rust_unnamed.data.data);
+    utf8_set(&mut (*gc).data, (*gce).c2rust_unnamed.data.data);
     (*gc).link = 0 as u_int;
 }
 pub unsafe fn grid_get_cell(
@@ -2243,7 +2243,7 @@ pub unsafe fn grid_in_set(
         }
         if (has_tab != 0 || has_space != 0)
             && tmp_gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0
-            || has_space != 0 && utf8_has_whitespace(&raw mut tmp_gc.data) != 0
+            || has_space != 0 && utf8_has_whitespace(&tmp_gc.data) != 0
         {
             return (tmp_gc.data.width as u_int).wrapping_sub(px.wrapping_sub(pxx))
                 as ::core::ffi::c_int;
@@ -2253,7 +2253,7 @@ pub unsafe fn grid_in_set(
     if (has_tab != 0 || has_space != 0) && gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
         return gc.data.width as ::core::ffi::c_int;
     }
-    if has_space != 0 && utf8_has_whitespace(&raw mut gc.data) != 0 {
+    if has_space != 0 && utf8_has_whitespace(&gc.data) != 0 {
         return if gc.data.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
             1 as ::core::ffi::c_int
         } else {

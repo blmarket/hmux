@@ -1400,7 +1400,7 @@ unsafe fn redraw_draw_border_arrow(
     } else {
         return;
     }
-    utf8_set(&raw mut (*gc).data, ch as u_char);
+    utf8_set(&mut (*gc).data, ch as u_char);
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
 }
 unsafe fn redraw_draw_border_span(

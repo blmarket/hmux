@@ -620,7 +620,7 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
             (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY) as utf8_char,
             &mut ud,
         );
-        if utf8_towc(&raw mut ud, &raw mut wc) as ::core::ffi::c_uint
+        if utf8_towc(&ud, &mut wc) as ::core::ffi::c_uint
             == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             key = wc as key_code;

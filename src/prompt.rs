@@ -483,7 +483,7 @@ unsafe fn prompt_redraw_character(
         (*gc).data.size = (*gc).data.have;
         (*gc).data.width = 2 as u_char;
     } else {
-        utf8_copy(&raw mut (*gc).data, ud);
+        (*gc).data = utf8_copy(&*ud);
     }
     screen_write_cell(ctx, gc);
     return 1 as ::core::ffi::c_int;
@@ -508,7 +508,7 @@ unsafe fn prompt_redraw_quote(
         && pcursor >= offset
         && (*(*ctx).s).cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
     {
-        utf8_set(&raw mut ud, '^' as i32 as u_char);
+        utf8_set(&mut ud, '^' as i32 as u_char);
         return prompt_redraw_character(ctx, offset, pw, w, gc, &raw mut ud);
     }
     return 1 as ::core::ffi::c_int;
@@ -571,7 +571,7 @@ unsafe fn prompt_draw_complete(
         if cell.size == 0 || width.wrapping_add(cell.width as u_int) > avail {
             break;
         }
-        utf8_copy(&raw mut gc.data, cell);
+        gc.data = utf8_copy(cell);
         screen_write_cell(ctx, &raw mut gc);
         width = width.wrapping_add(cell.width as u_int);
     }
@@ -1318,7 +1318,7 @@ unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
         ud = udp;
         i = 0 as u_int;
         while i as size_t != bufsize {
-            more = utf8_open(udp, *bufdata.offset(i as isize) as u_char);
+            more = utf8_open(&mut *udp, *bufdata.offset(i as isize) as u_char);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
@@ -1329,7 +1329,7 @@ unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
                     {
                         break;
                     }
-                    more = utf8_append(udp, *bufdata.offset(i as isize) as u_char);
+                    more = utf8_append(&mut *udp, *bufdata.offset(i as isize) as u_char);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1345,7 +1345,7 @@ unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
             {
                 break;
             }
-            utf8_set(udp, *bufdata.offset(i as isize) as u_char);
+            utf8_set(&mut *udp, *bufdata.offset(i as isize) as u_char);
             udp = udp.offset(1);
             i = i.wrapping_add(1);
         }
@@ -1447,7 +1447,7 @@ unsafe fn prompt_replace_complete(
             size: 0,
             width: 0,
         };
-        utf8_set(&raw mut cell, byte);
+        utf8_set(&mut cell, byte);
         replacement.push(cell);
     }
     replacement.extend_from_slice(&buffer[last_index..=size]);
@@ -1734,26 +1734,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -2081,26 +2065,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -2428,26 +2396,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -2775,26 +2727,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -3122,26 +3058,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -3469,26 +3389,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -3816,26 +3720,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -4163,26 +4051,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -4510,26 +4382,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -4857,26 +4713,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -5204,26 +5044,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -5551,26 +5375,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -5898,26 +5706,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -6245,26 +6037,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -6592,26 +6368,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -6939,26 +6699,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -7286,26 +7030,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -7633,26 +7361,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -7980,26 +7692,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -8327,26 +8023,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -8674,26 +8354,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -9021,26 +8685,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -9368,26 +9016,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -9715,26 +9347,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -10062,26 +9678,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -10409,26 +10009,10 @@ pub unsafe fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                 }
                                 if idx >= 2 as size_t {
-                                    utf8_copy(
-                                        &raw mut tmp,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(2 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                    );
-                                    utf8_copy(
-                                        prompt_buffer_cells(pr)
-                                            .offset(idx.wrapping_sub(1 as size_t) as isize)
-                                            as *mut utf8_data,
-                                        &raw mut tmp,
-                                    );
+                                    let cells = &mut (*pr).buffer;
+                                    tmp = utf8_copy(&cells[idx - 2]);
+                                    cells[idx - 2] = utf8_copy(&cells[idx - 1]);
+                                    cells[idx - 1] = utf8_copy(&tmp);
                                     (*pr).index = idx;
                                     current_block = 5848346009959455809;
                                 } else {
@@ -10753,7 +10337,7 @@ pub unsafe fn prompt_key(
     match current_block {
         1115217863795707468 => {
             if key <= 0x7f as key_code {
-                utf8_set(&raw mut tmp, key as u_char);
+                utf8_set(&mut tmp, key as u_char);
                 if key <= 0x1f as key_code || key == 0x7f as key_code {
                     tmp.width = 2 as u_char;
                 }
@@ -10961,7 +10545,7 @@ mod prompt_buffer_tests {
             size: 0,
             width: 0,
         };
-        unsafe { utf8_set(&raw mut result, byte) };
+        utf8_set(&mut result, byte);
         result
     }
 
@@ -10980,6 +10564,24 @@ mod prompt_buffer_tests {
             );
             assert_eq!(pr.index, 5);
             assert_eq!(pr.buffer.len(), utf8_strlen(pr.buffer.as_ptr()) + 1);
+        }
+    }
+
+    #[test]
+    fn transpose_keeps_multibyte_cells_and_the_logical_sentinel() {
+        for (index, expected, next) in [(0, c"é漢Z", 0), (1, c"漢éZ", 2), (3, c"éZ漢", 3)] {
+            let mut pr = make_prompt(c"é漢Z", index, None);
+            let mut redraw = 0;
+            unsafe {
+                assert_eq!(
+                    prompt_key(&mut *pr, KEYC_CTRL | b't' as key_code, &mut redraw),
+                    PROMPT_KEY_HANDLED
+                );
+                assert_eq!(utf8_tocstr_cstring(pr.buffer.as_ptr()).as_c_str(), expected);
+            }
+            assert_eq!(pr.index, next);
+            assert_eq!(pr.buffer.len(), 4);
+            assert_eq!(pr.buffer[3].size, 0);
         }
     }
 

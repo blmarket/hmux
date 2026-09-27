@@ -96,12 +96,12 @@ pub unsafe fn utf8_should_combine(
 ) -> ::core::ffi::c_int {
     let mut w: wchar_t = 0;
     let mut a: wchar_t = 0;
-    if utf8_towc(with, &raw mut w) as ::core::ffi::c_uint
+    if utf8_towc(&*with, &mut w) as ::core::ffi::c_uint
         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 0 as ::core::ffi::c_int;
     }
-    if utf8_towc(add, &raw mut a) as ::core::ffi::c_uint
+    if utf8_towc(&*add, &mut a) as ::core::ffi::c_uint
         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 0 as ::core::ffi::c_int;

@@ -636,7 +636,7 @@ pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -
         if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 let mut tab = gc.data;
-                utf8_set(&raw mut tab, '\t' as i32 as u_char);
+                utf8_set(&mut tab, '\t' as i32 as u_char);
                 ud.push(tab);
             } else {
                 ud.push(gc.data);

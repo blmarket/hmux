@@ -5700,13 +5700,13 @@ fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
         width: 0,
     };
     let mut codepoint: utf8_char = 0;
-    let mut more = unsafe { utf8_open(&raw mut data, remaining[0]) };
+    let mut more = unsafe { utf8_open(&mut data, remaining[0]) };
     if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
         if remaining.len() != data.size as usize {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
         for &byte in &remaining[1..] {
-            more = unsafe { utf8_append(&raw mut data, byte) };
+            more = unsafe { utf8_append(&mut data, byte) };
         }
         if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;

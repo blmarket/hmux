@@ -592,7 +592,7 @@ pub unsafe fn screen_select_cell(
     if (*dst).bg == 8 as ::core::ffi::c_int || (*dst).bg == 9 as ::core::ffi::c_int {
         (*dst).bg = (*src).bg;
     }
-    utf8_copy(&raw mut (*dst).data, &raw const (*src).data);
+    (*dst).data = utf8_copy(&(*src).data);
     (*dst).flags = (*src).flags;
     if (*dst).attr as ::core::ffi::c_int & GRID_ATTR_NOATTR != 0 {
         (*dst).attr = ((*dst).attr as ::core::ffi::c_int

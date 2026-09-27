@@ -8220,9 +8220,9 @@ unsafe fn window_copy_copy_line(
             grid_get_cell(gd, i, sy, &raw mut gc);
             if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
                 if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-                    utf8_set(&raw mut ud, '\t' as i32 as u_char);
+                    utf8_set(&mut ud, '\t' as i32 as u_char);
                 } else {
-                    utf8_copy(&raw mut ud, &raw mut gc.data);
+                    ud = utf8_copy(&gc.data);
                 }
                 if ud.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                     && gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0

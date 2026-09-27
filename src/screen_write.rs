@@ -528,7 +528,7 @@ pub unsafe fn screen_write_putc(
         gcp as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    utf8_set(&raw mut gc.data, ch);
+    utf8_set(&mut gc.data, ch);
     screen_write_cell(ctx, &raw mut gc);
 }
 /// Measure literal C-string bytes using the screen's display-width rules.
@@ -545,7 +545,7 @@ pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
     let mut ptr = msg.as_ptr() as *const u_char;
     while *ptr as ::core::ffi::c_int != '\0' as i32 {
         if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int
-            && utf8_open(&raw mut ud, *ptr) as ::core::ffi::c_uint
+            && utf8_open(&mut ud, *ptr) as ::core::ffi::c_uint
                 == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             ptr = ptr.offset(1);
@@ -554,7 +554,7 @@ pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
                 break;
             }
             loop {
-                more = utf8_append(&raw mut ud, *ptr);
+                more = utf8_append(&mut ud, *ptr);
                 if !(more as ::core::ffi::c_uint
                     == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
@@ -673,7 +673,7 @@ pub unsafe fn screen_write_text(
         }
         i = idx;
         while i < end {
-            utf8_copy(&raw mut gc.data, text.offset(i as isize) as *mut utf8_data);
+            gc.data = utf8_copy(&*(text.offset(i as isize) as *mut utf8_data));
             screen_write_cell(ctx, &raw mut gc);
             i = i.wrapping_add(1);
         }
@@ -747,7 +747,7 @@ pub unsafe fn screen_write_nputs(
     let mut ptr = msg.as_ptr() as *const u_char;
     while *ptr as ::core::ffi::c_int != '\0' as i32 {
         if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int
-            && utf8_open(ud, *ptr) as ::core::ffi::c_uint
+            && utf8_open(&mut *ud, *ptr) as ::core::ffi::c_uint
                 == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             ptr = ptr.offset(1);
@@ -756,7 +756,7 @@ pub unsafe fn screen_write_nputs(
                 break;
             }
             loop {
-                more = utf8_append(ud, *ptr);
+                more = utf8_append(&mut *ud, *ptr);
                 if !(more as ::core::ffi::c_uint
                     == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
@@ -942,36 +942,33 @@ unsafe fn screen_write_box_border_set(
     match lines as ::core::ffi::c_int {
         1 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&raw mut (*gc).data, tty_acs_double_borders(cell_type));
+            (*gc).data = utf8_copy(&*(tty_acs_double_borders(cell_type)));
         }
         2 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&raw mut (*gc).data, tty_acs_heavy_borders(cell_type));
+            (*gc).data = utf8_copy(&*(tty_acs_heavy_borders(cell_type)));
         }
         4 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&raw mut (*gc).data, tty_acs_rounded_borders(cell_type));
+            (*gc).data = utf8_copy(&*(tty_acs_rounded_borders(cell_type)));
         }
         3 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
             utf8_set(
-                &raw mut (*gc).data,
+                &mut (*gc).data,
                 SIMPLE_BORDERS[cell_type as usize] as u_char,
             );
         }
         5 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
             utf8_set(
-                &raw mut (*gc).data,
+                &mut (*gc).data,
                 PADDED_BORDERS[cell_type as usize] as u_char,
             );
         }
         0 | -1 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-            utf8_set(
-                &raw mut (*gc).data,
-                CELL_BORDERS[cell_type as usize] as u_char,
-            );
+            utf8_set(&mut (*gc).data, CELL_BORDERS[cell_type as usize] as u_char);
         }
         6 | _ => {}
     };
@@ -1870,7 +1867,7 @@ pub unsafe fn screen_write_alignmenttest(mut ctx: *mut screen_write_ctx) {
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    utf8_set(&raw mut gc.data, 'E' as i32 as u_char);
+    utf8_set(&mut gc.data, 'E' as i32 as u_char);
     yy = 0 as u_int;
     while yy < (*(*s).grid).sy {
         xx = 0 as u_int;
@@ -4356,7 +4353,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         }
         return;
     }
-    utf8_set(&raw mut tmp_gc.data, ' ' as i32 as u_char);
+    utf8_set(&mut tmp_gc.data, ' ' as i32 as u_char);
     if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
         return;
     }

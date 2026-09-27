@@ -1129,7 +1129,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
         (*sb_style).pad = PANE_SCROLLBARS_DEFAULT_PADDING;
     }
     utf8_set(
-        &raw mut (*sb_style).gc.data,
+        &mut (*sb_style).gc.data,
         PANE_SCROLLBARS_CHARACTER as u_char,
     );
 }

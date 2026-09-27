@@ -1994,7 +1994,7 @@ pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const grid_cell) -> grid_cel
         (*gc).data.size as size_t,
     );
     if c != -(1 as ::core::ffi::c_int) {
-        utf8_set(&raw mut new.data, c as u_char);
+        utf8_set(&mut new.data, c as u_char);
         new.attr = (new.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
         return new;
     }

@@ -1,7 +1,7 @@
-use crate::src::compat::utf8proc::{utf8proc_wctomb, utf8proc_wcwidth};
+use crate::src::compat::utf8proc::utf8proc_wcwidth;
 use crate::src::compat::vis::vis;
-use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, memcpy, memset, strlen, wctomb};
-use crate::src::log::{fatalx, log_bytes, log_cstr_n, log_debug};
+use crate::src::ffi::libc::{__ctype_b_loc, strlen};
+use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
 };
@@ -136,197 +136,166 @@ pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
             << 29 as ::core::ffi::c_int
         | ch as utf8_char;
 }
-pub unsafe fn utf8_set(ud: *mut utf8_data, ch: u_char) {
+pub fn utf8_set(ud: &mut utf8_data, ch: u_char) {
     *ud = utf8_data {
         data: [0; 32],
         have: 1,
         size: 1,
         width: 1,
     };
-    (*ud).data[0] = ch;
+    ud.data[0] = ch;
 }
 
-pub unsafe fn utf8_copy(mut to: *mut utf8_data, mut from: *const utf8_data) {
-    let mut i: u_int = 0;
-    memcpy(
-        to as *mut ::core::ffi::c_void,
-        from as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    );
-    i = (*to).size as u_int;
-    while (i as usize) < ::core::mem::size_of::<[u_char; 32]>() as usize {
-        (*to).data[i as usize] = '\0' as i32 as u_char;
-        i = i.wrapping_add(1);
-    }
+/// Return a stack value so a caller may safely copy onto its own source.
+pub fn utf8_copy(from: &utf8_data) -> utf8_data {
+    let mut copied = *from;
+    let size = (copied.size as usize).min(copied.data.len());
+    copied.data[size..].fill(0);
+    copied
 }
-unsafe fn utf8_width(mut ud: *mut utf8_data, mut width: *mut ::core::ffi::c_int) -> utf8_state {
-    let mut wc: wchar_t = 0;
-    if utf8_towc(ud, &raw mut wc) as ::core::ffi::c_uint
-        != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return UTF8_ERROR;
+
+unsafe fn utf8_width(ud: &utf8_data) -> Option<i32> {
+    let mut wc = 0;
+    if utf8_towc(ud, &mut wc) != UTF8_DONE {
+        return None;
     }
     if let Some(cached) = utf8_find_in_width_cache(wc) {
-        *width = cached as ::core::ffi::c_int;
         log_debug(format_args!(
             "cached width for {:08X} is {}",
-            wc as u_int,
-            (*width) as i32
+            wc as u_int, cached
         ));
-        return UTF8_DONE;
+        return Some(cached as i32);
     }
-    *width = utf8proc_wcwidth(wc);
+    let width = utf8proc_wcwidth(wc);
     log_debug(format_args!(
         "utf8proc_wcwidth({:05X}) returned {}",
-        wc as u_int,
-        (*width) as i32
+        wc as u_int, width
     ));
-    if *width >= 0 as ::core::ffi::c_int && *width <= 0xff as ::core::ffi::c_int {
-        return UTF8_DONE;
-    }
-    return UTF8_ERROR;
+    (0..=0xff).contains(&width).then_some(width)
 }
-pub unsafe fn utf8_towc(mut ud: *const utf8_data, mut wc: *mut wchar_t) -> utf8_state {
-    let size = (*ud).size as usize;
-    if size > ::core::mem::size_of::<[u_char; 32]>() {
+
+pub unsafe fn utf8_towc(ud: &utf8_data, wc: &mut wchar_t) -> utf8_state {
+    let Some(bytes) = ud.data.get(..ud.size as usize) else {
         return UTF8_ERROR;
-    }
-    let bytes = ::core::slice::from_raw_parts((*ud).data.as_ptr(), size);
+    };
     match decode_utf8(bytes) {
         DecodeResult::Complete { codepoint, .. } => {
             *wc = codepoint as wchar_t;
             log_debug(format_args!(
                 "UTF-8 {} is U+{:06X}",
-                log_cstr_n(
-                    (&raw const (*ud).data as *const u_char) as *const _,
-                    (*ud).size as ::core::ffi::c_int
-                ),
+                log_bytes(bytes),
                 *wc as u_int
             ));
             UTF8_DONE
         }
         _ => {
-            log_debug(format_args!(
-                "UTF-8 {} is invalid",
-                log_cstr_n(
-                    (&raw const (*ud).data as *const u_char) as *const _,
-                    (*ud).size as ::core::ffi::c_int
-                )
-            ));
+            log_debug(format_args!("UTF-8 {} is invalid", log_bytes(bytes)));
             UTF8_ERROR
         }
     }
 }
-pub unsafe fn utf8_has_whitespace(mut ud: *const utf8_data) -> ::core::ffi::c_int {
-    let mut wc: wchar_t = 0;
-    let mut offset: u_int = 0 as u_int;
-    let mut size: u_int = 0;
-    if (*ud).size as usize > ::core::mem::size_of::<[u_char; 32]>() {
-        return 0 as ::core::ffi::c_int;
-    }
-    let bytes = ::core::slice::from_raw_parts((*ud).data.as_ptr(), (*ud).size as usize);
-    while offset < (*ud).size as u_int {
-        let remaining = &bytes[offset as usize..];
+
+pub fn utf8_has_whitespace(ud: &utf8_data) -> ::core::ffi::c_int {
+    let Some(mut remaining) = ud.data.get(..ud.size as usize) else {
+        return 0;
+    };
+    while !remaining.is_empty() {
         let DecodeResult::Complete { codepoint, len } = decode_utf8(remaining) else {
-            return 0 as ::core::ffi::c_int;
+            return 0;
         };
-        wc = codepoint as wchar_t;
-        size = len as u_int;
-        offset = offset.wrapping_add(size);
-        match wc {
-            9 | 10 | 11 | 12 | 13 | 32 | 133 | 160 | 5760 | 8192 | 8193 | 8194 | 8195 | 8196
-            | 8197 | 8198 | 8199 | 8200 | 8201 | 8202 | 8232 | 8233 | 8239 | 8287 | 12288 => {
-                return 1 as ::core::ffi::c_int
-            }
-            _ => {}
+        remaining = &remaining[len..];
+        if matches!(
+            codepoint,
+            9 | 10
+                | 11
+                | 12
+                | 13
+                | 32
+                | 133
+                | 160
+                | 5760
+                | 8192
+                | 8193
+                | 8194
+                | 8195
+                | 8196
+                | 8197
+                | 8198
+                | 8199
+                | 8200
+                | 8201
+                | 8202
+                | 8232
+                | 8233
+                | 8239
+                | 8287
+                | 12288
+        ) {
+            return 1;
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0
 }
-pub unsafe fn utf8_fromwc(mut wc: wchar_t, mut ud: *mut utf8_data) -> utf8_state {
-    let mut size: ::core::ffi::c_int = 0;
-    let mut width: ::core::ffi::c_int = 0;
-    size = utf8proc_wctomb(
-        &raw mut (*ud).data as *mut u_char as *mut ::core::ffi::c_char,
-        wc,
-    );
-    if size < 0 as ::core::ffi::c_int {
-        log_debug(format_args!(
-            "UTF-8 {}, wctomb() {}",
-            (wc) as i32,
-            (*__errno_location()) as i32
-        ));
-        wctomb(::core::ptr::null_mut::<::core::ffi::c_char>(), 0 as wchar_t);
+
+pub unsafe fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
+    let size = match crate::src::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
+        Ok(size) => size,
+        Err(error) => {
+            log_debug(format_args!("UTF-8 {}, wctomb() {}", wc, error));
+            crate::src::ffi::utf8proc::reset_wctomb();
+            return UTF8_ERROR;
+        }
+    };
+    if size == 0 {
         return UTF8_ERROR;
     }
-    if size == 0 as ::core::ffi::c_int {
-        return UTF8_ERROR;
+    ud.have = size as u_char;
+    ud.size = ud.have;
+    if let Some(width) = utf8_width(ud) {
+        ud.width = width as u_char;
+        UTF8_DONE
+    } else {
+        UTF8_ERROR
     }
-    (*ud).have = size as u_char;
-    (*ud).size = (*ud).have;
-    if utf8_width(ud, &raw mut width) as ::core::ffi::c_uint
-        == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        (*ud).width = width as u_char;
-        return UTF8_DONE;
-    }
-    return UTF8_ERROR;
 }
-pub unsafe fn utf8_open(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
-    memset(
-        ud as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    );
-    let first = [ch as u8];
-    let DecodeResult::Incomplete { expected } = decode_utf8(&first) else {
+
+pub unsafe fn utf8_open(ud: &mut utf8_data, ch: u_char) -> utf8_state {
+    *ud = utf8_data::default();
+    let DecodeResult::Incomplete { expected } = decode_utf8(&[ch]) else {
         return UTF8_ERROR;
     };
-    if expected < 2 || expected > 4 {
+    if !(2..=4).contains(&expected) {
         return UTF8_ERROR;
     }
-    (*ud).size = expected as u_char;
+    ud.size = expected as u_char;
     utf8_append(ud, ch);
     UTF8_MORE
 }
-pub unsafe fn utf8_append(mut ud: *mut utf8_data, mut ch: u_char) -> utf8_state {
-    let mut width: ::core::ffi::c_int = 0;
-    if (*ud).have as ::core::ffi::c_int >= (*ud).size as ::core::ffi::c_int {
+
+pub unsafe fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
+    if ud.have >= ud.size {
         fatalx(|out| out.write_all(b"UTF-8 character overflow"));
     }
-    if (*ud).size as usize > ::core::mem::size_of::<[u_char; 32]>() as usize {
+    if ud.size as usize > ud.data.len() {
         fatalx(|out| out.write_all(b"UTF-8 character size too large"));
     }
-    if (*ud).have as ::core::ffi::c_int != 0 as ::core::ffi::c_int
-        && ch as ::core::ffi::c_int & 0xc0 as ::core::ffi::c_int != 0x80 as ::core::ffi::c_int
-    {
-        (*ud).width = 0xff as u_char;
+    if ud.have != 0 && ch & 0xc0 != 0x80 {
+        ud.width = 0xff;
     }
-    let fresh1 = (*ud).have;
-    (*ud).have = (*ud).have.wrapping_add(1);
-    (*ud).data[fresh1 as usize] = ch;
-    let bytes = ::core::slice::from_raw_parts((*ud).data.as_ptr(), (*ud).have as usize);
-    match decode_utf8(bytes) {
-        DecodeResult::Complete { len, .. }
-            if (*ud).have as ::core::ffi::c_int == (*ud).size as ::core::ffi::c_int
-                && len == (*ud).size as usize =>
-        {
-            if (*ud).width as ::core::ffi::c_int == 0xff as ::core::ffi::c_int {
+    ud.data[ud.have as usize] = ch;
+    ud.have += 1;
+    match decode_utf8(&ud.data[..ud.have as usize]) {
+        DecodeResult::Complete { len, .. } if ud.have == ud.size && len == ud.size as usize => {
+            if ud.width == 0xff {
                 return UTF8_ERROR;
             }
-            if utf8_width(ud, &raw mut width) as ::core::ffi::c_uint
-                != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
+            let Some(width) = utf8_width(ud) else {
                 return UTF8_ERROR;
-            }
-            (*ud).width = width as u_char;
+            };
+            ud.width = width as u_char;
             UTF8_DONE
         }
-        DecodeResult::Invalid { .. }
-            if (*ud).have as ::core::ffi::c_int == (*ud).size as ::core::ffi::c_int =>
-        {
-            UTF8_ERROR
-        }
+        DecodeResult::Invalid { .. } if ud.have == ud.size => UTF8_ERROR,
         _ => UTF8_MORE,
     }
 }
@@ -347,7 +316,7 @@ pub unsafe fn utf8_strvis(
     let mut more: utf8_state = UTF8_MORE;
     let mut i: size_t = 0;
     while src < end {
-        more = utf8_open(&raw mut ud, *src as u_char);
+        more = utf8_open(&mut ud, *src as u_char);
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
                 src = src.offset(1);
@@ -357,7 +326,7 @@ pub unsafe fn utf8_strvis(
                 {
                     break;
                 }
-                more = utf8_append(&raw mut ud, *src as u_char);
+                more = utf8_append(&mut ud, *src as u_char);
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -461,7 +430,7 @@ pub unsafe fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_
     let mut more: utf8_state = UTF8_MORE;
     end = s.offset(strlen(s) as isize);
     while s < end {
-        more = utf8_open(&raw mut ud, *s as u_char);
+        more = utf8_open(&mut ud, *s as u_char);
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
                 s = s.offset(1);
@@ -471,7 +440,7 @@ pub unsafe fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_
                 {
                     break;
                 }
-                more = utf8_append(&raw mut ud, *s as u_char);
+                more = utf8_append(&mut ud, *s as u_char);
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -504,14 +473,14 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
     let mut offset = 0;
     while offset < source.len() {
         let candidate_start = offset;
-        more = unsafe { utf8_open(&raw mut ud, source[offset]) };
+        more = unsafe { utf8_open(&mut ud, source[offset]) };
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
                 offset += 1;
                 if offset >= source.len() || more != UTF8_MORE {
                     break;
                 }
-                more = unsafe { utf8_append(&raw mut ud, source[offset]) };
+                more = unsafe { utf8_append(&mut ud, source[offset]) };
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -572,14 +541,14 @@ pub(crate) fn utf8_fromcstr_vec(src: &CStr) -> Vec<utf8_data> {
             size: 0,
             width: 0,
         };
-        let mut more = unsafe { utf8_open(&raw mut cell, bytes[index] as u_char) };
+        let mut more = unsafe { utf8_open(&mut cell, bytes[index] as u_char) };
         if more == UTF8_MORE {
             loop {
                 index += 1;
                 if index == bytes.len() || more != UTF8_MORE {
                     break;
                 }
-                more = unsafe { utf8_append(&raw mut cell, bytes[index] as u_char) };
+                more = unsafe { utf8_append(&mut cell, bytes[index] as u_char) };
             }
             if more == UTF8_DONE {
                 cells.push(cell);
@@ -587,7 +556,7 @@ pub(crate) fn utf8_fromcstr_vec(src: &CStr) -> Vec<utf8_data> {
             }
             index -= cell.have as usize;
         }
-        unsafe { utf8_set(&raw mut cell, bytes[index] as u_char) };
+        utf8_set(&mut cell, bytes[index] as u_char);
         cells.push(cell);
         index += 1;
     }
@@ -626,7 +595,7 @@ pub unsafe fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_int {
     let mut more: utf8_state = UTF8_MORE;
     width = 0 as u_int;
     while *s as ::core::ffi::c_int != '\0' as i32 {
-        more = utf8_open(&raw mut tmp, *s as u_char);
+        more = utf8_open(&mut tmp, *s as u_char);
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
                 s = s.offset(1);
@@ -636,7 +605,7 @@ pub unsafe fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_int {
                 {
                     break;
                 }
-                more = utf8_append(&raw mut tmp, *s as u_char);
+                more = utf8_append(&mut tmp, *s as u_char);
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -685,12 +654,12 @@ pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
             size: 0,
             width: 0,
         };
-        let mut more = unsafe { utf8_open(&raw mut cell, bytes[offset]) };
+        let mut more = unsafe { utf8_open(&mut cell, bytes[offset]) };
         if more == UTF8_MORE {
             let start = offset;
             offset += 1;
             while offset < bytes.len() && more == UTF8_MORE {
-                more = unsafe { utf8_append(&raw mut cell, bytes[offset]) };
+                more = unsafe { utf8_append(&mut cell, bytes[offset]) };
                 offset += 1;
             }
             if more != UTF8_DONE {
@@ -700,7 +669,7 @@ pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
             }
         }
         if more != UTF8_DONE {
-            unsafe { utf8_set(&raw mut cell, bytes[offset]) };
+            utf8_set(&mut cell, bytes[offset]);
             offset += 1;
         }
         let matches = {

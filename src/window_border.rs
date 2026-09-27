@@ -72,10 +72,7 @@ unsafe fn window_set_fill_cell(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-    utf8_set(
-        &raw mut (*gc).data,
-        CELL_BORDERS[CELL_NONE as usize] as u_char,
-    );
+    utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_NONE as usize] as u_char);
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -131,7 +128,7 @@ pub unsafe fn window_set_fill_cells(mut w: *mut window) {
     window_set_fill_cell(w, 0 as ::core::ffi::c_int, &raw mut (*w).outside_cell);
 }
 unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
-    utf8_copy(&raw mut (*gc).data, &raw const (*fill).data);
+    (*gc).data = utf8_copy(&(*fill).data);
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | (*fill).attr as ::core::ffi::c_int) as u_short;
     (*gc).flags =
         ((*gc).flags as ::core::ffi::c_int | (*fill).flags as ::core::ffi::c_int) as u_char;
@@ -167,51 +164,45 @@ pub unsafe fn window_get_border_cell(
         4 => {
             if cell_type == CELL_NONE {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(
-                    &raw mut (*gc).data,
-                    CELL_BORDERS[CELL_NONE as usize] as u_char,
-                );
+                utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_NONE as usize] as u_char);
             } else {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
                 if !wp.is_null() && window_pane_index(wp, &raw mut idx) == 0 as ::core::ffi::c_int {
                     utf8_set(
-                        &raw mut (*gc).data,
+                        &mut (*gc).data,
                         ('0' as i32 as u_int).wrapping_add(idx.wrapping_rem(10 as u_int)) as u_char,
                     );
                 } else {
-                    utf8_set(&raw mut (*gc).data, '*' as i32 as u_char);
+                    utf8_set(&mut (*gc).data, '*' as i32 as u_char);
                 }
             }
         }
         1 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&raw mut (*gc).data, tty_acs_double_borders(cell_type));
+            (*gc).data = utf8_copy(&*(tty_acs_double_borders(cell_type)));
         }
         2 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&raw mut (*gc).data, tty_acs_heavy_borders(cell_type));
+            (*gc).data = utf8_copy(&*(tty_acs_heavy_borders(cell_type)));
         }
         7 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&raw mut (*gc).data, tty_acs_rounded_borders(cell_type));
+            (*gc).data = utf8_copy(&*(tty_acs_rounded_borders(cell_type)));
         }
         3 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
             utf8_set(
-                &raw mut (*gc).data,
+                &mut (*gc).data,
                 SIMPLE_BORDERS[cell_type as usize] as u_char,
             );
         }
         6 | 5 => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&raw mut (*gc).data, ' ' as i32 as u_char);
+            utf8_set(&mut (*gc).data, ' ' as i32 as u_char);
         }
         _ => {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-            utf8_set(
-                &raw mut (*gc).data,
-                CELL_BORDERS[cell_type as usize] as u_char,
-            );
+            utf8_set(&mut (*gc).data, CELL_BORDERS[cell_type as usize] as u_char);
         }
     };
 }

@@ -878,7 +878,7 @@ unsafe fn window_panes_draw_borders(
                 border_gc.attr =
                     (border_gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
                 utf8_set(
-                    &raw mut border_gc.data,
+                    &mut border_gc.data,
                     CELL_BORDERS[cell_type as usize] as u_char,
                 );
                 screen_write_cursormove(
@@ -990,7 +990,7 @@ unsafe fn window_panes_draw_floating_border(
                 border_gc.attr =
                     (border_gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
                 utf8_set(
-                    &raw mut border_gc.data,
+                    &mut border_gc.data,
                     CELL_BORDERS[cell_type as usize] as u_char,
                 );
                 screen_write_cursormove(

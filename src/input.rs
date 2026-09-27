@@ -2063,7 +2063,7 @@ unsafe fn input_stop_utf8(mut ictx: *mut input_ctx) {
         }
     };
     if (*ictx).utf8started != 0 {
-        utf8_copy(&raw mut (*ictx).cell.cell.data, &raw mut rc);
+        (*ictx).cell.cell.data = utf8_copy(&rc);
         screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
     }
     (*ictx).utf8started = 0 as ::core::ffi::c_int;
@@ -2508,9 +2508,9 @@ unsafe fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         (*ictx).cell.cell.attr =
             ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     }
-    utf8_set(&raw mut (*ictx).cell.cell.data, (*ictx).ch as u_char);
+    utf8_set(&mut (*ictx).cell.cell.data, (*ictx).ch as u_char);
     screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
-    utf8_copy(&raw mut (*ictx).last, &raw mut (*ictx).cell.cell.data);
+    (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
     (*ictx).cell.cell.attr =
         ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
@@ -3405,7 +3405,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                             & !GRID_ATTR_CHARSET)
                             as u_short;
                     }
-                    utf8_copy(&raw mut (*ictx).cell.cell.data, &raw mut (*ictx).last);
+                    (*ictx).cell.cell.data = utf8_copy(&(*ictx).last);
                     i = 0 as ::core::ffi::c_int;
                     while i < n {
                         screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
@@ -4753,14 +4753,14 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags &= !INPUT_LAST;
     if (*ictx).utf8started == 0 {
         (*ictx).utf8started = 1 as ::core::ffi::c_int;
-        if utf8_open(ud, (*ictx).ch as u_char) as ::core::ffi::c_uint
+        if utf8_open(&mut *ud, (*ictx).ch as u_char) as ::core::ffi::c_uint
             != UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             input_stop_utf8(ictx);
         }
         return 0 as ::core::ffi::c_int;
     }
-    match utf8_append(ud, (*ictx).ch as u_char) as ::core::ffi::c_uint {
+    match utf8_append(&mut *ud, (*ictx).ch as u_char) as ::core::ffi::c_uint {
         0 => return 0 as ::core::ffi::c_int,
         2 => {
             input_stop_utf8(ictx);
@@ -4779,9 +4779,9 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         ),
         ((*ud).width as ::core::ffi::c_int) as u8
     ));
-    utf8_copy(&raw mut (*ictx).cell.cell.data, ud);
+    (*ictx).cell.cell.data = utf8_copy(&*ud);
     screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
-    utf8_copy(&raw mut (*ictx).last, &raw mut (*ictx).cell.cell.data);
+    (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
     return 0 as ::core::ffi::c_int;
 }
