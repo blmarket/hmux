@@ -1794,7 +1794,7 @@ mod term_string_owner_tests {
             let mut options = options_create_owned(std::ptr::null_mut());
             global_options = &raw mut *options;
             for name in [c"terminal-features", c"terminal-overrides"] {
-                options_empty(global_options, options_search(name.as_ptr()).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry));
+                options_empty(global_options, options_search(name.as_ptr()).expect("terminal option definition"));
             }
             let mut client = client::empty();
             client.environ = Some(crate::src::environ::environ_create());

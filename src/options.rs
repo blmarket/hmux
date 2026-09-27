@@ -319,14 +319,9 @@ pub unsafe fn options_get(
     return o;
 }
 pub unsafe fn options_empty(
-    mut oo: *mut options,
-    mut oe: *const options_table_entry,
+    oo: *mut options,
+    definition: &'static options_table_entry,
 ) -> *mut options_entry {
-    // Resolve legacy pointer inputs to their actual static owner. Production
-    // definitions all live in options_table; no lifetime is inferred from oe.
-    let definition = options_table.iter()
-        .find(|entry| std::ptr::eq(*entry, oe))
-        .expect("option definition must belong to options_table");
     let o = options_add(oo, definition.name_ptr());
     (*o).tableentry = Some(definition);
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
@@ -342,7 +337,7 @@ pub unsafe fn options_default(
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut key: [::core::ffi::c_char; 32] = [0; 32];
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    o = options_empty(oo, oe);
+    o = options_empty(oo, options_table.iter().find(|entry| std::ptr::eq(*entry, oe)).expect("static option definition"));
     ov = &raw mut (*o).value;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if (*oe).default_arr.is_none() {
