@@ -2560,25 +2560,10 @@ unsafe fn format_cb_window_bell_flag(mut ft: *mut format_tree) -> Option<CString
     }
     return None;
 }
-unsafe fn format_cb_window_bigger(mut ft: *mut format_tree) -> Option<CString> {
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if !(*ft).c.is_null() {
-        if tty_window_offset(
-            &raw mut (*(*ft).c).tty,
-            &raw mut ox,
-            &raw mut oy,
-            &raw mut sx,
-            &raw mut sy,
-        ) != 0
-        {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
-    }
-    return None;
+unsafe fn format_cb_window_bigger(ft: *mut format_tree) -> Option<CString> {
+    let c = (*ft).c.as_ref()?;
+    let view = tty_window_offset(&c.tty);
+    Some(if view.bigger { c"1" } else { c"0" }.to_owned())
 }
 unsafe fn format_cb_window_cell_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
@@ -2756,49 +2741,17 @@ unsafe fn format_cb_window_name(mut ft: *mut format_tree) -> Option<CString> {
     }
     return None;
 }
-unsafe fn format_cb_window_offset_x(mut ft: *mut format_tree) -> Option<CString> {
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if !(*ft).c.is_null() {
-        if tty_window_offset(
-            &raw mut (*(*ft).c).tty,
-            &raw mut ox,
-            &raw mut oy,
-            &raw mut sx,
-            &raw mut sy,
-        ) != 0
-        {
-            return Some(
-                CString::new(format!("{}", (ox) as u32)).expect("formatted numbers contain no NUL"),
-            );
-        }
-        return None;
-    }
-    return None;
+unsafe fn format_cb_window_offset_x(ft: *mut format_tree) -> Option<CString> {
+    let c = (*ft).c.as_ref()?;
+    let view = tty_window_offset(&c.tty);
+    view.bigger
+        .then(|| CString::new(view.ox.to_string()).expect("formatted number contains no NUL"))
 }
-unsafe fn format_cb_window_offset_y(mut ft: *mut format_tree) -> Option<CString> {
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if !(*ft).c.is_null() {
-        if tty_window_offset(
-            &raw mut (*(*ft).c).tty,
-            &raw mut ox,
-            &raw mut oy,
-            &raw mut sx,
-            &raw mut sy,
-        ) != 0
-        {
-            return Some(
-                CString::new(format!("{}", (oy) as u32)).expect("formatted numbers contain no NUL"),
-            );
-        }
-        return None;
-    }
-    return None;
+unsafe fn format_cb_window_offset_y(ft: *mut format_tree) -> Option<CString> {
+    let c = (*ft).c.as_ref()?;
+    let view = tty_window_offset(&c.tty);
+    view.bigger
+        .then(|| CString::new(view.oy.to_string()).expect("formatted number contains no NUL"))
 }
 unsafe fn format_cb_window_panes(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {

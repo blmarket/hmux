@@ -78,10 +78,6 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wp: *mut window_pane = (*target).wp;
     let mut swp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut tty_ox: u_int = 0;
-    let mut tty_oy: u_int = 0;
-    let mut tty_sx: u_int = 0;
-    let mut tty_sy: u_int = 0;
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
         window_pane_reset_mode_all(wp);
@@ -152,13 +148,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_copy_pagedown(wp, args_has(args, 'e' as i32 as u_char));
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
-        tty_window_offset(
-            &raw mut (*c).tty,
-            &raw mut tty_ox,
-            &raw mut tty_oy,
-            &raw mut tty_sx,
-            &raw mut tty_sy,
-        );
+        let tty_oy = tty_window_offset(&(*c).tty).oy;
         window_copy_scroll(
             wp,
             (*c).tty.mouse_slider_mpos,

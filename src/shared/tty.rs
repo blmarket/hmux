@@ -316,6 +316,16 @@ pub enum tty_code {
     Flag(::core::ffi::c_int),
 }
 
+/// Cached window coordinates and the size visible through a terminal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct tty_window_view {
+    pub bigger: bool,
+    pub ox: u_int,
+    pub oy: u_int,
+    pub sx: u_int,
+    pub sy: u_int,
+}
+
 #[derive(Default)]
 pub struct tty {
     pub client: *mut client,

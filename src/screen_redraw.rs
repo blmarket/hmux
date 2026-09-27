@@ -220,24 +220,11 @@ unsafe fn redraw_flags_to_string(mut flags: ::core::ffi::c_int) -> *const ::core
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-unsafe fn redraw_get_window_offset(
-    mut c: *mut client,
-    mut ox: *mut u_int,
-    mut oy: *mut u_int,
-    mut sx: *mut u_int,
-    mut sy: *mut u_int,
-) {
-    let mut tty_sx: u_int = 0;
-    let mut tty_sy: u_int = 0;
-    tty_window_offset(&raw mut (*c).tty, ox, oy, sx, sy);
-    tty_sx = (*c).tty.sx;
-    tty_sy = (*c).tty.sy.wrapping_sub(status_line_size(c));
-    if *sx < tty_sx {
-        *sx = tty_sx;
-    }
-    if *sy < tty_sy {
-        *sy = tty_sy;
-    }
+unsafe fn redraw_get_window_offset(c: &mut client) -> tty_window_view {
+    let mut view = tty_window_offset(&c.tty);
+    view.sx = view.sx.max(c.tty.sx);
+    view.sy = view.sy.max(c.tty.sy.wrapping_sub(status_line_size(c)));
+    view
 }
 unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx) {
     let mut s: *mut session = (*c).session;
@@ -249,13 +236,11 @@ unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx
     );
     (*bctx).c = c;
     (*bctx).w = w;
-    redraw_get_window_offset(
-        c,
-        &raw mut (*bctx).ox,
-        &raw mut (*bctx).oy,
-        &raw mut (*bctx).sx,
-        &raw mut (*bctx).sy,
-    );
+    let view = redraw_get_window_offset(&mut *c);
+    (*bctx).ox = view.ox;
+    (*bctx).oy = view.oy;
+    (*bctx).sx = view.sx;
+    (*bctx).sy = view.sy;
     (*bctx).ind = options_get_number(
         (*w).options,
         b"pane-border-indicators\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1215,11 +1200,7 @@ unsafe fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
     let mut scene: *mut redraw_scene = (*c).redraw_scene;
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut reason: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    redraw_get_window_offset(c, &raw mut ox, &raw mut oy, &raw mut sx, &raw mut sy);
+    let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(&mut *c);
     if scene.is_null() {
         reason = b"missing\0" as *const u8 as *const ::core::ffi::c_char;
     } else if (*scene).w != w {

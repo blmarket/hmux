@@ -1258,81 +1258,71 @@ pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(c)) < (*w).sy)
         as ::core::ffi::c_int;
 }
-pub unsafe fn tty_window_offset(
-    mut tty: *mut tty,
-    mut ox: *mut u_int,
-    mut oy: *mut u_int,
-    mut sx: *mut u_int,
-    mut sy: *mut u_int,
-) -> ::core::ffi::c_int {
-    *ox = (*tty).oox;
-    *oy = (*tty).ooy;
-    *sx = (*tty).osx;
-    *sy = (*tty).osy;
-    return (*tty).oflag;
+pub fn tty_window_offset(tty: &tty) -> tty_window_view {
+    tty_window_view {
+        bigger: tty.oflag != 0,
+        ox: tty.oox,
+        oy: tty.ooy,
+        sx: tty.osx,
+        sy: tty.osy,
+    }
 }
-unsafe fn tty_window_offset1(
-    mut tty: *mut tty,
-    mut ox: *mut u_int,
-    mut oy: *mut u_int,
-    mut sx: *mut u_int,
-    mut sy: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
-    let mut w: *mut window = (*(*(*c).session).curw).window;
-    let mut wp: *mut window_pane = (*w).active;
-    let mut cx: u_int = 0;
-    let mut cy: u_int = 0;
-    let mut lines: u_int = 0;
-    lines = status_line_size(c);
-    if (*tty).sx >= (*w).sx && (*tty).sy.wrapping_sub(lines) >= (*w).sy {
-        *ox = 0 as u_int;
-        *oy = 0 as u_int;
-        *sx = (*w).sx;
-        *sy = (*w).sy;
-        (*c).pan_window = NULL;
-        return 0 as ::core::ffi::c_int;
+unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
+    let w = (*(*c.session).curw).window;
+    let wp = (*w).active;
+    let lines = status_line_size(c);
+    if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
+        c.pan_window = NULL;
+        return tty_window_view {
+            bigger: false,
+            ox: 0,
+            oy: 0,
+            sx: (*w).sx,
+            sy: (*w).sy,
+        };
     }
-    *sx = (*tty).sx;
-    *sy = (*tty).sy.wrapping_sub(lines);
-    if (*c).pan_window == w as *mut ::core::ffi::c_void {
-        if *sx >= (*w).sx {
-            (*c).pan_ox = 0 as u_int;
-        } else if (*c).pan_ox.wrapping_add(*sx) > (*w).sx {
-            (*c).pan_ox = (*w).sx.wrapping_sub(*sx);
+    let mut view = tty_window_view {
+        bigger: true,
+        ox: 0,
+        oy: 0,
+        sx: c.tty.sx,
+        sy: c.tty.sy.wrapping_sub(lines),
+    };
+    if c.pan_window == w.cast() {
+        if view.sx >= (*w).sx {
+            c.pan_ox = 0;
+        } else if c.pan_ox.wrapping_add(view.sx) > (*w).sx {
+            c.pan_ox = (*w).sx.wrapping_sub(view.sx);
         }
-        *ox = (*c).pan_ox;
-        if *sy >= (*w).sy {
-            (*c).pan_oy = 0 as u_int;
-        } else if (*c).pan_oy.wrapping_add(*sy) > (*w).sy {
-            (*c).pan_oy = (*w).sy.wrapping_sub(*sy);
+        view.ox = c.pan_ox;
+        if view.sy >= (*w).sy {
+            c.pan_oy = 0;
+        } else if c.pan_oy.wrapping_add(view.sy) > (*w).sy {
+            c.pan_oy = (*w).sy.wrapping_sub(view.sy);
         }
-        *oy = (*c).pan_oy;
-        return 1 as ::core::ffi::c_int;
+        view.oy = c.pan_oy;
+        return view;
     }
-    if !(*(*wp).screen).mode & MODE_CURSOR != 0 {
-        *ox = 0 as u_int;
-        *oy = 0 as u_int;
-    } else {
-        cx = ((*wp).xoff as u_int).wrapping_add((*(*wp).screen).cx);
-        cy = ((*wp).yoff as u_int).wrapping_add((*(*wp).screen).cy);
-        if cx < *sx {
-            *ox = 0 as u_int;
-        } else if cx > (*w).sx.wrapping_sub(*sx) {
-            *ox = (*w).sx.wrapping_sub(*sx);
+    if (*(*wp).screen).mode & MODE_CURSOR != 0 {
+        let cx = ((*wp).xoff as u_int).wrapping_add((*(*wp).screen).cx);
+        let cy = ((*wp).yoff as u_int).wrapping_add((*(*wp).screen).cy);
+        view.ox = if cx < view.sx {
+            0
+        } else if cx > (*w).sx.wrapping_sub(view.sx) {
+            (*w).sx.wrapping_sub(view.sx)
         } else {
-            *ox = cx.wrapping_sub((*sx).wrapping_div(2 as u_int));
-        }
-        if cy < *sy {
-            *oy = 0 as u_int;
-        } else if cy > (*w).sy.wrapping_sub(*sy) {
-            *oy = (*w).sy.wrapping_sub(*sy);
+            cx.wrapping_sub(view.sx / 2)
+        };
+        view.oy = if cy < view.sy {
+            0
+        } else if cy > (*w).sy.wrapping_sub(view.sy) {
+            (*w).sy.wrapping_sub(view.sy)
         } else {
-            *oy = cy.wrapping_sub(*sy).wrapping_add(1 as u_int);
-        }
+            cy.wrapping_sub(view.sy).wrapping_add(1)
+        };
     }
-    (*c).pan_window = NULL;
-    return 1 as ::core::ffi::c_int;
+    c.pan_window = NULL;
+    view
 }
 pub unsafe fn tty_update_window_offset(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -1348,20 +1338,17 @@ pub unsafe fn tty_update_window_offset(mut w: *mut window) {
     }
 }
 pub unsafe fn tty_update_client_offset(mut c: *mut client) {
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     if !(*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
         return;
     }
-    (*c).tty.oflag = tty_window_offset1(
-        &raw mut (*c).tty,
-        &raw mut ox,
-        &raw mut oy,
-        &raw mut sx,
-        &raw mut sy,
-    );
+    let tty_window_view {
+        bigger,
+        ox,
+        oy,
+        sx,
+        sy,
+    } = tty_window_offset1(&mut *c);
+    (*c).tty.oflag = bigger as ::core::ffi::c_int;
     if ox == (*c).tty.oox && oy == (*c).tty.ooy && sx == (*c).tty.osx && sy == (*c).tty.osy {
         return;
     }

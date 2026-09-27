@@ -41,7 +41,7 @@ use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEE
 use crate::src::shared::posix_io::_PATH_BSHELL;
 use crate::src::shared::session::session;
 use crate::src::shared::style::*;
-use crate::src::shared::tty::tty;
+use crate::src::shared::tty::{tty, tty_window_view};
 use crate::src::shared::window::{window, winlink};
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::tmux::checkshell;
@@ -158,10 +158,6 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut top: ::core::ffi::c_int = 0;
     let mut line: u_int = 0;
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     let mut lines: u_int = 0;
     let mut position: u_int = 0;
     let mut n: ::core::ffi::c_long = 0;
@@ -381,13 +377,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             );
         }
     }
-    tty_window_offset(
-        &raw mut (*tc).tty,
-        &raw mut ox,
-        &raw mut oy,
-        &raw mut sx,
-        &raw mut sy,
-    );
+    let tty_window_view { ox, oy, .. } = tty_window_offset(&(*tc).tty);
     n = ((top + (*wp).yoff) as u_int)
         .wrapping_sub(oy)
         .wrapping_add(h) as ::core::ffi::c_long;
@@ -558,10 +548,6 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     let mut lines: u_int = 0;
     let mut position: u_int = 0;
     let mut n: ::core::ffi::c_long = 0;
@@ -580,13 +566,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     } else {
         0 as u_int
     }) as ::core::ffi::c_long;
-    tty_window_offset(
-        &raw mut (*tc).tty,
-        &raw mut ox,
-        &raw mut oy,
-        &raw mut sx,
-        &raw mut sy,
-    );
+    let tty_window_view { ox, oy, sy, .. } = tty_window_offset(&(*tc).tty);
     ft = format_create_from_target(item);
     if (*event).m.valid != 0 {
         mouse_x = (*event).m.x.wrapping_add(ox) as ::core::ffi::c_long;

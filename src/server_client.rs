@@ -1805,8 +1805,6 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut n: u_int = 0;
@@ -2054,13 +2052,10 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         } else {
             py = y;
         }
-        tty_window_offset(
-            &raw mut (*c).tty,
-            &raw mut (*m).ox,
-            &raw mut (*m).oy,
-            &raw mut sx,
-            &raw mut sy,
-        );
+        let view = tty_window_offset(&(*c).tty);
+        (*m).ox = view.ox;
+        (*m).oy = view.oy;
+        let (sx, sy) = (view.sx, view.sy);
         log_debug(format_args!(
             "mouse window @{} at {},{} ({}x{})",
             ((*w).id) as u32,
@@ -3062,10 +3057,6 @@ unsafe fn server_client_handle_menu_key(
     let mut w: *mut window = (*(*(*c).session).curw).window;
     let mut new_event = (*event).metadata_snapshot();
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     if (*w).menu.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -3081,13 +3072,7 @@ unsafe fn server_client_handle_menu_key(
         m = &raw mut new_event.m;
         (*m).statusat = status_at_line(c);
         (*m).statuslines = status_line_size(c);
-        tty_window_offset(
-            &raw mut (*c).tty,
-            &raw mut ox,
-            &raw mut oy,
-            &raw mut sx,
-            &raw mut sy,
-        );
+        let tty_window_view { ox, oy, .. } = tty_window_offset(&(*c).tty);
         (*m).x = (*m).x.wrapping_add(ox);
         if (*m).statusat == 0 as ::core::ffi::c_int {
             if (*m).y < (*m).statuslines {
@@ -3561,17 +3546,13 @@ unsafe fn server_client_prompt_cursor(
 ) -> ::core::ffi::c_int {
     let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     let mut px: ::core::ffi::c_int = 0;
     let mut py: ::core::ffi::c_int = 0;
     if window_pane_has_prompt(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     *mode &= !MODE_CURSOR;
-    tty_window_offset(tty, &raw mut ox, &raw mut oy, &raw mut sx, &raw mut sy);
+    let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
     if status_at_line(c) == 0 as ::core::ffi::c_int {
         py = (*wp).yoff;
     } else {
@@ -3618,10 +3599,6 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut pane_mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cx: u_int = 0 as u_int;
     let mut cy: u_int = 0 as u_int;
-    let mut ox: u_int = 0;
-    let mut oy: u_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
     let mut prompt: u_int = 0 as u_int;
     let mut sb_w: u_int = 0;
     if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
@@ -3672,7 +3649,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
         status_prompt_cursor(c, &raw mut cx, &raw mut cy);
     } else if !wp.is_null() && (*c).overlay_draw.is_none() {
         if !(*w).menu.is_null() {
-            tty_window_offset(tty, &raw mut ox, &raw mut oy, &raw mut sx, &raw mut sy);
+            let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
             if cx < ox || cx >= ox.wrapping_add(sx) || cy < oy || cy >= oy.wrapping_add(sy) {
                 mode &= !MODE_CURSOR;
             } else {
@@ -3690,7 +3667,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
         if prompt == 0 {
             cursor = 0 as ::core::ffi::c_int;
             pane_mode = (*wp).base.mode;
-            tty_window_offset(tty, &raw mut ox, &raw mut oy, &raw mut sx, &raw mut sy);
+            let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
             if (*wp).xoff + (*s).cx as ::core::ffi::c_int >= ox as ::core::ffi::c_int
                 && (*wp).xoff + (*s).cx as ::core::ffi::c_int
                     <= ox as ::core::ffi::c_int + sx as ::core::ffi::c_int

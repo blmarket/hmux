@@ -199,14 +199,12 @@ fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
             (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
             return -1;
         }
-        if tty_window_offset(
-            &raw mut (*c).tty,
-            &raw mut (*ttyctx).wox,
-            &raw mut (*ttyctx).woy,
-            &raw mut (*ttyctx).wsx,
-            &raw mut (*ttyctx).wsy,
-        ) != 0
-        {
+        let view = tty_window_offset(&(*c).tty);
+        ttyctx.wox = view.ox;
+        ttyctx.woy = view.oy;
+        ttyctx.wsx = view.sx;
+        ttyctx.wsy = view.sy;
+        if view.bigger {
             (*ttyctx).flags |= TTY_CTX_WINDOW_BIGGER;
         } else {
             (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;

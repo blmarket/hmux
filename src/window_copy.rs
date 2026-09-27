@@ -1918,17 +1918,7 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mut c: *mut client = (*cs).c;
     let mut m: *mut mouse_event = (*cs).m;
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).wargs, 'e' as i32 as u_char);
-    let mut tty_ox: u_int = 0;
-    let mut tty_oy: u_int = 0;
-    let mut tty_sx: u_int = 0;
-    let mut tty_sy: u_int = 0;
-    tty_window_offset(
-        &raw mut (*c).tty,
-        &raw mut tty_ox,
-        &raw mut tty_oy,
-        &raw mut tty_sx,
-        &raw mut tty_sy,
-    );
+    let tty_oy = tty_window_offset(&(*c).tty).oy;
     window_copy_scroll(wp, (*c).tty.mouse_slider_mpos, (*m).y, tty_oy, scroll_exit);
     return WINDOW_COPY_CMD_MOVE;
 }
