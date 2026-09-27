@@ -571,9 +571,9 @@ unsafe fn window_buffer_do_paste(
     if paste_get_name(&(*item).name).is_some() {
         mode_tree_run_command(
             c,
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            (*data).command.as_ptr(),
-            ((*item).name).as_ptr().cast_mut(),
+            None,
+            &(*data).command,
+            &(*item).name,
         );
     }
 }

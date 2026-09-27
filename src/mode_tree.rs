@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
+    cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{
@@ -33,7 +33,7 @@ use crate::src::shared::client::{client, CLIENT_DEAD};
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
+use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::display::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
@@ -2301,44 +2301,35 @@ pub unsafe fn mode_tree_key(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn mode_tree_run_command(
-    mut c: *mut client,
-    mut fs: *mut cmd_find_state,
-    mut template: *const ::core::ffi::c_char,
-    mut name: *const ::core::ffi::c_char,
+    c: *mut client,
+    fs: Option<&cmd_find_state>,
+    template: &CStr,
+    name: &CStr,
 ) {
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let command = cmd_template_replace_cstring(
-        CStr::from_ptr(template),
-        CStr::from_ptr(name),
-        1 as ::core::ffi::c_int,
-    );
-    if !command.as_bytes().is_empty() {
-        state = cmdq_new_state(
-            fs,
-            ::core::ptr::null_mut::<key_event>(),
-            0 as ::core::ffi::c_int,
-        );
-        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), c, state) {
-            if !c.is_null() {
-                cmd_parse_error_uppercase_first(&mut error);
-                status_message_set(
-                    c,
-                    -(1 as ::core::ffi::c_int),
-                    1 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    |out| {
-                        write_cstr(
-                            out,
-                            error
-                                .as_ref()
-                                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-                        )
-                    },
-                );
-            }
+    let command = cmd_template_replace_cstring(template, name, 1);
+    if command.as_bytes().is_empty() {
+        return;
+    }
+    // The legacy constructor only reads and copies the supplied find state.
+    let state = crate::src::shared::rc::take(cmdq_new_state(
+        fs.map_or(std::ptr::null_mut(), |fs| std::ptr::from_ref(fs).cast_mut()),
+        std::ptr::null_mut(),
+        0,
+    ));
+    if let Err(mut error) =
+        cmd_parse_and_append(&command, c, crate::src::shared::rc::as_ptr(&state))
+    {
+        if !c.is_null() {
+            cmd_parse_error_uppercase_first(&mut error);
+            status_message_set(c, -1, 1, 0, 0, |out| {
+                write_cstr(
+                    out,
+                    error
+                        .as_ref()
+                        .map_or(std::ptr::null(), |cause| cause.as_ptr()),
+                )
+            });
         }
-        cmdq_free_state(state);
     }
 }
 

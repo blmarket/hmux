@@ -828,9 +828,9 @@ unsafe fn window_client_key(
             item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
             mode_tree_run_command(
                 c,
-                ::core::ptr::null_mut::<cmd_find_state>(),
-                (*data).command.as_ptr(),
-                (*item).ttyname.as_ptr(),
+                None,
+                &(*data).command,
+                &(*item).ttyname,
             );
             finished = 1 as ::core::ffi::c_int;
         }

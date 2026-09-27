@@ -1849,12 +1849,9 @@ unsafe fn window_tree_command_each(
     if let Some(name) = window_tree_get_target(item, &raw mut fs) {
         mode_tree_run_command(
             c,
-            &raw mut fs,
-            (*data)
-                .entered
-                .as_ref()
-                .map_or(::core::ptr::null(), |entered| entered.as_ptr()),
-            name.as_ptr(),
+            Some(&fs),
+            (*data).entered.as_deref().expect("entered tree command"),
+            &name,
         );
     }
 }
@@ -2308,9 +2305,9 @@ unsafe fn window_tree_key(
             if let Some(name) = window_tree_get_target(item, &raw mut fs) {
                 mode_tree_run_command(
                     c,
-                    ::core::ptr::null_mut::<cmd_find_state>(),
-                    (*data).command.as_ptr(),
-                    name.as_ptr(),
+                    None,
+                    &(*data).command,
+                    &name,
                 );
             }
             finished = 1 as ::core::ffi::c_int;
