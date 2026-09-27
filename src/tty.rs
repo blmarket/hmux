@@ -2051,7 +2051,7 @@ unsafe fn tty_client_ready(ctx: &tty_ctx, mut c: *mut client) -> ::core::ffi::c_
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn tty_write(cmdfn: unsafe fn(*mut tty, &tty_ctx), ctx: &mut tty_ctx) {
+pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty_ctx) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut state: ::core::ffi::c_int = 0;
     let Some(mut set_client_cb) = ctx.set_client_cb.take() else {
@@ -2320,8 +2320,7 @@ pub unsafe fn tty_cmd_alignmenttest(mut tty: *mut tty, ctx: &tty_ctx) {
         j = j.wrapping_add(1);
     }
 }
-pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx) {
-    let mut gcp: *const grid_cell = ctx.cell;
+pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
     let mut s: *mut screen = ctx.s;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut px: u_int = 0;
@@ -2337,25 +2336,25 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx) {
     if tty_is_visible(ctx, ctx.ocx, ctx.ocy, 1 as u_int, 1 as u_int) == 0 {
         return;
     }
-    if (*gcp).data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+    if gc.data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int
         && tty_check_overlay(tty, px, py) == 0
     {
         return;
     }
-    if (*gcp).data.width as ::core::ffi::c_int > 1 as ::core::ffi::c_int {
-        r = tty_check_overlay_range(tty, px, py, (*gcp).data.width as u_int);
+    if gc.data.width as ::core::ffi::c_int > 1 as ::core::ffi::c_int {
+        r = tty_check_overlay_range(tty, px, py, gc.data.width as u_int);
         i = 0 as u_int;
         while i < (*r).used {
             vis = vis.wrapping_add((&(*r).storage)[i as usize].nx);
             i = i.wrapping_add(1);
         }
-        if vis < (*gcp).data.width as u_int {
+        if vis < gc.data.width as u_int {
             tty_draw_line(
                 tty,
                 s,
                 (*s).cx,
                 (*s).cy,
-                (*gcp).data.width as u_int,
+                gc.data.width as u_int,
                 px,
                 py,
                 &raw const ctx.style_ctx,
@@ -2377,12 +2376,12 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx) {
         tty_invalidate(tty);
     }
     tty_cursor_pane_unless_wrap(tty, ctx, ctx.ocx, ctx.ocy);
-    tty_cell(tty, &*ctx.cell, Some(&ctx.style_ctx));
+    tty_cell(tty, gc, Some(&ctx.style_ctx));
     if ctx.flags & TTY_CTX_CELL_INVALIDATE != 0 {
         tty_invalidate(tty);
     }
 }
-pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx) {
+pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx, gc: &grid_cell) {
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut i: u_int = 0;
@@ -2415,7 +2414,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx) {
     }
     tty_margin_off(tty);
     tty_cursor_pane_unless_wrap(tty, ctx, ctx.ocx, ctx.ocy);
-    tty_attributes(tty, &*ctx.cell, Some(&ctx.style_ctx));
+    tty_attributes(tty, gc, Some(&ctx.style_ctx));
     px = (ctx.xoff as u_int)
         .wrapping_add(ctx.ocx)
         .wrapping_sub(ctx.wox);

@@ -1,11 +1,12 @@
-use hmux2::src::grid::{grid_cells_equal, grid_default_cell};
+use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::shared::client::{client, CLIENT_UTF8};
 use hmux2::src::shared::grid::{grid_cell, GRID_FLAG_PADDING};
+use hmux2::src::shared::screen::screen;
 use hmux2::src::shared::tty::{
-    tty, tty_code, tty_style_ctx, tty_term, TTYC_COLORS, TTYC_SETAB, TTYC_SETAF,
+    tty, tty_code, tty_ctx, tty_style_ctx, tty_term, TTYC_COLORS, TTYC_SETAB, TTYC_SETAF,
 };
-use hmux2::src::tty::{tty_cell, tty_default_attributes};
+use hmux2::src::tty::{tty_cell, tty_cmd_cell, tty_default_attributes};
 use hmux2::src::tty_term::tty_term_ncodes;
 
 fn character(bytes: &[u8], width: u8) -> grid_cell {
@@ -48,7 +49,20 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
                 source.flags |= GRID_FLAG_PADDING as u8;
             }
             let before = source;
-            tty_cell(&raw mut terminal, &source, None);
+            let mut screen = screen::empty();
+            screen.grid = Some(grid_create(20, 2, 0));
+            let ctx = tty_ctx {
+                s: &raw mut screen,
+                sx: 20,
+                sy: 2,
+                orlower: 1,
+                style_ctx: tty_style_ctx {
+                    defaults: grid_default_cell,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            tty_cmd_cell(&raw mut terminal, &ctx, &source);
             assert_eq!(
                 evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default(),
                 expected

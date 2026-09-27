@@ -419,7 +419,6 @@ pub struct tty_ctx<'a> {
     pub s: *mut screen,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
-    pub cell: *const grid_cell,
     pub flags: ::core::ffi::c_int,
     pub data: tty_command_data<'a>,
     pub ocx: u_int,
