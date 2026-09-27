@@ -244,7 +244,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tablename.is_null() {
-        table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
+        table = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int);
         if table.is_none() {
             cmdq_error(item, |out| {
                 out.write_all(b"table ")?;

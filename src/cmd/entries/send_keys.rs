@@ -125,10 +125,7 @@ unsafe fn cmd_send_keys_inject_key(
         }
         return item;
     }
-    let table = key_bindings_get_table(
-        (*(*wme).mode).key_table.expect("non-null function pointer")(wme),
-        1 as ::core::ffi::c_int,
-    ).expect("created key table");
+    let table = key_bindings_get_table(std::ffi::CStr::from_ptr((*(*wme).mode).key_table.expect("non-null function pointer")(wme)), 1 as ::core::ffi::c_int).expect("created key table");
     let command = key_bindings_get(&*crate::src::shared::rc::as_ptr(&table), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
         after = key_bindings_dispatch(

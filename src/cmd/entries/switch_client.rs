@@ -127,7 +127,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tablename.is_null() {
-        let Some(table) = key_bindings_get_table(tablename, 0) else {
+        let Some(table) = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0) else {
             cmdq_error(item, |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;

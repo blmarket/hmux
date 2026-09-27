@@ -492,7 +492,7 @@ unsafe fn window_customize_check_item(
 unsafe fn window_customize_get_key_table(
     item: &window_customize_itemdata,
 ) -> Option<Rc<std::cell::UnsafeCell<key_table>>> {
-    let table = crate::src::key_bindings::key_bindings_get_table(item.table.as_ref()?.as_ptr(), 0)?;
+    let table = crate::src::key_bindings::key_bindings_get_table(std::ffi::CStr::from_ptr(item.table.as_ref()?.as_ptr()), 0)?;
     key_bindings_get(&*crate::src::shared::rc::as_ptr(&table), item.key)?;
     Some(table)
 }
@@ -4413,13 +4413,7 @@ unsafe fn window_customize_add_key_callback(
             return PROMPT_CLOSE;
         }
         1 | _ => {
-            key_bindings_add(
-                item.table.as_deref().expect("key binding table name"),
-                key,
-                ::core::ptr::null::<::core::ffi::c_char>(),
-                0 as ::core::ffi::c_int,
-                pr.take_cmdlist(),
-            );
+            key_bindings_add(item.table.as_deref().expect("key binding table name"), key, { let note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0 as ::core::ffi::c_int, pr.take_cmdlist());
             mode_tree_build((*data).data_ptr());
             mode_tree_draw((*data).data_ptr());
             (*mode_pane).flags |= PANE_REDRAW;
@@ -4473,7 +4467,7 @@ unsafe fn window_customize_unset_key(
     {
         mode_tree_up((*data).data_ptr(), 0);
     }
-    key_bindings_remove(name.as_ptr(), item.key);
+    key_bindings_remove(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
 }
 unsafe fn window_customize_reset_key(
     data: *mut window_customize_modedata,
@@ -4496,7 +4490,7 @@ unsafe fn window_customize_reset_key(
     {
         mode_tree_up((*data).data_ptr(), 0);
     }
-    key_bindings_reset(name.as_ptr(), item.key);
+    key_bindings_reset(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
 }
 unsafe fn window_customize_change_each(
     mut data: *mut window_customize_modedata,

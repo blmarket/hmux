@@ -58,7 +58,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
             }
         }
-        if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
+        if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item, |out| {
                     out.write_all(b"table ")?;
@@ -68,7 +68,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             }
             return CMD_RETURN_ERROR;
         }
-        key_bindings_remove_table(tablename);
+        key_bindings_remove_table(std::ffi::CStr::from_ptr(tablename));
         return CMD_RETURN_NORMAL;
     }
     if keystr.is_null() {
@@ -91,7 +91,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-        if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
+        if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item, |out| {
                     out.write_all(b"table ")?;
@@ -106,6 +106,6 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     } else {
         tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    key_bindings_remove(tablename, key);
+    key_bindings_remove(std::ffi::CStr::from_ptr(tablename), key);
     return CMD_RETURN_NORMAL;
 }

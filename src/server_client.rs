@@ -1097,7 +1097,7 @@ pub unsafe fn server_client_set_key_table(
         name = server_client_get_key_table(c);
     }
     drop((*c).keytable.take());
-    (*c).keytable = key_bindings_get_table(name, 1);
+    (*c).keytable = key_bindings_get_table(std::ffi::CStr::from_ptr(name), 1);
     if gettimeofday(&raw mut (*key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get())).activity_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
@@ -1178,7 +1178,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
     (*c).theme = THEME_UNKNOWN;
     status_init(c);
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
-    (*c).keytable = key_bindings_get_table(c"root".as_ptr(), 1);
+    (*c).keytable = key_bindings_get_table(std::ffi::CStr::from_ptr(c"root".as_ptr()), 1);
     event_set(
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),
@@ -2858,10 +2858,7 @@ unsafe fn server_client_key_callback(
                             }
                             && (*(*wme).mode).key_table.is_some()
                         {
-                            table_owner = key_bindings_get_table(
-                                (*(*wme).mode).key_table.expect("non-null function pointer")(wme),
-                                1 as ::core::ffi::c_int,
-                            );
+                            table_owner = key_bindings_get_table(std::ffi::CStr::from_ptr((*(*wme).mode).key_table.expect("non-null function pointer")(wme)), 1 as ::core::ffi::c_int);
                         } else {
                             table_owner = (*c).keytable.clone();
                         }
