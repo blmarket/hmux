@@ -15,7 +15,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read,
     evbuffer_write, event_add, event_del, event_initialized, event_pending, event_set,
 };
-use crate::src::screen::screen_mode_to_string;
+use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
 use crate::src::server_client::{
     server_client_ensure_ranges, server_client_lost, server_client_ranges_is_empty,
@@ -1199,7 +1199,7 @@ pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, m
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             ),
-            log_cstr((screen_mode_to_string((*tty).mode)) as *const _)
+            screen_mode_display((*tty).mode)
         ));
         log_debug(format_args!(
             "{}: setting mode {}",
@@ -1209,7 +1209,7 @@ pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, m
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             ),
-            log_cstr((screen_mode_to_string(mode)) as *const _)
+            screen_mode_display(mode)
         ));
     }
     if changed & ALL_MOUSE_MODES != 0 && tty_term_has(term, TTYC_KMOUS) != 0 {

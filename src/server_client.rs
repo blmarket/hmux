@@ -53,7 +53,7 @@ use crate::src::reactor::{
     event_pending, event_set,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
-use crate::src::screen::screen_mode_to_string;
+use crate::src::screen::screen_mode_display;
 use crate::src::screen_redraw::{
     redraw_free_scene, redraw_pane, redraw_pane_scrollbar, redraw_screen,
 };
@@ -3662,7 +3662,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             ),
-            log_cstr((screen_mode_to_string(mode)) as *const _)
+            screen_mode_display(mode)
         ));
     }
     tty_region_off(tty);

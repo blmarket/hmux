@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{memcpy, snprintf, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, snprintf, strlen};
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create,
@@ -715,167 +715,53 @@ pub unsafe fn screen_alternate_off(
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn screen_mode_to_string(mut mode: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut tmp: [::core::ffi::c_char; 1024] = [0; 1024];
-    if mode == 0 as ::core::ffi::c_int {
-        return b"NONE\0" as *const u8 as *const ::core::ffi::c_char;
+struct ScreenModeNames(i32);
+
+impl std::fmt::Display for ScreenModeNames {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 == 0 {
+            return out.write_str("NONE");
+        }
+        if self.0 == ALL_MODES {
+            return out.write_str("ALL");
+        }
+        const SCREEN_MODE_NAMES: &[(i32, &str)] = &[
+            (MODE_CURSOR, "CURSOR"),
+            (MODE_INSERT, "INSERT"),
+            (MODE_KCURSOR, "KCURSOR"),
+            (MODE_KKEYPAD, "KKEYPAD"),
+            (MODE_WRAP, "WRAP"),
+            (MODE_MOUSE_STANDARD, "MOUSE_STANDARD"),
+            (MODE_MOUSE_BUTTON, "MOUSE_BUTTON"),
+            (MODE_CURSOR_BLINKING, "CURSOR_BLINKING"),
+            (MODE_CURSOR_VERY_VISIBLE, "CURSOR_VERY_VISIBLE"),
+            (MODE_CURSOR_BLINKING_SET, "CURSOR_BLINKING_SET"),
+            (MODE_MOUSE_UTF8, "MOUSE_UTF8"),
+            (MODE_MOUSE_SGR, "MOUSE_SGR"),
+            (MODE_BRACKETPASTE, "BRACKETPASTE"),
+            (MODE_FOCUSON, "FOCUSON"),
+            (MODE_MOUSE_ALL, "MOUSE_ALL"),
+            (MODE_ORIGIN, "ORIGIN"),
+            (MODE_CRLF, "CRLF"),
+            (MODE_KEYS_EXTENDED, "KEYS_EXTENDED"),
+            (MODE_KEYS_EXTENDED_2, "KEYS_EXTENDED_2"),
+            (MODE_THEME_UPDATES, "THEME_UPDATES"),
+            (MODE_SYNC, "SYNC"),
+        ];
+        let mut separator = "";
+        for &(mask, name) in SCREEN_MODE_NAMES {
+            if self.0 & mask != 0 {
+                out.write_str(separator)?;
+                out.write_str(name)?;
+                separator = ",";
+            }
+        }
+        Ok(())
     }
-    if mode == ALL_MODES {
-        return b"ALL\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    *(&raw mut tmp as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if mode & MODE_CURSOR != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"CURSOR,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_INSERT != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"INSERT,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_KCURSOR != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"KCURSOR,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_KKEYPAD != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"KKEYPAD,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_WRAP != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"WRAP,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_MOUSE_STANDARD != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"MOUSE_STANDARD,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_MOUSE_BUTTON != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"MOUSE_BUTTON,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_CURSOR_BLINKING != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"CURSOR_BLINKING,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_CURSOR_VERY_VISIBLE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"CURSOR_VERY_VISIBLE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_CURSOR_BLINKING_SET != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"CURSOR_BLINKING_SET,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_MOUSE_UTF8 != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"MOUSE_UTF8,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_MOUSE_SGR != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"MOUSE_SGR,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_BRACKETPASTE != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"BRACKETPASTE,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_FOCUSON != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"FOCUSON,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_MOUSE_ALL != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"MOUSE_ALL,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_ORIGIN != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"ORIGIN,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_CRLF != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"CRLF,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_KEYS_EXTENDED != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"KEYS_EXTENDED,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_KEYS_EXTENDED_2 != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"KEYS_EXTENDED_2,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_THEME_UPDATES != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"THEME_UPDATES,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if mode & MODE_SYNC != 0 {
-        strlcat(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            b"SYNC,\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
-    }
-    if *(&raw mut tmp as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
-        tmp[strlen(&raw mut tmp as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
-            '\0' as i32 as ::core::ffi::c_char;
-    }
-    return &raw mut tmp as *mut ::core::ffi::c_char;
+}
+
+pub fn screen_mode_display(mode: i32) -> impl std::fmt::Display {
+    ScreenModeNames(mode)
 }
 pub unsafe fn screen_print(
     mut s: *mut screen,

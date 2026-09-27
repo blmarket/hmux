@@ -16,7 +16,7 @@ use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_le
 use crate::src::options::options_get_number;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::screen::{
-    screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_to_string,
+    screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
 };
 use crate::src::server_fn::server_redraw_window_borders;
@@ -1387,7 +1387,7 @@ pub unsafe fn screen_write_mode_set(mut ctx: *mut screen_write_ctx, mut mode: ::
         log_debug(format_args!(
             "{}: {}",
             "screen_write_mode_set",
-            log_cstr((screen_mode_to_string(mode)) as *const _)
+            screen_mode_display(mode)
         ));
     }
 }
@@ -1401,7 +1401,7 @@ pub unsafe fn screen_write_mode_clear(
         log_debug(format_args!(
             "{}: {}",
             "screen_write_mode_clear",
-            log_cstr((screen_mode_to_string(mode)) as *const _)
+            screen_mode_display(mode)
         ));
     }
 }
