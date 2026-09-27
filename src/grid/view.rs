@@ -189,17 +189,8 @@ pub unsafe fn grid_view_delete_cells(
     );
     grid_clear(gd, sx.wrapping_sub(nx), py, nx, 1, bg);
 }
-pub unsafe fn grid_view_string_cells_bytes(gd: *mut grid, py: u_int, nx: u_int) -> Vec<u8> {
-    let px: u_int = 0 as u_int;
-    grid_string_cells_bytes(
-        gd,
-        px,
-        (*gd).hsize.wrapping_add(py),
-        nx,
-        None,
-        0,
-        ::core::ptr::null_mut(),
-    )
+pub unsafe fn grid_view_string_cells_bytes(gd: &grid, py: u_int, nx: u_int) -> Vec<u8> {
+    grid_string_cells_bytes(gd, 0, gd.hsize.wrapping_add(py), nx, None, 0, None)
 }
 
 #[cfg(test)]

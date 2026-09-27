@@ -1,7 +1,5 @@
-use crate::src::ffi::libc::{memcpy, strchr, strlcat, strlen};
-use crate::src::format::bytes::xformat;
 use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::log::{fatalx, log_cstr, log_debug};
+use crate::src::log::{fatalx, log_debug};
 use crate::src::server::current_time;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
@@ -13,14 +11,8 @@ use crate::src::text::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
 use crate::src::tmux::start_time;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_1 {
-    pub mask: u_int,
-    pub code: u_int,
-}
 pub static grid_default_cell: grid_cell = grid_cell {
     data: utf8_data {
         data: [
@@ -771,411 +763,235 @@ unsafe fn grid_string_cells_us(gc: &grid_cell, values: &mut [i32; 64]) -> usize 
         0
     }
 }
-unsafe fn grid_string_cells_add_code(
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
+/// A bounded, NUL-terminated scratch buffer with tmux's strlcat truncation.
+struct GridStringBuffer<'a> {
+    storage: &'a mut [u8],
+    len: usize,
+}
+impl<'a> GridStringBuffer<'a> {
+    fn new(storage: &'a mut [u8]) -> Self {
+        let mut buffer = Self { storage, len: 0 };
+        buffer.clear();
+        buffer
+    }
+    fn clear(&mut self) {
+        self.len = 0;
+        if let Some(first) = self.storage.first_mut() {
+            *first = 0;
+        }
+    }
+    fn append(&mut self, bytes: &[u8]) {
+        if self.storage.is_empty() {
+            return;
+        }
+        let count = bytes.len().min(self.storage.len() - 1 - self.len);
+        self.storage[self.len..self.len + count].copy_from_slice(&bytes[..count]);
+        self.len += count;
+        self.storage[self.len] = 0;
+    }
+    fn as_bytes(&self) -> &[u8] {
+        &self.storage[..self.len]
+    }
+}
+impl std::fmt::Write for GridStringBuffer<'_> {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.append(text.as_bytes());
+        Ok(())
+    }
+}
+fn grid_string_cells_add_code(
+    buf: &mut GridStringBuffer<'_>,
     s: &[i32],
     newc: &[i32],
     oldc: &[i32],
-    mut flags: ::core::ffi::c_int,
+    flags: i32,
 ) {
-    let mut i: u_int = 0;
-    let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
+    use std::fmt::Write;
     let reset = s.first() == Some(&0);
     if newc.is_empty() || (!reset && newc == oldc) || (reset && matches!(newc[0], 39 | 49)) {
         return;
     }
-    if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-        strlcat(
-            buf,
-            b"\\033[\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
+    buf.append(if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
+        b"\\033["
     } else {
-        strlcat(
-            buf,
-            b"\x1B[\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
-    }
-    i = 0 as u_int;
-    while (i as usize) < newc.len() {
-        if (i.wrapping_add(1) as usize) < newc.len() {
-            xformat(&mut tmp, format_args!("{};", newc[i as usize]));
-        } else {
-            xformat(&mut tmp, format_args!("{}", newc[i as usize]));
+        b"\x1b["
+    });
+    for (index, value) in newc.iter().enumerate() {
+        if index != 0 {
+            buf.append(b";");
         }
-        strlcat(buf, &raw mut tmp as *mut ::core::ffi::c_char, len);
-        i = i.wrapping_add(1);
+        write!(buf, "{value}").expect("bounded buffer formatting succeeds");
     }
-    strlcat(buf, b"m\0" as *const u8 as *const ::core::ffi::c_char, len);
+    buf.append(b"m");
 }
-unsafe fn grid_string_cells_add_hyperlink(
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
-    mut id: *const ::core::ffi::c_char,
-    mut uri: *const ::core::ffi::c_char,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    if strlen(uri)
-        .wrapping_add(strlen(id))
-        .wrapping_add(17 as size_t)
-        >= len
-    {
-        return 0 as ::core::ffi::c_int;
+fn grid_string_cells_add_hyperlink(
+    buf: &mut GridStringBuffer<'_>,
+    id: &CStr,
+    uri: &CStr,
+    flags: i32,
+) -> bool {
+    let id = id.to_bytes();
+    let uri = uri.to_bytes();
+    if uri.len().wrapping_add(id.len()).wrapping_add(17) >= buf.storage.len() {
+        return false;
     }
-    if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-        strlcat(
-            buf,
-            b"\\033]8;\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
-    } else {
-        strlcat(
-            buf,
-            b"\x1B]8;\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
+    let escaped = flags & GRID_STRING_ESCAPE_SEQUENCES != 0;
+    buf.append(if escaped { b"\\033]8;" } else { b"\x1b]8;" });
+    if !id.is_empty() {
+        buf.append(b"id=");
+        buf.append(id);
     }
-    if *id as ::core::ffi::c_int != '\0' as i32 {
-        let id_bytes = CStr::from_ptr(id).to_bytes();
-        let mut bytes = Vec::with_capacity(id_bytes.len() + 4);
-        bytes.extend_from_slice(b"id=");
-        bytes.extend_from_slice(id_bytes);
-        bytes.push(b';');
-        let tmp = CString::new(bytes).expect("C string ID contains no interior NUL");
-        strlcat(buf, tmp.as_ptr(), len);
-    } else {
-        strlcat(buf, b";\0" as *const u8 as *const ::core::ffi::c_char, len);
-    }
-    strlcat(buf, uri, len);
-    if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-        strlcat(
-            buf,
-            b"\\033\\\\\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
-    } else {
-        strlcat(
-            buf,
-            b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
-    }
-    return 1 as ::core::ffi::c_int;
+    buf.append(b";");
+    buf.append(uri);
+    buf.append(if escaped { b"\\033\\\\" } else { b"\x1b\\" });
+    true
 }
 unsafe fn grid_string_cells_code(
-    mut lastgc: *const grid_cell,
-    mut gc: *const grid_cell,
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
-    mut flags: ::core::ffi::c_int,
-    mut sc: *mut screen,
-    mut has_link: *mut ::core::ffi::c_int,
+    lastgc: &grid_cell,
+    gc: &grid_cell,
+    buf: &mut GridStringBuffer<'_>,
+    flags: i32,
+    sc: Option<&screen>,
+    has_link: &mut bool,
 ) {
-    let mut oldc: [::core::ffi::c_int; 64] = [0; 64];
-    let mut newc: [::core::ffi::c_int; 64] = [0; 64];
-    let mut s: [::core::ffi::c_int; 128] = [0; 128];
-    let mut noldc: size_t = 0;
-    let mut nnewc: size_t = 0;
-    let mut n: size_t = 0;
-    let mut i: size_t = 0;
-    let mut attr: u_int = (*gc).attr as u_int;
-    let mut lastattr: u_int = (*lastgc).attr as u_int;
-    let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
-    static mut attrs: [C2RustUnnamed_1; 13] = [
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_BRIGHT as u_int,
-            code: 1 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_DIM as u_int,
-            code: 2 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_ITALICS as u_int,
-            code: 3 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_UNDERSCORE as u_int,
-            code: 4 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_BLINK as u_int,
-            code: 5 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_REVERSE as u_int,
-            code: 7 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_HIDDEN as u_int,
-            code: 8 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_STRIKETHROUGH as u_int,
-            code: 9 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_UNDERSCORE_2 as u_int,
-            code: 42 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_UNDERSCORE_3 as u_int,
-            code: 43 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_UNDERSCORE_4 as u_int,
-            code: 44 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_UNDERSCORE_5 as u_int,
-            code: 45 as u_int,
-        },
-        C2RustUnnamed_1 {
-            mask: GRID_ATTR_OVERLINE as u_int,
-            code: 53 as u_int,
-        },
+    use std::fmt::Write;
+    let mut oldc = [0; 64];
+    let mut newc = [0; 64];
+    let mut codes = [0; 128];
+    let mut count = 0;
+    let attr = gc.attr as i32;
+    let mut lastattr = lastgc.attr as i32;
+    const ATTRS: &[(i32, i32)] = &[
+        (GRID_ATTR_BRIGHT, 1),
+        (GRID_ATTR_DIM, 2),
+        (GRID_ATTR_ITALICS, 3),
+        (GRID_ATTR_UNDERSCORE, 4),
+        (GRID_ATTR_BLINK, 5),
+        (GRID_ATTR_REVERSE, 7),
+        (GRID_ATTR_HIDDEN, 8),
+        (GRID_ATTR_STRIKETHROUGH, 9),
+        (GRID_ATTR_UNDERSCORE_2, 42),
+        (GRID_ATTR_UNDERSCORE_3, 43),
+        (GRID_ATTR_UNDERSCORE_4, 44),
+        (GRID_ATTR_UNDERSCORE_5, 45),
+        (GRID_ATTR_OVERLINE, 53),
     ];
-    n = 0 as size_t;
-    i = 0 as size_t;
-    while i
-        < (::core::mem::size_of::<[C2RustUnnamed_1; 13]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_1>() as usize)
+    if ATTRS
+        .iter()
+        .any(|&(mask, _)| !attr & mask != 0 && lastattr & mask != 0)
+        || (lastgc.us != 8 && gc.us == 8)
     {
-        if !attr & attrs[i as usize].mask != 0 && lastattr & attrs[i as usize].mask != 0
-            || (*lastgc).us != 8 as ::core::ffi::c_int && (*gc).us == 8 as ::core::ffi::c_int
-        {
-            let fresh4 = n;
-            n = n.wrapping_add(1);
-            s[fresh4 as usize] = 0 as ::core::ffi::c_int;
-            lastattr &= GRID_ATTR_CHARSET as u_int;
-            break;
-        } else {
-            i = i.wrapping_add(1);
+        codes[count] = 0;
+        count += 1;
+        lastattr &= GRID_ATTR_CHARSET;
+    }
+    for &(mask, code) in ATTRS {
+        if attr & mask != 0 && lastattr & mask == 0 {
+            codes[count] = code;
+            count += 1;
         }
     }
-    i = 0 as size_t;
-    while i
-        < (::core::mem::size_of::<[C2RustUnnamed_1; 13]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_1>() as usize)
-    {
-        if attr & attrs[i as usize].mask != 0 && lastattr & attrs[i as usize].mask == 0 {
-            let fresh5 = n;
-            n = n.wrapping_add(1);
-            s[fresh5 as usize] = attrs[i as usize].code as ::core::ffi::c_int;
-        }
-        i = i.wrapping_add(1);
-    }
-    *buf = '\0' as i32 as ::core::ffi::c_char;
-    if n > 0 as size_t {
-        if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-            strlcat(
-                buf,
-                b"\\033[\0" as *const u8 as *const ::core::ffi::c_char,
-                len,
-            );
-        } else {
-            strlcat(
-                buf,
-                b"\x1B[\0" as *const u8 as *const ::core::ffi::c_char,
-                len,
-            );
-        }
-        i = 0 as size_t;
-        while i < n {
-            if s[i as usize] < 10 as ::core::ffi::c_int {
-                xformat(&mut tmp, format_args!("{}", (s[i as usize]) as i32));
+    let codes = &codes[..count];
+    let escaped = flags & GRID_STRING_ESCAPE_SEQUENCES != 0;
+    buf.clear();
+    if !codes.is_empty() {
+        buf.append(if escaped { b"\\033[" } else { b"\x1b[" });
+        for (index, &code) in codes.iter().enumerate() {
+            if index != 0 {
+                buf.append(b";");
+            }
+            if code < 10 {
+                write!(buf, "{code}").expect("bounded buffer formatting succeeds");
             } else {
-                xformat(
-                    &mut tmp,
-                    format_args!(
-                        "{}:{}",
-                        (s[i as usize] / 10 as ::core::ffi::c_int) as i32,
-                        (s[i as usize] % 10 as ::core::ffi::c_int) as i32
-                    ),
-                );
+                write!(buf, "{}:{}", code / 10, code % 10)
+                    .expect("bounded buffer formatting succeeds");
             }
-            strlcat(buf, &raw mut tmp as *mut ::core::ffi::c_char, len);
-            if i.wrapping_add(1 as size_t) < n {
-                strlcat(buf, b";\0" as *const u8 as *const ::core::ffi::c_char, len);
+        }
+        buf.append(b"m");
+    }
+    let nnewc = grid_string_cells_fg(gc, &mut newc);
+    let noldc = grid_string_cells_fg(lastgc, &mut oldc);
+    grid_string_cells_add_code(buf, codes, &newc[..nnewc], &oldc[..noldc], flags);
+    let nnewc = grid_string_cells_bg(gc, &mut newc);
+    let noldc = grid_string_cells_bg(lastgc, &mut oldc);
+    grid_string_cells_add_code(buf, codes, &newc[..nnewc], &oldc[..noldc], flags);
+    let nnewc = grid_string_cells_us(gc, &mut newc);
+    let noldc = grid_string_cells_us(lastgc, &mut oldc);
+    grid_string_cells_add_code(buf, codes, &newc[..nnewc], &oldc[..noldc], flags);
+    if attr & GRID_ATTR_CHARSET != 0 && lastattr & GRID_ATTR_CHARSET == 0 {
+        buf.append(if escaped { b"\\016" } else { b"\x0e" });
+    }
+    if attr & GRID_ATTR_CHARSET == 0 && lastattr & GRID_ATTR_CHARSET != 0 {
+        buf.append(if escaped { b"\\017" } else { b"\x0f" });
+    }
+    if lastgc.link != gc.link {
+        if let Some(table) = sc.and_then(|screen| screen.hyperlinks.as_ref()) {
+            if let Some(link) = hyperlinks_get(table, gc.link) {
+                *has_link =
+                    grid_string_cells_add_hyperlink(buf, &link.internal_id, &link.uri, flags);
+            } else if *has_link {
+                grid_string_cells_add_hyperlink(buf, c"", c"", flags);
+                *has_link = false;
             }
-            i = i.wrapping_add(1);
-        }
-        strlcat(buf, b"m\0" as *const u8 as *const ::core::ffi::c_char, len);
-    }
-    nnewc = grid_string_cells_fg(&*gc, &mut newc);
-    noldc = grid_string_cells_fg(&*lastgc, &mut oldc);
-    grid_string_cells_add_code(
-        buf,
-        len,
-        &s[..n],
-        &newc[..nnewc],
-        &oldc[..noldc],
-        flags,
-    );
-    nnewc = grid_string_cells_bg(&*gc, &mut newc);
-    noldc = grid_string_cells_bg(&*lastgc, &mut oldc);
-    grid_string_cells_add_code(
-        buf,
-        len,
-        &s[..n],
-        &newc[..nnewc],
-        &oldc[..noldc],
-        flags,
-    );
-    nnewc = grid_string_cells_us(&*gc, &mut newc);
-    noldc = grid_string_cells_us(&*lastgc, &mut oldc);
-    grid_string_cells_add_code(
-        buf,
-        len,
-        &s[..n],
-        &newc[..nnewc],
-        &oldc[..noldc],
-        flags,
-    );
-    if attr & GRID_ATTR_CHARSET as u_int != 0 && lastattr & GRID_ATTR_CHARSET as u_int == 0 {
-        if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-            strlcat(
-                buf,
-                b"\\016\0" as *const u8 as *const ::core::ffi::c_char,
-                len,
-            );
-        } else {
-            strlcat(
-                buf,
-                b"\x0E\0" as *const u8 as *const ::core::ffi::c_char,
-                len,
-            );
-        }
-    }
-    if attr & GRID_ATTR_CHARSET as u_int == 0 && lastattr & GRID_ATTR_CHARSET as u_int != 0 {
-        if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-            strlcat(
-                buf,
-                b"\\017\0" as *const u8 as *const ::core::ffi::c_char,
-                len,
-            );
-        } else {
-            strlcat(
-                buf,
-                b"\x0F\0" as *const u8 as *const ::core::ffi::c_char,
-                len,
-            );
-        }
-    }
-    if !sc.is_null() && !(*sc).hyperlinks.is_null() && (*lastgc).link != (*gc).link {
-        if let Some(link) = hyperlinks_get(&*(*sc).hyperlinks, (*gc).link) {
-            *has_link = grid_string_cells_add_hyperlink(buf, len, link.internal_id.as_ptr(), link.uri.as_ptr(), flags);
-        } else if *has_link != 0 {
-            grid_string_cells_add_hyperlink(
-                buf,
-                len,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
-                flags,
-            );
-            *has_link = 0 as ::core::ffi::c_int;
         }
     }
 }
 /// The caller initializes `lastgc` to `grid_default_cell` once per capture
 /// and retains it across lines so unchanged attributes are not emitted again.
 pub unsafe fn grid_string_cells_bytes(
-    gd: *mut grid,
+    gd: &grid,
     px: u_int,
     py: u_int,
     nx: u_int,
     mut lastgc: Option<&mut grid_cell>,
-    flags: ::core::ffi::c_int,
-    s: *mut screen,
+    flags: i32,
+    screen: Option<&screen>,
 ) -> Vec<u8> {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut data: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut cell = grid_cell::default();
     let mut buf = Vec::with_capacity(128);
-    let mut code: [::core::ffi::c_char; 8192] = [0; 8192];
-    let mut size: size_t = 0;
-    let mut codelen: size_t = 0;
-    let mut xx: u_int = 0;
-    let mut end: u_int = 0;
-    let mut has_link: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let Some(gl) = grid_peek_line(&*gd, py) else {
+    let mut code_storage = [0; 8192];
+    let mut code = GridStringBuffer::new(&mut code_storage);
+    let mut has_link = false;
+    let Some(line) = grid_peek_line(gd, py) else {
         return buf;
     };
-    if flags & GRID_STRING_EMPTY_CELLS != 0 {
-        end = gl.cellsize as u_int;
+    let end = if flags & GRID_STRING_EMPTY_CELLS != 0 {
+        line.cellsize
     } else {
-        end = gl.cellused as u_int;
-    }
-    xx = px;
-    while xx < px.wrapping_add(nx) {
-        if xx >= end {
+        line.cellused
+    } as u_int;
+    for column in px..px.wrapping_add(nx) {
+        if column >= end {
             break;
         }
-        grid_get_cell(&*gd, xx, py, &mut gc);
-        if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-            if let Some(lastgc) = lastgc
-                .as_deref_mut()
-                .filter(|_| flags & GRID_STRING_WITH_SEQUENCES != 0)
-            {
-                grid_string_cells_code(
-                    lastgc,
-                    &raw mut gc,
-                    &raw mut code as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
-                    flags,
-                    s,
-                    &raw mut has_link,
-                );
-                codelen = strlen(&raw mut code as *mut ::core::ffi::c_char);
-                *lastgc = gc;
-            } else {
-                codelen = 0 as size_t;
-            }
-            if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-                data = b"\t\0" as *const u8 as *const ::core::ffi::c_char;
-                size = 1 as size_t;
-            } else {
-                data = &raw mut gc.data.data as *mut u_char as *const ::core::ffi::c_char;
-                size = gc.data.size as size_t;
-                if flags & GRID_STRING_ESCAPE_SEQUENCES != 0
-                    && size == 1 as size_t
-                    && *data as ::core::ffi::c_int == '\\' as i32
-                {
-                    data = b"\\\\\0" as *const u8 as *const ::core::ffi::c_char;
-                    size = 2 as size_t;
-                }
-            }
-            if codelen != 0 as size_t {
-                buf.extend_from_slice(std::slice::from_raw_parts(code.as_ptr().cast(), codelen));
-            }
-            buf.extend_from_slice(std::slice::from_raw_parts(data.cast(), size));
+        grid_get_cell(gd, column, py, &mut cell);
+        if cell.flags as i32 & GRID_FLAG_PADDING != 0 {
+            continue;
         }
-        xx = xx.wrapping_add(1);
+        if let Some(last) = lastgc
+            .as_deref_mut()
+            .filter(|_| flags & GRID_STRING_WITH_SEQUENCES != 0)
+        {
+            grid_string_cells_code(last, &cell, &mut code, flags, screen, &mut has_link);
+            buf.extend_from_slice(code.as_bytes());
+            *last = cell;
+        }
+        let data: &[u8] = if cell.flags as i32 & GRID_FLAG_TAB != 0 {
+            b"\t"
+        } else if flags & GRID_STRING_ESCAPE_SEQUENCES != 0
+            && cell.data.size == 1
+            && cell.data.data[0] == b'\\'
+        {
+            b"\\\\"
+        } else {
+            &cell.data.data[..cell.data.size as usize]
+        };
+        buf.extend_from_slice(data);
     }
-    if has_link != 0 {
-        grid_string_cells_add_hyperlink(
-            &raw mut code as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-            b"\0" as *const u8 as *const ::core::ffi::c_char,
-            flags,
-        );
-        codelen = strlen(&raw mut code as *mut ::core::ffi::c_char);
-        buf.extend_from_slice(std::slice::from_raw_parts(code.as_ptr().cast(), codelen));
+    if has_link {
+        // tmux appends the closing hyperlink to the last cell's code buffer.
+        grid_string_cells_add_hyperlink(&mut code, c"", c"", flags);
+        buf.extend_from_slice(code.as_bytes());
     }
     if flags & GRID_STRING_TRIM_SPACES != 0 {
         while buf.last() == Some(&b' ') {
@@ -1651,6 +1467,109 @@ pub fn grid_cell_attr_display(attr: i32) -> impl std::fmt::Display {
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn sequence_buffers_preserve_resets_charset_and_truncated_prefixes() {
+        unsafe {
+            let mut previous = grid_default_cell;
+            previous.attr = (GRID_ATTR_BRIGHT | GRID_ATTR_CHARSET) as u_short;
+            previous.fg = COLOUR_FLAG_RGB | 0xabcdef;
+            previous.us = COLOUR_FLAG_RGB | 0x010203;
+            let mut cell = grid_default_cell;
+            cell.attr = (GRID_ATTR_UNDERSCORE_2 | GRID_ATTR_OVERLINE) as u_short;
+            cell.fg = previous.fg;
+            for (flags, expected) in [
+                (0, b"\x1b[0;4:2;5:3m\x1b[38;2;171;205;239m\x0f".as_slice()),
+                (
+                    GRID_STRING_ESCAPE_SEQUENCES,
+                    b"\\033[0;4:2;5:3m\\033[38;2;171;205;239m\\017".as_slice(),
+                ),
+            ] {
+                let mut storage = [0; 128];
+                let mut out = GridStringBuffer::new(&mut storage);
+                let mut has_link = false;
+                grid_string_cells_code(&previous, &cell, &mut out, flags, None, &mut has_link);
+                assert_eq!(out.as_bytes(), expected);
+                grid_string_cells_code(&cell, &cell, &mut out, flags, None, &mut has_link);
+                assert!(out.as_bytes().is_empty());
+            }
+            let mut storage = [99; 5];
+            let mut out = GridStringBuffer::new(&mut storage);
+            grid_string_cells_code(&previous, &cell, &mut out, 0, None, &mut false);
+            assert_eq!(out.as_bytes(), b"\x1b[0;");
+            assert_eq!(storage[4], 0);
+        }
+    }
+
+    #[test]
+    fn hyperlink_sequences_keep_capacity_guard_and_existing_prefix() {
+        let mut storage = [0; 32];
+        let mut out = GridStringBuffer::new(&mut storage);
+        out.append(b"prefix");
+        assert!(!grid_string_cells_add_hyperlink(
+            &mut out,
+            c"abcdefghijklmn",
+            c"x",
+            0
+        ));
+        assert_eq!(out.as_bytes(), b"prefix");
+        assert!(grid_string_cells_add_hyperlink(
+            &mut out,
+            c"a",
+            c"https://x/",
+            GRID_STRING_ESCAPE_SEQUENCES
+        ));
+        assert_eq!(out.as_bytes(), b"prefix\\033]8;id=a;https://x/\\03");
+        assert_eq!(storage[31], 0);
+    }
+
+    #[test]
+    fn captures_preserve_last_code_when_closing_hyperlinks() {
+        unsafe {
+            let table = crate::src::hyperlinks::HyperlinksRef::new();
+            let link = crate::src::hyperlinks::hyperlinks_put(
+                table.as_ptr(),
+                c"uri".as_ptr(),
+                c"id".as_ptr(),
+            );
+            let mut screen = screen::empty();
+            screen.hyperlinks = table.as_ptr();
+            let mut gd = grid_create_box(2, 1, 0);
+            let mut cell = grid_default_cell;
+            cell.link = link;
+            utf8_set(&mut cell.data, b'A');
+            grid_set_cell(&mut gd, 0, 0, &cell);
+            let mut previous = grid_default_cell;
+            assert_eq!(
+                grid_string_cells_bytes(
+                    &gd,
+                    0,
+                    0,
+                    1,
+                    Some(&mut previous),
+                    GRID_STRING_WITH_SEQUENCES,
+                    Some(&screen)
+                ),
+                b"\x1b]8;id=id;uri\x1b\\A\x1b]8;id=id;uri\x1b\\\x1b]8;;\x1b\\"
+            );
+            utf8_set(&mut cell.data, b'B');
+            grid_set_cell(&mut gd, 1, 0, &cell);
+            previous = grid_default_cell;
+            assert_eq!(
+                grid_string_cells_bytes(
+                    &gd,
+                    0,
+                    0,
+                    2,
+                    Some(&mut previous),
+                    GRID_STRING_WITH_SEQUENCES,
+                    Some(&screen)
+                ),
+                b"\x1b]8;id=id;uri\x1b\\AB\x1b]8;;\x1b\\"
+            );
+            assert_eq!(previous.link, link);
+        }
+    }
 
     #[test]
     fn colour_parameters_keep_theme_priority_and_default_underline_semantics() {

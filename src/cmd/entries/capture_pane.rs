@@ -481,7 +481,7 @@ unsafe fn cmd_capture_pane_history(
         let line = if hyperlinks != 0 {
             cmd_capture_pane_hyperlinks(gd, s, i, &mut links)
         } else {
-            let mut line = grid_string_cells_bytes(gd, 0 as u_int, i, sx, Some(&mut gc), flags, s);
+            let mut line = grid_string_cells_bytes(&*gd, 0 as u_int, i, sx, Some(&mut gc), flags, s.as_ref());
             if let Some(nul) = line.iter().position(|&byte| byte == 0) {
                 line.truncate(nul);
             }

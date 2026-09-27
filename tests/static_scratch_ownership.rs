@@ -120,25 +120,25 @@ fn capture_attributes_continue_across_lines_but_not_between_captures() {
         let mut second = grid_default_cell;
 
         assert_eq!(
-            grid_string_cells_bytes(grid, 0, 0, 1, Some(&mut first), flags, null_mut()),
+            grid_string_cells_bytes(&*grid, 0, 0, 1, Some(&mut first), flags, None),
             b"\x1b[31mA"
         );
         assert_eq!(
-            grid_string_cells_bytes(grid, 0, 2, 1, Some(&mut second), flags, null_mut()),
+            grid_string_cells_bytes(&*grid, 0, 2, 1, Some(&mut second), flags, None),
             b"\x1b[34mC"
         );
         // Interleaving a separate capture must not change the first one's state.
         assert_eq!(
-            grid_string_cells_bytes(grid, 0, 1, 1, Some(&mut first), flags, null_mut()),
+            grid_string_cells_bytes(&*grid, 0, 1, 1, Some(&mut first), flags, None),
             b"B"
         );
         let mut fresh = grid_default_cell;
         assert_eq!(
-            grid_string_cells_bytes(grid, 0, 1, 1, Some(&mut fresh), flags, null_mut()),
+            grid_string_cells_bytes(&*grid, 0, 1, 1, Some(&mut fresh), flags, None),
             b"\x1b[31mB"
         );
         assert_eq!(
-            grid_string_cells_bytes(grid, 0, 0, 1, None, flags, null_mut()),
+            grid_string_cells_bytes(&*grid, 0, 0, 1, None, flags, None),
             b"A"
         );
         grid_destroy(grid);

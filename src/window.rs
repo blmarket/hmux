@@ -3562,7 +3562,7 @@ pub unsafe fn window_pane_search(
     };
     i = 0 as u_int;
     while i < (*(*s).grid).sy {
-        let mut line = grid_view_string_cells_bytes((*s).grid, i, (*(*s).grid).sx);
+        let mut line = grid_view_string_cells_bytes(&*(*s).grid, i, (*(*s).grid).sx);
         if let Some(nul) = line.iter().position(|&byte| byte == 0) {
             line.truncate(nul);
         }
