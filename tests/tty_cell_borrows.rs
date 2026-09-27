@@ -89,7 +89,7 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
             ..grid_default_cell
         };
         let style = tty_style_ctx {
-            defaults: &defaults,
+            defaults,
             ..Default::default()
         };
         tty_cell(&raw mut terminal, &source, Some(&style));

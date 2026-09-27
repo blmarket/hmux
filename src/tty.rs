@@ -119,7 +119,7 @@ pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 static mut tty_log_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
-        defaults: &raw const grid_default_cell,
+        defaults: grid_default_cell,
         palette: ::core::ptr::null::<colour_palette>() as *mut colour_palette,
         dim: 0 as u_int,
         hyperlinks: ::core::ptr::null::<hyperlinks>() as *mut hyperlinks,
@@ -1622,7 +1622,14 @@ unsafe fn tty_clear_pane_line(
         while i < (*r).used {
             ri = &raw mut (&mut (*r).storage)[i as usize];
             if !((*ri).nx == 0 as u_int) {
-                tty_clear_line(tty, &raw const (*ctx).defaults, ry, (*ri).px, (*ri).nx, bg);
+                tty_clear_line(
+                    tty,
+                    &raw const (*ctx).style_ctx.defaults,
+                    ry,
+                    (*ri).px,
+                    (*ri).nx,
+                    bg,
+                );
             }
             i = i.wrapping_add(1);
         }
@@ -1722,7 +1729,7 @@ unsafe fn tty_clear_area(
     mut bg: u_int,
 ) {
     let mut c: *mut client = (*tty).client;
-    let mut defaults: *const grid_cell = &raw const (*ctx).defaults;
+    let mut defaults: *const grid_cell = &raw const (*ctx).style_ctx.defaults;
     let mut yy: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
     log_debug(format_args!(
@@ -2096,7 +2103,7 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, mut ctx: *const tty_ctx
     let mut c: *mut client = (*tty).client;
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, (*ctx).bg) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, (*ctx).bg) != 0
         || tty_term_has((*tty).term, TTYC_ICH) == 0 && tty_term_has((*tty).term, TTYC_ICH1) == 0
         || (*c).overlay_check.is_some()
     {
@@ -2111,7 +2118,7 @@ pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, mut ctx: *const tty_ctx
     let mut c: *mut client = (*tty).client;
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, (*ctx).bg) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, (*ctx).bg) != 0
         || tty_term_has((*tty).term, TTYC_DCH) == 0 && tty_term_has((*tty).term, TTYC_DCH1) == 0
         || (*c).overlay_check.is_some()
     {
@@ -2137,7 +2144,7 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     let mut c: *mut client = (*tty).client;
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, (*ctx).bg) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, (*ctx).bg) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_IL1) == 0
         || (*ctx).sx == 1 as u_int
@@ -2159,7 +2166,7 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     let mut c: *mut client = (*tty).client;
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, (*ctx).bg) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, (*ctx).bg) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_DL1) == 0
         || (*ctx).sx == 1 as u_int
@@ -2185,7 +2192,7 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
             && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, 8 as u_int) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, 8 as u_int) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_RI) == 0 && tty_term_has((*tty).term, TTYC_RIN) == 0
         || (*ctx).sx == 1 as u_int
@@ -2211,7 +2218,7 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
             && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, 8 as u_int) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, 8 as u_int) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || (*ctx).sx == 1 as u_int
         || (*ctx).sy == 1 as u_int
@@ -2253,7 +2260,7 @@ pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, mut ctx: *const tty_ctx) {
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0
         || !((*ctx).xoff == 0 as ::core::ffi::c_int && (*ctx).sx >= (*tty).sx)
             && (*(*tty).term).flags & TERM_DECSLRM == 0
-        || tty_fake_bce(tty, &raw const (*ctx).defaults, 8 as u_int) != 0
+        || tty_fake_bce(tty, &raw const (*ctx).style_ctx.defaults, 8 as u_int) != 0
         || tty_term_has((*tty).term, TTYC_CSR) == 0
         || tty_term_has((*tty).term, TTYC_RI) == 0 && tty_term_has((*tty).term, TTYC_RIN) == 0
         || (*ctx).sx == 1 as u_int
@@ -2942,10 +2949,10 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
     palette = style_ctx.palette;
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
         if gc2.fg == 8 as ::core::ffi::c_int {
-            gc2.fg = (*style_ctx.defaults).fg;
+            gc2.fg = style_ctx.defaults.fg;
         }
         if gc2.bg == 8 as ::core::ffi::c_int {
-            gc2.bg = (*style_ctx.defaults).bg;
+            gc2.bg = style_ctx.defaults.bg;
         }
         if !palette.is_null() {
             changed = colour_palette_get(palette, gc2.fg);

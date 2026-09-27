@@ -285,13 +285,8 @@ unsafe fn popup_set_client(pd: *mut popup_data, ttyctx: &mut tty_ctx, c: *mut cl
     1
 }
 unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
-    memcpy(
-        &raw mut (*ttyctx).defaults as *mut ::core::ffi::c_void,
-        &raw mut (*pd).defaults as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    (*ttyctx).style_ctx.defaults = (*pd).defaults;
     (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;
-    (*ttyctx).style_ctx.defaults = &raw mut (*ttyctx).defaults;
     (*ttyctx).style_ctx.palette = &raw mut (*pd).palette;
     (*ttyctx).redraw_cb = Some(Box::new(move |_| unsafe {
         (*(*pd).c).flags |= CLIENT_REDRAWOVERLAY as uint64_t;
@@ -359,7 +354,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
         link: 0,
     };
     let mut style_ctx: tty_style_ctx = tty_style_ctx {
-        defaults: ::core::ptr::null::<grid_cell>(),
+        defaults: grid_cell::default(),
         palette: ::core::ptr::null_mut::<colour_palette>(),
         dim: 0,
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
@@ -422,7 +417,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     if defaults.bg == 8 as ::core::ffi::c_int {
         defaults.bg = (*pd).palette.bg;
     }
-    style_ctx.defaults = &raw mut defaults;
+    style_ctx.defaults = defaults;
     style_ctx.palette = &raw mut (*pd).palette;
     style_ctx.dim = 0 as u_int;
     style_ctx.hyperlinks = s.hyperlinks;

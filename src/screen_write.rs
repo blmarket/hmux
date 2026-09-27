@@ -33,7 +33,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::display::visible_range;
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::menu::menu;
@@ -50,7 +49,7 @@ use crate::src::shared::screen_write::{
 use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
 use crate::src::shared::style::*;
 use crate::src::shared::tty::{
-    tty, tty_ctx, tty_ctx_c2rust_unnamed, tty_ctx_redraw_cb, tty_ctx_set_client_cb, tty_style_ctx,
+    tty, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
 };
 use crate::src::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
@@ -341,25 +340,24 @@ unsafe fn screen_write_initctx(
     if check_obscured != 0 && screen_write_pane_is_obscured(ctx) != 0 {
         ttyctx.flags |= TTY_CTX_PANE_OBSCURED;
     }
-    ttyctx.defaults = grid_default_cell;
-    ttyctx.style_ctx.defaults = &raw mut ttyctx.defaults;
+    ttyctx.style_ctx.defaults = grid_default_cell;
     ttyctx.style_ctx.hyperlinks = (*ctx.s).hyperlinks;
     if let Some(callback) = ctx.init_ctx_cb.as_mut() {
         callback(ttyctx);
         if !ttyctx.style_ctx.palette.is_null() {
             palette = ttyctx.style_ctx.palette;
-            if ttyctx.defaults.fg == 8 as ::core::ffi::c_int {
-                ttyctx.defaults.fg = (*palette).fg;
+            if ttyctx.style_ctx.defaults.fg == 8 as ::core::ffi::c_int {
+                ttyctx.style_ctx.defaults.fg = (*palette).fg;
             }
-            if ttyctx.defaults.bg == 8 as ::core::ffi::c_int {
-                ttyctx.defaults.bg = (*palette).bg;
+            if ttyctx.style_ctx.defaults.bg == 8 as ::core::ffi::c_int {
+                ttyctx.style_ctx.defaults.bg = (*palette).bg;
             }
         }
     } else {
         ttyctx.redraw_cb = screen_write_redraw_cb(ctx.wp);
         if !ctx.wp.is_null() {
             tty_default_colours(
-                &raw mut ttyctx.defaults,
+                &raw mut ttyctx.style_ctx.defaults,
                 ctx.wp as *mut window_pane,
                 &raw mut ttyctx.style_ctx.dim,
             );
@@ -701,49 +699,7 @@ pub unsafe fn screen_write_fast_copy(
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let gd = src.grid();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1434,49 +1390,7 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
         scrolled: 0,
         bg: 0,
     };
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut s: *mut screen = &raw mut (*wp).base;
     let mut y: u_int = 0;
     let mut sy: u_int = (*s).grid().sy;
@@ -1535,49 +1449,7 @@ unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, mut ttyctx: *mut 
 }
 pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1638,49 +1510,7 @@ pub unsafe fn screen_write_insertcharacter(
 ) {
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
@@ -1722,49 +1552,7 @@ pub unsafe fn screen_write_deletecharacter(
 ) {
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
@@ -1806,49 +1594,7 @@ pub unsafe fn screen_write_clearcharacter(
 ) {
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
@@ -1886,49 +1632,7 @@ pub unsafe fn screen_write_clearcharacter(
 pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let mut s: *mut screen = ctx.s;
     let mut gd: *mut grid = (*s).grid_mut();
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut sy: u_int = (*s).grid().sy;
     if ny == 0 as u_int {
         ny = 1 as u_int;
@@ -2003,49 +1707,7 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
 pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let mut s: *mut screen = ctx.s;
     let mut gd: *mut grid = (*s).grid_mut();
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut sy: u_int = (*s).grid().sy;
     let mut ry: u_int = 0;
     if ny == 0 as u_int {
@@ -2233,49 +1895,7 @@ pub unsafe fn screen_write_cursormove(
 }
 pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut ry: u_int = 0;
     if (*s).cy != (*s).rupper {
         if (*s).cy > 0 as u_int {
@@ -2404,49 +2024,7 @@ pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int
 pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
     let mut s: *mut screen = ctx.s;
     let mut gd: *mut grid = (*s).grid_mut();
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut i: u_int = 0;
     let mut ry: u_int = 0;
     screen_write_initctx(
@@ -2499,49 +2077,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
     let mut gd: *mut grid = (*s).grid_mut();
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut sx: u_int = (*s).grid().sx;
     let mut sy: u_int = (*s).grid().sy;
     let mut y: u_int = 0;
@@ -2658,49 +2194,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
 pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut sx: u_int = (*s).grid().sx;
     let mut y: u_int = 0;
     let mut i: u_int = 0;
@@ -2796,49 +2290,7 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
 pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut sx: u_int = (*s).grid().sx;
     let mut sy: u_int = (*s).grid().sy;
     let mut y: u_int = 0;
@@ -2911,49 +2363,7 @@ pub unsafe fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
     grid_clear_history(&mut *((*ctx.s).grid_mut()));
 }
 pub unsafe fn screen_write_fullredraw(ctx: &mut screen_write_ctx) {
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_fullredraw");
     screen_write_initctx(
         ctx,
@@ -3044,49 +2454,7 @@ unsafe fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
 unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     let mut s: *mut screen = ctx.s;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     screen_write_initctx(
         ctx,
         &mut ttyctx,
@@ -3163,49 +2531,7 @@ unsafe fn screen_write_collect_flush_line(
     let mut r_end: ::core::ffi::c_int = 0;
     let mut c_start: ::core::ffi::c_int = 0;
     let mut c_end: ::core::ffi::c_int = 0;
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     if !wp.is_null() {
         wsx = (*(*wp).window).sx;
         wsy = (*(*wp).window).sy;
@@ -3697,49 +3023,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         us: 0,
         link: 0,
     };
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut sx: u_int = (*s).grid().sx;
     let mut sy: u_int = (*s).grid().sy;
     let mut width: u_int = ud.width as u_int;
@@ -3967,49 +3251,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         us: 0,
         link: 0,
     };
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut force_wide: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut zero_width: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4220,49 +3462,7 @@ unsafe fn screen_write_overwrite(
     return done;
 }
 pub unsafe fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr, data: &[u8]) {
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     screen_write_initctx(
         ctx,
         &mut ttyctx,
@@ -4283,49 +3483,7 @@ pub unsafe fn screen_write_rawstring(
     data: &[u8],
     mut allow_invisible_panes: ::core::ffi::c_int,
 ) {
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     screen_write_initctx(
         ctx,
         &mut ttyctx,
@@ -4348,49 +3506,7 @@ pub unsafe fn screen_write_alternateon(
     gc: &grid_cell,
     cursor: ::core::ffi::c_int,
 ) {
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     if !wp.is_null()
         && options_get_number(
@@ -4434,49 +3550,7 @@ pub unsafe fn screen_write_alternateoff(
     gc: &mut grid_cell,
     cursor: ::core::ffi::c_int,
 ) {
-    let mut ttyctx: tty_ctx = tty_ctx {
-        s: ::core::ptr::null_mut::<screen>(),
-        redraw_cb: None,
-        set_client_cb: None,
-        cell: ::core::ptr::null::<grid_cell>(),
-        flags: 0,
-        c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
-        ocx: 0,
-        ocy: 0,
-        orupper: 0,
-        orlower: 0,
-        xoff: 0,
-        yoff: 0,
-        rxoff: 0,
-        ryoff: 0,
-        sx: 0,
-        sy: 0,
-        bg: 0,
-        defaults: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_ctx: tty_style_ctx {
-            defaults: ::core::ptr::null::<grid_cell>(),
-            palette: ::core::ptr::null_mut::<colour_palette>(),
-            dim: 0,
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        },
-        wox: 0,
-        woy: 0,
-        wsx: 0,
-        wsy: 0,
-    };
+    let mut ttyctx = tty_ctx::default();
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     if !wp.is_null()
         && options_get_number(
@@ -4555,6 +3629,50 @@ mod write_ctx_tests {
     }
 
     #[test]
+    fn callback_defaults_and_palette_fallback_share_the_owned_style_cell() {
+        unsafe {
+            let mut s = screen::empty();
+            s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            let mut palette = colour_palette {
+                fg: 3,
+                bg: 4,
+                ..Default::default()
+            };
+            let palette_ptr = &raw mut palette;
+            let mut ctx = screen_write_ctx {
+                s: &raw mut s,
+                flags: SCREEN_WRITE_SYNC,
+                init_ctx_cb: Some(Box::new(move |ttyctx| {
+                    ttyctx.style_ctx.defaults.fg = 7;
+                    ttyctx.style_ctx.palette = palette_ptr;
+                })),
+                ..Default::default()
+            };
+            let mut ttyctx = tty_ctx::default();
+            screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+            assert_eq!(
+                (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
+                (7, 4)
+            );
+            let previous = std::hint::black_box(ttyctx);
+            palette.bg = 6;
+            ttyctx = tty_ctx::default();
+            screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+            assert_eq!(
+                (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
+                (7, 6)
+            );
+            assert_eq!(
+                (
+                    previous.style_ctx.defaults.fg,
+                    previous.style_ctx.defaults.bg
+                ),
+                (7, 4)
+            );
+        }
+    }
+
+    #[test]
     fn resetting_a_terminal_context_drops_both_owned_callbacks() {
         unsafe {
             let mut s = screen::empty();
@@ -4582,9 +3700,11 @@ mod write_ctx_tests {
                 screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
                 assert_eq!(drops.get(), reset * 2);
                 assert_eq!((ttyctx.sx, ttyctx.sy, ttyctx.ocx, ttyctx.ocy), (8, 2, 3, 1));
-                assert!(grid_cells_equal(&ttyctx.defaults, &grid_default_cell));
+                assert!(grid_cells_equal(
+                    &ttyctx.style_ctx.defaults,
+                    &grid_default_cell
+                ));
                 assert!(ttyctx.set_client_cb.is_none());
-                assert!(std::ptr::eq(ttyctx.style_ctx.defaults, &ttyctx.defaults));
             }
         }
     }

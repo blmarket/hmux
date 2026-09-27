@@ -181,18 +181,18 @@ pub unsafe fn tty_draw_line(
     let mut current_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
     let mut next_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
     let mut default_style_ctx: tty_style_ctx = tty_style_ctx {
-        defaults: ::core::ptr::null::<grid_cell>(),
+        defaults: grid_cell::default(),
         palette: ::core::ptr::null_mut::<colour_palette>(),
         dim: 0,
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
     };
     let mut defaults: *const grid_cell = ::core::ptr::null::<grid_cell>();
     if style_ctx.is_null() {
-        default_style_ctx.defaults = &raw const grid_default_cell;
+        default_style_ctx.defaults = grid_default_cell;
         default_style_ctx.hyperlinks = (*s).hyperlinks;
         style_ctx = &raw mut default_style_ctx;
     }
-    defaults = (*style_ctx).defaults;
+    defaults = &raw const (*style_ctx).defaults;
     log_debug(format_args!(
         "{}: px={} py={} nx={} atx={} aty={}",
         "tty_draw_line",

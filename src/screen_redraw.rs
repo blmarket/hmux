@@ -1277,7 +1277,7 @@ unsafe fn redraw_draw_pane_span(
         link: 0,
     };
     let mut style_ctx: tty_style_ctx = tty_style_ctx {
-        defaults: ::core::ptr::null::<grid_cell>(),
+        defaults: grid_cell::default(),
         palette: ::core::ptr::null_mut::<colour_palette>(),
         dim: 0,
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
@@ -1285,7 +1285,7 @@ unsafe fn redraw_draw_pane_span(
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     tty_default_colours(&raw mut defaults, wp, &raw mut style_ctx.dim);
-    style_ctx.defaults = &raw mut defaults;
+    style_ctx.defaults = defaults;
     style_ctx.palette = &raw mut (*wp).palette;
     style_ctx.hyperlinks = (*s).hyperlinks;
     px = (*span)

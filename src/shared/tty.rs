@@ -433,7 +433,6 @@ pub struct tty_ctx {
     pub sx: u_int,
     pub sy: u_int,
     pub bg: u_int,
-    pub defaults: grid_cell,
     pub style_ctx: tty_style_ctx,
     pub wox: u_int,
     pub woy: u_int,
@@ -444,7 +443,7 @@ pub struct tty_ctx {
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct tty_style_ctx {
-    pub defaults: *const grid_cell,
+    pub defaults: grid_cell,
     pub palette: *mut colour_palette,
     pub dim: u_int,
     pub hyperlinks: *mut hyperlinks,
