@@ -237,7 +237,7 @@ unsafe fn cmd_wait_for_client_name(mut wei: *mut wait_event_item) -> *const ::co
 }
 unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
+    let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item, name, args);

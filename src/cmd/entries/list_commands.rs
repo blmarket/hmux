@@ -99,7 +99,7 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    command = args_string(args, 0 as u_int);
+    command = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if command.is_null() {
         for &entry in &cmd_table {
             cmd_list_single_command(entry, ft, template, item);

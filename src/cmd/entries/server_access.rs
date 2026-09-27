@@ -83,7 +83,7 @@ unsafe fn cmd_server_access_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     let arg = format_single_cstring(
         item,
-        args_string(args, 0 as u_int),
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
         c,
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),

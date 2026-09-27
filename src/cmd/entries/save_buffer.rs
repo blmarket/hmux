@@ -122,7 +122,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
     }
     let expanded_path = (!show_buffer)
-        .then(|| format_single_from_target_cstring(item, args_string(args, 0 as u_int)));
+        .then(|| format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())));
     let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
     let path: *const ::core::ffi::c_char = expanded_path
         .as_ref()

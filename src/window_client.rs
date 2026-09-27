@@ -756,7 +756,7 @@ unsafe fn window_client_init(
     let command = if args.is_null() || args_count(args) == 0 as u_int {
         WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr()
     } else {
-        args_string(args, 0 as u_int)
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
     };
     data = Box::into_raw(Box::new(window_client_modedata {
         wp: Weak::new(),

@@ -107,7 +107,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         cmdq_error(item, |out| out.write_all(b"no data specified"));
         return CMD_RETURN_ERROR;
     }
-    let new_data = CStr::from_ptr(args_string(args, 0)).to_bytes();
+    let new_data = CStr::from_ptr(args_string(&mut *(args), 0).map_or(std::ptr::null(), |value| value.as_ptr())).to_bytes();
     if new_data.is_empty() {
         return CMD_RETURN_NORMAL;
     }

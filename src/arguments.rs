@@ -910,27 +910,24 @@ mod ownership_tests {
 pub unsafe fn args_count(mut args: *mut args) -> u_int {
     return (*args).count;
 }
-pub unsafe fn args_string(mut args: *mut args, mut idx: u_int) -> *const ::core::ffi::c_char {
-    if idx >= (*args).count {
-        return ::core::ptr::null::<::core::ffi::c_char>();
+pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
+    if idx >= args.count {
+        return None;
     }
-    let value = (*args).values.as_mut_ptr().add(idx as usize);
-    match (*value).type_0() as ::core::ffi::c_uint {
-        0 => b"\0".as_ptr().cast(),
-        1 => (*value).string_ptr(),
-        2 => {
-            if let Some(cached) = &(*value).cached {
-                return cached.as_ptr();
+    let value = &mut args.values[idx as usize];
+    match value.type_0() {
+        ARGS_NONE => Some(c""),
+        ARGS_STRING => value.as_string(),
+        ARGS_COMMANDS => {
+            if value.cached.is_none() {
+                let printed = unsafe {
+                    cmd_list_print_cstring(&*value.as_commands().expect("command argument").get(), 0)
+                };
+                value.cached = Some(printed);
             }
-            let printed = cmd_list_print_cstring(
-                &*rc::as_ptr((*value).as_commands().expect("command argument")),
-                0,
-            );
-            let pointer = printed.as_ptr();
-            (*value).cached = Some(printed);
-            pointer
+            value.cached.as_deref()
         }
-        _ => fatalx(|out| out.write_all(b"unexpected argument type")),
+        _ => unreachable!("unexpected argument type"),
     }
 }
 pub unsafe fn args_make_commands_now(

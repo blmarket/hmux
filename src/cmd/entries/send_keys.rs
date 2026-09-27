@@ -147,7 +147,7 @@ unsafe fn cmd_send_keys_inject_string(
     mut args: *mut args,
     mut i: ::core::ffi::c_int,
 ) -> *mut cmdq_item {
-    let mut s: *const ::core::ffi::c_char = args_string(args, i as u_int);
+    let mut s: *const ::core::ffi::c_char = args_string(&mut *(args), i as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();

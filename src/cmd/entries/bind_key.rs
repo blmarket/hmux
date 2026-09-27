@@ -53,14 +53,14 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut count: u_int = args_count(args);
-    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(args_string(args, 0 as u_int)))
+    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())))
         .unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         cmdq_error(item, |out| {
             out.write_all(b"unknown key: ")?;
-            write_cstr(out, args_string(args, 0 as u_int))
+            write_cstr(out, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()))
         });
         return CMD_RETURN_ERROR;
     }
@@ -90,7 +90,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     if count == 2 as u_int {
         pr = cmd_parse_from_string(
-            std::ffi::CStr::from_ptr(args_string(args, 1 as u_int)),
+            std::ffi::CStr::from_ptr(args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())),
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
     } else {

@@ -206,14 +206,14 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         flags: 0,
     });
     if args_has(args, 'C' as i32 as u_char) == 0 {
-        cmd = args_string(args, 0 as u_int);
+        cmd = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         if !cmd.is_null() {
             ft = format_create_from_target(item);
             i = 1 as u_int;
             while i < args_count(args) {
                 xformat(&mut key, format_args!("{}", i as u32));
                 format_add(ft, &raw mut key as *mut ::core::ffi::c_char, |out| {
-                    write_cstr(out, args_string(args, i))
+                    write_cstr(out, args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()))
                 });
                 i = i.wrapping_add(1);
             }

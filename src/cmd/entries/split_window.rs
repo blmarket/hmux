@@ -233,7 +233,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     input = args_has(args, 'I' as i32 as u_char);
     if input != 0
         || count == 1 as u_int
-            && *args_string(args, 0 as u_int) as ::core::ffi::c_int == '\0' as i32
+            && *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int == '\0' as i32
     {
         empty = 1 as ::core::ffi::c_int;
     } else {
@@ -242,7 +242,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if empty != 0
         && count != 0 as u_int
         && (count != 1 as u_int
-            || *args_string(args, 0 as u_int) as ::core::ffi::c_int != '\0' as i32)
+            || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int != '\0' as i32)
     {
         cmdq_error(item, |out| {
             out.write_all(b"command cannot be given for empty pane")

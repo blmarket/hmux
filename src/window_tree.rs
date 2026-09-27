@@ -1704,7 +1704,7 @@ unsafe fn window_tree_init(
     let command = if args.is_null() || args_count(args) == 0 as u_int {
         WINDOW_TREE_DEFAULT_COMMAND.as_ptr()
     } else {
-        args_string(args, 0 as u_int)
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
     };
     let owner = Rc::new_cyclic(|observer| UnsafeCell::new(window_tree_modedata {
         observer: observer.clone(),

@@ -43,7 +43,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let env: &mut environ;
-    let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
+    let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut expanded: Option<std::ffi::CString> = None;
@@ -59,7 +59,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     if args_count(args) < 2 as u_int {
         value = ::core::ptr::null::<::core::ffi::c_char>();
     } else {
-        value = args_string(args, 1 as u_int);
+        value = args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     }
     if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
         expanded = Some(format_single_from_target_cstring(item, value));

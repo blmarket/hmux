@@ -136,7 +136,7 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         cmdq_error(item, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
-    let argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let argument = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if *argument.as_ptr() as ::core::ffi::c_int != '@' as i32 {
         cmdq_error(item, |out| out.write_all(b"event name must start with @"));
         return CMD_RETURN_ERROR;
@@ -249,7 +249,7 @@ unsafe fn cmd_set_hook_monitor_exec(
                 hooks_monitor_remove(oo, name);
             } else {
                 if args_count(args) != 0 as u_int {
-                    value = args_string(args, 0 as u_int);
+                    value = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
                     if args_has(args, 'F' as i32 as u_char) != 0 {
                         expanded = Some(format_single_from_target_cstring(item, value));
                         value = expanded.as_ref().expect("expanded value was set").as_ptr();
@@ -331,7 +331,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         cmdq_error(item, |out| out.write_all(b"missing argument"));
         return CMD_RETURN_ERROR;
     }
-    let argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let argument = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
         && args_has(args, 'R' as i32 as u_char) != 0
     {
@@ -375,7 +375,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if args_count(args) < 2 as u_int {
             value = ::core::ptr::null::<::core::ffi::c_char>();
         } else {
-            value = args_string(args, 1 as u_int);
+            value = args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         }
         if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
             expanded = Some(format_single_from_target_cstring(item, value));

@@ -303,7 +303,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     )));
     i = 0 as u_int;
     while i < args_count(args) {
-        path = args_string(args, i);
+        path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());
         let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
             Some(format_single_from_target_cstring(item, path))
         } else {

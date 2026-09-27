@@ -206,7 +206,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 if args_count(args) == 0 as u_int {
                     argval = b"1\0" as *const u8 as *const ::core::ffi::c_char;
                 } else {
-                    argval = args_string(args, 0 as u_int);
+                    argval = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
                 }
             }
             adjust = strtonum(

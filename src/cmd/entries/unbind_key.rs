@@ -41,7 +41,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut keystr: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
+    let mut keystr: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut quiet: ::core::ffi::c_int = args_has(args, 'q' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 {
         if !keystr.is_null() {

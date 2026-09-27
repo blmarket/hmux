@@ -128,7 +128,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
         cdata.client = ClientOwner::retain(tc);
     }
-    let path = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let path = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     file_read_with_cmdq_wait(
         cmdq_get_client(item),
         path.as_ptr(),

@@ -79,7 +79,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    let shellcmd = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let shellcmd = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if args_has(args, 'F' as i32 as u_char) != 0 {
         let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
             && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32

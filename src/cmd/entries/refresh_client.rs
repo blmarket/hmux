@@ -249,7 +249,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             adjust = 1 as u_int;
         } else {
             adjust = strtonum(
-                args_string(args, 0 as u_int),
+                args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
                 1 as ::core::ffi::c_longlong,
                 INT_MAX as ::core::ffi::c_longlong,
                 &raw mut errstr,

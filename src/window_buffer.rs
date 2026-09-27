@@ -474,7 +474,7 @@ unsafe fn window_buffer_init(
     let command = if args.is_null() || args_count(args) == 0 as u_int {
         CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned()
     } else {
-        CStr::from_ptr(args_string(args, 0 as u_int)).to_owned()
+        CStr::from_ptr(args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
     };
     data = Box::into_raw(Box::new(window_buffer_modedata {
         wp: window_pane_weak(wp),

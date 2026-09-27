@@ -118,7 +118,7 @@ fn cmd_display_menu_args_parse(
         }
         let fresh0 = i;
         i = i.wrapping_add(1);
-        if unsafe { *args_string(args as *mut args, fresh0) } as ::core::ffi::c_int == '\0' as i32 {
+        if unsafe { *args_string(&mut *(args as *mut args), fresh0).map_or(std::ptr::null(), |value| value.as_ptr()) } as ::core::ffi::c_int == '\0' as i32 {
             continue;
         }
         type_0 = ARGS_PARSE_STRING;
@@ -953,7 +953,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let count = args_count(args);
     let mut i = 0;
     while i != count {
-        let name = std::ffi::CStr::from_ptr(args_string(args, i));
+        let name = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
         i += 1;
         if name.is_empty() {
             menu_add_item(&mut menu, None, item, tc, target);
@@ -963,8 +963,8 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
             cmdq_error(item, |out| out.write_all(b"not enough arguments"));
             return CMD_RETURN_ERROR;
         }
-        let key = std::ffi::CStr::from_ptr(args_string(args, i));
-        let command = std::ffi::CStr::from_ptr(args_string(args, i + 1));
+        let key = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
+        let command = std::ffi::CStr::from_ptr(args_string(&mut *(args), i + 1).map_or(std::ptr::null(), |value| value.as_ptr()));
         i += 2;
         let definition = menu_item {
             name,
@@ -1163,7 +1163,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                                     b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
                             } else if count == 1 as u_int {
-                                shellcmd = args_string(args, 0 as u_int);
+                                shellcmd = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
                             }
                             if count <= 1 as u_int
                                 && (shellcmd.is_null()

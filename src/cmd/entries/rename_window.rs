@@ -43,7 +43,7 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl;
-    let name = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let name = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if !check_name(&name) {
         cmdq_error(item, |out| {
             out.write_all(b"invalid window name: ")?;

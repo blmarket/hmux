@@ -161,7 +161,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
         return cmd_show_options_all(self_0, item, scope, oo);
     }
-    argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    argument = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     let matched = options_match_owned(argument.as_c_str());
     if let Ok(parsed) = &matched {
         name = parsed.name.as_ptr();

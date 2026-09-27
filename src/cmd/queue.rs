@@ -418,7 +418,7 @@ pub unsafe fn cmdq_insert_hook(
     while i < args_count(args_0) {
         xformat(&mut tmp, format_args!("argument_{}", i as u32));
         event_payload_set_string(&mut *ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
-            write_cstr(out, args_string(args_0, i))
+            write_cstr(out, args_string(&mut *(args_0), i).map_or(std::ptr::null(), |value| value.as_ptr()))
         });
         i = i.wrapping_add(1);
     }

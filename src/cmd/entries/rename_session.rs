@@ -62,7 +62,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let tmp = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let tmp = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if !check_name(&tmp) {
         cmdq_error(item, |out| {
             out.write_all(b"invalid session name: ")?;

@@ -221,7 +221,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         reversed: 0,
         order_seq: &[],
     };
-    keystr = args_string(args, 0 as u_int);
+    keystr = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if !keystr.is_null() {
         only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {

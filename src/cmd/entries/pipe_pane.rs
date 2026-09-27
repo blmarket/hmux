@@ -95,7 +95,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
     }
     if args_count(args) == 0 as u_int
-        || *args_string(args, 0 as u_int) as ::core::ffi::c_int == '\0' as i32
+        || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int == '\0' as i32
     {
         return CMD_RETURN_NORMAL;
     }
@@ -129,7 +129,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         0 as ::core::ffi::c_int,
     );
     format_defaults(ft, tc, s, wl, wp);
-    let cmd = format_expand_time_cstring(ft, args_string(args, 0 as u_int));
+    let cmd = format_expand_time_cstring(ft, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     format_free(ft);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);

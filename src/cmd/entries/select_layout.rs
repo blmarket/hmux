@@ -142,7 +142,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         layout_spread_out(wp);
     } else {
         if args_count(args) != 0 as u_int {
-            layoutname = args_string(args, 0 as u_int);
+            layoutname = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         } else if args_has(args, 'o' as i32 as u_char) != 0 {
             layoutname = oldlayout_ptr;
         } else {
