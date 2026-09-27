@@ -2,7 +2,6 @@
 
 use super::abi::{u_char, u_int};
 use super::command::{cmd_list, cmd_parse_input};
-use refbox::{RefBox, Weak};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 pub type args_type = ::core::ffi::c_uint;
@@ -79,7 +78,6 @@ pub enum ArgsPayload {
 pub struct args_value {
     pub payload: ArgsPayload,
     pub cached: Option<CString>,
-    pub entry: args_value_entry,
 }
 
 impl args_value {
@@ -87,10 +85,6 @@ impl args_value {
         Self {
             payload,
             cached: None,
-            entry: args_value_entry {
-                owner: None,
-                index: 0,
-            },
         }
     }
 
@@ -142,32 +136,23 @@ impl args_value {
     }
 }
 
-#[derive(Clone)]
-#[repr(C)]
-pub struct args_value_entry {
-    /// Owner collection used by args_next_value; this is not a neighbor link.
-    pub owner: Option<Weak<args_values_storage>>,
-    /// Stable position in the owner's append-only value collection.
-    pub index: usize,
-}
-
 #[repr(C)]
 pub struct args_tree {
-    pub entries: RefBox<args_tree_storage>,
+    pub entries: Box<args_tree_storage>,
 }
 
 impl Default for args_tree {
     fn default() -> Self {
         Self {
-            entries: RefBox::default(),
+            entries: Box::default(),
         }
     }
 }
 
-/// Rust-owned ordering storage for an argument tree's C-allocated entries.
+/// Owns each stable heap entry; readers borrow entries from this ordered map.
 #[derive(Default)]
 pub struct args_tree_storage {
-    pub(crate) entries: BTreeMap<u_char, *mut args_entry>,
+    pub(crate) entries: BTreeMap<u_char, Box<args_entry>>,
 }
 
 #[repr(C)]
@@ -177,17 +162,13 @@ pub struct args_entry {
     pub values: args_values,
     pub count: u_int,
     pub flags: ::core::ffi::c_int,
-    /// Non-owning pointer used to find the next item in the ordered collection.
-    pub(crate) owner: Option<Weak<args_tree_storage>>,
 }
 
 #[repr(C)]
-/// Rust-owned head for an argument entry's flag values. The first-element view
-/// remains a raw pointer for translated callers; storage is owned by RefBox.
-/// This internal layout is not a C ABI contract.
+/// Owns flag-value storage in its original heap allocation. Iteration borrows
+/// the boxed records and cannot outlive the containing argument set.
 pub struct args_values {
-    pub first: *mut args_value,
-    pub storage: RefBox<args_values_storage>,
+    pub storage: Box<args_values_storage>,
 }
 
 /// Owns stable flag-value records for one args_entry.

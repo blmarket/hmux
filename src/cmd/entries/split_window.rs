@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_first_value, args_get, args_has, args_next_value, args_string, args_to_vector,
+    args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{
@@ -171,7 +171,6 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut cause: Option<std::ffi::CString> = None;
     let mut choice_cause: Option<std::ffi::CString> = None;
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut lines: pane_lines = PANE_LINES_SINGLE;
     let mut count: u_int = args_count(args);
     if window_active_pane_is_over_zoom(w) != 0 {
@@ -300,10 +299,8 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = environ_create();
-    av = args_first_value(args, 'e' as i32 as u_char);
-    while !av.is_null() {
-        environ_put(sc.environ, (*av).string_ptr(), 0 as ::core::ffi::c_int);
-        av = args_next_value(av);
+    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+        environ_put(sc.environ, av.string_ptr(), 0 as ::core::ffi::c_int);
     }
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = args_get(args, 'c' as i32 as u_char);

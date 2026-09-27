@@ -1,6 +1,4 @@
-use crate::src::arguments::{
-    args_count, args_first_value, args_get, args_has, args_next_value, args_string,
-};
+use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
@@ -242,7 +240,6 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     if args_has(args, 'c' as i32 as u_char) != 0
         || args_has(args, 'L' as i32 as u_char) != 0
         || args_has(args, 'R' as i32 as u_char) != 0
@@ -318,19 +315,15 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     }
     if args_has(args, 'A' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
-            av = args_first_value(args, 'A' as i32 as u_char);
-            while !av.is_null() {
-                cmd_refresh_client_update_offset(tc, (*av).string_ptr());
-                av = args_next_value(av);
+            for av in args_flag_values(&*args, 'A' as i32 as u_char) {
+                cmd_refresh_client_update_offset(tc, av.string_ptr());
             }
             return CMD_RETURN_NORMAL;
         }
     } else if args_has(args, 'B' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
-            av = args_first_value(args, 'B' as i32 as u_char);
-            while !av.is_null() {
-                cmd_refresh_client_update_subscription(tc, (*av).string_ptr());
-                av = args_next_value(av);
+            for av in args_flag_values(&*args, 'B' as i32 as u_char) {
+                cmd_refresh_client_update_subscription(tc, av.string_ptr());
             }
             return CMD_RETURN_NORMAL;
         }

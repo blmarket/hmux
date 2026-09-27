@@ -1,6 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_first, args_first_value, args_get, args_next, args_next_value,
-    args_print_cstring, args_string,
+    args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::find::{
@@ -32,7 +31,7 @@ use crate::src::server_client::{server_client_print, server_client_unref};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
-use crate::src::shared::arguments::{args, args_entry, args_value};
+use crate::src::shared::arguments::args;
 use crate::src::shared::client::{client, client_file};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;
@@ -398,11 +397,8 @@ pub unsafe fn cmdq_insert_hook(
 ) {
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args_0: *mut args = cmd_get_args(cmd);
-    let mut ae: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
-    let mut flag: ::core::ffi::c_char = 0;
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if (*(*item).state).flags & CMDQ_STATE_NOHOOKS != 0 {
@@ -432,8 +428,7 @@ pub unsafe fn cmdq_insert_hook(
         });
         i = i.wrapping_add(1);
     }
-    flag = args_first(args_0, &raw mut ae) as ::core::ffi::c_char;
-    while flag as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+    for flag in args_flags(&*args_0) {
         value = args_get(args_0, flag as u_char);
         xformat_with(&mut tmp, |out| {
             out.write_all(b"flag_")?;
@@ -449,20 +444,17 @@ pub unsafe fn cmdq_insert_hook(
             });
         }
         i = 0 as u_int;
-        av = args_first_value(args_0, flag as u_char);
-        while !av.is_null() {
+        for av in args_flag_values(&*args_0, flag as u_char) {
             xformat_with(&mut tmp, |out| {
                 out.write_all(b"flag_")?;
                 out.write_all(&[flag as u8])?;
                 write!(out, "_{}", i)
             });
             event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
-                write_cstr(out, (*av).string_ptr())
+                write_cstr(out, av.string_ptr())
             });
             i = i.wrapping_add(1);
-            av = args_next_value(av);
         }
-        flag = args_next(&raw mut ae) as ::core::ffi::c_char;
     }
     events_fire(name.as_ptr(), ep);
 }

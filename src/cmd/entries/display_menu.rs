@@ -1,6 +1,6 @@
 use crate::src::arguments::{
-    args_count, args_first_value, args_get, args_has, args_next_value, args_percentage_result,
-    args_string, args_strtonum_result, args_to_vector,
+    args_count, args_flag_values, args_get, args_has, args_percentage_result, args_string,
+    args_strtonum_result, args_to_vector,
 };
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{cmd_append_argv, cmd_get_args};
@@ -1054,7 +1054,6 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut w: u_int = 0;
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut o: *mut options = (*(*(*s).curw).window).options;
     let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -1185,10 +1184,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             }
                             if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
                                 env = environ_create();
-                                av = args_first_value(args, 'e' as i32 as u_char);
-                                while !av.is_null() {
-                                    environ_put(env, (*av).string_ptr(), 0 as ::core::ffi::c_int);
-                                    av = args_next_value(av);
+                                for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+                                    environ_put(env, av.string_ptr(), 0 as ::core::ffi::c_int);
                                 }
                             }
                             current_block = 1345366029464561491;

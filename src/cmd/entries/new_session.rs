@@ -1,6 +1,4 @@
-use crate::src::arguments::{
-    args_count, args_first_value, args_get, args_has, args_next_value, args_to_vector,
-};
+use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_to_vector};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::find::cmd_find_from_session;
@@ -181,7 +179,6 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     if cmd_get_entry(self_0) == &raw const cmd_has_session_entry {
         return CMD_RETURN_NORMAL;
     }
@@ -211,8 +208,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
-            clean_name_cstring(ename.as_c_str(), 0)
-                .expect("check_name validated the window name"),
+            clean_name_cstring(ename.as_c_str(), 0).expect("check_name validated the window name"),
         );
         wname = wname_owned
             .as_ref()
@@ -546,17 +542,15 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 env,
                                                             );
                                                         }
-                                                        av = args_first_value(
-                                                            args,
+                                                        for av in args_flag_values(
+                                                            &*args,
                                                             'e' as i32 as u_char,
-                                                        );
-                                                        while !av.is_null() {
+                                                        ) {
                                                             environ_put(
                                                                 env,
-                                                                (*av).string_ptr(),
+                                                                av.string_ptr(),
                                                                 0 as ::core::ffi::c_int,
                                                             );
-                                                            av = args_next_value(av);
                                                         }
                                                         s = session_create(
                                                             prefix.as_ref().map_or(

@@ -1,6 +1,4 @@
-use crate::src::arguments::{
-    args_first_value, args_get, args_has, args_next_value, args_to_vector,
-};
+use crate::src::arguments::{args_flag_values, args_get, args_has, args_to_vector};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::environ::{environ_create, environ_free, environ_put};
@@ -69,7 +67,6 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
     let mut cause: Option<std::ffi::CString> = None;
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     sc.item = item;
     sc.s = s;
     sc.wl = wl;
@@ -77,10 +74,8 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = environ_create();
-    av = args_first_value(args, 'e' as i32 as u_char);
-    while !av.is_null() {
-        environ_put(sc.environ, (*av).string_ptr(), 0 as ::core::ffi::c_int);
-        av = args_next_value(av);
+    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+        environ_put(sc.environ, av.string_ptr(), 0 as ::core::ffi::c_int);
     }
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = args_get(args, 'c' as i32 as u_char);

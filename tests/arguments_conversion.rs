@@ -163,7 +163,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         let args = args_create();
         let cmdlist = cmd_list_new();
         args_set_owned_commands(args, b'c', cmdlist, 0);
-        let value = args_first_value(args, b'c');
+        let value = args_first_value(&*args, b'c').unwrap();
 
         assert_eq!(
             args_strtonum_result(args, b'c', 0, 100),
@@ -174,7 +174,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
             Err(ArgumentValueError::Missing)
         );
 
-        let rendered = cmd_list_print(&*(*value).cmdlist(), 0);
+        let rendered = cmd_list_print(&*value.cmdlist(), 0);
         assert_eq!(rendered.as_bytes(), b"");
         args_free(args);
 

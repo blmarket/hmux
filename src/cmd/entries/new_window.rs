@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_first_value, args_get, args_has, args_next_value, args_string, args_to_vector,
+    args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::find::cmd_find_from_winlink;
@@ -111,7 +111,6 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     if args_has(args, 'E' as i32 as u_char) != 0
         && count != 0 as ::core::ffi::c_int
         && (count != 1 as ::core::ffi::c_int
@@ -206,10 +205,8 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = environ_create();
-    av = args_first_value(args, 'e' as i32 as u_char);
-    while !av.is_null() {
-        environ_put(sc.environ, (*av).string_ptr(), 0 as ::core::ffi::c_int);
-        av = args_next_value(av);
+    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+        environ_put(sc.environ, av.string_ptr(), 0 as ::core::ffi::c_int);
     }
     sc.idx = idx;
     sc.cwd = args_get(args, 'c' as i32 as u_char);
