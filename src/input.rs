@@ -2318,7 +2318,10 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
 pub unsafe fn input_parse_pane(mut wp: *mut window_pane) {
     let mut new_data: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut new_size: size_t = 0;
-    new_data = window_pane_get_new_data(wp, &raw mut (*wp).offset, &raw mut new_size);
+    // Parsing fires callbacks; release the input-buffer borrow before dispatch.
+    let data = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &(*wp).offset).to_vec();
+    new_size = data.len();
+    new_data = data.as_ptr().cast_mut().cast();
     if new_size != 0 as size_t {
         (*wp).last_output_time = time(::core::ptr::null_mut::<time_t>());
     }

@@ -2979,7 +2979,9 @@ unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut new_size: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        new_data = window_pane_get_new_data(wp, wpo, &raw mut new_size) as *mut ::core::ffi::c_char;
+        let data = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &*wpo);
+        new_size = data.len();
+        new_data = data.as_ptr().cast_mut().cast();
         if new_size > 0 as size_t {
             bufferevent_write(
                 (*wp).pipe_event,
@@ -4111,16 +4113,14 @@ pub unsafe fn window_pane_start_input(
     );
     Ok(0)
 }
-pub unsafe fn window_pane_get_new_data(
-    mut wp: *mut window_pane,
-    mut wpo: *mut window_pane_offset,
-    mut size: *mut size_t,
-) -> *mut ::core::ffi::c_void {
-    let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
-    *size = evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used);
-    return evbuffer_pullup(&mut *(*(*wp).event).input, -1)
-        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-        .offset(used as isize) as *mut ::core::ffi::c_void;
+pub fn window_pane_get_new_data<'a>(
+    input: &'a mut evbuffer,
+    base_offset: size_t,
+    offset: &window_pane_offset,
+) -> &'a [u8] {
+    let used = offset.used.wrapping_sub(base_offset);
+    let data = evbuffer_pullup(input, -1).unwrap_or_default();
+    data.get(used..).expect("pane offset is within input buffer")
 }
 pub unsafe fn window_pane_update_used_data(
     mut wp: *mut window_pane,

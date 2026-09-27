@@ -941,7 +941,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                 .as_deref_mut()
                 .expect("control client state");
             let cp = cs.panes.get_mut(pane).expect("indexed control pane");
-            window_pane_get_new_data(wp, &raw mut cp.queued, &raw mut new_size);
+            new_size = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &cp.queued).len();
             if new_size == 0 as size_t {
                 return;
             }
@@ -1198,7 +1198,9 @@ unsafe fn control_append_data(
         }
         message
     });
-    new_data = window_pane_get_new_data(wp, &raw mut cp.offset, &raw mut new_size) as *mut u_char;
+    let data = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &cp.offset);
+    new_size = data.len();
+    new_data = data.as_ptr().cast_mut();
     if new_size < size {
         fatalx(|out| {
             write!(

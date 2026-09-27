@@ -3553,7 +3553,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                     if flag == 0 {
                         off = 0 as ::core::ffi::c_int;
                     }
-                    window_pane_get_new_data(wp, wpo, &raw mut new_size);
+                    new_size = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &*wpo).len();
                     log_debug(format_args!(
                         "{}: {} has {} bytes used and {} left for %{}",
                         log_cstr(
