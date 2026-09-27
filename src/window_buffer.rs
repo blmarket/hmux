@@ -1016,7 +1016,7 @@ mod tests {
         );
         assert_eq!(unsafe { ((*first).name).as_ptr().cast_mut() }, first_name);
         assert_eq!(
-            unsafe { CStr::from_ptr(((*empty_item).name).as_ptr().cast_mut()).to_bytes() },
+            unsafe { (*empty_item).name.as_bytes() },
             b""
         );
 

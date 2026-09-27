@@ -73,8 +73,8 @@ pub unsafe fn hyperlinks_put(
     }
     let internal_id = utf8_stravis_cstring(internal_id_input, VIS_OCTAL | VIS_CSTYLE);
     if !internal_id.as_bytes().is_empty() {
-        find.uri = ::std::ffi::CStr::from_ptr(uri.as_ptr()).to_owned();
-        find.internal_id = ::std::ffi::CStr::from_ptr(internal_id.as_ptr()).to_owned();
+        find.uri = uri.clone();
+        find.internal_id = internal_id.clone();
         hlu = hyperlinks_by_uri_tree_find(&(*hl).by_uri, &find);
         if !hlu.is_null() {
             return (*hlu).inner;

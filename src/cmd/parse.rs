@@ -9,7 +9,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
-use crate::src::log::{fatalx, log_cstr, log_debug};
+use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_value;
 use crate::src::shared::arguments::*;
@@ -112,12 +112,12 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, mut cmdlist: *m
         cmdq_print((*pi).item, |out| {
             write_cstr(out, (*pi).file_ptr())?;
             write!(out, ":{}: ", ((*pi).line) as u32)?;
-            write_cstr(out, s.as_ptr())
+            out.write_all(s.as_bytes())
         });
     } else {
         cmdq_print((*pi).item, |out| {
             write!(out, "{}: ", ((*pi).line) as u32)?;
-            write_cstr(out, s.as_ptr())
+            out.write_all(s.as_bytes())
         });
     }
 }
@@ -337,15 +337,15 @@ unsafe fn cmd_parse_log_commands(mut cmds: *mut cmd_parse_commands, prefix: &CSt
                 0 => {
                     log_debug(format_args!(
                         "{} {}:{}: {}",
-                        log_cstr((prefix.as_ptr()) as *const _),
+                        log_bytes(prefix.to_bytes()),
                         (i) as u32,
                         (j) as u32,
-                        log_cstr(
-                            ((*arg)
+                        log_bytes(
+                            (*arg)
                                 .string
                                 .as_ref()
                                 .expect("parser string argument owns its text")
-                                .as_ptr()) as *const _
+                                .as_bytes()
                         )
                     ));
                 }
@@ -359,10 +359,10 @@ unsafe fn cmd_parse_log_commands(mut cmds: *mut cmd_parse_commands, prefix: &CSt
                     let s = cmd_list_print_cstring(&*(*arg).cmdlist, 0);
                     log_debug(format_args!(
                         "{} {}:{}: {}",
-                        log_cstr((prefix.as_ptr()) as *const _),
+                        log_bytes(prefix.to_bytes()),
                         (i) as u32,
                         (j) as u32,
-                        log_cstr((s.as_ptr()) as *const _)
+                        log_bytes(s.as_bytes())
                     ));
                 }
                 _ => {}
@@ -408,7 +408,7 @@ unsafe fn cmd_parse_expand_alias(
         "cmd_parse_expand_alias",
         ((*pi).line) as u32,
         log_cstr((name) as *const _),
-        log_cstr((alias.as_ptr()) as *const _)
+        log_bytes(alias.as_bytes())
     ));
     let parsed = cmd_parse_do_buffer(alias.as_ptr(), alias.as_bytes().len(), pi);
     cmds = match parsed {
@@ -582,7 +582,7 @@ unsafe fn cmd_parse_build_commands(
     log_debug(format_args!(
         "{}: {}",
         "cmd_parse_build_commands",
-        log_cstr((s.as_ptr()) as *const _)
+        log_bytes(s.as_bytes())
     ));
     (*pr).status = CMD_PARSE_SUCCESS;
     (*pr).cmdlist = result;

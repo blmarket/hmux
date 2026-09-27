@@ -135,12 +135,12 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if check_name(expanded.as_ptr()) == 0 {
             cmdq_error(item, |out| {
                 out.write_all(b"invalid window name: ")?;
-                write_cstr(out, expanded.as_ptr())
+                out.write_all(expanded.as_bytes())
             });
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
-            clean_name_cstring(CStr::from_ptr(expanded.as_ptr()), 0)
+            clean_name_cstring(expanded.as_c_str(), 0)
                 .expect("check_name validated the window name"),
         );
         wname = wname_owned
@@ -253,7 +253,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             }
             let cp =
                 format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window).active);
-            cmdq_print(item, |out| write_cstr(out, cp.as_ptr()));
+            cmdq_print(item, |out| out.write_all(cp.as_bytes()));
         }
         cmd_find_from_winlink(&raw mut fs, new_wl, 0 as ::core::ffi::c_int);
         cmdq_insert_hook(s, item, &raw mut fs, |out| {

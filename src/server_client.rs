@@ -1519,7 +1519,7 @@ pub unsafe fn server_client_detach(mut c: *mut client, mut msgtype: msgtype) {
     (*c).exit_msgtype = msgtype;
     server_client_set_exit_session(
         &mut *c,
-        Some(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_owned()),
+        Some((*s).name.clone()),
     );
 }
 pub unsafe fn server_client_exec(mut c: *mut client, mut cmd: *const ::core::ffi::c_char) {

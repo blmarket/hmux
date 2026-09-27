@@ -1660,7 +1660,7 @@ unsafe fn mode_tree_display_menu(
     let title = if outside == 0 {
         items = (*mtd).menu;
         let mut bytes = b"#[align=centre]".to_vec();
-        bytes.extend_from_slice(CStr::from_ptr(((*mti).name).as_ptr().cast_mut()).to_bytes());
+        bytes.extend_from_slice((*mti).name.as_bytes());
         CString::new(bytes).expect("mode tree item names contain no NUL")
     } else {
         items = &raw const mode_tree_menu_items as *const menu_item;

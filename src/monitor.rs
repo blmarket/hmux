@@ -117,7 +117,7 @@ unsafe fn monitor_report(
     mut last: *const ::core::ffi::c_char,
 ) {
     // A callback may remove the item while still using the change record.
-    let name = CStr::from_ptr(((*me).name).as_ptr().cast_mut()).to_owned();
+    let name = (*me).name.clone();
     let mut change: monitor_change = monitor_change {
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         value: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -687,8 +687,7 @@ pub unsafe fn monitor_add(
     let owned_name = CStr::from_ptr(name).to_owned();
     let owned_format = CStr::from_ptr(format).to_owned();
     let mut find: monitor_item = monitor_item {
-        name: ::std::ffi::CStr::from_ptr(owned_name.as_ptr() as *mut ::core::ffi::c_char)
-            .to_owned(),
+        name: owned_name.clone(),
         format: Default::default(),
         type_0: MONITOR_SESSION,
         id: 0,
@@ -818,14 +817,14 @@ pub unsafe fn monitor_items_find(head: &monitor_items, elm: &monitor_item) -> *m
     let map = owner
         .try_borrow_mut()
         .expect("monitor item index already borrowed");
-    let key = elm.name.as_c_str().to_bytes();
+    let key = elm.name.as_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_items_insert(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = (*elm).name.as_bytes();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
@@ -847,7 +846,7 @@ pub unsafe fn monitor_items_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = (*elm).name.as_bytes();
     let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
@@ -886,7 +885,7 @@ pub unsafe fn monitor_items_next(elm: &monitor_item) -> *mut monitor_item {
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
         Err(refbox::BorrowError::Borrowed) => panic!("monitor item index already borrowed"),
     };
-    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)

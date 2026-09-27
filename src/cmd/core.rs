@@ -79,7 +79,7 @@ use crate::src::cmd::entries::switch_client::cmd_switch_client_entry;
 use crate::src::cmd::entries::unbind_key::cmd_unbind_key_entry;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
-use crate::src::log::{fatalx, log_cstr, log_debug};
+use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_only,
 };
@@ -221,9 +221,9 @@ pub unsafe fn cmd_log_argv(argv: &Vec<CString>, prefix: &CStr) {
     for (i, arg) in argv.iter().enumerate() {
         log_debug(format_args!(
             "{}: argv[{}]={}",
-            log_cstr((prefix.as_ptr()) as *const _),
+            log_bytes(prefix.to_bytes()),
             i as ::core::ffi::c_int,
-            log_cstr((arg.as_ptr()) as *const _)
+            log_bytes(arg.as_bytes())
         ));
     }
 }
@@ -263,8 +263,8 @@ pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<C
             "{}: {} {} = {}",
             "cmd_stringify_argv",
             (i) as u32,
-            log_cstr((argument.as_ptr()) as *const _),
-            log_cstr((escaped.as_ptr()) as *const _)
+            log_bytes(argument.as_bytes()),
+            log_bytes(escaped.as_bytes())
         ));
         if i != 0 {
             bytes.push(b' ');
@@ -565,7 +565,7 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
     log_debug(format_args!(
         "{}: {}",
         "cmd_list_copy",
-        log_cstr((s.as_ptr()) as *const _)
+        log_bytes(s.as_bytes())
     ));
     new_cmdlist = cmd_list_new();
     for &cmd in &cmdlist.list {
@@ -582,7 +582,7 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
     log_debug(format_args!(
         "{}: {}",
         "cmd_list_copy",
-        log_cstr((s.as_ptr()) as *const _)
+        log_bytes(s.as_bytes())
     ));
     return new_cmdlist;
 }
@@ -831,8 +831,8 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
     log_debug(format_args!(
         "{}: {} -> {}",
         "cmd_template_replace",
-        log_cstr((template.as_ptr()) as *const _),
-        log_cstr((text.as_ptr()) as *const _)
+        log_bytes(template.to_bytes()),
+        log_bytes(text.as_bytes())
     ));
     text
 }

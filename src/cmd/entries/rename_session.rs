@@ -67,11 +67,11 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if check_name(tmp.as_ptr()) == 0 {
         cmdq_error(item, |out| {
             out.write_all(b"invalid session name: ")?;
-            write_cstr(out, tmp.as_ptr())
+            out.write_all(tmp.as_bytes())
         });
         return CMD_RETURN_ERROR;
     }
-    let newname = clean_name_cstring(CStr::from_ptr(tmp.as_ptr()), 0)
+    let newname = clean_name_cstring(tmp.as_c_str(), 0)
         .expect("check_name validated the session name");
     if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
@@ -79,7 +79,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if !session_find(newname.as_ptr()).is_null() {
         cmdq_error(item, |out| {
             out.write_all(b"duplicate session: ")?;
-            write_cstr(out, newname.as_ptr())
+            out.write_all(newname.as_bytes())
         });
         return CMD_RETURN_ERROR;
     }
@@ -99,7 +99,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     event_payload_set_string(
         ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, newname.as_ptr()),
+        |out| out.write_all(newname.as_bytes()),
     );
     sessions_remove(&raw mut sessions, s);
     drop(session_replace_name(&mut *s, newname));

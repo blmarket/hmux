@@ -9,7 +9,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::log::{fatalx, log_byte, log_cstr, log_debug};
+use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
 use crate::src::server_client::server_client_unref;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -415,7 +415,7 @@ unsafe fn args_parse_flag_argument(
         "{}: -{} = {}",
         "args_parse_flag_argument",
         log_byte((flag) as u8),
-        log_cstr((printed.as_ptr()) as *const _)
+        log_bytes(printed.to_bytes())
     ));
     args_set_value(args, flag as u_char, Some(new), 0);
     Ok(())
@@ -517,7 +517,6 @@ pub unsafe fn args_parse(
     let mut i: u_int = 0;
     let mut type_0: args_parse_type = ARGS_PARSE_INVALID;
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut stop: ::core::ffi::c_int = 0;
     if count == 0 as u_int {
         return Ok(args_create());
@@ -546,12 +545,11 @@ pub unsafe fn args_parse(
         while i < count {
             value = values.offset(i as isize) as *mut args_value;
             let printed = args_value_for_log(&*value);
-            s = printed.as_ptr();
             log_debug(format_args!(
                 "{}: {} = {} (type {})",
                 "args_parse",
                 (i) as u32,
-                log_cstr((s) as *const _),
+                log_bytes(printed.to_bytes()),
                 log_cstr((args_type_to_string((*value).type_0())) as *const _)
             ));
             if (*parse).cb.is_some() {
@@ -1114,7 +1112,7 @@ pub unsafe fn args_make_commands(
     log_debug(format_args!(
         "{}: {}",
         "args_make_commands",
-        log_cstr((cmd.as_ptr()) as *const _)
+        log_bytes(cmd.as_bytes())
     ));
     cmd_log_argv(argv, c"args_make_commands");
     i = 0 as ::core::ffi::c_int;
@@ -1128,8 +1126,8 @@ pub unsafe fn args_make_commands(
             "{}: %{} {}: {}",
             "args_make_commands",
             (i + 1 as ::core::ffi::c_int) as u32,
-            log_cstr((argv[i as usize].as_ptr()) as *const _),
-            log_cstr((next.as_ptr()) as *const _)
+            log_bytes(argv[i as usize].as_bytes()),
+            log_bytes(next.as_bytes())
         ));
         cmd = next;
         i += 1;
@@ -1137,7 +1135,7 @@ pub unsafe fn args_make_commands(
     log_debug(format_args!(
         "{}: {}",
         "args_make_commands",
-        log_cstr((cmd.as_ptr()) as *const _)
+        log_bytes(cmd.as_bytes())
     ));
     let pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut (*state).pi);
     drop(cmd);

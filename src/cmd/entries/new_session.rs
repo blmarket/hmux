@@ -206,12 +206,12 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if check_name(ename.as_ptr()) == 0 {
             cmdq_error(item, |out| {
                 out.write_all(b"invalid window name: ")?;
-                write_cstr(out, ename.as_ptr())
+                out.write_all(ename.as_bytes())
             });
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
-            clean_name_cstring(CStr::from_ptr(ename.as_ptr()), 0)
+            clean_name_cstring(ename.as_c_str(), 0)
                 .expect("check_name validated the window name"),
         );
         wname = wname_owned
@@ -232,12 +232,12 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if check_name(ename.as_ptr()) == 0 {
             cmdq_error(item, |out| {
                 out.write_all(b"invalid session name: ")?;
-                write_cstr(out, ename.as_ptr())
+                out.write_all(ename.as_bytes())
             });
             current_block = 5193972633326621385;
         } else {
             sname_owned = Some(
-                clean_name_cstring(CStr::from_ptr(ename.as_ptr()), 0)
+                clean_name_cstring(ename.as_c_str(), 0)
                     .expect("check_name validated the session name"),
             );
             sname = sname_owned
@@ -286,12 +286,10 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                         sg = session_group_contains(groupwith);
                     }
                     if !sg.is_null() {
-                        prefix = Some(CStr::from_ptr(((*sg).name).as_ptr().cast_mut()).to_owned());
+                        prefix = Some((*sg).name.clone());
                         current_block = 6717214610478484138;
                     } else if !groupwith.is_null() {
-                        prefix = Some(
-                            CStr::from_ptr(((*groupwith).name).as_ptr().cast_mut()).to_owned(),
-                        );
+                        prefix = Some((*groupwith).name.clone());
                         current_block = 6717214610478484138;
                     } else if check_name(group) == 0 {
                         cmdq_error(item, |out| {
@@ -368,7 +366,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                     if let Err(open_error) = server_client_open(c) {
                                         cmdq_error(item, |out| {
                                             out.write_all(b"open terminal failed: ")?;
-                                            write_cstr(out, open_error.as_ptr())
+                                            out.write_all(open_error.as_bytes())
                                         });
                                         current_block = 5193972633326621385;
                                     } else {
@@ -707,7 +705,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                     ),
                                                                 );
                                                                 cmdq_print(item, |out| {
-                                                                    write_cstr(out, cp.as_ptr())
+                                                                    out.write_all(cp.as_bytes())
                                                                 });
                                                             }
                                                             if detached == 0 {

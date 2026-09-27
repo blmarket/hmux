@@ -1107,11 +1107,11 @@ pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_ta
     let map = owner
         .try_borrow_mut()
         .expect("key table index already borrowed");
-    let key = elm.name.as_c_str().to_bytes();
+    let key = elm.name.as_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = (*elm).name.as_bytes();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
@@ -1130,7 +1130,7 @@ pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> *
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = (*elm).name.as_bytes();
     let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
@@ -1169,7 +1169,7 @@ pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
         Err(refbox::BorrowError::Borrowed) => panic!("key table index already borrowed"),
     };
-    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)

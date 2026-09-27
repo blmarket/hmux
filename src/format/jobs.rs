@@ -240,7 +240,7 @@ unsafe fn format_job_find_or_insert(
         let node = format_job {
             client,
             tag,
-            cmd: ::std::ffi::CStr::from_ptr(command.as_ptr()).to_owned(),
+            cmd: command.clone(),
             expanded: Default::default(),
             last: 0,
             out: Default::default(),
@@ -398,8 +398,8 @@ mod tests {
                 let cmd = CString::new(format!("job-{index}")).unwrap();
                 let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_c_str());
                 (*fj).last = last;
-                format_job_set_expanded(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
-                format_job_set_out(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
+                format_job_set_expanded(&mut *fj, cmd.clone());
+                format_job_set_out(&mut *fj, cmd.clone());
                 if last > now || now - last < 3600 {
                     survivors.push((cmd, fj));
                 }

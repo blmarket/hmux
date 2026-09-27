@@ -457,7 +457,7 @@ unsafe fn window_customize_scope_text(
         }
         4 | 9 => {
             let mut bytes = b"session ".to_vec();
-            bytes.extend_from_slice(CStr::from_ptr((*fs.s).name.as_ptr().cast_mut()).to_bytes());
+            bytes.extend_from_slice((*fs.s).name.as_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
         6 => {
@@ -1328,7 +1328,7 @@ unsafe fn window_customize_build_keys(
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
-    title_bytes.extend_from_slice(CStr::from_ptr(((*kt).name).as_ptr().cast_mut()).to_bytes());
+    title_bytes.extend_from_slice((*kt).name.as_bytes());
     let title = CString::new(title_bytes).expect("key table name contains no NUL");
     top = mode_tree_add(
         (*data).data,
@@ -1597,7 +1597,7 @@ unsafe fn window_customize_build_environment(
         window_customize_set_name(&mut *item, Some((*envent).name.as_c_str()));
         let text;
         let name: Cow<'_, CStr> = if (*envent).value.is_none() {
-            let entry_name = CStr::from_ptr(((*envent).name).as_ptr().cast_mut());
+            let entry_name = (*envent).name.as_c_str();
             let mut bytes = Vec::with_capacity(entry_name.to_bytes().len() + 1);
             bytes.push(b'-');
             bytes.extend_from_slice(entry_name.to_bytes());
@@ -1605,7 +1605,7 @@ unsafe fn window_customize_build_environment(
             Cow::Owned(CString::new(bytes).expect("environment name contains no NUL"))
         } else {
             text = Some(format_expand_cstring(ft, (*data).format.as_ptr()));
-            Cow::Borrowed(CStr::from_ptr(((*envent).name).as_ptr().cast_mut()))
+            Cow::Borrowed((*envent).name.as_c_str())
         };
         mode_tree_add(
             (*data).data,

@@ -548,7 +548,7 @@ mod tests {
                 -1
             );
             assert_eq!(
-                CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
+                cause.as_ref().unwrap().as_c_str(),
                 c"empty buffer name"
             );
 
@@ -598,7 +598,7 @@ mod tests {
                 -1
             );
             assert_eq!(
-                CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
+                cause.as_ref().unwrap().as_c_str(),
                 c"no buffer"
             );
         }

@@ -203,7 +203,7 @@ pub struct EnvironEntry<'a> {
 impl<'a> EnvironEntry<'a> {
     /// Borrow the original name bytes, including no trailing NUL.
     pub fn name(&self) -> &'a CStr {
-        unsafe { CStr::from_ptr(((*self.raw.as_ptr()).name).as_ptr().cast_mut()) }
+        unsafe { (*self.raw.as_ptr()).name.as_c_str() }
     }
 
     /// Borrow the original name bytes without UTF-8 decoding.
@@ -213,12 +213,7 @@ impl<'a> EnvironEntry<'a> {
 
     /// Borrow the value, or return `None` for a present valueless entry.
     pub fn value(&self) -> Option<&'a CStr> {
-        unsafe {
-            let value = ((*self.raw.as_ptr()).value)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-            (!value.is_null()).then(|| CStr::from_ptr(value))
-        }
+        unsafe { (*self.raw.as_ptr()).value.as_deref() }
     }
 
     /// Borrow value bytes without UTF-8 decoding.

@@ -338,7 +338,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         hooks_run(item, argument.as_ptr());
         return CMD_RETURN_NORMAL;
     }
-    let matched = options_match_owned(CStr::from_ptr(argument.as_ptr()));
+    let matched = options_match_owned(argument.as_c_str());
     if let Ok(parsed) = &matched {
         name = parsed.name.as_ptr();
         array_key = parsed
