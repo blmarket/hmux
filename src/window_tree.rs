@@ -943,7 +943,7 @@ unsafe fn window_tree_draw_session(
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_preview(ctx, &raw mut (*(*w).active).base, width, sy);
+            screen_write_preview(&mut *ctx, &(*(*w).active).base, width, sy);
             format = options_get_string(
                 oo,
                 b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1197,7 +1197,7 @@ unsafe fn window_tree_draw_window(
                     cy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_preview(ctx, &raw mut (*wp).base, width, sy);
+                screen_write_preview(&mut *ctx, &(*wp).base, width, sy);
                 format = options_get_string(
                     oo,
                     b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1423,7 +1423,7 @@ unsafe fn window_tree_draw(
         }
         3 => {
             if (*data).hide_preview_this_pane == 0 || wp != (*data).wp {
-                screen_write_preview(ctx, &raw mut (*wp).base, sx, sy);
+                screen_write_preview(&mut *ctx, &(*wp).base, sx, sy);
             }
         }
         0 | _ => {}

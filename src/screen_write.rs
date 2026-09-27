@@ -794,16 +794,16 @@ pub unsafe fn screen_write_nputs(
     }
 }
 pub unsafe fn screen_write_fast_copy(
-    mut ctx: *mut screen_write_ctx,
-    mut src: *mut screen,
+    ctx: &mut screen_write_ctx,
+    src: &screen,
     mut px: u_int,
     mut py: u_int,
     mut nx: u_int,
     mut ny: u_int,
 ) {
     let mut r = Vec::new();
-    let mut s: *mut screen = (*ctx).s;
-    let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
+    let mut s: *mut screen = ctx.s;
+    let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     let mut ttyctx: tty_ctx = tty_ctx {
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
@@ -847,7 +847,7 @@ pub unsafe fn screen_write_fast_copy(
         wsx: 0,
         wsy: 0,
     };
-    let mut gd: *mut grid = (*src).grid_mut();
+    let gd = src.grid();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -877,7 +877,7 @@ pub unsafe fn screen_write_fast_copy(
     }
     yy = py;
     while yy < py.wrapping_add(ny) {
-        if yy >= (*gd).hsize.wrapping_add((*gd).sy) {
+        if yy >= gd.hsize.wrapping_add(gd.sy) {
             break;
         }
         (*s).cx = cx;
@@ -896,20 +896,20 @@ pub unsafe fn screen_write_fast_copy(
         );
         xx = px;
         while xx < px.wrapping_add(nx) {
-            let gl = grid_get_line(&*gd, yy);
+            let gl = grid_get_line(gd, yy);
             let sgl = grid_get_line((*s).grid(), (*s).cy);
             if xx >= gl.cellsize as u_int && (*s).cx >= sgl.cellsize as u_int {
                 break;
             }
-            grid_get_cell(&*gd, xx, yy, &mut gc);
+            grid_get_cell(gd, xx, yy, &mut gc);
             if xx.wrapping_add(gc.data.width as u_int) > px.wrapping_add(nx) {
                 break;
             }
-            grid_view_set_cell(&mut *((*s).grid_mut()), (*s).cx, (*s).cy, &gc);
+            grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, &gc);
             if !window_position_is_visible(&r, (xoff as u_int).wrapping_add((*s).cx)) {
                 break;
             }
-            ttyctx.cell = &raw mut gc;
+            ttyctx.cell = &gc;
             ttyctx.flags &= TTY_CTX_OVERLAY_SYNC | TTY_CTX_SYNC;
             tty_write(
                 Some(tty_cmd_cell as unsafe fn(*mut tty, *const tty_ctx) -> ()),
@@ -1306,12 +1306,12 @@ pub unsafe fn screen_write_box(
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_preview(
-    mut ctx: *mut screen_write_ctx,
-    mut src: *mut screen,
+    ctx: &mut screen_write_ctx,
+    src: &screen,
     mut nx: u_int,
     mut ny: u_int,
 ) {
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = ctx.s;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1332,47 +1332,47 @@ pub unsafe fn screen_write_preview(
     let mut py: u_int = 0;
     cx = (*s).cx;
     cy = (*s).cy;
-    if (*src).mode & MODE_CURSOR != 0 {
-        px = (*src).cx;
+    if src.mode & MODE_CURSOR != 0 {
+        px = src.cx;
         if px < nx.wrapping_div(3 as u_int) {
             px = 0 as u_int;
         } else {
             px = px.wrapping_sub(nx.wrapping_div(3 as u_int));
         }
-        if px.wrapping_add(nx) > (*src).grid().sx {
-            if nx > (*src).grid().sx {
+        if px.wrapping_add(nx) > src.grid().sx {
+            if nx > src.grid().sx {
                 px = 0 as u_int;
             } else {
-                px = (*src).grid().sx.wrapping_sub(nx);
+                px = src.grid().sx.wrapping_sub(nx);
             }
         }
-        py = (*src).cy;
+        py = src.cy;
         if py < ny.wrapping_div(3 as u_int) {
             py = 0 as u_int;
         } else {
             py = py.wrapping_sub(ny.wrapping_div(3 as u_int));
         }
-        if py.wrapping_add(ny) > (*src).grid().sy {
-            if ny > (*src).grid().sy {
+        if py.wrapping_add(ny) > src.grid().sy {
+            if ny > src.grid().sy {
                 py = 0 as u_int;
             } else {
-                py = (*src).grid().sy.wrapping_sub(ny);
+                py = src.grid().sy.wrapping_sub(ny);
             }
         }
     } else {
         px = 0 as u_int;
         py = 0 as u_int;
     }
-    screen_write_fast_copy(ctx, src, px, (*src).grid().hsize.wrapping_add(py), nx, ny);
-    if (*src).mode & MODE_CURSOR != 0 {
-        grid_view_get_cell((*src).grid(), (*src).cx, (*src).cy, &mut gc);
+    screen_write_fast_copy(ctx, src, px, src.grid().hsize.wrapping_add(py), nx, ny);
+    if src.mode & MODE_CURSOR != 0 {
+        grid_view_get_cell(src.grid(), src.cx, src.cy, &mut gc);
         gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_REVERSE) as u_short;
         screen_write_set_cursor(
             ctx,
-            cx.wrapping_add((*src).cx.wrapping_sub(px)) as ::core::ffi::c_int,
-            cy.wrapping_add((*src).cy.wrapping_sub(py)) as ::core::ffi::c_int,
+            cx.wrapping_add(src.cx.wrapping_sub(px)) as ::core::ffi::c_int,
+            cy.wrapping_add(src.cy.wrapping_sub(py)) as ::core::ffi::c_int,
         );
-        screen_write_cell(&mut *ctx, &gc);
+        screen_write_cell(ctx, &gc);
     }
 }
 pub unsafe fn screen_write_mode_set(mut ctx: *mut screen_write_ctx, mut mode: ::core::ffi::c_int) {

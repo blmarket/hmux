@@ -379,8 +379,8 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
             0 as ::core::ffi::c_int,
         );
         screen_write_fast_copy(
-            &raw mut ctx,
-            &raw mut (*pd).s,
+            &mut ctx,
+            &(*pd).s,
             0 as u_int,
             0 as u_int,
             (*pd).sx,
@@ -404,8 +404,8 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
             0 as ::core::ffi::c_int,
         );
         screen_write_fast_copy(
-            &raw mut ctx,
-            &raw mut (*pd).s,
+            &mut ctx,
+            &(*pd).s,
             0 as u_int,
             0 as u_int,
             (*pd).sx.wrapping_sub(2 as u_int),

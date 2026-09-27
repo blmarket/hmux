@@ -108,7 +108,7 @@ unsafe fn format_draw_put(
         ocy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_fast_copy(octx, s, start, 0 as u_int, width, 1 as u_int);
+    screen_write_fast_copy(&mut *octx, &*s, start, 0 as u_int, width, 1 as u_int);
     format_update_ranges(frs, s, offset, start, width);
 }
 unsafe fn format_draw_put_list(
@@ -147,8 +147,8 @@ unsafe fn format_draw_put_list(
             0 as ::core::ffi::c_int,
         );
         screen_write_fast_copy(
-            octx,
-            list_left,
+            &mut *octx,
+            &*list_left,
             0 as u_int,
             0 as u_int,
             (*list_left).cx,
@@ -168,8 +168,8 @@ unsafe fn format_draw_put_list(
             0 as ::core::ffi::c_int,
         );
         screen_write_fast_copy(
-            octx,
-            list_right,
+            &mut *octx,
+            &*list_right,
             0 as u_int,
             0 as u_int,
             (*list_right).cx,
@@ -320,8 +320,8 @@ unsafe fn format_draw_left(
     if width_list == 0 as u_int {
         screen_write_start(&raw mut ctx, left);
         screen_write_fast_copy(
-            &raw mut ctx,
-            after,
+            &mut ctx,
+            &*after,
             0 as u_int,
             0 as u_int,
             width_after,
@@ -476,8 +476,8 @@ unsafe fn format_draw_centre(
     if width_list == 0 as u_int {
         screen_write_start(&raw mut ctx, centre);
         screen_write_fast_copy(
-            &raw mut ctx,
-            after,
+            &mut ctx,
+            &*after,
             0 as u_int,
             0 as u_int,
             width_after,
@@ -625,8 +625,8 @@ unsafe fn format_draw_right(
     if width_list == 0 as u_int {
         screen_write_start(&raw mut ctx, right);
         screen_write_fast_copy(
-            &raw mut ctx,
-            after,
+            &mut ctx,
+            &*after,
             0 as u_int,
             0 as u_int,
             width_after,

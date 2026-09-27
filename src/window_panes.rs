@@ -182,7 +182,7 @@ unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     let dst = (*data).preview.as_deref_mut().unwrap() as *mut screen;
     screen_init(&mut *dst, sx, sy, 0 as u_int);
     screen_write_start(&raw mut ctx, dst);
-    screen_write_fast_copy(&raw mut ctx, src, 0 as u_int, (*src).grid().hsize, sx, sy);
+    screen_write_fast_copy(&mut ctx, &*src, 0 as u_int, (*src).grid().hsize, sx, sy);
     screen_write_stop(&raw mut ctx);
     (*dst).mode = (*src).mode;
     (*dst).cx = (*src).cx;
@@ -1416,9 +1416,9 @@ unsafe fn window_panes_draw_pane(
         s = preview;
     }
     if osx <= dsx && osy <= dsy {
-        screen_write_fast_copy(ctx, s, 0 as u_int, (*s).grid().hsize, sx, sy);
+        screen_write_fast_copy(&mut *ctx, &*s, 0 as u_int, (*s).grid().hsize, sx, sy);
     } else {
-        screen_write_preview(ctx, s, sx, sy);
+        screen_write_preview(&mut *ctx, &*s, sx, sy);
     }
     window_panes_draw_number(data, ctx, wp, pane, x, y, sx, sy);
 }

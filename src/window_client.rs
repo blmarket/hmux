@@ -513,8 +513,8 @@ unsafe fn window_client_draw(
     );
     if !wp.is_null() {
         screen_write_preview(
-            ctx,
-            &raw mut (*wp).base,
+            &mut *ctx,
+            &(*wp).base,
             sx,
             sy.wrapping_sub(2 as u_int).wrapping_sub(lines),
         );
@@ -571,8 +571,8 @@ unsafe fn window_client_draw(
         );
     }
     screen_write_fast_copy(
-        ctx,
-        &raw mut (*c).status.screen,
+        &mut *ctx,
+        &(*c).status.screen,
         0 as u_int,
         0 as u_int,
         sx,

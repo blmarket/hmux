@@ -669,8 +669,8 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     format_free(ft);
     screen_write_start(&raw mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
-        &raw mut ctx,
-        &raw mut (*sl).screen,
+        &mut ctx,
+        &(*sl).screen,
         0 as u_int,
         0 as u_int,
         (*c).tty.sx,
@@ -827,8 +827,8 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     status_message_area(c, &raw mut ax, &raw mut aw);
     screen_write_start(&raw mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
-        &raw mut ctx,
-        &raw mut (*sl).screen,
+        &mut ctx,
+        &(*sl).screen,
         0 as u_int,
         0 as u_int,
         (*c).tty.sx,
