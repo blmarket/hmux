@@ -969,7 +969,7 @@ unsafe fn control_error_callback(mut data: *mut ::core::ffi::c_void) {
 unsafe fn control_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
-    let mut buffer: *mut evbuffer = &raw mut *(*(*cs).read_event).input;
+    let buffer: &mut evbuffer = &mut *(*(*cs).read_event).input;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
         let Some(line) = evbuffer_readln(buffer) else {
@@ -1194,7 +1194,8 @@ unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
                 as *const _
         ),
         log_cstr_n(
-            (evbuffer_pullup(&mut *message, -(1 as ::core::ffi::c_int) as ssize_t)) as *const _,
+            (evbuffer_pullup(&mut *message, -1)
+                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())) as *const _,
             evbuffer_get_length(&message) as ::core::ffi::c_int
         )
     ));
@@ -1282,15 +1283,15 @@ unsafe fn control_write_pending(
 unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
-    let mut evb: *mut evbuffer = &raw mut *(*(*cs).write_event).output;
     let mut space: size_t = 0;
     let mut limit: size_t = 0;
     control_flush_all_blocks(c);
-    while evbuffer_get_length(&*(evb)) < CONTROL_BUFFER_HIGH as size_t {
+    while evbuffer_get_length(&(*(*cs).write_event).output) < CONTROL_BUFFER_HIGH as size_t {
         if (*cs).pending_count == 0 as u_int {
             break;
         }
-        space = (CONTROL_BUFFER_HIGH as size_t).wrapping_sub(evbuffer_get_length(&*(evb)));
+        space = (CONTROL_BUFFER_HIGH as size_t)
+            .wrapping_sub(evbuffer_get_length(&(*(*cs).write_event).output));
         log_debug(format_args!(
             "{}: {}: {} bytes available, {} panes",
             "control_write_callback",
@@ -1311,7 +1312,7 @@ unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
         }
         let pending = (*control_state_owner(cs)).pending_snapshot();
         for cp in pending {
-            if evbuffer_get_length(&*(evb)) >= CONTROL_BUFFER_HIGH as size_t {
+            if evbuffer_get_length(&(*(*cs).write_event).output) >= CONTROL_BUFFER_HIGH as size_t {
                 break;
             }
             if !(*control_state_owner(cs))
@@ -1330,7 +1331,7 @@ unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
             }
         }
     }
-    if evbuffer_get_length(&*(evb)) == 0 as size_t {
+    if evbuffer_get_length(&(*(*cs).write_event).output) == 0 as size_t {
         bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
     }
 }

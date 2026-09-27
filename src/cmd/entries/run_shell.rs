@@ -399,8 +399,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
     }
     size = evbuffer_get_length(&event);
     if size != 0 as size_t {
-        let input = evbuffer_pullup(&mut *event, -(1 as ::core::ffi::c_int) as ssize_t);
-        let mut partial_line = ::core::slice::from_raw_parts(input as *const u8, size).to_vec();
+        let mut partial_line = evbuffer_pullup(&mut event, -1).unwrap_or_default().to_vec();
         partial_line.push(0);
         cmd_run_shell_print(cdata, partial_line.as_ptr().cast());
     }

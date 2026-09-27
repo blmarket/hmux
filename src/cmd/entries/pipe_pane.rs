@@ -236,12 +236,11 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
 }
 unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut available: size_t = 0;
     if (*wp).pipe_event.is_null() {
         return;
     }
-    evb = &raw mut *(*(*wp).pipe_event).input;
+    let evb = &mut *(*(*wp).pipe_event).input;
     available = evbuffer_get_length(&*(evb));
     log_debug(format_args!(
         "%{} pipe read {}",
@@ -250,7 +249,8 @@ unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     ));
     bufferevent_write(
         (*wp).event,
-        evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const ::core::ffi::c_void,
+        evbuffer_pullup(evb, -1)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *const ::core::ffi::c_void,
         available,
     );
     evbuffer_drain(evb, available);

@@ -1,4 +1,4 @@
-//! C-call-site compatibility for runtime-owned byte storage.
+//! Borrowed buffer operations for runtime-owned byte storage.
 use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::{size_t, ssize_t};
 pub use hmux_buffer::SegmentedBuf as evbuffer;
@@ -11,32 +11,34 @@ pub fn evbuffer_new() -> Box<ByteBuffer> {
 pub fn evbuffer_get_length(b: &ByteBuffer) -> size_t {
     b.remaining() as size_t
 }
-pub unsafe fn evbuffer_add(b: *mut ByteBuffer, data: *const c_void, len: size_t) -> c_int {
+pub unsafe fn evbuffer_add(b: &mut ByteBuffer, data: *const c_void, len: size_t) -> c_int {
     if len != 0 {
-        (*b).put_slice(std::slice::from_raw_parts(data.cast(), len));
+        b.put_slice(std::slice::from_raw_parts(data.cast(), len));
     }
     super::wake_buffer(b);
     0
 }
-pub unsafe fn evbuffer_drain(b: *mut ByteBuffer, len: size_t) -> c_int {
-    let count = len.min((*b).remaining());
-    (*b).advance(count);
+pub fn evbuffer_drain(b: &mut ByteBuffer, len: size_t) -> c_int {
+    let count = len.min(b.remaining());
+    b.advance(count);
     super::wake_buffer(b);
     0
 }
-pub unsafe fn evbuffer_pullup(b: *mut ByteBuffer, size: ssize_t) -> *mut u8 {
-    if !(*b).has_remaining() || (size >= 0 && size as usize > (*b).remaining()) {
-        std::ptr::null_mut()
+/// Borrow a contiguous prefix, or all readable bytes when `size` is negative.
+/// Empty buffers and requests larger than the readable length return `None`.
+pub fn evbuffer_pullup(b: &mut ByteBuffer, size: ssize_t) -> Option<&mut [u8]> {
+    if !b.has_remaining() || (size >= 0 && size as usize > b.remaining()) {
+        None
     } else {
         let count = if size < 0 {
-            (*b).remaining()
+            b.remaining()
         } else {
             size as usize
         };
-        (*b).pullup(count).unwrap().as_mut_ptr()
+        b.pullup(count)
     }
 }
-pub unsafe fn evbuffer_read(b: *mut ByteBuffer, fd: c_int, limit: c_int) -> c_int {
+pub unsafe fn evbuffer_read(b: &mut ByteBuffer, fd: c_int, limit: c_int) -> c_int {
     let count = if limit < 0 {
         65536
     } else {
@@ -47,19 +49,19 @@ pub unsafe fn evbuffer_read(b: *mut ByteBuffer, fd: c_int, limit: c_int) -> c_in
     if n > 0 {
         // read initialized exactly n bytes of the allocation.
         bytes.set_len(n as usize);
-        (*b).put(ByteBuffer::from(bytes));
+        b.put(ByteBuffer::from(bytes));
         super::wake_buffer(b);
     }
     n as c_int
 }
-pub unsafe fn evbuffer_write(b: *mut ByteBuffer, fd: c_int) -> c_int {
+pub unsafe fn evbuffer_write(b: &mut ByteBuffer, fd: c_int) -> c_int {
     let mut chunks = [libc::iovec {
         iov_base: std::ptr::null_mut(),
         iov_len: 0,
     }; 64];
     let mut count = 0;
     let mut remaining = 65536;
-    for chunk in (*b).chunks().take(64) {
+    for chunk in b.chunks().take(64) {
         let len = chunk.len().min(remaining);
         chunks[count] = libc::iovec {
             iov_base: chunk.as_ptr() as *mut c_void,
@@ -73,14 +75,14 @@ pub unsafe fn evbuffer_write(b: *mut ByteBuffer, fd: c_int) -> c_int {
     }
     let n = libc::writev(fd, chunks.as_ptr(), count as c_int);
     if n > 0 {
-        (*b).advance(n as usize);
+        b.advance(n as usize);
         super::wake_buffer(b);
     }
     n as c_int
 }
 
-unsafe fn read_line(b: *mut ByteBuffer, ending: LineEnding) -> Option<Vec<u8>> {
-    let Some(mut line) = (*b).read_line(ending) else {
+fn read_line(b: &mut ByteBuffer, ending: LineEnding) -> Option<Vec<u8>> {
+    let Some(mut line) = b.read_line(ending) else {
         return None;
     };
     line.push(0);
@@ -88,22 +90,22 @@ unsafe fn read_line(b: *mut ByteBuffer, ending: LineEnding) -> Option<Vec<u8>> {
     super::wake_buffer(b);
     Some(line)
 }
-pub unsafe fn evbuffer_readln(b: *mut ByteBuffer) -> Option<Vec<u8>> {
+pub fn evbuffer_readln(b: &mut ByteBuffer) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Lf)
 }
 
-pub unsafe fn evbuffer_readline(b: *mut ByteBuffer) -> Option<Vec<u8>> {
+pub fn evbuffer_readline(b: &mut ByteBuffer) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Legacy)
 }
-pub unsafe fn evbuffer_add_formatted(
-    b: *mut ByteBuffer,
+pub fn evbuffer_add_formatted(
+    b: &mut ByteBuffer,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> c_int {
     let Some(mut formatted) = format_buffer(write) else {
         return -1;
     };
     let count = formatted.remaining();
-    (*b).append(&mut formatted);
+    b.append(&mut formatted);
     super::wake_buffer(b);
     count as c_int
 }
@@ -127,8 +129,29 @@ fn format_buffer(
 mod tests {
     use super::*;
     use std::ffi::CString;
-    unsafe fn append_formatted(
-        destination: *mut ByteBuffer,
+
+    #[test]
+    fn pullup_borrows_prefix_and_preserves_request_bounds() {
+        let mut buffer = evbuffer_new();
+        assert!(evbuffer_pullup(&mut buffer, -1).is_none());
+        buffer.put_slice(b"abc");
+        buffer.put_slice(b"def");
+
+        assert!(evbuffer_pullup(&mut buffer, 7).is_none());
+        let prefix = evbuffer_pullup(&mut buffer, 4).unwrap();
+        assert_eq!(prefix, b"abcd");
+        prefix[3] = b'D';
+
+        assert_eq!(evbuffer_get_length(&buffer), 6);
+        assert_eq!(evbuffer_pullup(&mut buffer, -1).unwrap(), b"abcDef");
+        evbuffer_drain(&mut buffer, 4);
+        assert_eq!(evbuffer_pullup(&mut buffer, -1).unwrap(), b"ef");
+        evbuffer_drain(&mut buffer, usize::MAX);
+        assert!(evbuffer_pullup(&mut buffer, 0).is_none());
+    }
+
+    fn append_formatted(
+        destination: &mut ByteBuffer,
         write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     ) -> c_int {
         let Some(mut formatted) = format_buffer(write) else {
@@ -136,7 +159,6 @@ mod tests {
         };
         let count = formatted.remaining();
         let pointer = formatted.chunk().as_ptr();
-        let destination = unsafe { &mut *destination };
         destination.append(&mut formatted);
         assert_eq!(formatted.remaining(), 0);
         if count != 0 {

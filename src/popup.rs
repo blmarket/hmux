@@ -722,11 +722,12 @@ unsafe fn popup_key(c: *mut client, pd: *mut popup_data, event: *mut key_event) 
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn popup_job_update_cb(job: &mut job, mut pd: *mut popup_data) {
-    let mut evb: *mut evbuffer = &raw mut *(*job_get_event(job as *mut job)).input;
+    let evb: &mut evbuffer = &mut *(*job_get_event(job as *mut job)).input;
     let mut c: *mut client = (*pd).c;
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void =
-        evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
+        evbuffer_pullup(evb, -1)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
     let mut size: size_t = evbuffer_get_length(&*(evb));
     if size == 0 as size_t {
         return;

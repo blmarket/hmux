@@ -137,7 +137,7 @@ unsafe fn cmd_source_file_done(
     path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
-    mut buffer: *mut evbuffer,
+    mut buffer: &mut evbuffer,
 ) {
     // Progress notifications do not need contiguous storage. Coalesce only
     // once, after the complete file has arrived.
@@ -148,7 +148,8 @@ unsafe fn cmd_source_file_done(
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut c: *mut client = (*cdata).client;
     let mut bdata: *mut ::core::ffi::c_void =
-        evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
+        evbuffer_pullup(buffer, -1)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
     let mut bsize: size_t = evbuffer_get_length(&*(buffer));
     let mut n: u_int = 0;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -189,9 +190,7 @@ unsafe fn cmd_source_file_done(
                     event.path,
                     event.error,
                     event.closed as ::core::ffi::c_int,
-                    event
-                        .buffer
-                        .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+                    event.buffer.expect("read callback buffer"),
                 )
             })),
             item,
@@ -362,9 +361,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     event.path,
                     event.error,
                     event.closed as ::core::ffi::c_int,
-                    event
-                        .buffer
-                        .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+                    event.buffer.expect("read callback buffer"),
                 )
             })),
             item,

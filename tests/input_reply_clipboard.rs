@@ -1,6 +1,6 @@
 use hmux2::src::input::input_reply_clipboard;
 use hmux2::src::reactor::{
-    bufferevent_free, bufferevent_new, evbuffer_get_length, evbuffer_pullup, shutdown_runtime,
+    bufferevent_free, bufferevent_new, evbuffer_pullup, shutdown_runtime,
 };
 use std::ffi::c_char;
 
@@ -9,13 +9,8 @@ fn reply(buf: *const c_char, len: usize, end: &'static [u8], clip: c_char) -> Ve
         let bev = bufferevent_new(-1, None, None, None);
         assert!(!bev.is_null());
         input_reply_clipboard(bev, buf, len, end.as_ptr().cast(), clip);
-        let output = &raw mut *(*bev).output;
-        let output_len = evbuffer_get_length(&*output);
-        let bytes = if output_len == 0 {
-            Vec::new()
-        } else {
-            std::slice::from_raw_parts(evbuffer_pullup(output, -1), output_len).to_vec()
-        };
+        let output = &mut *(*bev).output;
+        let bytes = evbuffer_pullup(output, -1).unwrap_or_default().to_vec();
         bufferevent_free(bev);
         shutdown_runtime();
         bytes

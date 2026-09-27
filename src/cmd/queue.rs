@@ -974,7 +974,7 @@ pub unsafe fn cmdq_guard(
         control_write_guard(c, guard, t, number, flags);
     }
 }
-pub unsafe fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: *mut evbuffer) {
+pub unsafe fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: &mut evbuffer) {
     server_client_print((*item).client, 1 as ::core::ffi::c_int, evb);
 }
 pub unsafe fn cmdq_print(

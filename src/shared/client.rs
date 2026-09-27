@@ -296,7 +296,7 @@ pub struct client_file_event<'a> {
     pub path: Option<&'a CStr>,
     pub error: i32,
     pub closed: bool,
-    pub buffer: Option<std::ptr::NonNull<evbuffer>>,
+    pub buffer: Option<&'a mut evbuffer>,
 }
 
 impl client_file {

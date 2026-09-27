@@ -39,7 +39,7 @@ static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
 pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
-    let mut evb: *mut evbuffer = &raw mut *(*job_get_event(job as *mut job)).input;
+    let evb: &mut evbuffer = &mut *(*job_get_event(job as *mut job)).input;
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {
@@ -92,14 +92,7 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
         CString::new(&line[..visible]).expect("visible job output contains no NUL")
     } else {
         let len = evbuffer_get_length(&evb);
-        let bytes = if len == 0 {
-            &[][..]
-        } else {
-            std::slice::from_raw_parts(
-                evbuffer_pullup(&mut *evb, -(1 as ::core::ffi::c_int) as ssize_t),
-                len,
-            )
-        };
+        let bytes = evbuffer_pullup(&mut evb, -1).unwrap_or_default();
         // The old malloc buffer was treated as a C string after copying all
         // bytes, so only bytes before the first NUL became visible output.
         let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);

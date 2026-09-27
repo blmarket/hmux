@@ -232,7 +232,7 @@ unsafe fn file_fire_done_cb(mut arg: *mut ::core::ffi::c_void) {
                 path: (*cf).path.as_deref(),
                 error: (*cf).error,
                 closed: true,
-                buffer: std::ptr::NonNull::new(&raw mut *(*cf).buffer),
+                buffer: Some(&mut *(*cf).buffer),
             });
         }
     }
@@ -262,7 +262,7 @@ pub unsafe fn file_fire_read(mut cf: *mut client_file) {
                 path: (*cf).path.as_deref(),
                 error: (*cf).error,
                 closed: false,
-                buffer: std::ptr::NonNull::new(&raw mut *(*cf).buffer),
+                buffer: Some(&mut *(*cf).buffer),
             });
         }
     }
@@ -296,7 +296,7 @@ pub unsafe fn file_print(
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_formatted(&raw mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut *(*cf).buffer, write);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -308,7 +308,7 @@ pub unsafe fn file_print(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
-        evbuffer_add_formatted(&raw mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut *(*cf).buffer, write);
         file_push(cf);
     };
 }
@@ -332,7 +332,7 @@ pub unsafe fn file_print_buffer(
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add(&raw mut *(*cf).buffer, data, size);
+        evbuffer_add(&mut *(*cf).buffer, data, size);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -344,7 +344,7 @@ pub unsafe fn file_print_buffer(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
-        evbuffer_add(&raw mut *(*cf).buffer, data, size);
+        evbuffer_add(&mut *(*cf).buffer, data, size);
         file_push(cf);
     };
 }
@@ -367,7 +367,7 @@ pub unsafe fn file_error(
     if cf.is_null() {
         cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_formatted(&raw mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut *(*cf).buffer, write);
         msg.stream = 2 as ::core::ffi::c_int;
         msg.fd = STDERR_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -379,7 +379,7 @@ pub unsafe fn file_error(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
-        evbuffer_add_formatted(&raw mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut *(*cf).buffer, write);
         file_push(cf);
     };
 }
@@ -467,7 +467,7 @@ unsafe fn file_write_impl(
     }
     match current_block {
         8821498768635335055 => {
-            evbuffer_add(&raw mut *(*cf).buffer, bdata, bsize);
+            evbuffer_add(&mut *(*cf).buffer, bdata, bsize);
             msglen = strlen(
                 ((*cf).path)
                     .as_ref()
@@ -588,7 +588,7 @@ unsafe fn file_read_impl(
                         current_block = 17369485759464587280;
                         break;
                     } else if evbuffer_add(
-                        &raw mut *(*cf).buffer,
+                        &mut *(*cf).buffer,
                         &raw mut buffer as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
                         size,
                     ) != 0 as ::core::ffi::c_int
@@ -714,7 +714,8 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         );
         memcpy(
             msg.as_mut_ptr().add(header_len).cast(),
-            evbuffer_pullup(&raw mut *(*cf).buffer, sent as ssize_t) as *const ::core::ffi::c_void,
+            evbuffer_pullup(&mut *(*cf).buffer, sent as ssize_t)
+                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *const ::core::ffi::c_void,
             sent,
         );
         if proc_send(
@@ -727,7 +728,7 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         {
             break;
         }
-        evbuffer_drain(&raw mut *(*cf).buffer, sent);
+        evbuffer_drain(&mut *(*cf).buffer, sent);
         left = evbuffer_get_length(&*((*cf).buffer));
         log_debug(format_args!(
             "file {} sent {}, left {}",
@@ -1039,7 +1040,8 @@ unsafe fn file_read_callback(mut arg: *mut ::core::ffi::c_void) {
                 .wrapping_sub(::core::mem::size_of::<msg_read_data>() as usize)
                 as size_t;
         }
-        bdata = evbuffer_pullup(&raw mut *(*(*cf).event).input, bsize as ssize_t) as *mut ::core::ffi::c_void;
+        bdata = evbuffer_pullup(&mut *(*(*cf).event).input, bsize as ssize_t)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
         log_debug(format_args!(
             "read {} from file {}",
             (bsize) as usize,
@@ -1063,7 +1065,7 @@ unsafe fn file_read_callback(mut arg: *mut ::core::ffi::c_void) {
             msg.as_ptr().cast(),
             msglen,
         );
-        evbuffer_drain(&raw mut *(*(*cf).event).input, bsize);
+        evbuffer_drain(&mut *(*(*cf).event).input, bsize);
     }
 }
 pub unsafe fn file_read_open(
@@ -1232,7 +1234,7 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
         (bsize) as usize
     ));
     if (*cf).error == 0 as ::core::ffi::c_int && (*cf).closed == 0 {
-        if evbuffer_add(&raw mut *(*cf).buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
+        if evbuffer_add(&mut *(*cf).buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
             (*cf).error = ENOMEM;
             file_fire_done(cf);
         } else {

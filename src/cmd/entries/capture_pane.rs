@@ -265,18 +265,15 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     buf
 }
 unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &window_pane) -> Vec<u8> {
-    let mut pending: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut buf = Vec::new();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: [::core::ffi::c_char; 5] = [0; 5];
     let mut linelen: size_t = 0;
     let mut i: u_int = 0;
-    pending = input_pending(wp.ictx);
-    if pending.is_null() {
-        return buf;
-    }
+    let pending = input_pending(&mut *wp.ictx);
     line =
-        evbuffer_pullup(pending, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char;
+        evbuffer_pullup(pending, -1)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
     linelen = evbuffer_get_length(&*(pending));
     if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;

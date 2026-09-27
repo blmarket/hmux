@@ -39,8 +39,12 @@ impl StreamState {
         }
     }
 }
-pub(super) fn wake_buffer(buffer: *mut evbuffer) {
-    let state = BUFFERS.with(|b| b.borrow().get(&(buffer as usize)).and_then(Weak::upgrade));
+pub(super) fn wake_buffer(buffer: &evbuffer) {
+    let state = BUFFERS.with(|b| {
+        b.borrow()
+            .get(&(buffer as *const evbuffer as usize))
+            .and_then(Weak::upgrade)
+    });
     if let Some(state) = state {
         state.wake();
     }
@@ -135,7 +139,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     };
                     if count > 0 {
                         let n =
-                            super::evbuffer_read(&raw mut *(*stream).input, s.fd, count as c_int);
+                            super::evbuffer_read(&mut *(*stream).input, s.fd, count as c_int);
                         if n > 0 {
                             if (*(*stream).input).remaining() >= (*stream).wm_read.low {
                                 let cb = (*stream).readcb.clone();
@@ -169,7 +173,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     let n = if empty {
                         0
                     } else {
-                        super::evbuffer_write(&raw mut *(*stream).output, s.fd)
+                        super::evbuffer_write(&mut *(*stream).output, s.fd)
                     };
                     if n > 0 || (empty && requested) {
                         if (*(*stream).output).remaining() <= (*stream).wm_write.low {
@@ -241,8 +245,8 @@ pub unsafe fn bufferevent_new(
     STREAMS.with(|r| r.borrow_mut().insert(stream as usize, s.clone()));
     BUFFERS.with(|b| {
         let mut b = b.borrow_mut();
-        b.insert((&raw mut *(*stream).input) as usize, Rc::downgrade(&s));
-        b.insert((&raw mut *(*stream).output) as usize, Rc::downgrade(&s));
+        b.insert((&*(*stream).input as *const evbuffer) as usize, Rc::downgrade(&s));
+        b.insert((&*(*stream).output as *const evbuffer) as usize, Rc::downgrade(&s));
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
@@ -263,8 +267,8 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
         drop(task);
         BUFFERS.with(|b| {
             let mut b = b.borrow_mut();
-            b.remove(&((&raw mut *(*stream).input) as usize));
-            b.remove(&((&raw mut *(*stream).output) as usize));
+            b.remove(&((&*(*stream).input as *const evbuffer) as usize));
+            b.remove(&((&*(*stream).output as *const evbuffer) as usize));
         });
         if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
             libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
@@ -272,8 +276,8 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
         drop(Box::from_raw(stream));
     }
 }
-pub unsafe fn bufferevent_get_output(stream: *mut bufferevent) -> *mut evbuffer {
-    &raw mut *(*stream).output
+pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut evbuffer {
+    &mut stream.output
 }
 pub unsafe fn bufferevent_enable(stream: *mut bufferevent, flags: c_short) -> c_int {
     let previous = (*stream).enabled;
@@ -300,10 +304,10 @@ pub unsafe fn bufferevent_write(
     data: *const c_void,
     size: usize,
 ) -> c_int {
-    super::evbuffer_add(&raw mut *(*stream).output, data, size)
+    super::evbuffer_add(&mut *(*stream).output, data, size)
 }
-pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: *mut evbuffer) -> c_int {
-    if buffer == (&raw mut *(*stream).output) {
+pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: &mut evbuffer) -> c_int {
+    if std::ptr::eq(buffer, &raw const *(*stream).output) {
         return -1;
     }
     (*(*stream).output).put(&mut *buffer);

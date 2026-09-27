@@ -1659,7 +1659,8 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         sgr_type: 0,
         sgr_b: 0,
     };
-    buf = evbuffer_pullup((*tty).in_0.as_deref_mut().expect("open TTY buffer"), -(1 as ::core::ffi::c_int) as ssize_t)
+    buf = evbuffer_pullup((*tty).in_0.as_deref_mut().expect("open TTY buffer"), -1)
+        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *const ::core::ffi::c_char;
     len = evbuffer_get_length((*tty).in_0.as_deref().expect("open TTY buffer"));
     if len == 0 as size_t {

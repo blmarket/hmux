@@ -2913,9 +2913,8 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
 }
 unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    let mut evb: *mut evbuffer = &raw mut *(*(*wp).event).input;
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
-    let mut size: size_t = evbuffer_get_length(&*(evb));
+    let mut size: size_t = evbuffer_get_length(&(*(*wp).event).input);
     let mut new_data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new_size: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -3944,14 +3943,15 @@ unsafe fn window_pane_input_callback(
     _path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
-    mut buffer: *mut evbuffer,
+    mut buffer: &mut evbuffer,
     mut cdata: *mut window_pane_input_data,
 ) {
     // file_read retains this pointer until its terminal callback. Only that
     // callback reconstructs the Box, after using its command and client links.
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut buf: *mut u_char =
-        evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut u_char;
+        evbuffer_pullup(buffer, -1)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut u_char;
     let mut len: size_t = evbuffer_get_length(&*(buffer));
     wp = window_pane_find_by_id((*cdata).wp);
     if wp.is_null() {
@@ -4008,9 +4008,7 @@ pub unsafe fn window_pane_start_input(
                 event.path,
                 event.error,
                 event.closed as ::core::ffi::c_int,
-                event
-                    .buffer
-                    .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+                event.buffer.expect("read callback buffer"),
                 cdata,
             )
         })),
@@ -4031,7 +4029,8 @@ pub unsafe fn window_pane_get_new_data(
 ) -> *mut ::core::ffi::c_void {
     let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
     *size = evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used);
-    return evbuffer_pullup(&raw mut *(*(*wp).event).input, -(1 as ::core::ffi::c_int) as ssize_t)
+    return evbuffer_pullup(&mut *(*(*wp).event).input, -1)
+        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         .offset(used as isize) as *mut ::core::ffi::c_void;
 }
 pub unsafe fn window_pane_update_used_data(

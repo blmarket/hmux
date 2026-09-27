@@ -2226,8 +2226,8 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
     (*ictx).state = &raw const input_state_ground as *const input_state;
     (*ictx).flags = 0 as ::core::ffi::c_int;
 }
-pub unsafe fn input_pending(mut ictx: *mut input_ctx) -> *mut evbuffer {
-    return &raw mut *(*ictx).since_ground;
+pub fn input_pending(ictx: &mut input_ctx) -> &mut evbuffer {
+    &mut ictx.since_ground
 }
 unsafe fn input_set_state(mut ictx: *mut input_ctx, mut itr: *const input_transition) {
     if (*(*ictx).state).exit.is_some() {
@@ -2281,7 +2281,7 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
         }
         if (*ictx).state != &raw const input_state_ground {
             evbuffer_add(
-                &raw mut *(*ictx).since_ground,
+                &mut *(*ictx).since_ground,
                 &raw mut (*ictx).ch as *const ::core::ffi::c_void,
                 1 as size_t,
             );
@@ -2487,7 +2487,7 @@ unsafe fn input_clear(mut ictx: *mut input_ctx) {
 unsafe fn input_ground(mut ictx: *mut input_ctx) {
     event_del(&raw mut (*ictx).ground_timer);
     evbuffer_drain(
-        &raw mut *(*ictx).since_ground,
+        &mut *(*ictx).since_ground,
         evbuffer_get_length(&*((*ictx).since_ground)),
     );
     (*ictx).shrink_buffer();

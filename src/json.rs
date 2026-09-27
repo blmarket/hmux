@@ -1119,7 +1119,7 @@ unsafe fn json_parse_boolean(
         &raw mut boolean as *mut ::core::ffi::c_void,
     );
 }
-unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node) {
+unsafe fn json_string_append(mut buffer: &mut evbuffer, mut node: *mut json_node) {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1220,13 +1220,7 @@ pub unsafe fn json_to_string(node: *mut json_node) -> Option<CString> {
     }
     let mut buffer = evbuffer_new();
     json_string_append(&mut *buffer, node);
-    let len = evbuffer_get_length(&buffer);
-    let bytes = if len == 0 {
-        Vec::new()
-    } else {
-        let ptr = evbuffer_pullup(&mut *buffer, -(1 as ::core::ffi::c_int) as ssize_t);
-        ::core::slice::from_raw_parts(ptr.cast::<u8>(), len).to_vec()
-    };
+    let bytes = evbuffer_pullup(&mut buffer, -1).unwrap_or_default().to_vec();
     Some(CString::new(bytes).expect("serialized JSON contains no NUL"))
 }
 

@@ -3442,7 +3442,6 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);
 }
 unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
-    let mut evb: *mut evbuffer = &raw mut *(*(*wp).event).input;
     let mut minimum: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut wpo: *mut window_pane_offset = ::core::ptr::null_mut::<window_pane_offset>();
@@ -3501,6 +3500,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
     }
     minimum = minimum.wrapping_sub((*wp).base_offset);
     if !(minimum == 0 as size_t) {
+        let evb = &mut *(*(*wp).event).input;
         log_debug(format_args!(
             "{}: %{} has {} minimum (of {}) bytes used",
             "server_client_check_pane_buffer",
@@ -5068,10 +5068,11 @@ pub unsafe fn server_client_remove_pane(mut wp: *mut window_pane) {
 pub unsafe fn server_client_print(
     mut c: *mut client,
     mut parse: ::core::ffi::c_int,
-    mut evb: *mut evbuffer,
+    mut evb: &mut evbuffer,
 ) {
     let mut data: *mut ::core::ffi::c_void =
-        evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
+        evbuffer_pullup(evb, -1)
+            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
     let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -5092,7 +5093,8 @@ pub unsafe fn server_client_print(
         msg = &raw mut empty;
     } else {
         msg =
-            evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char;
+            evbuffer_pullup(evb, -1)
+                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
         if *msg.offset(size.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int != '\0' as i32
         {
             evbuffer_add(
@@ -5100,6 +5102,7 @@ pub unsafe fn server_client_print(
                 b"\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
+            msg = evbuffer_pullup(evb, -1).expect("nonempty print buffer").as_mut_ptr().cast();
         }
     }
     log_debug(format_args!(
@@ -5151,7 +5154,8 @@ pub unsafe fn server_client_print(
                 }
                 size = evbuffer_get_length(&*(evb));
                 if size != 0 as size_t {
-                    line = evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
+                    line = evbuffer_pullup(evb, -1)
+                        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                         as *mut ::core::ffi::c_char;
                     window_copy_add(wp, 1 as ::core::ffi::c_int, |out| {
                         write_cstr_n(out, line, (size as ::core::ffi::c_int) as i32)

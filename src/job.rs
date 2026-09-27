@@ -53,18 +53,8 @@ pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
 
 unsafe fn job_completion(job: *mut job) -> JobCompletion {
-    let input = &raw mut *(*(*job).event).input;
-    let len = evbuffer_get_length(&*input);
-    let output = if len == 0 {
-        Vec::new()
-    } else {
-        let bytes = evbuffer_pullup(input, -(1 as ::core::ffi::c_int) as ssize_t);
-        if bytes.is_null() {
-            Vec::new()
-        } else {
-            std::slice::from_raw_parts(bytes, len).to_vec()
-        }
-    };
+    let input = &mut *(*(*job).event).input;
+    let output = evbuffer_pullup(input, -1).unwrap_or_default().to_vec();
     JobCompletion {
         status: JobExitStatus::from_wait_status((*job).status),
         output,
@@ -490,7 +480,7 @@ unsafe fn job_read_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut job: *mut job = data as *mut job;
-    let mut len: size_t = evbuffer_get_length(&*(bufferevent_get_output((*job).event)));
+    let mut len: size_t = evbuffer_get_length(&*(bufferevent_get_output(&mut *(*job).event)));
     log_debug(format_args!(
         "job write {}: {}, pid {}, output left {}",
         log_pointer((job) as *const ::core::ffi::c_void),

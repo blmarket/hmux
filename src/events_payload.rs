@@ -486,7 +486,7 @@ pub unsafe fn event_payload_get_string(mut ep: *mut event_payload) -> *const ::c
     }
     return (*epi).value.string();
 }
-unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut evbuffer) {
+unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: &mut evbuffer) {
     match (*epi).type_0() as ::core::ffi::c_uint {
         0 => {
             evbuffer_add_formatted(evb, |out| write_cstr(out, (*epi).value.string()));
@@ -554,10 +554,7 @@ pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item
     event_payload_add_item(epi, &mut *evb);
     size = evbuffer_get_length(&evb);
     let mut value = Vec::with_capacity(size + 1);
-    if size != 0 as size_t {
-        let bytes = evbuffer_pullup(&mut *evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const u8;
-        value.extend_from_slice(std::slice::from_raw_parts(bytes, size));
-    }
+    value.extend_from_slice(evbuffer_pullup(&mut evb, -1).unwrap_or_default());
     value.push(0);
     value
 }
@@ -655,7 +652,7 @@ pub unsafe fn event_payload_log(
         "{}{}",
         log_cstr((prefix.as_ptr()) as *const _),
         log_cstr_n(
-            (evbuffer_pullup(&mut *evb, -(1 as ::core::ffi::c_int) as ssize_t)
+            (evbuffer_pullup(&mut *evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                 as *mut ::core::ffi::c_char) as *const _,
             evbuffer_get_length(&evb) as ::core::ffi::c_int
         )
