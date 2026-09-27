@@ -928,119 +928,70 @@ pub unsafe fn screen_write_vline(
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_menu(
-    mut ctx: *mut screen_write_ctx,
-    mut menu: *mut menu,
-    mut choice: ::core::ffi::c_int,
-    mut lines: box_lines,
-    mut menu_gc: *const grid_cell,
-    mut border_gc: *const grid_cell,
-    mut choice_gc: *const grid_cell,
+    ctx: &mut screen_write_ctx,
+    menu: &menu,
+    choice: ::core::ffi::c_int,
+    lines: box_lines,
+    menu_gc: &grid_cell,
+    border_gc: Option<&grid_cell>,
+    choice_gc: &grid_cell,
 ) {
-    let mut s: *mut screen = (*ctx).s;
-    let mut default_gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut gc: *const grid_cell = &raw mut default_gc;
-    let mut cx: u_int = 0;
-    let mut cy: u_int = 0;
-    let mut i: u_int = 0;
-    let mut j: u_int = 0;
-    let mut width: u_int = (*menu).width;
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    cx = (*s).cx;
-    cy = (*s).cy;
-    memcpy(
-        &raw mut default_gc as *mut ::core::ffi::c_void,
-        menu_gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    let cx = (*ctx.s).cx;
+    let cy = (*ctx.s).cy;
+    let width = menu.width;
+    let mut default_gc = *menu_gc;
     screen_write_box(
-        &mut *ctx,
-        (*menu).width.wrapping_add(4 as u_int),
-        (*menu).count.wrapping_add(2 as u_int),
+        ctx,
+        width.wrapping_add(4),
+        menu.count.wrapping_add(2),
         lines,
-        border_gc.as_ref(),
-        Some((*menu).title.as_c_str()),
+        border_gc,
+        Some(menu.title.as_c_str()),
     );
-    i = 0 as u_int;
-    while i < (*menu).count {
-        name = (*(*menu).items.as_mut_ptr().offset(i as isize)).name_ptr();
-        if name.is_null() {
-            screen_write_cursormove(
-                ctx,
-                cx as ::core::ffi::c_int,
-                cy.wrapping_add(1 as u_int).wrapping_add(i) as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-            );
-            screen_write_hline(
-                &mut *ctx,
-                width.wrapping_add(4 as u_int),
-                1 as ::core::ffi::c_int,
-                1 as ::core::ffi::c_int,
-                lines,
-                border_gc.as_ref(),
-            );
+    for (index, item) in menu.items[..menu.count as usize].iter().enumerate() {
+        let y = cy.wrapping_add(1).wrapping_add(index as u_int);
+        let Some(name) = item.name.as_deref() else {
+            screen_write_cursormove(ctx, cx as ::core::ffi::c_int, y as ::core::ffi::c_int, 0);
+            screen_write_hline(ctx, width.wrapping_add(4), 1, 1, lines, border_gc);
+            continue;
+        };
+        let disabled = name.to_bytes().first() == Some(&b'-');
+        let gc = if choice >= 0 && index == choice as usize && !disabled {
+            choice_gc
         } else {
-            if choice >= 0 as ::core::ffi::c_int
-                && i == choice as u_int
-                && *name as ::core::ffi::c_int != '-' as i32
-            {
-                gc = choice_gc;
-            }
-            screen_write_cursormove(
-                ctx,
-                cx.wrapping_add(1 as u_int) as ::core::ffi::c_int,
-                cy.wrapping_add(1 as u_int).wrapping_add(i) as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-            );
-            j = 0 as u_int;
-            while j < width.wrapping_add(2 as u_int) {
-                screen_write_putc(&mut *ctx, &*gc, ' ' as i32 as u_char);
-                j = j.wrapping_add(1);
-            }
-            screen_write_cursormove(
-                ctx,
-                cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
-                cy.wrapping_add(1 as u_int).wrapping_add(i) as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-            );
-            if *name as ::core::ffi::c_int == '-' as i32 {
-                default_gc.attr =
-                    (default_gc.attr as ::core::ffi::c_int | GRID_ATTR_DIM) as u_short;
-                format_draw(
-                    ctx,
-                    gc,
-                    width,
-                    name.offset(1 as ::core::ffi::c_int as isize),
-                    ::core::ptr::null_mut::<style_ranges>(),
-                    0 as ::core::ffi::c_int,
-                );
-                default_gc.attr =
-                    (default_gc.attr as ::core::ffi::c_int & !GRID_ATTR_DIM) as u_short;
-            } else {
-                format_draw(
-                    ctx,
-                    gc,
-                    width,
-                    name,
-                    ::core::ptr::null_mut::<style_ranges>(),
-                    0 as ::core::ffi::c_int,
-                );
-                gc = &raw mut default_gc;
-            }
+            &default_gc
+        };
+        screen_write_cursormove(
+            ctx,
+            cx.wrapping_add(1) as ::core::ffi::c_int,
+            y as ::core::ffi::c_int,
+            0,
+        );
+        for _ in 0..width.wrapping_add(2) {
+            screen_write_putc(ctx, gc, b' ');
         }
-        i = i.wrapping_add(1);
+        screen_write_cursormove(
+            ctx,
+            cx.wrapping_add(2) as ::core::ffi::c_int,
+            y as ::core::ffi::c_int,
+            0,
+        );
+        if disabled {
+            default_gc.attr |= GRID_ATTR_DIM as u_short;
+            let name = CStr::from_bytes_with_nul(&name.to_bytes_with_nul()[1..])
+                .expect("removing the disabled marker preserves the terminator");
+            format_draw(
+                ctx,
+                &default_gc,
+                width,
+                name.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+            );
+            default_gc.attr &= !(GRID_ATTR_DIM as u_short);
+        } else {
+            format_draw(ctx, gc, width, name.as_ptr(), std::ptr::null_mut(), 0);
+        }
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }

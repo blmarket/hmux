@@ -349,13 +349,13 @@ pub unsafe fn menu_update(mut md: *mut menu_data) {
         );
     }
     screen_write_menu(
-        &raw mut ctx,
-        menu,
+        &mut ctx,
+        &*menu,
         (*md).choice,
         (*md).border_lines,
-        &raw mut (*md).style_gc,
-        &raw mut (*md).border_style_gc,
-        &raw mut (*md).selected_style_gc,
+        &(*md).style_gc,
+        Some(&(*md).border_style_gc),
+        &(*md).selected_style_gc,
     );
     screen_write_stop(&mut ctx);
 }
