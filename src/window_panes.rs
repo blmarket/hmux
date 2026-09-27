@@ -1,6 +1,5 @@
 use crate::src::arguments::{
-    args_has, args_make_commands, args_make_commands_free, args_make_commands_prepare,
-    args_strtonum_result,
+    args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
 };
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error, cmdq_get_source,
@@ -71,7 +70,7 @@ pub struct window_panes_modedata {
     pub screen: screen,
     preview: Option<Box<screen>>,
     pub timer: event,
-    pub state: *mut args_command_state,
+    pub state: Option<Box<args_command_state>>,
     pub delay: u_int,
     pub ignore_keys: ::core::ffi::c_int,
     pub zoomed: ::core::ffi::c_int,
@@ -1570,7 +1569,7 @@ unsafe fn window_panes_init(
         screen: screen::empty(),
         preview: None,
         timer: Default::default(),
-        state: ::core::ptr::null_mut(),
+        state: None,
         delay: 0,
         ignore_keys: 0,
         zoomed: 0,
@@ -1581,14 +1580,14 @@ unsafe fn window_panes_init(
     (*data).session = s;
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
     (*data).screen.mode &= !MODE_CURSOR;
-    (*data).state = args_make_commands_prepare(
+    (*data).state = Some(args_make_commands_prepare(
         self_0,
         item,
         0 as u_int,
         b"select-pane -t \"%%%\"\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
-    );
+    ));
     if args_has(args, 's' as i32 as u_char) != 0 {
         (*data).source_session = (*(*source).s).id;
         (*data).source_window = (*(*source).w).id;
@@ -1636,9 +1635,7 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     server_redraw_window(w);
     server_redraw_window_borders(w);
     server_status_window(w);
-    if !(*data).state.is_null() {
-        args_make_commands_free((*data).state);
-    }
+    drop((*data).state.take());
     window_panes_free_areas(data);
     if let Some(mut preview) = (*data).preview.take() {
         screen_free(&mut *preview);
@@ -1659,7 +1656,13 @@ unsafe fn window_panes_run_command(
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let expanded = CString::new(format!("%{}", (*wp).id)).expect("pane ID contains NUL");
-    match args_make_commands((*data).state, &vec![expanded]) {
+    match args_make_commands(
+        (*data)
+            .state
+            .as_deref_mut()
+            .expect("prepared command state"),
+        &vec![expanded],
+    ) {
         Err(error) => {
             cmdq_append(
                 c,

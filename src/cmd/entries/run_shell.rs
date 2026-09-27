@@ -1,6 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_get, args_has, args_make_commands, args_make_commands_free,
-    args_make_commands_prepare, args_string,
+    args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
 use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
@@ -49,7 +48,7 @@ use std::ffi::{CStr, CString};
 pub struct cmd_run_shell_data {
     pub client: *mut client,
     pub cmd: Option<CString>,
-    pub state: *mut args_command_state,
+    pub state: Option<Box<args_command_state>>,
     pub cwd: CString,
     pub item: *mut cmdq_item,
     pub s: *mut session,
@@ -194,7 +193,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut cdata = Box::new(cmd_run_shell_data {
         client: ::core::ptr::null_mut(),
         cmd: None,
-        state: ::core::ptr::null_mut(),
+        state: None,
         cwd: CStr::from_ptr(cwd).to_owned(),
         item: ::core::ptr::null_mut(),
         s: ::core::ptr::null_mut(),
@@ -218,14 +217,14 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             format_free(ft);
         }
     } else {
-        cdata.state = args_make_commands_prepare(
+        cdata.state = Some(args_make_commands_prepare(
             self_0,
             item,
             0 as u_int,
             ::core::ptr::null::<::core::ffi::c_char>(),
             wait,
             1 as ::core::ffi::c_int,
-        );
+        ));
     }
     if args_has(args, 't' as i32 as u_char) != 0 && !wp.is_null() {
         cdata.wp_id = (*wp).id as ::core::ffi::c_int;
@@ -273,12 +272,12 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     return CMD_RETURN_WAIT;
 }
-unsafe fn cmd_run_shell_timer(cdata: Box<cmd_run_shell_data>) {
+unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     let mut c: *mut client = cdata.client;
     let cmd = cdata.cmd.as_deref();
     let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    if cdata.state.is_null() {
+    if cdata.state.is_none() {
         if cmd.is_none() {
             if !cdata.item.is_null() {
                 cmdq_continue(cdata.item);
@@ -328,7 +327,10 @@ unsafe fn cmd_run_shell_timer(cdata: Box<cmd_run_shell_data>) {
         }
         return;
     }
-    match args_make_commands(cdata.state, &Vec::new()) {
+    match args_make_commands(
+        cdata.state.as_deref_mut().expect("prepared command state"),
+        &Vec::new(),
+    ) {
         Err(mut error) => {
             if cdata.item.is_null() {
                 cmd_parse_error_uppercase_first(&mut error);
@@ -434,9 +436,7 @@ impl Drop for cmd_run_shell_data {
             if !self.client.is_null() {
                 server_client_unref(self.client);
             }
-            if !self.state.is_null() {
-                args_make_commands_free(self.state);
-            }
+            drop(self.state.take());
         }
     }
 }

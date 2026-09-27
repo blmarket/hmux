@@ -1,6 +1,6 @@
 use crate::src::arguments::{
-    args_count, args_has, args_make_commands, args_make_commands_free, args_make_commands_now,
-    args_make_commands_prepare, args_string,
+    args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
+    args_string,
 };
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
@@ -29,8 +29,8 @@ use crate::src::shared::session::session;
 use crate::src::status::status_message_set;
 
 pub struct cmd_if_shell_data {
-    pub cmd_if: *mut args_command_state,
-    pub cmd_else: *mut args_command_state,
+    pub cmd_if: Option<Box<args_command_state>>,
+    pub cmd_else: Option<Box<args_command_state>>,
     pub client: *mut client,
     pub item: *mut cmdq_item,
 }
@@ -98,28 +98,28 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         return CMD_RETURN_NORMAL;
     }
     let mut cdata = Box::new(cmd_if_shell_data {
-        cmd_if: ::core::ptr::null_mut(),
-        cmd_else: ::core::ptr::null_mut(),
+        cmd_if: None,
+        cmd_else: None,
         client: ::core::ptr::null_mut(),
         item: ::core::ptr::null_mut(),
     });
-    cdata.cmd_if = args_make_commands_prepare(
+    cdata.cmd_if = Some(args_make_commands_prepare(
         self_0,
         item,
         1 as u_int,
         ::core::ptr::null::<::core::ffi::c_char>(),
         wait,
         0 as ::core::ffi::c_int,
-    );
+    ));
     if count == 3 as u_int {
-        cdata.cmd_else = args_make_commands_prepare(
+        cdata.cmd_else = Some(args_make_commands_prepare(
             self_0,
             item,
             2 as u_int,
             ::core::ptr::null::<::core::ffi::c_char>(),
             wait,
             0 as ::core::ffi::c_int,
-        );
+        ));
     }
     if wait != 0 {
         cdata.client = cmdq_get_client(item);
@@ -156,24 +156,23 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     // The job takes ownership only after startup succeeds. The record also
     // drops when the completion callback is cancelled without being invoked.
     (*job).completecb = Some(Box::new(move |completion| unsafe {
-        cmd_if_shell_callback(completion, &cdata);
+        cmd_if_shell_callback(completion, &mut cdata);
     }));
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
     return CMD_RETURN_WAIT;
 }
-unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &cmd_if_shell_data) {
+unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_shell_data) {
     let mut c: *mut client = cdata.client;
     let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
-    if completion.status == JobExitStatus::Exited(0) {
-        state = cdata.cmd_if;
+    let state = if completion.status == JobExitStatus::Exited(0) {
+        cdata.cmd_if.as_deref_mut()
     } else {
-        state = cdata.cmd_else;
-    }
-    if !state.is_null() {
+        cdata.cmd_else.as_deref_mut()
+    };
+    if let Some(state) = state {
         match args_make_commands(state, &Vec::new()) {
             Err(mut error) => {
                 if cdata.item.is_null() {
@@ -217,12 +216,8 @@ impl Drop for cmd_if_shell_data {
             if !self.client.is_null() {
                 server_client_unref(self.client);
             }
-            if !self.cmd_else.is_null() {
-                args_make_commands_free(self.cmd_else);
-            }
-            if !self.cmd_if.is_null() {
-                args_make_commands_free(self.cmd_if);
-            }
+            drop(self.cmd_else.take());
+            drop(self.cmd_if.take());
         }
     }
 }

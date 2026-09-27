@@ -1,6 +1,6 @@
 use crate::src::arguments::{
-    args_count, args_get, args_has, args_make_commands, args_make_commands_free,
-    args_make_commands_get_command_cstring, args_make_commands_prepare,
+    args_count, args_get, args_has, args_make_commands, args_make_commands_get_command_cstring,
+    args_make_commands_prepare,
 };
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
@@ -33,7 +33,7 @@ use std::ffi::{CStr, CString};
 
 pub struct cmd_command_prompt_cdata {
     pub item: *mut cmdq_item,
-    pub state: *mut args_command_state,
+    pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
     pub wp: *mut window_pane,
@@ -144,7 +144,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     }
     let mut cdata = Box::new(cmd_command_prompt_cdata {
         item: ::core::ptr::null_mut(),
-        state: ::core::ptr::null_mut(),
+        state: None,
         flags: 0,
         prompt_type: PROMPT_TYPE_COMMAND,
         wp: ::core::ptr::null_mut(),
@@ -158,19 +158,21 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if pane != 0 {
         cdata.wp = wp;
     }
-    cdata.state = args_make_commands_prepare(
+    cdata.state = Some(args_make_commands_prepare(
         self_0,
         item,
         0 as u_int,
         b"%1\0" as *const u8 as *const ::core::ffi::c_char,
         wait,
         args_has(args, 'F' as i32 as u_char),
-    );
+    ));
     let literal = args_has(args, 'l' as i32 as u_char) != 0;
     s = args_get(args, 'p' as i32 as u_char);
     if s.is_null() {
         if count != 0 as u_int {
-            let command = args_make_commands_get_command_cstring(cdata.state);
+            let command = args_make_commands_get_command_cstring(
+                cdata.state.as_deref().expect("prepared command state"),
+            );
             prompt_bytes.push(b'(');
             prompt_bytes.extend_from_slice(command.as_bytes());
             prompt_bytes.push(b')');
@@ -300,7 +302,10 @@ unsafe fn cmd_command_prompt_callback(
                 } else {
                     cdata.argv = argv_owner.clone();
                 }
-                match args_make_commands(cdata.state, &argv_owner) {
+                match args_make_commands(
+                    cdata.state.as_deref_mut().expect("prepared command state"),
+                    &argv_owner,
+                ) {
                     Err(error) => {
                         cmdq_append(
                             c,
@@ -354,9 +359,7 @@ impl Drop for cmd_command_prompt_cdata {
                 cmdq_continue(self.item);
             }
             self.prompts.clear();
-            if !self.state.is_null() {
-                args_make_commands_free(self.state);
-            }
+            drop(self.state.take());
         }
     }
 }
@@ -378,14 +381,11 @@ mod tests {
                 item.flags = CMDQ_WAITING;
                 let cmdlist = cmd_list_new();
                 let commands = rc::downgrade(cmdlist);
-                let state = Box::new(args_command_state {
-                    cmdlist,
-                    ..args_command_state::empty()
-                });
+                let mut state = Box::new(args_command_state::empty());
+                state.cmdlist = Some(rc::take(cmdlist));
                 let data = Box::new(cmd_command_prompt_cdata {
                     item: &mut item,
-                    // The command-state API still transfers this separate allocation.
-                    state: Box::into_raw(state),
+                    state: Some(state),
                     flags: 0,
                     prompt_type: PROMPT_TYPE_COMMAND,
                     wp: std::ptr::null_mut(),

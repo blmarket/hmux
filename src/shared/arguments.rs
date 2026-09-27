@@ -1,9 +1,12 @@
 //! Authoritative argument storage, parsing callbacks, and scalar domains.
 
 use super::abi::{u_char, u_int};
+use super::client::client;
 use super::command::{cmd_list, cmd_parse_input};
+use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::ffi::CString;
+use std::rc::Rc;
 pub type args_type = ::core::ffi::c_uint;
 pub const ARGS_COMMANDS: args_type = 2;
 pub const ARGS_STRING: args_type = 1;
@@ -188,9 +191,10 @@ pub struct args_parse {
     pub cb: args_parse_cb,
 }
 
-#[repr(C)]
+/// Box-owned prepared command; retained model references have typed owners.
 pub struct args_command_state {
-    pub cmdlist: *mut cmd_list,
+    pub cmdlist: Option<Rc<UnsafeCell<cmd_list>>>,
+    pub(crate) client: Option<Rc<UnsafeCell<client>>>,
     pub cmd: Option<std::ffi::CString>,
     pub pi: cmd_parse_input,
     pub(crate) file: Option<std::ffi::CString>,
@@ -199,7 +203,8 @@ pub struct args_command_state {
 impl args_command_state {
     pub fn empty() -> Self {
         Self {
-            cmdlist: Default::default(),
+            cmdlist: None,
+            client: None,
             cmd: Default::default(),
             pi: Default::default(),
             file: Default::default(),

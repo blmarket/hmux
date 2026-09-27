@@ -6,11 +6,11 @@ use crate::src::cmd::{
     cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
+use crate::src::ffi::libc::{__ctype_b_loc, free, strchr};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
-use crate::src::server_client::server_client_unref;
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
@@ -690,6 +690,82 @@ mod ownership_tests {
     use super::*;
 
     #[test]
+    fn prepared_commands_keep_their_list_after_source_and_state_drop() {
+        unsafe {
+            let commands = crate::src::cmd::cmd_list_new();
+            let observer = crate::src::shared::rc::downgrade(commands);
+            let mut source = Box::new(args::empty());
+            args_push_positional_commands(&mut *source, commands);
+            let mut command = cmd::empty();
+            command.args = &mut *source;
+            let mut item = cmdq_item::empty();
+            let mut state =
+                args_make_commands_prepare(&mut command, &mut item, 0, std::ptr::null(), 0, 0);
+            assert_eq!(observer.strong_count(), 2);
+            assert!(state.client.is_none());
+            drop(source);
+            assert_eq!(observer.strong_count(), 1);
+            assert_eq!(
+                args_make_commands_get_command_cstring(&state).as_bytes(),
+                b""
+            );
+            let returned = args_make_commands(&mut state, &Vec::new()).unwrap();
+            assert_eq!(returned, commands);
+            assert_eq!(observer.strong_count(), 2);
+            drop(state);
+            assert_eq!(observer.strong_count(), 1);
+            assert!(cmd_list_print_cstring(&*returned, 0).as_bytes().is_empty());
+            cmd_list_free(returned);
+            assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn prepared_text_owns_source_metadata_and_defers_client_release() {
+        unsafe {
+            let client = client::new();
+            let observer = std::rc::Rc::downgrade(&client);
+            let mut source = Box::new(args::empty());
+            let mut command = cmd::empty();
+            command.args = &mut *source;
+            command.file = Some(CString::new(b"source\xff.conf".as_slice()).unwrap());
+            command.line = 17;
+            let mut item = cmdq_item::empty();
+            item.target_client = crate::src::shared::rc::as_ptr(&client);
+            let state = args_make_commands_prepare(
+                &mut command,
+                &mut item,
+                0,
+                c"display-message %1".as_ptr(),
+                1,
+                0,
+            );
+            command.file = None;
+            drop(source);
+            drop(client);
+            assert_eq!(observer.strong_count(), 1);
+            assert_eq!(
+                state.pi.file.as_ref().unwrap().as_bytes(),
+                b"source\xff.conf"
+            );
+            assert_eq!(state.pi.line, 17);
+            assert_eq!(state.pi.item, &mut item as *mut _);
+            assert_eq!(
+                args_make_commands_get_command_cstring(&state).as_bytes(),
+                b"display-message"
+            );
+            assert_eq!(
+                state.cmd.as_ref().unwrap().as_bytes(),
+                b"display-message %1"
+            );
+            drop(state);
+            assert!(observer.upgrade().is_some(), "client cleanup is deferred");
+            crate::src::reactor::shutdown_runtime();
+            assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
     fn flag_entries_keep_value_identity_and_order_across_map_growth() {
         let mut args = args::empty();
         args_set_value(
@@ -826,9 +902,8 @@ pub unsafe fn args_make_commands_now(
     mut idx: u_int,
     mut expand: ::core::ffi::c_int,
 ) -> *mut cmd_list {
-    let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    state = args_make_commands_prepare(
+    let mut state = args_make_commands_prepare(
         self_0,
         item,
         idx,
@@ -836,7 +911,7 @@ pub unsafe fn args_make_commands_now(
         0 as ::core::ffi::c_int,
         expand,
     );
-    match args_make_commands(state, &Vec::new()) {
+    match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => cmdlist = commands,
         Err(error) => cmdq_error(item, |out| {
             write_cstr(
@@ -847,7 +922,7 @@ pub unsafe fn args_make_commands_now(
             )
         }),
     }
-    args_make_commands_free(state);
+    drop(state);
     return cmdlist;
 }
 pub unsafe fn args_make_commands_prepare(
@@ -857,27 +932,24 @@ pub unsafe fn args_make_commands_prepare(
     mut default_command: *const ::core::ffi::c_char,
     mut wait: ::core::ffi::c_int,
     mut expand: ::core::ffi::c_int,
-) -> *mut args_command_state {
+) -> Box<args_command_state> {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    state = Box::into_raw(Box::new(args_command_state {
-        cmd: None,
-        file: None,
-        ..args_command_state::empty()
-    }))
-    .cast::<args_command_state>();
+    let mut state = Box::new(args_command_state::empty());
     if idx < (*args).count {
         value = (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
         if (*value).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            (*state).cmdlist = (*value).cmdlist() as *mut cmd_list;
-            crate::src::shared::rc::retain((*state).cmdlist);
+            state.cmdlist = Some(
+                crate::src::shared::rc::downgrade((*value).cmdlist())
+                    .upgrade()
+                    .expect("live argument command list"),
+            );
             return state;
         }
         cmd = (*value).string_ptr();
@@ -888,54 +960,54 @@ pub unsafe fn args_make_commands_prepare(
         cmd = default_command;
     }
     if expand != 0 {
-        (*state).cmd = Some(format_single_from_target_cstring(item, cmd));
+        state.cmd = Some(format_single_from_target_cstring(item, cmd));
     } else {
-        (*state).cmd = Some(CStr::from_ptr(cmd).to_owned());
+        state.cmd = Some(CStr::from_ptr(cmd).to_owned());
     }
 
     log_debug(format_args!(
         "{}: {}",
         "args_make_commands_prepare",
         log_cstr(
-            (((*state).cmd)
+            ((state.cmd)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         )
     ));
     if wait != 0 {
-        (*state).pi.item = item;
+        state.pi.item = item;
     }
-    cmd_get_source(self_0, &raw mut file, &raw mut (*state).pi.line);
+    cmd_get_source(self_0, &raw mut file, &raw mut state.pi.line);
     if !file.is_null() {
-        (*state).file = Some(CStr::from_ptr(file).to_owned());
-        (*state).pi.file = (*state).file.clone();
+        state.file = Some(CStr::from_ptr(file).to_owned());
+        state.pi.file = state.file.clone();
     }
-    (*state).pi.c = tc;
-    if !(*state).pi.c.is_null() {
-        crate::src::shared::rc::retain((*state).pi.c);
+    state.pi.c = tc;
+    if !state.pi.c.is_null() {
+        state.client = Some(
+            crate::src::shared::rc::downgrade(state.pi.c)
+                .upgrade()
+                .expect("live command client"),
+        );
     }
-    cmd_find_copy_state(&raw mut (*state).pi.fs, target);
+    cmd_find_copy_state(&raw mut state.pi.fs, target);
     return state;
 }
 pub unsafe fn args_make_commands(
-    mut state: *mut args_command_state,
+    state: &mut args_command_state,
     argv: &Vec<CString>,
 ) -> Result<*mut cmd_list, Option<CString>> {
     let mut i: ::core::ffi::c_int = 0;
-    if !(*state).cmdlist.is_null() {
+    if let Some(commands) = state.cmdlist.as_ref() {
+        let commands = crate::src::shared::rc::as_ptr(commands);
         if argv.is_empty() {
-            crate::src::shared::rc::retain((*state).cmdlist);
-            return Ok((*state).cmdlist);
+            crate::src::shared::rc::retain(commands);
+            return Ok(commands);
         }
-        return Ok(cmd_list_copy(&*(*state).cmdlist, argv));
+        return Ok(cmd_list_copy(&*commands, argv));
     }
-    let mut cmd = CStr::from_ptr(
-        ((*state).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    )
-    .to_owned();
+    let mut cmd = state.cmd.as_ref().expect("prepared command text").clone();
     log_debug(format_args!(
         "{}: {}",
         "args_make_commands",
@@ -964,7 +1036,7 @@ pub unsafe fn args_make_commands(
         "args_make_commands",
         log_bytes(cmd.as_bytes())
     ));
-    let pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut (*state).pi);
+    let pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut state.pi);
     drop(cmd);
     match pr.status as ::core::ffi::c_uint {
         0 => Err(pr.error),
@@ -972,38 +1044,32 @@ pub unsafe fn args_make_commands(
         _ => fatalx(|out| out.write_all(b"invalid parse return state")),
     }
 }
-pub unsafe fn args_make_commands_free(mut state: *mut args_command_state) {
-    if !(*state).cmdlist.is_null() {
-        cmd_list_free((*state).cmdlist);
+impl Drop for args_command_state {
+    fn drop(&mut self) {
+        drop(self.cmdlist.take());
+        if let Some(client) = self.client.take() {
+            server_client_unref_owned(client);
+        }
     }
-    if !(*state).pi.c.is_null() {
-        server_client_unref((*state).pi.c);
-    }
-    drop(Box::from_raw(state));
 }
 
-pub(crate) unsafe fn args_make_commands_get_command_cstring(
-    state: *mut args_command_state,
-) -> CString {
-    if !(*state).cmdlist.is_null() {
-        let first = cmd_list_first((*state).cmdlist);
+pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command_state) -> CString {
+    if let Some(commands) = state.cmdlist.as_ref() {
+        let first = cmd_list_first(crate::src::shared::rc::as_ptr(commands));
         if first.is_null() {
             return CString::new(Vec::new()).expect("empty command name has no NUL");
         }
         return (*cmd_get_entry(first)).name.to_owned();
     }
-    let n = strcspn(
-        ((*state).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        b" ,\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
-    let command = CStr::from_ptr(
-        ((*state).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    )
-    .to_bytes();
+    let command = state
+        .cmd
+        .as_ref()
+        .expect("prepared command text")
+        .as_bytes();
+    let n = command
+        .iter()
+        .position(|byte| b" ,".contains(byte))
+        .unwrap_or(command.len()) as ::core::ffi::c_int;
     // A negative printf precision leaves the whole string untruncated.
     let prefix = if n < 0 {
         command
