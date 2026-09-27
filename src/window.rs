@@ -45,7 +45,7 @@ use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::screen_write::{screen_write_clear_dirty, screen_write_stop_sync};
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::server_client_unref;
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,
@@ -67,14 +67,15 @@ use crate::src::style::{
 use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use std::cell::RefCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
+use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::{client, client_file};
+use crate::src::shared::client::{client, client_file, client_file_cb};
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_DEAD, CLIENT_EXIT, CLIENT_EXITED, CLIENT_FOCUSED, CLIENT_UNATTACHEDFLAGS,
 };
@@ -130,10 +131,31 @@ use crate::src::shared::window::{
 };
 
 struct window_pane_input_data {
-    item: *mut cmdq_item,
-    client: *mut client,
+    item: NonNull<cmdq_item>,
+    client: Option<Rc<UnsafeCell<client>>>,
     wp: u_int,
-    file: *mut client_file,
+    file: RefCell<Weak<UnsafeCell<client_file>>>,
+}
+
+impl window_pane_input_data {
+    fn into_callback(self: Rc<Self>) -> client_file_cb {
+        Some(Box::new(move |event| unsafe {
+            window_pane_input_callback(
+                &self,
+                event.error,
+                event.closed,
+                event.buffer.expect("read callback buffer"),
+            );
+        }))
+    }
+}
+
+impl Drop for window_pane_input_data {
+    fn drop(&mut self) {
+        if let Some(client) = self.client.take() {
+            server_client_unref_owned(client);
+        }
+    }
 }
 
 pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
@@ -3965,49 +3987,39 @@ pub unsafe fn winlink_shuffle_up(
     return idx;
 }
 unsafe fn window_pane_input_callback(
-    mut c: *mut client,
-    _path: Option<&CStr>,
-    mut error: ::core::ffi::c_int,
-    mut closed: ::core::ffi::c_int,
-    mut buffer: &mut evbuffer,
-    mut cdata: *mut window_pane_input_data,
+    cdata: &window_pane_input_data,
+    error: ::core::ffi::c_int,
+    closed: bool,
+    buffer: &mut evbuffer,
 ) {
-    // file_read retains this pointer until its terminal callback. Only that
-    // callback reconstructs the Box, after using its command and client links.
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut buf: *mut u_char =
-        evbuffer_pullup(buffer, -1)
-            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut u_char;
-    let mut len: size_t = evbuffer_get_length(&*buffer);
-    wp = window_pane_find_by_id((*cdata).wp);
+    let c = cdata.client.as_ref().expect("pane input client").get();
+    let buf = evbuffer_pullup(buffer, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
+    let len = evbuffer_get_length(buffer);
+    let wp = window_pane_find_by_id(cdata.wp);
     if wp.is_null() {
-        (*c).retval = 1 as ::core::ffi::c_int;
+        (*c).retval = 1;
         (*c).flags |= CLIENT_EXIT as uint64_t;
     }
-    if !(*cdata).file.is_null()
-        && closed == 0
+    let file = cdata.file.borrow().upgrade();
+    if file.is_some()
+        && !closed
         && (wp.is_null() || (*c).flags & CLIENT_DEAD as uint64_t != 0 || error != 0)
     {
-        file_cancel((*cdata).file);
-    } else if (*cdata).file.is_null() || closed != 0 || error != 0 as ::core::ffi::c_int {
-        cmdq_continue((*cdata).item);
-        server_client_unref(c);
-        drop(Box::from_raw(cdata));
+        file_cancel(crate::src::shared::rc::as_ptr(file.as_ref().unwrap()));
+    } else if file.is_none() || closed || error != 0 {
+        cmdq_continue(cdata.item.as_ptr());
     } else {
         input_parse_buffer(wp, buf, len);
     }
     evbuffer_drain(buffer, len);
 }
-unsafe fn window_pane_input_cancel(cdata: *mut window_pane_input_data) {
-    let cdata = Box::from_raw(cdata);
-    server_client_unref(cdata.client);
-}
+
 pub unsafe fn window_pane_start_input(
-    mut wp: *mut window_pane,
-    mut item: *mut cmdq_item,
+    wp: *mut window_pane,
+    item: *mut cmdq_item,
 ) -> Result<::core::ffi::c_int, std::ffi::CString> {
-    let mut c: *mut client = cmdq_get_client(item);
-    if !(*wp).flags & PANE_EMPTY != 0 {
+    let c = cmdq_get_client(item);
+    if (*wp).flags & PANE_EMPTY == 0 {
         return Err(c"pane is not empty".to_owned());
     }
     if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
@@ -4016,35 +4028,30 @@ pub unsafe fn window_pane_start_input(
     if !(*c).session.is_null() {
         return Ok(1);
     }
-    let cdata = Box::into_raw(Box::new(window_pane_input_data {
-        item,
-        client: c,
+    // Startup publishes the returned file handle before events can dispatch.
+    // Afterwards only the read callback retains the record; cancellation
+    // drops that callback and releases the retained client automatically.
+    let cdata = Rc::new(window_pane_input_data {
+        item: NonNull::new(item).expect("pane input command"),
+        client: Some(
+            crate::src::shared::rc::downgrade(c)
+                .upgrade()
+                .expect("live pane input client"),
+        ),
         wp: (*wp).id,
-        file: std::ptr::null_mut(),
-    }));
-    crate::src::shared::rc::retain(c);
+        file: RefCell::new(Weak::new()),
+    });
     let file = file_read_with_cmdq_wait(
         c,
-        b"-\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(Box::new(move |event| unsafe {
-            window_pane_input_callback(
-                event
-                    .client
-                    .map_or(::core::ptr::null_mut(), |client| client.as_ptr()),
-                event.path,
-                event.error,
-                event.closed as ::core::ffi::c_int,
-                event.buffer.expect("read callback buffer"),
-                cdata,
-            )
-        })),
+        c"-".as_ptr(),
+        Rc::clone(&cdata).into_callback(),
         item,
-        Some(Box::new(move || unsafe { window_pane_input_cancel(cdata) })),
+        None,
     );
-    // A failed open schedules a terminal callback and returns null. That
-    // callback uses the initial null file value to release this owner.
+    // A failed open returns null and schedules a terminal callback. Its empty
+    // file handle tells the callback to resume the waiting command.
     if !file.is_null() {
-        (*cdata).file = file;
+        *cdata.file.borrow_mut() = crate::src::shared::rc::downgrade(file);
     }
     Ok(0)
 }
@@ -4706,6 +4713,109 @@ mod pane_prompt_data_tests {
             drop(replacement);
             assert!(replacement_weak.upgrade().is_none());
             assert_eq!(window_pane_tree_remove(&raw mut all_window_panes, wp), wp);
+        }
+    }
+}
+
+#[cfg(test)]
+mod pane_input_owner_tests {
+    use super::*;
+    use crate::src::file::{file_fire_done, file_fire_read};
+    use crate::src::reactor::{evbuffer_add, event_loop, shutdown_runtime};
+    use crate::src::shared::command::CMDQ_WAITING;
+    use crate::src::shared::rc;
+
+    unsafe fn waiting_input(
+        item: &mut cmdq_item,
+        client: &Rc<UnsafeCell<client>>,
+    ) -> (Rc<window_pane_input_data>, *mut client_file) {
+        let data = Rc::new(window_pane_input_data {
+            item: NonNull::from(&mut *item),
+            client: Some(Rc::clone(client)),
+            wp: u_int::MAX,
+            file: RefCell::new(Weak::new()),
+        });
+        let file = rc::new(client_file::empty());
+        (*file).wait_item = item;
+        (*file).wait_client = rc::as_ptr(client);
+        (*file).cb = Rc::clone(&data).into_callback();
+        item.wait_file = file;
+        item.flags = CMDQ_WAITING;
+        (data, file)
+    }
+
+    #[test]
+    fn progress_cancellation_keeps_record_and_client_until_terminal_dispatch() {
+        unsafe {
+            let client = client::new();
+            let client_observer = Rc::downgrade(&client);
+            let mut item = cmdq_item::empty();
+            let (data, file) = waiting_input(&mut item, &client);
+            let data_observer = Rc::downgrade(&data);
+            let file_observer = rc::downgrade(file);
+            *data.file.borrow_mut() = file_observer.clone();
+            // Cancellation was already requested. Further progress must drain
+            // the bytes and keep waiting until the peer sends its terminal event.
+            (*file).closed = 1;
+            evbuffer_add(&mut (*file).buffer, b"discard".as_ptr().cast(), 7);
+            drop(data);
+            drop(client);
+
+            file_fire_read(file);
+            assert_eq!(evbuffer_get_length(&(*file).buffer), 0);
+            assert_ne!(item.flags & CMDQ_WAITING, 0);
+            assert!(data_observer.upgrade().is_some());
+            assert_eq!(
+                rc::strong_count(file),
+                1,
+                "the callback only weakly observes its file"
+            );
+            {
+                let client = client_observer.upgrade().unwrap();
+                assert_eq!((*client.get()).retval, 1);
+                assert_ne!((*client.get()).flags & CLIENT_EXIT as u64, 0);
+            }
+
+            file_fire_done(file);
+            file_fire_done(file);
+            assert!(data_observer.upgrade().is_some());
+            event_loop();
+            assert_eq!(item.flags & CMDQ_WAITING, 0);
+            assert!(item.wait_file.is_null());
+            assert!(data_observer.upgrade().is_none());
+            assert!(file_observer.upgrade().is_none());
+            assert!(client_observer.upgrade().is_none());
+            shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn failed_open_and_dead_client_release_callback_records_once() {
+        unsafe {
+            for dead in [false, true] {
+                let client = client::new();
+                let client_observer = Rc::downgrade(&client);
+                if dead {
+                    (*client.get()).flags |= CLIENT_DEAD as u64;
+                }
+                let mut item = cmdq_item::empty();
+                let (data, file) = waiting_input(&mut item, &client);
+                let observer = Rc::downgrade(&data);
+                let file_observer = rc::downgrade(file);
+                (*file).error = libc::EBADF;
+                // A failed file_read leaves the record's weak handle empty.
+                drop(data);
+                drop(client);
+                file_fire_done(file);
+                file_fire_done(file);
+                event_loop();
+                assert_eq!(item.flags & CMDQ_WAITING != 0, dead);
+                assert!(item.wait_file.is_null());
+                assert!(observer.upgrade().is_none());
+                assert!(file_observer.upgrade().is_none());
+                assert!(client_observer.upgrade().is_none());
+                shutdown_runtime();
+            }
         }
     }
 }
