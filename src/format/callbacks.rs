@@ -564,7 +564,7 @@ unsafe fn format_cb_pane_fg(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return Some(CStr::from_ptr(window_pane_printable_flags((*ft).wp)).to_owned());
+        return Some(window_pane_printable_flags((*ft).wp));
     }
     return None;
 }

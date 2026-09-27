@@ -2212,9 +2212,9 @@ pub unsafe fn window_printable_flags(
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
     std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
 }
-pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> *const ::core::ffi::c_char {
+pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> std::ffi::CString {
     let mut w: *mut window = (*wp).window as *mut window;
-    static mut flags: [::core::ffi::c_char; 32] = [0; 32];
+    let mut flags: [::core::ffi::c_char; 32] = [0; 32];
     let mut pos: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if wp == (*w).active {
         let fresh12 = pos;
@@ -2247,7 +2247,7 @@ pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> *const ::
         flags[fresh17 as usize] = 'O' as i32 as ::core::ffi::c_char;
     }
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
-    return &raw mut flags as *mut ::core::ffi::c_char;
+    std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
 }
 pub unsafe fn window_pane_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut window_pane {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
