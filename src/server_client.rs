@@ -2562,7 +2562,7 @@ unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_in
     if t == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if tty_term_has(tty_term_owner_ptr(&(*c).tty.term), TTYC_ENBP) != 0 {
+    if tty_term_has(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term), TTYC_ENBP) != 0 {
         return 0 as ::core::ffi::c_int;
     }
     tv.tv_sec = (*c).activity_time.tv_sec - (*c).last_activity_time.tv_sec;

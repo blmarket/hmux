@@ -1595,8 +1595,8 @@ impl Drop for CurrentTerminalOwner {
     }
 }
 /// Read-only legacy projection; ownership stays with the TTY.
-pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> *const tty_term {
-    owner.as_deref().map_or(std::ptr::null(), |term| term)
+pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_term> {
+    owner.as_deref()
 }
 
 pub unsafe fn tty_term_has(mut term: *const tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {

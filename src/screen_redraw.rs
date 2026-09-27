@@ -1695,7 +1695,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> redraw_draw_ctx<'_> {
     if options_get_number(options_owner_ptr(&mut (*s).options), c"status-position".as_ptr()) == 0 {
         dctx.flags |= REDRAW_STATUS_TOP;
     }
-    if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has(tty_term_owner_ptr(&(*c).tty.term), TTYC_BIDI) != 0 {
+    if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term), TTYC_BIDI) != 0 {
         dctx.flags |= REDRAW_ISOLATES;
     }
     dctx

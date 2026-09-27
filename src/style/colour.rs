@@ -473,8 +473,8 @@ pub unsafe fn colour_format_escape_for_client(
 ) -> Option<std::ffi::CString> {
     let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
     if let Some(client) = c {
-        if client.tty.flags & TTY_OPENED != 0 && !tty_term_owner_ptr(&client.tty.term).is_null() {
-            flags = (*tty_term_owner_ptr(&client.tty.term)).flags;
+        if client.tty.flags & TTY_OPENED != 0 && !tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term).is_null() {
+            flags = (*tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term)).flags;
         }
     }
     if colour & COLOUR_FLAG_THEME != 0 {

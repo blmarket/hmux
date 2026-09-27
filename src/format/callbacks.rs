@@ -1034,7 +1034,7 @@ unsafe fn format_cb_client_colours(mut ft: *mut format_tree) -> Option<CString> 
     if (*ft).c.is_null() || !(*(*ft).c).tty.flags & TTY_STARTED != 0 {
         return None;
     }
-    term = tty_term_owner_ptr(&(*(*ft).c).tty.term);
+    term = tty_term_owner_ptr(&(*(*ft).c).tty.term).map_or(std::ptr::null(), |term| term);
     if (*term).flags & TERM_RGBCOLOURS != 0 {
         colours = 16777216 as ::core::ffi::c_int as u_int;
     } else if (*term).flags & TERM_256COLOURS != 0 {

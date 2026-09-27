@@ -450,7 +450,7 @@ unsafe fn window_client_draw_info(
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    if (*tty_term_owner_ptr(&(*c).tty.term)).flags & TERM_INVALIDMS != 0 {
+    if (*tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term)).flags & TERM_INVALIDMS != 0 {
         format_add(
             ft,
             b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,

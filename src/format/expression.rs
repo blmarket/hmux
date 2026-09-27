@@ -2662,20 +2662,20 @@ pub(super) unsafe fn format_replace(
         || modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0
     {
         if (*ft).c.is_null()
-            || tty_term_owner_ptr(&(*(*ft).c).tty.term).is_null()
+            || tty_term_owner_ptr(&(*(*ft).c).tty.term).map_or(std::ptr::null(), |term| term).is_null()
             || (*(*ft).c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0
         {
             value = c"".to_owned();
         } else {
             if modifiers & FORMAT_CLIENT_TERMCAP as uint64_t != 0 {
-                if tty_term_has_name(tty_term_owner_ptr(&(*(*ft).c).tty.term), copy) != 0 {
+                if tty_term_has_name(tty_term_owner_ptr(&(*(*ft).c).tty.term).map_or(std::ptr::null(), |term| term), copy) != 0 {
                     value = c"1".to_owned();
                 } else {
                     value = c"0".to_owned();
                 }
             }
             if modifiers & FORMAT_CLIENT_TERMFEAT as uint64_t != 0 {
-                if tty_feature_present(tty_term_owner_ptr(&(*(*ft).c).tty.term), copy) != 0 {
+                if tty_feature_present(tty_term_owner_ptr(&(*(*ft).c).tty.term).map_or(std::ptr::null(), |term| term), copy) != 0 {
                     value = c"1".to_owned();
                 } else {
                     value = c"0".to_owned();
