@@ -30,7 +30,7 @@ use std::collections::VecDeque;
 
 pub const SESSION_ALERTED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 static mut alerts_fired: ::core::ffi::c_int = 0;
-static mut alerts_list: VecDeque<*mut window> = VecDeque::new();
+static mut alerts_list: VecDeque<std::rc::Rc<std::cell::UnsafeCell<window>>> = VecDeque::new();
 
 fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
     let item = queue.pop_front()?;
@@ -59,9 +59,10 @@ unsafe fn alerts_callback() {
             let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
             alerts_pop_front(queue)
         };
-        let Some((w, has_next)) = next else {
+        let Some((owner, has_next)) = next else {
             break;
         };
+        let w = crate::src::shared::rc::as_ptr(&owner);
         // Keep the membership flag set during checks to suppress duplicate requeues.
         alerts = alerts_check_all(w);
         log_debug(format_args!(
@@ -72,7 +73,7 @@ unsafe fn alerts_callback() {
         (*w).alerts_queued = 0 as ::core::ffi::c_int;
         (*w).flags &= !WINDOW_ALERTFLAGS;
         window_remove_ref(
-            w,
+            owner,
             b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if !has_next {
@@ -192,15 +193,10 @@ pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
         ));
     }
     if alerts_enabled(w, flags) != 0 {
-        let enqueued = {
+        if (*w).alerts_queued == 0 {
+            let owner = window_add_ref(w, c"alerts_queue".as_ptr());
             let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
-            alerts_enqueue(queue, &mut (*w).alerts_queued, w)
-        };
-        if enqueued {
-            window_add_ref(
-                w,
-                b"alerts_queue\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            alerts_enqueue(queue, &mut (*w).alerts_queued, owner);
         }
         if alerts_fired == 0 {
             log_debug(format_args!(

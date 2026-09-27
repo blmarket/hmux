@@ -925,7 +925,7 @@ mod tests {
     fn cancellation_preserves_a_replacement_and_windows_do_not_form_cycles() {
         unsafe {
             let window =
-                crate::src::shared::rc::take(crate::src::shared::rc::new(window::default()));
+                window::new();
             let weak_window = Rc::downgrade(&window);
             let w = crate::src::shared::rc::as_ptr(&window);
             let first = MenuOwner::new(state(&[Some(c"first")]));
@@ -978,7 +978,7 @@ mod tests {
                 .unwrap();
             options_default(global_options, definition);
             for destroy_window in [false, true] {
-                let window = rc::take(rc::new(window::default()));
+                let window = window::new();
                 let observer = Rc::downgrade(&window);
                 let w = rc::as_ptr(&window);
                 (*w).sx = 80;

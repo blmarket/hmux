@@ -21,9 +21,9 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let mut owner = Box::new(session::empty());
         let first_owner =
-            hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
+            window::new();
         let second_owner =
-            hmux2::src::shared::rc::take(hmux2::src::shared::rc::new(window::default()));
+            window::new();
         let first_window = hmux2::src::shared::rc::as_ptr(&first_owner);
         let second_window = hmux2::src::shared::rc::as_ptr(&second_owner);
         (*first_window).entry.owner = None;
@@ -106,23 +106,26 @@ fn close_notification_can_retain_the_last_window_reference() {
     use std::{cell::Cell, rc::Rc};
 
     unsafe {
-        let w = rc::new(window::default());
+        let w_owner = window::new();
+        let w = rc::as_ptr(&w_owner);
         let weak = rc::downgrade(w);
         let notified = Rc::new(Cell::new(false));
         let observed = notified.clone();
+        let retained = Rc::new(std::cell::RefCell::new(None));
+        let retained_callback = retained.clone();
         let sink = events_add_sink(
             c"window-closed",
             Rc::new(move |_, _| {
                 observed.set(true);
-                window_add_ref(w, c"close callback".as_ptr());
+                *retained_callback.borrow_mut() = Some(window_add_ref(w, c"close callback".as_ptr()));
             }),
         );
-        window_remove_ref(w, c"original owner".as_ptr());
+        window_remove_ref(w_owner, c"original owner".as_ptr());
         assert!(notified.get());
         assert!(weak.upgrade().is_some());
         assert_eq!(rc::strong_count(w), 1);
         events_remove_sink(sink);
-        window_remove_ref(w, c"callback owner".as_ptr());
+        window_remove_ref(retained.borrow_mut().take().unwrap(), c"callback owner".as_ptr());
         assert!(weak.upgrade().is_none());
     }
 }
@@ -137,24 +140,27 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
     unsafe {
         let mut links = winlinks { storage: None };
         let link = winlink_add(&mut links, 0);
-        let w = rc::new(window::default());
+        let w_owner = window::new();
+        let w = rc::as_ptr(&w_owner);
         let weak = rc::downgrade(w);
         winlink_set_window(link, w);
-        window_remove_ref(w, c"creator".as_ptr());
+        window_remove_ref(w_owner, c"creator".as_ptr());
         assert_eq!(rc::strong_count(w), 1);
         let count = Rc::new(Cell::new(0));
         let calls = count.clone();
+        let retained = Rc::new(std::cell::RefCell::new(None));
+        let retained_callback = retained.clone();
         let sink = events_add_sink(c"window-closed", Rc::new(move |_, _| {
             assert_eq!((*link).window_ptr(), w);
             calls.set(calls.get() + 1);
-            window_add_ref(w, c"close observer".as_ptr());
+            *retained_callback.borrow_mut() = Some(window_add_ref(w, c"close observer".as_ptr()));
         }));
         winlink_remove(&mut links, link);
         assert_eq!(count.get(), 1);
         assert!(links.storage.is_none());
         assert_eq!(rc::strong_count(w), 1);
         events_remove_sink(sink);
-        window_remove_ref(w, c"close observer".as_ptr());
+        window_remove_ref(retained.borrow_mut().take().unwrap(), c"close observer".as_ptr());
         assert!(weak.upgrade().is_none());
     }
 }

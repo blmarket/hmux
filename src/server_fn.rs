@@ -296,7 +296,7 @@ pub unsafe fn server_kill_pane(mut wp: *mut window_pane) {
 pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    window_add_ref(
+    let owner = window_add_ref(
         w,
         b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
@@ -326,7 +326,7 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
     }
     recalculate_sizes();
     window_remove_ref(
-        w,
+        owner,
         b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }

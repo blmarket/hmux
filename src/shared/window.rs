@@ -69,6 +69,7 @@ pub struct winlink_entry {
 #[repr(C)]
 /// Rc-owned window record; retain/release preserves pre-close notifications.
 pub struct window {
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window>>,
     pub id: u_int,
     pub latest: *mut ::core::ffi::c_void,
     pub name: std::ffi::CString,
@@ -226,6 +227,14 @@ pub struct windows {
 }
 
 impl window {
+    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        std::rc::Rc::new_cyclic(|observer| {
+            let mut value = Self::default();
+            value.observer = observer.clone();
+            std::cell::UnsafeCell::new(value)
+        })
+    }
+
     pub fn layout_root_ptr(&mut self) -> *mut layout_cell {
         self.layout_root
             .as_deref_mut()
@@ -246,8 +255,7 @@ impl WindowOwner {
     /// # Safety
     /// The pointer must name a live Rc-owned window.
     pub unsafe fn retain(ptr: *mut window, from: &std::ffi::CStr) -> Self {
-        crate::src::window::window_add_ref(ptr, from.as_ptr());
-        Self(Some(super::rc::take(ptr)))
+        Self(Some(crate::src::window::window_add_ref(ptr, from.as_ptr())))
     }
 
     pub fn as_ptr(&self) -> *mut window {
@@ -260,7 +268,7 @@ impl Drop for WindowOwner {
         if let Some(owner) = self.0.take() {
             unsafe {
                 crate::src::window::window_remove_ref(
-                    super::rc::into_raw(owner), c"WindowOwner::drop".as_ptr(),
+                    owner, c"WindowOwner::drop".as_ptr(),
                 );
             }
         }

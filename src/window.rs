@@ -1064,15 +1064,15 @@ pub unsafe fn window_create(
     mut sy: u_int,
     mut xpixel: u_int,
     mut ypixel: u_int,
-) -> *mut window {
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
+) -> Rc<std::cell::UnsafeCell<window>> {
     if xpixel == 0 as u_int {
         xpixel = DEFAULT_XPIXEL as u_int;
     }
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = crate::src::shared::rc::new(window::default());
+    let owner = window::new();
+    let w = crate::src::shared::rc::as_ptr(&owner);
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
@@ -1114,7 +1114,7 @@ pub unsafe fn window_create(
         ((*w).xpixel) as u32,
         ((*w).ypixel) as u32
     ));
-    return w;
+    return owner;
 }
 unsafe fn window_destroy(mut w: *mut window) {
     log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));
@@ -1163,13 +1163,14 @@ pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) {
-    crate::src::shared::rc::retain(w);
+pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) -> Rc<std::cell::UnsafeCell<window>> {
+    let owner = (*w).observer.upgrade().expect("live Rc window");
     log_debug(format_args!(
         "retain window @{} ({})",
         ((*w).id) as u32,
         log_cstr((from) as *const _)
     ));
+    owner
 }
 unsafe fn window_before_release(w: *mut window, from: *const ::core::ffi::c_char) {
     // Notify while a strong reference still exists: callbacks may retain w.
@@ -1182,9 +1183,9 @@ unsafe fn window_before_release(w: *mut window, from: *const ::core::ffi::c_char
         log_cstr((from) as *const _)
     ));
 }
-pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char) {
-    window_before_release(w, from);
-    crate::src::shared::rc::release(w);
+pub unsafe fn window_remove_ref(owner: Rc<std::cell::UnsafeCell<window>>, from: *const ::core::ffi::c_char) {
+    window_before_release(crate::src::shared::rc::as_ptr(&owner), from);
+    drop(owner);
 }
 pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
     crate::src::shared::rc::retain(wp);
@@ -4980,8 +4981,9 @@ mod zoom_teardown_tests {
     use crate::src::shared::rc;
     use std::cell::Cell;
 
-    unsafe fn zoomed_window() -> *mut window {
-        let w = rc::new(window::default());
+    unsafe fn zoomed_window() -> Rc<std::cell::UnsafeCell<window>> {
+        let w_owner = window::new();
+        let w = rc::as_ptr(&w_owner);
         (*w).options = Some(crate::src::options::options_create_owned(std::ptr::null_mut()));
         let entry = options_table
             .iter()
@@ -5012,13 +5014,14 @@ mod zoom_teardown_tests {
         (*w).layout_root = Some(zoomed);
         (*w).saved_layout_root = Some(saved);
         (*w).flags = WINDOW_ZOOMED;
-        w
+        w_owner
     }
 
     #[test]
     fn mode_tree_cleanup_unzooms_a_logically_destroyed_pane() {
         unsafe {
-            let w = zoomed_window();
+            let w_owner = zoomed_window();
+            let w = rc::as_ptr(&w_owner);
             let pane = (*w).active;
             let tree_owner = std::rc::Rc::new(std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
                 wp: window_pane_weak(pane),
@@ -5034,15 +5037,16 @@ mod zoom_teardown_tests {
 
             assert!(observed.upgrade().is_none());
             assert_eq!((*w).flags & WINDOW_ZOOMED, 0);
-            drop(rc::take(w));
+            drop(w_owner);
         }
     }
 
     #[test]
-    fn raw_and_typed_final_owners_destroy_zoomed_windows_without_resize_events() {
+    fn plain_and_notifying_rc_drops_destroy_zoomed_windows_without_resize_events() {
         unsafe {
             for typed in [false, true] {
-                let w = zoomed_window();
+                let w_owner = zoomed_window();
+            let w = rc::as_ptr(&w_owner);
                 let observer = rc::downgrade(w);
                 let pane_observer = rc::downgrade((*w).active);
                 let resized = Rc::new(Cell::new(0));
@@ -5068,9 +5072,9 @@ mod zoom_teardown_tests {
                     }),
                 );
                 if typed {
-                    drop(rc::take(w));
+                    drop(w_owner);
                 } else {
-                    window_remove_ref(w, c"test final raw owner".as_ptr());
+                    window_remove_ref(w_owner, c"test final notifying owner".as_ptr());
                 }
                 assert_eq!(resized.get(), 0);
                 assert_eq!(closed.get(), usize::from(!typed));
@@ -5085,7 +5089,8 @@ mod zoom_teardown_tests {
     #[test]
     fn live_unzoom_keeps_pane_resize_and_window_notifications() {
         unsafe {
-            let w = zoomed_window();
+            let w_owner = zoomed_window();
+            let w = rc::as_ptr(&w_owner);
             let pane = (*w).active;
             let notifications = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
@@ -5101,7 +5106,7 @@ mod zoom_teardown_tests {
             assert_eq!(window_unzoom(w, 1), 0);
             assert_eq!(((*pane).sx, (*pane).sy), (40, 24));
             assert!((*w).saved_layout_root.is_none());
-            window_remove_ref(w, c"test live close".as_ptr());
+            window_remove_ref(w_owner, c"test live close".as_ptr());
             assert_eq!(
                 *notifications.borrow(),
                 [c"pane-resized", c"window-unzoomed", c"window-closed"]

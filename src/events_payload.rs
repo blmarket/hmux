@@ -58,9 +58,9 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
             c"event_payload_free_target",
         );
     }
-    if !target.w.is_null() {
+    if let Some(window) = ep.target_window.take() {
         window_remove_ref(
-            target.w,
+            window,
             b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
@@ -86,7 +86,7 @@ impl Drop for event_payload_item {
                     session_remove_ref(session, c"event_payload_free_value")
                 }
                 EventPayloadValue::Window(window) => {
-                    window_remove_ref(crate::src::shared::rc::into_raw(window), c"event_payload_free_value".as_ptr())
+                    window_remove_ref(window, c"event_payload_free_value".as_ptr())
                 }
                 EventPayloadValue::Pane(pane) => {
                     window_pane_remove_ref(crate::src::shared::rc::into_raw(pane), c"event_payload_free_value".as_ptr())
@@ -114,6 +114,7 @@ unsafe fn event_payload_set_item(
 
 pub fn event_payload_create() -> Box<event_payload> {
     Box::new(event_payload {
+        target_window: None,
         target_session: None,
         items: event_payload_tree::default(),
         target: cmd_find_state {
@@ -157,16 +158,16 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
         target.idx = -(1 as ::core::ffi::c_int);
     }
     if !fs.w.is_null() {
-        window_add_ref(
+        ep.target_window = Some(window_add_ref(
             fs.w,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        ));
         target.w = fs.w;
     } else if !fs.wl.is_null() {
-        window_add_ref(
+        ep.target_window = Some(window_add_ref(
             (*fs.wl).window_ptr(),
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        ));
         target.w = (*fs.wl).window_ptr();
     }
     if !fs.wp.is_null() {
@@ -296,11 +297,11 @@ pub unsafe fn event_payload_set_window(
     mut name: *const ::core::ffi::c_char,
     mut w: *mut window,
 ) {
-    window_add_ref(
+    let window = window_add_ref(
         w,
         b"event_payload_set_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Window(crate::src::shared::rc::take(w)));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Window(window));
 }
 pub unsafe fn event_payload_set_pane(
     ep: &mut event_payload,
@@ -548,9 +549,11 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
         unsafe {
-            let first = rc::new(window::default());
+            let first_owner = window::new();
+        let first = rc::as_ptr(&first_owner);
             (*first).id = 11;
-            let second = rc::new(window::default());
+            let second_owner = window::new();
+        let second = rc::as_ptr(&second_owner);
             (*second).id = 22;
             let first_observer = rc::downgrade(first);
             let second_observer = rc::downgrade(second);
@@ -565,14 +568,15 @@ mod tests {
                 }),
             );
             let mut payload = event_payload {
-                target_session: None,
+                target_window: None,
+        target_session: None,
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };
             event_payload_set_window(&mut payload, c"alpha".as_ptr(), first);
             event_payload_set_window(&mut payload, c"beta".as_ptr(), second);
-            window_remove_ref(first, c"test initial owner".as_ptr());
-            window_remove_ref(second, c"test initial owner".as_ptr());
+            window_remove_ref(first_owner, c"test initial owner".as_ptr());
+            window_remove_ref(second_owner, c"test initial owner".as_ptr());
             event_payload_set_int(&mut payload, c"alpha".as_ptr(), 7);
             assert!(first_observer.upgrade().is_none());
             assert!(second_observer.upgrade().is_some());
@@ -588,7 +592,8 @@ mod tests {
     fn boxed_items_preserve_order_and_addresses_when_the_payload_moves() {
         unsafe {
             let mut payload = event_payload {
-                target_session: None,
+                target_window: None,
+        target_session: None,
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };
@@ -634,11 +639,14 @@ mod tests {
         use std::rc::Rc;
 
         unsafe {
-            let first = rc::new(window::default());
+            let first_owner = window::new();
+        let first = rc::as_ptr(&first_owner);
             (*first).id = 11;
-            let second = rc::new(window::default());
+            let second_owner = window::new();
+        let second = rc::as_ptr(&second_owner);
             (*second).id = 22;
-            let target = rc::new(window::default());
+            let target_owner = window::new();
+        let target = rc::as_ptr(&target_owner);
             (*target).id = 33;
             let first_observer = rc::downgrade(first);
             let second_observer = rc::downgrade(second);
@@ -666,9 +674,9 @@ mod tests {
             event_payload_set_target(&mut payload, &fs);
             event_payload_set_window(&mut payload, c"beta".as_ptr(), first);
             event_payload_set_window(&mut payload, c"alpha".as_ptr(), second);
-            window_remove_ref(first, c"test initial owner".as_ptr());
-            window_remove_ref(second, c"test initial owner".as_ptr());
-            window_remove_ref(target, c"test initial owner".as_ptr());
+            window_remove_ref(first_owner, c"test initial owner".as_ptr());
+            window_remove_ref(second_owner, c"test initial owner".as_ptr());
+            window_remove_ref(target_owner, c"test initial owner".as_ptr());
             drop(payload);
 
             assert_eq!(*closed.borrow(), [22, 11, 33]);
@@ -688,7 +696,8 @@ mod tests {
         use std::rc::Rc;
 
         unsafe {
-            let window = rc::new(window::default());
+            let window_owner = window::new();
+        let window = rc::as_ptr(&window_owner);
             (*window).id = 44;
             let observer = rc::downgrade(window);
             let observed = Rc::new(RefCell::new(Vec::new()));
@@ -708,7 +717,7 @@ mod tests {
             }
             let mut payload = event_payload_create();
             event_payload_set_window(&mut payload, c"window".as_ptr(), window);
-            window_remove_ref(window, c"test initial owner".as_ptr());
+            window_remove_ref(window_owner, c"test initial owner".as_ptr());
             events_fire(c"payload-owner-test".as_ptr(), payload);
 
             assert_eq!(*observed.borrow(), [44, 44]);
