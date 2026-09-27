@@ -13,7 +13,7 @@ use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::menu::{menu_add_items, menu_create, menu_display, menu_free};
+use crate::src::menu::{menu_add_items, menu_create, menu_display};
 use crate::src::options::options_get_number;
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_key, prompt_mouse,
@@ -40,7 +40,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::{menu, menu_item, MenuSelection};
+use crate::src::shared::menu::{menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
@@ -1661,7 +1661,6 @@ unsafe fn mode_tree_display_menu(
     mut outside: ::core::ffi::c_int,
 ) {
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
     let items: &[menu_item<'_>];
     let mut line: u_int = 0;
     if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
@@ -1679,8 +1678,8 @@ unsafe fn mode_tree_display_menu(
         items = &mode_tree_menu_items;
         c"".to_owned()
     };
-    menu = menu_create(&title);
-    menu_add_items(&mut *menu, items, c);
+    let mut menu = menu_create(&title);
+    menu_add_items(&mut menu, items, c);
     drop(title);
     crate::src::shared::rc::retain(mtd);
     if x >= (*menu)
@@ -1699,7 +1698,7 @@ unsafe fn mode_tree_display_menu(
     }
     x = x.wrapping_add((*(*mtd).wp).xoff as u_int);
     y = y.wrapping_add((*(*mtd).wp).yoff as u_int);
-    if menu_display(
+    menu_display(
         menu,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1725,11 +1724,7 @@ unsafe fn mode_tree_display_menu(
             }
             mode_tree_remove_ref(mtd);
         })),
-    ) != 0 as ::core::ffi::c_int
-    {
-        mode_tree_remove_ref(mtd);
-        menu_free(menu);
-    }
+    );
 }
 unsafe fn mode_tree_draw_help_line(
     mut ctx: *mut screen_write_ctx,

@@ -13,7 +13,7 @@ use crate::src::format::{
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::menu::{menu_add_item, menu_create, menu_display, menu_free};
+use crate::src::menu::{menu_add_item, menu_create, menu_display};
 use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_find_choice, options_get, options_get_number, options_get_string,
@@ -34,7 +34,7 @@ use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::menu::{menu, menu_item, MENU_NOMOUSE, MENU_STAYOPEN};
+use crate::src::shared::menu::{menu_item, MENU_NOMOUSE, MENU_STAYOPEN};
 use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
@@ -915,197 +915,117 @@ unsafe fn cmd_display_menu_get_menu_pos(
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args(self_0);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut event: *mut key_event = cmdq_get_event(item);
-    let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
-    let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut style: *const ::core::ffi::c_char = args_get(args, 's' as i32 as u_char);
-    let mut border_style: *const ::core::ffi::c_char = args_get(args, 'S' as i32 as u_char);
-    let mut selected_style: *const ::core::ffi::c_char = args_get(args, 'H' as i32 as u_char);
-    let mut lines: box_lines = BOX_LINES_DEFAULT;
-    let mut cause: Option<std::ffi::CString> = None;
-    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut starting_choice: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut px: u_int = 0;
-    let mut py: u_int = 0;
-    let mut i: u_int = 0;
-    let mut count: u_int = args_count(args);
-    let mut o: *mut options = (*(*(*(*target).s).curw).window).options;
-    let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    if args_has(args, 'C' as i32 as u_char) != 0 {
-        if strcmp(
-            args_get(args, 'C' as i32 as u_char),
-            b"-\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
-            starting_choice = -(1 as ::core::ffi::c_int);
-            current_block = 1841672684692190573;
+unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+    let args = cmd_get_args(self_0);
+    let target = cmdq_get_target(item);
+    let event = cmdq_get_event(item);
+    let tc = cmdq_get_target_client(item);
+    let style = args_get(args, b's');
+    let border_style = args_get(args, b'S');
+    let selected_style = args_get(args, b'H');
+    let o = (*(*(*(*target).s).curw).window).options;
+    let mut starting_choice = 0;
+    if args_has(args, b'C') != 0 {
+        if std::ffi::CStr::from_ptr(args_get(args, b'C')) == c"-" {
+            starting_choice = -1;
         } else {
-            match args_strtonum_result(
-                args,
-                'C' as i32 as u_char,
-                0 as ::core::ffi::c_longlong,
-                UINT_MAX as ::core::ffi::c_longlong,
-            ) {
-                Ok(value) => {
-                    starting_choice = value as ::core::ffi::c_int;
-                    current_block = 1841672684692190573;
-                }
+            match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
+                Ok(value) => starting_choice = value as i32,
                 Err(error) => {
                     cmdq_error(item, |out| {
                         out.write_all(b"starting choice ")?;
                         write_cstr(out, error.message().as_ptr())
                     });
-                    current_block = 17658167438033882251;
+                    return CMD_RETURN_ERROR;
                 }
             }
         }
+    }
+    let title = if args_has(args, b'T') != 0 {
+        Some(format_single_from_target_cstring(
+            item,
+            args_get(args, b'T'),
+        ))
     } else {
-        current_block = 1841672684692190573;
-    }
-    match current_block {
-        1841672684692190573 => {
-            let formatted_title = if args_has(args, 'T' as i32 as u_char) != 0 {
-                Some(format_single_from_target_cstring(
-                    item,
-                    args_get(args, 'T' as i32 as u_char),
-                ))
-            } else {
-                None
-            };
-            let title = formatted_title
-                .as_ref()
-                .map_or(c"", |title| title.as_c_str());
-            menu = menu_create(title);
-            i = 0 as u_int;
-            loop {
-                if !(i != count) {
-                    current_block = 2232869372362427478;
-                    break;
-                }
-                let fresh3 = i;
-                i = i.wrapping_add(1);
-                name = args_string(args, fresh3);
-                if *name as ::core::ffi::c_int == '\0' as i32 {
-                    menu_add_item(&mut *menu, None, item, tc, target);
-                } else if count.wrapping_sub(i) < 2 as u_int {
-                    cmdq_error(item, |out| out.write_all(b"not enough arguments"));
-                    current_block = 17658167438033882251;
-                    break;
-                } else {
-                    let fresh4 = i;
-                    i = i.wrapping_add(1);
-                    key = args_string(args, fresh4);
-                    let fresh5 = i;
-                    i = i.wrapping_add(1);
-                    let definition = menu_item {
-                        name: std::ffi::CStr::from_ptr(name),
-                        key: key_string_parse_cstr(std::ffi::CStr::from_ptr(key))
-                            .unwrap_or(KEYC_UNKNOWN),
-                        command: Some(std::ffi::CStr::from_ptr(args_string(args, fresh5))),
-                    };
-                    menu_add_item(&mut *menu, Some(&definition), item, tc, target);
-                }
-            }
-            match current_block {
-                17658167438033882251 => {}
-                _ => {
-                    if menu.is_null() {
-                        cmdq_error(item, |out| out.write_all(b"invalid menu arguments"));
-                    } else {
-                        if (*menu).count == 0 as u_int {
-                            current_block = 14896172439631163786;
-                        } else if cmd_display_menu_get_menu_pos(
-                            tc,
-                            item,
-                            args,
-                            &raw mut px,
-                            &raw mut py,
-                            (*menu).width.wrapping_add(4 as u_int),
-                            (*menu).count.wrapping_add(2 as u_int),
-                        ) == 0
-                        {
-                            current_block = 14896172439631163786;
-                        } else {
-                            value = args_get(args, 'b' as i32 as u_char);
-                            if !value.is_null() {
-                                oe = options_get(
-                                    o,
-                                    b"menu-border-lines\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                );
-                                lines = options_find_choice(
-                                    options_table_entry(oe),
-                                    value,
-                                    &raw mut cause,
-                                ) as box_lines;
-                                if lines as ::core::ffi::c_int == -(1 as ::core::ffi::c_int) {
-                                    cmdq_error(item, |out| {
-                                        out.write_all(b"menu-border-lines ")?;
-                                        write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                                    });
-                                    current_block = 17658167438033882251;
-                                } else {
-                                    current_block = 7245201122033322888;
-                                }
-                            } else {
-                                current_block = 7245201122033322888;
-                            }
-                            match current_block {
-                                17658167438033882251 => {}
-                                _ => {
-                                    if args_has(args, 'O' as i32 as u_char) != 0 {
-                                        flags |= MENU_STAYOPEN;
-                                    }
-                                    if (*event).m.valid == 0
-                                        && args_has(args, 'M' as i32 as u_char) == 0
-                                    {
-                                        flags |= MENU_NOMOUSE;
-                                    }
-                                    if menu_display(
-                                        menu,
-                                        flags,
-                                        starting_choice,
-                                        item,
-                                        px,
-                                        py,
-                                        tc,
-                                        lines,
-                                        style,
-                                        selected_style,
-                                        border_style,
-                                        target,
-                                        None,
-                                    ) != 0 as ::core::ffi::c_int
-                                    {
-                                        current_block = 14896172439631163786;
-                                    } else {
-                                        return CMD_RETURN_NORMAL;
-                                    }
-                                }
-                            }
-                        }
-                        match current_block {
-                            17658167438033882251 => {}
-                            _ => {
-                                menu_free(menu);
-                                return CMD_RETURN_NORMAL;
-                            }
-                        }
-                    }
-                }
-            }
+        None
+    };
+    let mut menu = menu_create(title.as_deref().unwrap_or(c""));
+    drop(title);
+    let count = args_count(args);
+    let mut i = 0;
+    while i != count {
+        let name = std::ffi::CStr::from_ptr(args_string(args, i));
+        i += 1;
+        if name.is_empty() {
+            menu_add_item(&mut menu, None, item, tc, target);
+            continue;
         }
-        _ => {}
+        if count - i < 2 {
+            cmdq_error(item, |out| out.write_all(b"not enough arguments"));
+            return CMD_RETURN_ERROR;
+        }
+        let key = std::ffi::CStr::from_ptr(args_string(args, i));
+        let command = std::ffi::CStr::from_ptr(args_string(args, i + 1));
+        i += 2;
+        let definition = menu_item {
+            name,
+            key: key_string_parse_cstr(key).unwrap_or(KEYC_UNKNOWN),
+            command: Some(command),
+        };
+        menu_add_item(&mut menu, Some(&definition), item, tc, target);
     }
-    menu_free(menu);
-    return CMD_RETURN_ERROR;
+    let mut px = 0;
+    let mut py = 0;
+    if menu.count == 0
+        || cmd_display_menu_get_menu_pos(
+            tc,
+            item,
+            args,
+            &mut px,
+            &mut py,
+            menu.width.wrapping_add(4),
+            menu.count.wrapping_add(2),
+        ) == 0
+    {
+        return CMD_RETURN_NORMAL;
+    }
+    let mut lines = BOX_LINES_DEFAULT;
+    let value = args_get(args, b'b');
+    if !value.is_null() {
+        let oe = options_get(o, c"menu-border-lines".as_ptr());
+        let mut cause = None;
+        lines = options_find_choice(options_table_entry(oe), value, &mut cause) as box_lines;
+        if lines == -1 {
+            cmdq_error(item, |out| {
+                out.write_all(b"menu-border-lines ")?;
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
+            return CMD_RETURN_ERROR;
+        }
+    }
+    let mut flags = 0;
+    if args_has(args, b'O') != 0 {
+        flags |= MENU_STAYOPEN;
+    }
+    if (*event).m.valid == 0 && args_has(args, b'M') == 0 {
+        flags |= MENU_NOMOUSE;
+    }
+    menu_display(
+        menu,
+        flags,
+        starting_choice,
+        item,
+        px,
+        py,
+        tc,
+        lines,
+        style,
+        selected_style,
+        border_style,
+        target,
+        None,
+    );
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;

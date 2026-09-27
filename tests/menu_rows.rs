@@ -1,5 +1,5 @@
 use hmux2::src::environ::{environ_create, environ_free};
-use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create, menu_free};
+use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::shared::client::client;
 use hmux2::src::shared::key::KEYC_NONE;
@@ -24,7 +24,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         let owner = client::new();
         let client = hmux2::src::shared::rc::as_ptr(&owner);
         (*client).tty.sx = 120;
-        let menu = menu_create(c"Rows");
+        let mut menu = menu_create(c"Rows");
         let separator = menu_item {
             name: c"",
             key: KEYC_NONE,
@@ -105,7 +105,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         assert!((&(*menu).items)[65].command.is_none());
         assert_eq!((&(*menu).items)[66].name.as_deref(), Some(c"Last row"));
         assert_eq!((&(*menu).items)[66].command.as_deref(), Some(c""));
-        menu_free(menu);
+        drop(menu);
         hmux2::src::reactor::event_loop();
         assert_eq!(std::rc::Rc::strong_count(&owner), 1);
         options_free(global_options);

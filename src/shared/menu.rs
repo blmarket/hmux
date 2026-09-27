@@ -62,13 +62,13 @@ pub struct menu_data {
     pub s: screen,
     pub px: u_int,
     pub py: u_int,
-    pub menu: *mut menu,
+    pub menu: Box<menu>,
     pub choice: ::core::ffi::c_int,
     pub cb: menu_choice_cb,
 }
 
 impl menu_data {
-    pub fn empty() -> Self {
+    pub fn new(menu: Box<menu>) -> Self {
         Self {
             w: Default::default(),
             flags: Default::default(),
@@ -85,7 +85,7 @@ impl menu_data {
             s: screen::empty(),
             px: Default::default(),
             py: Default::default(),
-            menu: Default::default(),
+            menu,
             choice: Default::default(),
             cb: Default::default(),
         }
