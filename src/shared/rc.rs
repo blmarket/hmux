@@ -1,4 +1,6 @@
-//! Rc ownership behind the model's existing raw-pointer interfaces.
+//! Adapters for the remaining legacy raw-reference interfaces.
+//!
+//! Model ownership and transfers use ordinary Rc and Weak handles.
 //!
 //! Each retained raw pointer represents one strong reference. Borrowed pointers
 //! do not. T owns final cleanup through Drop, so dropping the last ordinary Rc
@@ -24,7 +26,7 @@ pub fn new<T>(value: T) -> *mut T {
 /// Add a strong reference without changing the model address.
 ///
 /// # Safety
-/// `ptr` must refer to a live allocation made by `new` for exactly this T.
+/// `ptr` must refer to a live `Rc<UnsafeCell<T>>` allocation for exactly this T.
 /// Each retain must be matched by one release or transfer through `take`.
 pub unsafe fn retain<T>(ptr: *mut T) {
     Rc::increment_strong_count(ptr.cast::<UnsafeCell<T>>());
@@ -35,13 +37,8 @@ pub unsafe fn retain<T>(ptr: *mut T) {
 /// # Safety
 /// The caller must own one unreleased raw reference from `new` or `retain`.
 /// This transfers it to the returned Rc; it must not be released again as raw.
-pub unsafe fn take<T>(ptr: *mut T) -> Rc<UnsafeCell<T>> {
+unsafe fn take<T>(ptr: *mut T) -> Rc<UnsafeCell<T>> {
     Rc::from_raw(ptr.cast::<UnsafeCell<T>>())
-}
-
-/// Transfer a typed owner back to a legacy retained-reference API.
-pub fn into_raw<T>(owner: Rc<UnsafeCell<T>>) -> *mut T {
-    Rc::into_raw(owner).cast_mut().cast()
 }
 
 /// Consume one retained raw reference.
@@ -56,7 +53,7 @@ pub unsafe fn release<T>(ptr: *mut T) {
 /// Inspect the count, including references pending deferred release.
 ///
 /// # Safety
-/// `ptr` must refer to a live `new` allocation with at least one strong owner.
+/// `ptr` must refer to a live `Rc<UnsafeCell<T>>` allocation with a strong owner.
 pub unsafe fn strong_count<T>(ptr: *mut T) -> usize {
     let owner = ManuallyDrop::new(take(ptr));
     Rc::strong_count(&owner)
@@ -65,7 +62,7 @@ pub unsafe fn strong_count<T>(ptr: *mut T) -> usize {
 /// Observe an allocation without retaining its value.
 ///
 /// # Safety
-/// `ptr` must refer to a live `new` allocation with at least one strong owner.
+/// `ptr` must refer to a live `Rc<UnsafeCell<T>>` allocation with a strong owner.
 pub unsafe fn downgrade<T>(ptr: *mut T) -> Weak<UnsafeCell<T>> {
     let owner = ManuallyDrop::new(take(ptr));
     Rc::downgrade(&owner)
