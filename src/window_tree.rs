@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_set_cancel_callback};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
@@ -72,7 +72,9 @@ use crate::src::window::{
     window_pane_index, window_pane_next, window_pane_reset_mode, window_winlinks_append,
     window_winlinks_remove, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 #[repr(C)]
 pub struct window_tree_modedata {
@@ -1864,27 +1866,23 @@ unsafe fn window_tree_command_each(
         );
     }
 }
-unsafe fn window_tree_command_done(mut data: *mut window_tree_modedata) -> cmd_retval {
-    if (*data).dead == 0 {
-        mode_tree_build((*data).data);
-        mode_tree_draw((*data).data);
-        (*(*data).wp).flags |= PANE_REDRAW;
-    }
-    window_tree_destroy(data);
-    return CMD_RETURN_NORMAL;
-}
-unsafe fn window_tree_cancel_command_done(modedata: *mut window_tree_modedata) {
-    window_tree_destroy(modedata);
+fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_cb {
+    Some(Box::new(move |_| unsafe {
+        let data = crate::src::shared::rc::as_ptr(&mode);
+        if (*data).dead == 0 {
+            mode_tree_build((*data).data);
+            mode_tree_draw((*data).data);
+            (*(*data).wp).flags |= PANE_REDRAW;
+        }
+        CMD_RETURN_NORMAL
+    }))
 }
 unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tree_modedata) {
     crate::src::shared::rc::retain(data);
+    let mode = crate::src::shared::rc::take(data);
     let item = cmdq_get_callback_owned(
-        b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(Box::new(move |_| unsafe { window_tree_command_done(data) })),
-    );
-    cmdq_set_cancel_callback(
-        &mut *item,
-        Box::new(move || unsafe { window_tree_cancel_command_done(data) }),
+        c"window_tree_command_done".as_ptr(),
+        window_tree_command_done(mode),
     );
     cmdq_append(c, item);
 }
@@ -2339,4 +2337,62 @@ unsafe fn window_tree_key(
         mode_tree_draw((*data).data);
         (*wp).flags |= PANE_REDRAW;
     };
+}
+
+#[cfg(test)]
+mod queued_refresh_tests {
+    use super::*;
+    use crate::src::cmd::queue::cmdq_free_detached;
+    use crate::src::shared::rc;
+    use std::ptr::NonNull;
+
+    #[test]
+    fn queued_refresh_releases_closed_mode_when_fired_or_cancelled() {
+        for fire in [false, true] {
+            unsafe {
+                let mode = rc::take(rc::new(window_tree_modedata {
+                    wp: std::ptr::null_mut(),
+                    dead: 1,
+                    data: std::ptr::null_mut(),
+                    format: c"row format".to_owned(),
+                    key_format: c"key format".to_owned(),
+                    command: c"display-message".to_owned(),
+                    squash_groups: 0,
+                    hide_preview_this_pane: 0,
+                    preview_is_info: 0,
+                    prompt_flags: 0,
+                    item_list: vec![Box::new(window_tree_itemdata {
+                        type_0: WINDOW_TREE_NONE,
+                        session: -1,
+                        winlink: -1,
+                        pane: -1,
+                    })],
+                    entered: Some(c"entered command".to_owned()),
+                    fs: Default::default(),
+                    type_0: WINDOW_TREE_NONE,
+                    offset: 0,
+                    left: 0,
+                    right: 0,
+                    start: 0,
+                    end: 0,
+                    each: 0,
+                }));
+                let observed = Rc::downgrade(&mode);
+                let item = cmdq_get_callback_owned(
+                    c"test-tree-refresh".as_ptr(),
+                    window_tree_command_done(mode),
+                );
+                assert!(observed.upgrade().is_some());
+                if fire {
+                    (*item).flags |= CMDQ_FIRED;
+                    let callback = (*item).cb.take().unwrap();
+                    // A closed mode has already released its pane and tree.
+                    assert_eq!(callback(NonNull::new(item).unwrap()), CMD_RETURN_NORMAL);
+                    assert!(observed.upgrade().is_none());
+                }
+                cmdq_free_detached(item);
+                assert!(observed.upgrade().is_none());
+            }
+        }
+    }
 }
