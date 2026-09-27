@@ -194,13 +194,13 @@ unsafe fn file_create_with_client(
     }
     return owner;
 }
-unsafe fn file_destroy(cf: *mut client_file) {
+unsafe fn file_destroy(cf: &mut client_file) {
     client_files_remove(cf);
-    drop((*cf).c.take());
-    (*cf).path = Default::default();
+    drop(cf.c.take());
+    cf.path = Default::default();
 }
-unsafe fn file_fire_done_cb(mut arg: *mut ::core::ffi::c_void) {
-    let mut cf: *mut client_file = arg as *mut client_file;
+unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = owner.get();
     let c: *mut client = client_owner_ptr(&(*cf).c);
     let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
     let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
@@ -254,7 +254,7 @@ pub unsafe fn file_fire_done(cf: *mut client_file) {
     let mut completion = Some(FileCompletion(owner));
     event_once(move |_, _| {
         let completion = completion.take().expect("one terminal dispatch");
-        file_fire_done_cb(rc::as_ptr(&completion.0).cast());
+        file_fire_done_cb(&completion.0);
     });
 }
 pub unsafe fn file_fire_read(mut cf: *mut client_file) {
@@ -701,8 +701,8 @@ pub unsafe fn file_cancel(mut cf: *mut client_file) {
         ::core::mem::size_of::<msg_read_cancel>() as size_t,
     );
 }
-unsafe fn file_push_cb(mut arg: *mut ::core::ffi::c_void) {
-    let mut cf: *mut client_file = arg as *mut client_file;
+unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = owner.get();
     if client_owner_ptr(&(*cf).c).is_null()
         || !(*client_owner_ptr(&(*cf).c)).flags & CLIENT_DEAD as uint64_t != 0
     {
@@ -765,7 +765,7 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
     }
     if left != 0 as size_t {
         let owner = (*cf).observer.upgrade().expect("live Rc file");
-        event_once(move |_, _| unsafe { file_push_cb(rc::as_ptr(&owner).cast()) });
+        event_once(move |_, _| unsafe { file_push_cb(&owner) });
     } else if (*cf).stream > 2 as ::core::ffi::c_int {
         close_0.stream = (*cf).stream;
         proc_send(
@@ -841,9 +841,9 @@ unsafe fn file_write_finished(mut cf: *mut client_file) {
 }
 unsafe fn file_write_error_callback(
     mut what: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
+    owner: &Rc<UnsafeCell<client_file>>,
 ) {
-    let mut cf: *mut client_file = arg as *mut client_file;
+    let cf = owner.get();
     let mut error: ::core::ffi::c_int = 0;
     if what as ::core::ffi::c_int & EVBUFFER_ERROR != 0 {
         error = *__errno_location();
@@ -871,8 +871,8 @@ unsafe fn file_write_error_callback(
         });
     }
 }
-unsafe fn file_write_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut cf: *mut client_file = arg as *mut client_file;
+unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = owner.get();
     log_debug(format_args!("write check file {}", ((*cf).stream) as i32));
     if (*cf).closed != 0 && evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
         file_write_finished(cf);
@@ -945,14 +945,16 @@ pub unsafe fn file_write_open(
             if (*cf).fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
             } else {
+                let data_observer = (*cf).observer.clone();
+                let error_observer = (*cf).observer.clone();
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     None,
                     bufferevent_data_callback(move |_| unsafe {
-                        file_write_callback(cf as *mut ::core::ffi::c_void)
+                        if let Some(owner) = data_observer.upgrade() { file_write_callback(&owner); }
                     }),
                     bufferevent_event_callback(move |_, flags| unsafe {
-                        file_write_error_callback(flags, cf as *mut ::core::ffi::c_void)
+                        if let Some(owner) = error_observer.upgrade() { file_write_error_callback(flags, &owner); }
                     }),
                 );
                 if (*cf).event.is_null() {
@@ -1024,9 +1026,9 @@ pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
 }
 unsafe fn file_read_error_callback(
     mut what: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
+    owner: &Rc<UnsafeCell<client_file>>,
 ) {
-    let mut cf: *mut client_file = arg as *mut client_file;
+    let cf = owner.get();
     let mut msg: msg_read_done = msg_read_done {
         stream: 0,
         error: 0,
@@ -1049,8 +1051,8 @@ unsafe fn file_read_error_callback(
     close((*cf).fd);
     client_files_remove(cf);
 }
-unsafe fn file_read_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut cf: *mut client_file = arg as *mut client_file;
+unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = owner.get();
     let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut bsize: size_t = 0;
     let mut msg = Vec::<u8>::new();
@@ -1157,14 +1159,16 @@ pub unsafe fn file_read_open(
             if (*cf).fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
             } else {
+                let data_observer = (*cf).observer.clone();
+                let error_observer = (*cf).observer.clone();
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     bufferevent_data_callback(move |_| unsafe {
-                        file_read_callback(cf as *mut ::core::ffi::c_void)
+                        if let Some(owner) = data_observer.upgrade() { file_read_callback(&owner); }
                     }),
                     None,
                     bufferevent_event_callback(move |_, flags| unsafe {
-                        file_read_error_callback(flags, cf as *mut ::core::ffi::c_void)
+                        if let Some(owner) = error_observer.upgrade() { file_read_error_callback(flags, &owner); }
                     }),
                 );
                 if (*cf).event.is_null() {
@@ -1200,7 +1204,7 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
         fatalx(|out| out.write_all(b"unknown stream number"));
     }
     log_debug(format_args!("cancel file {}", ((*cf).stream) as i32));
-    file_read_error_callback(0 as ::core::ffi::c_short, cf as *mut ::core::ffi::c_void);
+    file_read_error_callback(0, &(*cf).observer.upgrade().expect("live file"));
 }
 pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
