@@ -15,7 +15,7 @@ pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::FORMAT_NOJOBS;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
-pub use crate::src::shared::hyperlinks::hyperlinks;
+pub use crate::src::shared::hyperlinks::HyperlinkRef;
 pub use crate::src::shared::key::key_event;
 pub use crate::src::shared::layout::layout_cell;
 pub use crate::src::shared::limits::UINT_MAX;
@@ -107,15 +107,13 @@ thread_local! {
     // Style parsing and the global hyperlink eviction list run on the event loop.
     static STYLE_HYPERLINKS: std::cell::RefCell<Option<HyperlinksRef>> = const { std::cell::RefCell::new(None) };
 }
-unsafe fn style_hyperlinks(create: bool) -> *mut hyperlinks {
+fn style_hyperlinks(create: bool) -> Option<HyperlinksRef> {
     STYLE_HYPERLINKS.with(|slot| {
         let mut owner = slot.borrow_mut();
         if create && owner.is_none() {
             *owner = Some(HyperlinksRef::new());
         }
-        owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), HyperlinksRef::as_ptr)
+        owner.clone()
     })
 }
 unsafe fn style_set_range_string(mut sy: *mut style, mut s: *const ::core::ffi::c_char) {
@@ -703,14 +701,9 @@ pub unsafe fn style_parse(
             if tmp[5 as ::core::ffi::c_int as usize] as ::core::ffi::c_int == '\0' as i32 {
                 (*sy).link = 0 as u_int;
             } else {
-                let style_hyperlinks = style_hyperlinks(true);
-                (*sy).link = hyperlinks_put(
-                    style_hyperlinks,
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(5 as ::core::ffi::c_int as isize),
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(5 as ::core::ffi::c_int as isize),
-                );
+                let table = style_hyperlinks(true).expect("style hyperlink table");
+                let uri = std::ffi::CStr::from_ptr(tmp.as_ptr().add(5));
+                (*sy).link = hyperlinks_put(&table, uri, Some(uri));
             }
         } else {
             value = attributes_parse_cstr(std::ffi::CStr::from_ptr(
@@ -954,7 +947,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"link=")?;
-            out.write_all(uri.to_bytes())
+            out.write_all(uri.uri.as_bytes())
         });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -963,12 +956,12 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub unsafe fn style_link(sy: &style) -> Option<&std::ffi::CStr> {
-    let table = style_hyperlinks(false);
-    if sy.link == 0 || table.is_null() {
+pub fn style_link(sy: &style) -> Option<HyperlinkRef> {
+    if sy.link == 0 {
         return None;
     }
-    hyperlinks_get(&*table, sy.link).map(|link| link.uri.as_c_str())
+    let table = style_hyperlinks(false)?;
+    hyperlinks_get(&table, sy.link)
 }
 pub unsafe fn style_add(
     mut gc: *mut grid_cell,

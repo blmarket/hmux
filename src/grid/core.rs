@@ -1516,12 +1516,12 @@ mod storage_tests {
         unsafe {
             let table = crate::src::hyperlinks::HyperlinksRef::new();
             let link = crate::src::hyperlinks::hyperlinks_put(
-                table.as_ptr(),
-                c"uri".as_ptr(),
-                c"id".as_ptr(),
+                &table,
+                c"uri",
+                Some(c"id"),
             );
             let mut screen = screen::empty();
-            screen.hyperlinks = table.as_ptr();
+            screen.hyperlinks = Some(table.clone());
             let mut gd = grid_create(2, 1, 0);
             let mut cell = grid_default_cell;
             cell.link = link;

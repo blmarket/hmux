@@ -1,71 +1,32 @@
-//! Authoritative hyperlinks declarations, shared by the C translation units.
+//! Shared hyperlink tables and immutable, heap-allocated entries.
 
 use super::abi::u_int;
-#[repr(C)]
-/// Box-owned from `hyperlinks_init` through the final `hyperlinks_free`.
-/// URI nodes borrow this address.
+use std::{collections::BTreeMap, ffi::CString, rc::Rc};
+
+pub(crate) type HyperlinkKey = (bool, Vec<u8>, Vec<u8>, u32);
+pub type HyperlinkRef = Rc<hyperlinks_uri>;
+
+/// The table, index records, and entries remain heap allocated.
+/// Inner IDs own entries; the URI index stores IDs into the same table.
 pub struct hyperlinks {
-    pub next_inner: u_int,
-    pub by_inner: hyperlinks_by_inner_tree,
-    pub by_uri: hyperlinks_by_uri_tree,
+    pub(crate) next_inner: u_int,
+    pub(crate) by_inner: Option<Box<BTreeMap<u_int, HyperlinkRef>>>,
+    pub(crate) by_uri: Option<Box<BTreeMap<HyperlinkKey, u_int>>>,
 }
+
 impl hyperlinks {
     pub fn empty() -> Self {
         Self {
             next_inner: 0,
-            by_inner: hyperlinks_by_inner_tree { storage: None },
-            by_uri: hyperlinks_by_uri_tree { storage: None },
+            by_inner: None,
+            by_uri: None,
         }
     }
 }
 
-#[repr(C)]
-pub struct hyperlinks_by_uri_tree {
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
-        >,
-    >,
-}
-#[repr(C)]
 pub struct hyperlinks_uri {
-    pub tree: *mut hyperlinks,
     pub inner: u_int,
-    pub internal_id: std::ffi::CString,
-    pub external_id: std::ffi::CString,
-    pub uri: std::ffi::CString,
-    pub by_inner_entry: hyperlink_inner_entry,
-    pub by_uri_entry: hyperlink_uri_entry,
-}
-
-impl hyperlinks_uri {
-    pub fn empty() -> Self {
-        Self {
-            tree: Default::default(),
-            inner: Default::default(),
-            internal_id: Default::default(),
-            external_id: Default::default(),
-            uri: Default::default(),
-            by_inner_entry: hyperlink_inner_entry { owner: None },
-            by_uri_entry: hyperlink_uri_entry { owner: None },
-        }
-    }
-}
-#[repr(C)]
-pub struct hyperlink_uri_entry {
-    /// Weak traversal handle into the URI index.
-    pub owner: Option<
-        refbox::Weak<
-            std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
-        >,
-    >,
-}
-#[repr(C)]
-pub struct hyperlink_inner_entry {
-    /// Weak traversal handle into the inner-ID index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, *mut hyperlinks_uri>>>,
-}
-#[repr(C)]
-pub struct hyperlinks_by_inner_tree {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, *mut hyperlinks_uri>>>,
+    pub internal_id: CString,
+    pub external_id: CString,
+    pub uri: CString,
 }

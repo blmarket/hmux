@@ -167,7 +167,7 @@ pub unsafe fn tty_draw_line(
     let mut next_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
     let default_style_ctx = tty_style_ctx {
         defaults: grid_default_cell,
-        hyperlinks: s.hyperlinks,
+        hyperlinks: s.hyperlinks.clone(),
         ..Default::default()
     };
     let style_ctx = style_ctx.unwrap_or(&default_style_ctx);

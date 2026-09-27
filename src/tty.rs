@@ -40,7 +40,6 @@ use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_WRITE};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
@@ -122,7 +121,7 @@ static mut tty_default_style_ctx: tty_style_ctx = {
         defaults: grid_default_cell,
         palette: ::core::ptr::null::<colour_palette>() as *mut colour_palette,
         dim: 0 as u_int,
-        hyperlinks: ::core::ptr::null::<hyperlinks>() as *mut hyperlinks,
+        hyperlinks: None,
     }
 };
 pub unsafe fn tty_create_log() {
@@ -2750,7 +2749,11 @@ pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
     (*tty).cx = cx;
     (*tty).cy = cy;
 }
-unsafe fn tty_hyperlink(tty: *mut tty, gc: &grid_cell, hl: Option<&hyperlinks>) {
+unsafe fn tty_hyperlink(
+    tty: *mut tty,
+    gc: &grid_cell,
+    hl: Option<&crate::src::hyperlinks::HyperlinksRef>,
+) {
     if gc.link == (*tty).cell.link {
         return;
     }

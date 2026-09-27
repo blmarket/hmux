@@ -34,7 +34,6 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::input::input_ctx;
 use crate::src::shared::job::{job, job_update_callback, JobCompletion, JobExitStatus};
 use crate::src::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY};
@@ -357,11 +356,11 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
         defaults: grid_cell::default(),
         palette: ::core::ptr::null_mut::<colour_palette>(),
         dim: 0,
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
+        hyperlinks: None,
     };
     popup_reapply_styles(pd);
     screen_init(&mut s, (*pd).sx, (*pd).sy, 0 as u_int);
-    if !(*pd).s.hyperlinks.is_null() {
+    if (*pd).s.hyperlinks.is_some() {
         screen_share_hyperlinks(&mut s, &(*pd).s);
     }
     screen_write_start(&mut ctx, &raw mut s);
@@ -420,7 +419,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     style_ctx.defaults = defaults;
     style_ctx.palette = &raw mut (*pd).palette;
     style_ctx.dim = 0 as u_int;
-    style_ctx.hyperlinks = s.hyperlinks;
+    style_ctx.hyperlinks = s.hyperlinks.clone();
     (*c).overlay_check = None;
     i = 0 as u_int;
     while i < (*pd).sy {

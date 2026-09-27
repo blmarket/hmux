@@ -1,360 +1,224 @@
-use crate::src::ffi::libc::strcmp;
-use crate::src::shared::abi::*;
-use crate::src::shared::hyperlinks::{
-    hyperlink_inner_entry, hyperlink_uri_entry, hyperlinks, hyperlinks_by_inner_tree,
-    hyperlinks_by_uri_tree, hyperlinks_uri,
-};
-use crate::src::shared::tree::RB_NEGINF;
+use crate::src::shared::abi::u_int;
+use crate::src::shared::hyperlinks::{hyperlinks, hyperlinks_uri, HyperlinkKey, HyperlinkRef};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::text::utf8::utf8_stravis_cstring;
-use std::{collections::VecDeque, ffi::CString};
+use std::{
+    cell::RefCell,
+    collections::VecDeque,
+    ffi::{CStr, CString},
+    rc::{Rc, Weak},
+};
 
-/// One strong Rc reference to the mutable hyperlink table.
-pub(crate) struct HyperlinksRef(std::rc::Rc<std::cell::UnsafeCell<hyperlinks>>);
+/// A shared owner of a heap-allocated hyperlink table.
+#[derive(Clone)]
+pub struct HyperlinksRef(Rc<RefCell<hyperlinks>>);
 
 impl HyperlinksRef {
-    pub(crate) unsafe fn new() -> Self {
-        Self(crate::src::shared::rc::take(hyperlinks_init()))
+    pub fn new() -> Self {
+        hyperlinks_init()
     }
-    pub(crate) fn as_ptr(&self) -> *mut hyperlinks {
-        crate::src::shared::rc::as_ptr(&self.0)
+
+    pub fn len(&self) -> usize {
+        self.0.borrow().by_inner.as_ref().map_or(0, |map| map.len())
     }
-}
-impl Clone for HyperlinksRef {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
-pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
-pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
-static mut hyperlinks_next_external_id: ::core::ffi::c_longlong = 1 as ::core::ffi::c_longlong;
-// This queue owns the records and their insertion order. Boxes keep each node
-// at a stable address for the per-table URI and inner-ID indexes.
-static mut GLOBAL_HYPERLINKS: VecDeque<Box<hyperlinks_uri>> = VecDeque::new();
-
-unsafe fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
-    let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
-    let index = (*global_hyperlinks)
-        .iter()
-        .position(|owner| std::ptr::addr_of!(**owner).cast_mut() == hlu)
-        .expect("hyperlink record missing from global insertion order");
-    let owner = (*global_hyperlinks)
-        .remove(index)
-        .expect("hyperlink owner missing from global insertion order");
-    let hl = owner.tree;
-    hyperlinks_by_inner_tree_remove(&raw mut (*hl).by_inner, hlu);
-    hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
-    drop(owner);
+impl Default for HyperlinksRef {
+    fn default() -> Self {
+        Self::new()
+    }
 }
-pub unsafe fn hyperlinks_put(
-    mut hl: *mut hyperlinks,
-    mut uri_in: *const ::core::ffi::c_char,
-    mut internal_id_in: *const ::core::ffi::c_char,
-) -> u_int {
-    let mut find: hyperlinks_uri = hyperlinks_uri {
-        tree: ::core::ptr::null_mut::<hyperlinks>(),
-        inner: 0,
-        internal_id: Default::default(),
-        external_id: Default::default(),
-        uri: Default::default(),
-        by_inner_entry: hyperlink_inner_entry { owner: None },
-        by_uri_entry: hyperlink_uri_entry { owner: None },
+
+pub const MAX_HYPERLINKS: i32 = 5000;
+pub const MAX_HYPERLINK_URI: i32 = 1024;
+
+struct QueuedHyperlink {
+    table: Weak<RefCell<hyperlinks>>,
+    inner: u_int,
+}
+
+struct HyperlinkHistory {
+    next_external_id: i64,
+    entries: VecDeque<QueuedHyperlink>,
+}
+
+thread_local! {
+    // Hyperlink operations run on the server event loop, as does style parsing.
+    static HYPERLINK_HISTORY: RefCell<HyperlinkHistory> = const {
+        RefCell::new(HyperlinkHistory {
+            next_external_id: 1,
+            entries: VecDeque::new(),
+        })
     };
-    let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let internal_id_input = if internal_id_in.is_null() {
-        c""
+}
+
+fn hyperlink_key(internal_id: &CStr, uri: &CStr, inner: u_int) -> HyperlinkKey {
+    if internal_id.is_empty() {
+        (true, Vec::new(), Vec::new(), inner)
     } else {
-        ::std::ffi::CStr::from_ptr(internal_id_in)
-    };
-    let uri = utf8_stravis_cstring(::std::ffi::CStr::from_ptr(uri_in), VIS_OCTAL | VIS_CSTYLE);
-    if uri.as_bytes().len() > MAX_HYPERLINK_URI as usize {
-        return 0 as u_int;
+        (
+            false,
+            internal_id.to_bytes().to_vec(),
+            uri.to_bytes().to_vec(),
+            0,
+        )
     }
-    let internal_id = utf8_stravis_cstring(internal_id_input, VIS_OCTAL | VIS_CSTYLE);
-    if !internal_id.as_bytes().is_empty() {
-        find.uri = uri.clone();
-        find.internal_id = internal_id.clone();
-        hlu = hyperlinks_by_uri_tree_find(&(*hl).by_uri, &find);
-        if !hlu.is_null() {
-            return (*hlu).inner;
+}
+
+fn hyperlinks_remove(entry: QueuedHyperlink) {
+    let Some(owner) = entry.table.upgrade() else {
+        return;
+    };
+    let mut table = owner.borrow_mut();
+    let node = table
+        .by_inner
+        .as_mut()
+        .and_then(|index| index.remove(&entry.inner))
+        .expect("queued hyperlink is indexed");
+    let key = hyperlink_key(&node.internal_id, &node.uri, node.inner);
+    table
+        .by_uri
+        .as_mut()
+        .expect("hyperlink URI index")
+        .remove(&key);
+    if table.by_inner.as_ref().unwrap().is_empty() {
+        table.by_inner = None;
+        table.by_uri = None;
+    }
+}
+
+pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<&CStr>) -> u_int {
+    let uri = utf8_stravis_cstring(uri_in, VIS_OCTAL | VIS_CSTYLE);
+    if uri.as_bytes().len() > MAX_HYPERLINK_URI as usize {
+        return 0;
+    }
+    let internal_id = utf8_stravis_cstring(internal_id_in.unwrap_or(c""), VIS_OCTAL | VIS_CSTYLE);
+    if !internal_id.is_empty() {
+        let key = hyperlink_key(&internal_id, &uri, 0);
+        if let Some(&inner) =
+            hl.0.borrow()
+                .by_uri
+                .as_ref()
+                .and_then(|index| index.get(&key))
+        {
+            return inner;
         }
     }
-    let fresh0 = hyperlinks_next_external_id;
-    hyperlinks_next_external_id = hyperlinks_next_external_id + 1;
-    let mut owner = Box::new(hyperlinks_uri {
-        internal_id: internal_id,
-        external_id: CString::new(format!("tmux{:X}", fresh0 as u64))
-            .expect("generated hyperlink ID contains no NUL"),
-        uri: uri,
-        ..hyperlinks_uri::empty()
+    let external = HYPERLINK_HISTORY.with(|history| {
+        let mut history = history.borrow_mut();
+        let id = history.next_external_id;
+        history.next_external_id += 1;
+        id
     });
-
-    hlu = &mut *owner;
-    let fresh1 = (*hl).next_inner;
-    (*hl).next_inner = (*hl).next_inner.wrapping_add(1);
-    (*hlu).inner = fresh1;
-    (*hlu).tree = hl;
-    hyperlinks_by_uri_tree_insert(&raw mut (*hl).by_uri, hlu);
-    hyperlinks_by_inner_tree_insert(&raw mut (*hl).by_inner, hlu);
-    let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
-    (*global_hyperlinks).push_back(owner);
-    if (*global_hyperlinks).len() == MAX_HYPERLINKS as usize {
-        let oldest_owner = (*global_hyperlinks)
-            .front()
-            .expect("new hyperlink missing from global insertion order");
-        let oldest = std::ptr::addr_of!(**oldest_owner).cast_mut();
+    let inner = {
+        let mut table = hl.0.borrow_mut();
+        let inner = table.next_inner;
+        table.next_inner = table.next_inner.wrapping_add(1);
+        let key = hyperlink_key(&internal_id, &uri, inner);
+        let node = Rc::new(hyperlinks_uri {
+            inner,
+            internal_id,
+            external_id: CString::new(format!("tmux{:X}", external as u64))
+                .expect("generated hyperlink ID contains no NUL"),
+            uri,
+        });
+        table
+            .by_uri
+            .get_or_insert_with(Default::default)
+            .insert(key, inner);
+        table
+            .by_inner
+            .get_or_insert_with(Default::default)
+            .insert(inner, node);
+        inner
+    };
+    let oldest = HYPERLINK_HISTORY.with(|history| {
+        let mut history = history.borrow_mut();
+        history.entries.push_back(QueuedHyperlink {
+            table: Rc::downgrade(&hl.0),
+            inner,
+        });
+        // tmux evicts when the count reaches the limit, leaving 4999 records.
+        if history.entries.len() == MAX_HYPERLINKS as usize {
+            history.entries.pop_front()
+        } else {
+            None
+        }
+    });
+    if let Some(oldest) = oldest {
         hyperlinks_remove(oldest);
     }
-    return (*hlu).inner;
+    inner
 }
-/// Borrow a stored hyperlink until the next mutation of any hyperlink table.
-///
-/// # Safety
-/// Callers must not retain this borrow across table mutations: insertion into
-/// another table can evict this record through the global history limit.
-pub unsafe fn hyperlinks_get(hl: &hyperlinks, inner: u_int) -> Option<&hyperlinks_uri> {
-    let owner = hl.by_inner.storage.as_ref()?;
-    let index = owner
-        .try_borrow_mut()
-        .expect("hyperlink inner index already borrowed");
-    let node = *index.get(&inner)?;
-    node.as_ref()
+
+/// Keep an immutable entry alive while it is being consumed, including across
+/// another table's insertion or reset. Evicted entries are no longer indexed.
+pub fn hyperlinks_get(hl: &HyperlinksRef, inner: u_int) -> Option<HyperlinkRef> {
+    hl.0.borrow().by_inner.as_ref()?.get(&inner).cloned()
 }
-pub unsafe fn hyperlinks_init() -> *mut hyperlinks {
+
+pub fn hyperlinks_init() -> HyperlinksRef {
     let mut value = hyperlinks::empty();
     value.next_inner = 1;
-    crate::src::shared::rc::new(value)
-}
-pub unsafe fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
-    crate::src::shared::rc::retain(hl);
-    return hl;
-}
-pub unsafe fn hyperlinks_reset(mut hl: *mut hyperlinks) {
-    let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut hlu1: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    hlu = hyperlinks_by_inner_tree_minmax(&(*hl).by_inner);
-    while !hlu.is_null() && {
-        hlu1 = hyperlinks_by_inner_tree_next(&*hlu);
-        1 as ::core::ffi::c_int != 0
-    } {
-        hyperlinks_remove(hlu);
-        hlu = hlu1;
-    }
-}
-pub unsafe fn hyperlinks_free(mut hl: *mut hyperlinks) {
-    crate::src::shared::rc::release(hl);
-}
-fn hyperlinks_by_inner_tree_key(elm: &hyperlinks_uri) -> u32 {
-    elm.inner
-}
-pub unsafe fn hyperlinks_by_inner_tree_find(
-    head: &hyperlinks_by_inner_tree,
-    elm: &hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("hyperlink inner index already borrowed");
-    let key = hyperlinks_by_inner_tree_key(elm);
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn hyperlinks_by_inner_tree_insert(
-    head: *mut hyperlinks_by_inner_tree,
-    elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let key = hyperlinks_by_inner_tree_key(&*elm);
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("hyperlink inner index already borrowed");
-    match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            (*elm).by_inner_entry.owner = Some(observer);
-        }
-    }
-    std::ptr::null_mut()
-}
-pub unsafe fn hyperlinks_by_inner_tree_remove(
-    head: *mut hyperlinks_by_inner_tree,
-    elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    if elm.is_null() {
-        return std::ptr::null_mut();
-    }
-    let key = hyperlinks_by_inner_tree_key(&*elm);
-    let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let empty = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("hyperlink inner index already borrowed");
-        if map.get(&key).copied() != Some(elm) {
-            return std::ptr::null_mut();
-        }
-        map.remove(&key);
-        map.is_empty()
-    };
-    (*elm).by_inner_entry.owner = None;
-    if empty {
-        (*head).storage = None;
-    }
-    elm
-}
-pub unsafe fn hyperlinks_by_inner_tree_minmax(
-    head: &hyperlinks_by_inner_tree,
-) -> *mut hyperlinks_uri {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("hyperlink inner index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn hyperlinks_by_inner_tree_next(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(owner) = elm.by_inner_entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink inner index already borrowed"),
-    };
-    let key = hyperlinks_by_inner_tree_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+    HyperlinksRef(Rc::new(RefCell::new(value)))
 }
 
-fn hyperlinks_by_uri_tree_key(elm: &hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, u32) {
-    {
-        let id = elm.internal_id.as_bytes();
-        if id.is_empty() {
-            (true, Vec::new(), Vec::new(), elm.inner)
-        } else {
-            (false, id.to_vec(), elm.uri.as_bytes().to_vec(), 0)
-        }
-    }
-}
-pub unsafe fn hyperlinks_by_uri_tree_find(
-    head: &hyperlinks_by_uri_tree,
-    elm: &hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("hyperlink URI index already borrowed");
-    let key = hyperlinks_by_uri_tree_key(elm);
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn hyperlinks_by_uri_tree_insert(
-    head: *mut hyperlinks_by_uri_tree,
-    elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let key = hyperlinks_by_uri_tree_key(&*elm);
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("hyperlink URI index already borrowed");
-    match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            (*elm).by_uri_entry.owner = Some(observer);
-        }
-    }
-    std::ptr::null_mut()
-}
-pub unsafe fn hyperlinks_by_uri_tree_remove(
-    head: *mut hyperlinks_by_uri_tree,
-    elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    if elm.is_null() {
-        return std::ptr::null_mut();
-    }
-    let key = hyperlinks_by_uri_tree_key(&*elm);
-    let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let empty = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("hyperlink URI index already borrowed");
-        if map.get(&key).copied() != Some(elm) {
-            return std::ptr::null_mut();
-        }
-        map.remove(&key);
-        map.is_empty()
-    };
-    (*elm).by_uri_entry.owner = None;
-    if empty {
-        (*head).storage = None;
-    }
-    elm
+pub fn hyperlinks_copy(hl: &HyperlinksRef) -> HyperlinksRef {
+    hl.clone()
 }
 
-#[cfg(test)]
-mod hyperlink_index_tests {
-    use super::*;
+pub fn hyperlinks_reset(hl: &HyperlinksRef) {
+    let table = Rc::downgrade(&hl.0);
+    HYPERLINK_HISTORY.with(|history| {
+        history
+            .borrow_mut()
+            .entries
+            .retain(|entry| !entry.table.ptr_eq(&table));
+    });
+    let mut table = hl.0.borrow_mut();
+    table.by_inner = None;
+    table.by_uri = None;
+}
 
-    #[test]
-    fn hyperlink_indexes_keep_order_and_weak_observers_expire_on_free() {
-        unsafe {
-            let table = hyperlinks_init();
-            let other = hyperlinks_init();
-            let first_id =
-                hyperlinks_put(table, c"https://example.test/a".as_ptr(), c"alpha".as_ptr());
-            let second_id =
-                hyperlinks_put(table, c"https://example.test/b".as_ptr(), c"beta".as_ptr());
-            assert_eq!(
-                hyperlinks_put(table, c"https://example.test/a".as_ptr(), c"alpha".as_ptr()),
-                first_id
-            );
-
-            let mut find = hyperlinks_uri::empty();
-            find.inner = first_id;
-            let first = hyperlinks_by_inner_tree_find(&(*table).by_inner, &find);
-            find.inner = second_id;
-            let second = hyperlinks_by_inner_tree_find(&(*table).by_inner, &find);
-            assert!(!first.is_null() && !second.is_null());
-            let inner_index_observer = (*first).by_inner_entry.owner.as_ref().unwrap().clone();
-            let uri_index_observer = (*first).by_uri_entry.owner.as_ref().unwrap().clone();
-
-            assert!(hyperlinks_by_inner_tree_remove(&mut (*other).by_inner, first).is_null());
-            assert!((*first).by_inner_entry.owner.is_some());
-            assert_eq!(hyperlinks_by_inner_tree_next(&*first), second);
-            assert_eq!(
-                hyperlinks_by_uri_tree_find(&(*table).by_uri, &*second),
-                second
-            );
-
-            hyperlinks_free(table);
-            assert!(matches!(
-                inner_index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            assert!(matches!(
-                uri_index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            hyperlinks_free(other);
-        }
-    }
+pub fn hyperlinks_free(hl: HyperlinksRef) {
+    drop(hl);
 }
 
 impl Drop for hyperlinks {
     fn drop(&mut self) {
-        unsafe { hyperlinks_reset(self) }
+        if self.by_inner.is_some() {
+            // The last strong table reference is already gone. Do not access
+            // the history after its thread-local destructor has run.
+            let _ = HYPERLINK_HISTORY.try_with(|history| {
+                history
+                    .borrow_mut()
+                    .entries
+                    .retain(|entry| entry.table.strong_count() != 0);
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod hyperlink_owner_tests {
+    use super::*;
+
+    #[test]
+    fn dropping_last_table_owner_removes_its_history_but_keeps_borrowed_entries_alive() {
+        let table = hyperlinks_init();
+        let weak = Rc::downgrade(&table.0);
+        let id = hyperlinks_put(&table, c"https://example.test/a", Some(c"alpha"));
+        let node = hyperlinks_get(&table, id).unwrap();
+        let shared = table.clone();
+        drop(table);
+        assert!(weak.upgrade().is_some());
+        drop(shared);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(node.uri.as_c_str(), c"https://example.test/a");
+        HYPERLINK_HISTORY.with(|history| assert!(history.borrow().entries.is_empty()));
     }
 }

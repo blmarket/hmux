@@ -23,7 +23,6 @@ use crate::src::shared::command::cmdq_item;
 use crate::src::shared::display::{visible_range, visible_ranges};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::menu::menu_data;
@@ -1280,14 +1279,14 @@ unsafe fn redraw_draw_pane_span(
         defaults: grid_cell::default(),
         palette: ::core::ptr::null_mut::<colour_palette>(),
         dim: 0,
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
+        hyperlinks: None,
     };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     (defaults, style_ctx.dim) = tty_default_colours(wp);
     style_ctx.defaults = defaults;
     style_ctx.palette = &raw mut (*wp).palette;
-    style_ctx.hyperlinks = (*s).hyperlinks;
+    style_ctx.hyperlinks = (*s).hyperlinks.clone();
     px = (*span)
         .data
         .c2rust_unnamed

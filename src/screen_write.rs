@@ -340,7 +340,7 @@ unsafe fn screen_write_initctx(
         ttyctx.flags |= TTY_CTX_PANE_OBSCURED;
     }
     ttyctx.style_ctx.defaults = grid_default_cell;
-    ttyctx.style_ctx.hyperlinks = (*ctx.s).hyperlinks;
+    ttyctx.style_ctx.hyperlinks = (*ctx.s).hyperlinks.clone();
     if let Some(callback) = ctx.init_ctx_cb.as_mut() {
         callback(ttyctx);
         if !ttyctx.style_ctx.palette.is_null() {

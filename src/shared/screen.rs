@@ -4,7 +4,6 @@ use super::{
     abi::{bitstr_t, u_int},
     display::{progress_bar, screen_cursor_style},
     grid::{grid, grid_cell},
-    hyperlinks::hyperlinks,
     screen_write::screen_write_cline,
 };
 use std::collections::VecDeque;
@@ -47,7 +46,7 @@ pub struct screen {
     pub tabs: Vec<bitstr_t>,
     pub sel: Option<Box<screen_sel>>,
     pub write_list: Option<Box<[screen_write_cline]>>,
-    pub hyperlinks: *mut hyperlinks,
+    pub hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
     pub progress_bar: progress_bar,
 }
 

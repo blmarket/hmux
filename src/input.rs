@@ -77,7 +77,6 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::display::*;
 use crate::src::shared::event::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::input::input_request_type;
 use crate::src::shared::input::{
     input_cell, input_ctx, input_end_type, input_param, input_request, input_state,
@@ -4920,7 +4919,10 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
 }
 unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut current_block: u64;
-    let mut hl: *mut hyperlinks = (*(*ictx).ctx.s).hyperlinks;
+    let hl = (*(*ictx).ctx.s)
+        .hyperlinks
+        .as_ref()
+        .expect("screen hyperlink table");
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut start: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -4966,7 +4968,7 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
                     return;
                 }
                 let id_ptr = id.as_ref().map_or(std::ptr::null(), |id| id.as_ptr());
-                (*gc).link = hyperlinks_put(hl, uri, id_ptr);
+                (*gc).link = hyperlinks_put(hl, CStr::from_ptr(uri), id.as_deref());
                 if id.is_none() {
                     log_debug(format_args!(
                         "hyperlink (anonymous) {} = {}",

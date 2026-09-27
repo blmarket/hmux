@@ -6,7 +6,6 @@ use super::colour::colour_palette;
 use super::display::{screen_cursor_style, visible_ranges};
 use super::event::{evbuffer, event};
 use super::grid::grid_cell;
-use super::hyperlinks::hyperlinks;
 use super::key::key_code;
 use super::mouse::mouse_event;
 use super::terminal::termios;
@@ -438,13 +437,13 @@ pub struct tty_ctx<'a> {
     pub wsy: u_int,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct tty_style_ctx {
     pub defaults: grid_cell,
     pub palette: *mut colour_palette,
     pub dim: u_int,
-    pub hyperlinks: *mut hyperlinks,
+    pub hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
 }
 
 /// Payload borrowed for the synchronous terminal command dispatch.

@@ -27,7 +27,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::limits::{INT_MIN, SHRT_MAX};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::screen;
@@ -99,7 +98,7 @@ fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
 }
 unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     let gd = s.grid();
-    let mut hl: *mut hyperlinks = s.hyperlinks;
+    let hl = s.hyperlinks.as_ref();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -127,7 +126,7 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     let entry = if gc.link == 0 {
         None
     } else {
-        hyperlinks_get(&*hl, gc.link)
+        hl.and_then(|table| hyperlinks_get(table, gc.link))
     };
     let (link, linkid) = if let Some(link) = entry {
         let id = if link.internal_id.as_bytes().is_empty() {
@@ -313,8 +312,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
     };
     let mut line = Vec::new();
     let mut i: u_int = 0;
-    if s.hyperlinks.is_null() || !(gl.flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
-    {
+    if s.hyperlinks.is_none() || !(gl.flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0 {
         return line;
     }
     i = 0 as u_int;
@@ -322,7 +320,10 @@ unsafe fn cmd_capture_pane_hyperlinks(
         grid_get_cell(gd, i, py, &mut gc);
         if !(gc.link == 0 as u_int) {
             if !links.contains(&gc.link) {
-                if let Some(link) = hyperlinks_get(&*s.hyperlinks, gc.link) {
+                if let Some(link) = hyperlinks_get(
+                    s.hyperlinks.as_ref().expect("screen hyperlink table"),
+                    gc.link,
+                ) {
                     if links.len() == gd.sx as usize {
                         break;
                     }

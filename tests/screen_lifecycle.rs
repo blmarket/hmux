@@ -41,11 +41,11 @@ fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
         screen_set_path(&mut s, c"/kept/path");
         screen_set_progress_bar(&mut s, PROGRESS_BAR_PAUSED, 75);
         let link = hyperlinks_put(
-            s.hyperlinks,
-            c"https://example.org".as_ptr(),
-            c"saved".as_ptr(),
+            s.hyperlinks.as_ref().unwrap(),
+            c"https://example.org",
+            Some(c"saved"),
         );
-        assert!(hyperlinks_get(&*s.hyperlinks, link).is_some());
+        assert!(hyperlinks_get(s.hyperlinks.as_ref().unwrap(), link).is_some());
         s.mode |= MODE_CRLF;
 
         screen_reinit(&mut s, 1);
@@ -60,7 +60,7 @@ fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
         assert_eq!(s.progress_bar.progress, 0);
         assert_eq!(s.title.to_bytes(), b"kept title");
         assert_eq!(s.path.as_deref().unwrap().to_bytes(), b"/kept/path");
-        assert!(hyperlinks_get(&*s.hyperlinks, link).is_none());
+        assert!(hyperlinks_get(s.hyperlinks.as_ref().unwrap(), link).is_none());
         grid_get_cell(s.grid(), 0, 0, &mut cell);
         assert_eq!(cell.data.data[0], b' ');
         assert!(s.write_list.is_some());
@@ -69,7 +69,7 @@ fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
         assert!(s.grid.is_none());
         assert!(s.saved_grid.is_none());
         assert!(s.write_list.is_none());
-        assert!(s.hyperlinks.is_null());
+        assert!(s.hyperlinks.is_none());
         assert!(s.title.is_empty());
         assert!(s.path.is_none());
         assert!(s.tabs.is_empty());

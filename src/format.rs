@@ -685,10 +685,10 @@ pub(crate) unsafe fn format_grid_hyperlink_cstring(
         }
         x = x.wrapping_sub(1);
     }
-    if s.hyperlinks.is_null() || gc.link == 0 as u_int {
+    if s.hyperlinks.is_none() || gc.link == 0 as u_int {
         return None;
     }
-    hyperlinks_get(&*s.hyperlinks, gc.link).map(|link| link.uri.clone())
+    hyperlinks_get(s.hyperlinks.as_ref()?, gc.link).map(|link| link.uri.clone())
 }
 
 pub const FORMAT_TYPE_PANE: format_type = 3;

@@ -10,7 +10,6 @@ use crate::src::screen_write::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -912,7 +911,7 @@ pub unsafe fn format_draw(
     let mut size: size_t = strlen(expanded);
     let mut os: *mut screen = (*octx).s;
     let mut s: [screen; 8] = std::array::from_fn(|_| screen::empty());
-    let mut hl: *mut hyperlinks = (*os).hyperlinks;
+    let hl = (*os).hyperlinks.clone();
     let mut ctx: [screen_write_ctx; 8] = [const {
         screen_write_ctx {
             wp: ::core::ptr::null_mut::<window_pane>(),
@@ -1067,20 +1066,12 @@ pub unsafe fn format_draw(
     ));
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
-        screen_init(
-            &mut s[i as usize],
-            size as u_int,
-            1 as u_int,
-            0 as u_int,
-        );
+        screen_init(&mut s[i as usize], size as u_int, 1 as u_int, 0 as u_int);
         screen_write_start(
             &mut ctx[i as usize],
             (&raw mut s as *mut screen).offset(i as isize) as *mut screen,
         );
-        screen_write_clearendofline(
-            &mut ctx[i as usize],
-            current_default.bg as u_int,
-        );
+        screen_write_clearendofline(&mut ctx[i as usize], current_default.bg as u_int);
         width[i as usize] = 0 as u_int;
         i = i.wrapping_add(1);
     }
@@ -1222,9 +1213,11 @@ pub unsafe fn format_draw(
                         sy.gc.bg = (*base).bg;
                         sy.gc.fg = (*base).fg;
                     }
-                    sy.gc.link = match style_link(&sy).filter(|_| !hl.is_null()) {
-                        Some(uri) => hyperlinks_put(hl, uri.as_ptr(), uri.as_ptr()),
-                        None => 0,
+                    sy.gc.link = match (style_link(&sy), hl.as_ref()) {
+                        (Some(link), Some(table)) => {
+                            hyperlinks_put(table, &link.uri, Some(&link.uri))
+                        }
+                        _ => 0,
                     };
                     if sy.fill != 8 as ::core::ffi::c_int {
                         fill = sy.fill;

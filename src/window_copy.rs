@@ -626,13 +626,14 @@ unsafe fn window_copy_init(
     }
     (*data).scroll_exit = args_has(args, 'e' as i32 as u_char);
     (*data).hide_position = args_has(args, 'H' as i32 as u_char);
-    if !(*base).hyperlinks.is_null() {
+    if (*base).hyperlinks.is_some() {
         screen_share_hyperlinks(&mut (*data).screen, &*base);
     }
     (*data).screen.cx = window_copy_cursor_offset(wme, (*data).cx, (*data).screen.grid().sx);
     (*data).screen.cy = (*data).cy;
     (*data).mx = (*data).cx;
-    (*data).my = (*(*data).backing).grid()
+    (*data).my = (*(*data).backing)
+        .grid()
         .hsize
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);

@@ -4,7 +4,7 @@ use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create,
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
-use crate::src::hyperlinks::{hyperlinks_free, hyperlinks_init, hyperlinks_reset};
+use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::options_get_number;
 use crate::src::screen_write::{screen_write_free_list, screen_write_make_list};
@@ -12,7 +12,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::display::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::key::MODEKEY_EMACS;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
@@ -48,7 +47,7 @@ pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlim
     s.tabs = Vec::new();
     s.sel = None;
     s.write_list = None;
-    s.hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
+    s.hyperlinks = None;
     screen_reinit(s, 1 as ::core::ffi::c_int);
 }
 pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
@@ -81,12 +80,12 @@ pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
     screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
     screen_reset_hyperlinks(s);
 }
-pub unsafe fn screen_reset_hyperlinks(s: &mut screen) {
-    if s.hyperlinks.is_null() {
-        s.hyperlinks = hyperlinks_init();
+pub fn screen_reset_hyperlinks(s: &mut screen) {
+    if let Some(table) = s.hyperlinks.as_ref() {
+        hyperlinks_reset(table);
     } else {
-        hyperlinks_reset(s.hyperlinks);
-    };
+        s.hyperlinks = Some(hyperlinks_init());
+    }
 }
 pub unsafe fn screen_free(s: &mut screen) {
     drop(s.sel.take());
@@ -98,11 +97,8 @@ pub unsafe fn screen_free(s: &mut screen) {
     }
     drop(s.saved_grid.take());
     drop(s.grid.take());
-    if !s.hyperlinks.is_null() {
-        hyperlinks_free(s.hyperlinks);
-    }
+    drop(s.hyperlinks.take());
     screen_free_titles(s);
-    s.hyperlinks = std::ptr::null_mut();
 }
 pub unsafe fn screen_reset_tabs(s: &mut screen) {
     let bytes = (s.grid().sx as usize).div_ceil(8);
@@ -119,16 +115,8 @@ pub unsafe fn screen_reset_tabs(s: &mut screen) {
         i = i.wrapping_add(8 as u_int);
     }
 }
-pub(crate) unsafe fn screen_share_hyperlinks(dst: &mut screen, src: &screen) {
-    let shared = if src.hyperlinks.is_null() {
-        std::ptr::null_mut()
-    } else {
-        crate::src::hyperlinks::hyperlinks_copy(src.hyperlinks)
-    };
-    if !dst.hyperlinks.is_null() {
-        crate::src::hyperlinks::hyperlinks_free(dst.hyperlinks);
-    }
-    dst.hyperlinks = shared;
+pub(crate) fn screen_share_hyperlinks(dst: &mut screen, src: &screen) {
+    dst.hyperlinks = src.hyperlinks.clone();
 }
 pub(crate) unsafe fn screen_has_tab(s: &screen, column: u_int) -> bool {
     *s.tabs.get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
