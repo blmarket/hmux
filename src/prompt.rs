@@ -1,6 +1,6 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strlen};
+use crate::src::ffi::libc::{memcpy, memmove, memset, strlen};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -913,28 +913,13 @@ pub unsafe fn prompt_mouse(
     }
     return PROMPT_KEY_HANDLED;
 }
-unsafe fn prompt_in_list(
-    mut ws: *const ::core::ffi::c_char,
-    mut ud: *const utf8_data,
-) -> ::core::ffi::c_int {
-    if (*ud).size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-        || (*ud).width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (strchr(
-        ws,
-        *(&raw const (*ud).data as *const u_char) as ::core::ffi::c_int,
-    ) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
+fn prompt_in_list(separators: &CStr, cell: &utf8_data) -> ::core::ffi::c_int {
+    // strchr also matches the terminator when the cell contains a literal NUL.
+    (cell.size == 1 && cell.width == 1 && separators.to_bytes_with_nul().contains(&cell.data[0]))
+        as ::core::ffi::c_int
 }
-unsafe fn prompt_space(mut ud: *const utf8_data) -> ::core::ffi::c_int {
-    if (*ud).size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-        || (*ud).width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (*(&raw const (*ud).data as *const u_char) as ::core::ffi::c_int == ' ' as i32)
-        as ::core::ffi::c_int;
+fn prompt_space(cell: &utf8_data) -> ::core::ffi::c_int {
+    (cell.size == 1 && cell.width == 1 && cell.data[0] == b' ') as ::core::ffi::c_int
 }
 unsafe fn prompt_keypad_key(mut key: key_code) -> key_code {
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS != 0 {
@@ -1198,18 +1183,20 @@ unsafe fn prompt_replace_complete(
     }
     size = utf8_strlen(&(*pr).buffer);
     first = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
-    while first > prompt_buffer_cells(pr) && prompt_space(first) == 0 {
+    while first > prompt_buffer_cells(pr) && prompt_space(&*first) == 0 {
         first = first.offset(-1);
     }
-    while (*first).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int && prompt_space(first) != 0
+    while (*first).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
+        && prompt_space(&*first) != 0
     {
         first = first.offset(1);
     }
     last = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
-    while (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int && prompt_space(last) == 0 {
+    while (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int && prompt_space(&*last) == 0
+    {
         last = last.offset(1);
     }
-    while last > prompt_buffer_cells(pr) && prompt_space(last) != 0 {
+    while last > prompt_buffer_cells(pr) && prompt_space(&*last) != 0 {
         last = last.offset(-1);
     }
     if (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
@@ -1274,124 +1261,83 @@ unsafe fn prompt_replace_complete(
     (*pr).index = first_index + replacement_bytes.len();
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn prompt_forward_word(
-    mut pr: *mut prompt,
-    mut size: size_t,
-    mut vi: ::core::ffi::c_int,
-    mut separators: *const ::core::ffi::c_char,
-) {
-    let mut idx: size_t = (*pr).index;
-    let mut word_is_separators: ::core::ffi::c_int = 0;
-    if vi == 0 {
-        while idx != size
-            && prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0
-        {
-            idx = idx.wrapping_add(1);
+fn prompt_forward_word(pr: &prompt, size: usize, vi: bool, separators: &CStr) -> usize {
+    let buffer = &pr.buffer;
+    let mut index = pr.index;
+    if !vi {
+        while index != size && prompt_space(&buffer[index]) != 0 {
+            index += 1;
         }
     }
-    if idx == size {
-        (*pr).index = idx;
-        return;
+    if index == size {
+        return index;
     }
-    word_is_separators = (prompt_in_list(
-        separators,
-        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-    ) != 0
-        && prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) == 0)
-        as ::core::ffi::c_int;
+    let word_is_separators =
+        prompt_in_list(separators, &buffer[index]) != 0 && prompt_space(&buffer[index]) == 0;
     loop {
-        idx = idx.wrapping_add(1);
-        if prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0 {
-            if vi != 0 {
-                while idx != size
-                    && prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data)
-                        != 0
-                {
-                    idx = idx.wrapping_add(1);
+        index += 1;
+        if prompt_space(&buffer[index]) != 0 {
+            if vi {
+                while index != size && prompt_space(&buffer[index]) != 0 {
+                    index += 1;
                 }
             }
             break;
-        } else if !(idx != size
-            && word_is_separators
-                == prompt_in_list(
-                    separators,
-                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                ))
+        }
+        if index == size || word_is_separators != (prompt_in_list(separators, &buffer[index]) != 0)
         {
             break;
         }
     }
-    (*pr).index = idx;
+    index
 }
-unsafe fn prompt_end_word(
-    mut pr: *mut prompt,
-    mut size: size_t,
-    mut separators: *const ::core::ffi::c_char,
-) {
-    let mut idx: size_t = (*pr).index;
-    let mut word_is_separators: ::core::ffi::c_int = 0;
-    if idx == size {
-        return;
+fn prompt_end_word(pr: &prompt, size: usize, separators: &CStr) -> usize {
+    let buffer = &pr.buffer;
+    let mut index = pr.index;
+    if index == size {
+        return index;
     }
     loop {
-        idx = idx.wrapping_add(1);
-        if idx == size {
-            (*pr).index = idx;
-            return;
+        index += 1;
+        if index == size {
+            return index;
         }
-        if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0) {
+        if prompt_space(&buffer[index]) == 0 {
             break;
         }
     }
-    word_is_separators = prompt_in_list(
-        separators,
-        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-    );
+    let word_is_separators = prompt_in_list(separators, &buffer[index]);
     loop {
-        idx = idx.wrapping_add(1);
-        if idx == size {
-            break;
-        }
-        if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) == 0
-            && word_is_separators
-                == prompt_in_list(
-                    separators,
-                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                ))
+        index += 1;
+        if index == size
+            || prompt_space(&buffer[index]) != 0
+            || word_is_separators != prompt_in_list(separators, &buffer[index])
         {
             break;
         }
     }
-    (*pr).index = idx.wrapping_sub(1 as size_t);
+    index - 1
 }
-unsafe fn prompt_backward_word(mut pr: *mut prompt, mut separators: *const ::core::ffi::c_char) {
-    let mut idx: size_t = (*pr).index;
-    let mut word_is_separators: ::core::ffi::c_int = 0;
-    while idx != 0 as size_t {
-        idx = idx.wrapping_sub(1);
-        if prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) == 0 {
+fn prompt_backward_word(pr: &prompt, separators: &CStr) -> usize {
+    let buffer = &pr.buffer;
+    let mut index = pr.index;
+    while index != 0 {
+        index -= 1;
+        if prompt_space(&buffer[index]) == 0 {
             break;
         }
     }
-    word_is_separators = prompt_in_list(
-        separators,
-        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-    );
-    while idx != 0 as size_t {
-        idx = idx.wrapping_sub(1);
-        if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0
-            || word_is_separators
-                != prompt_in_list(
-                    separators,
-                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                ))
+    let word_is_separators = prompt_in_list(separators, &buffer[index]);
+    while index != 0 {
+        index -= 1;
+        if prompt_space(&buffer[index]) != 0
+            || word_is_separators != prompt_in_list(separators, &buffer[index])
         {
-            continue;
+            index += 1;
+            break;
         }
-        idx = idx.wrapping_add(1);
-        break;
     }
-    (*pr).index = idx;
+    index
 }
 unsafe fn prompt_done(
     mut pr: *mut prompt,
@@ -1593,27 +1539,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -1796,53 +1734,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -1924,27 +1842,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -2127,53 +2037,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -2255,27 +2145,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -2458,53 +2340,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -2586,27 +2448,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -2789,53 +2643,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -2917,27 +2751,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -3120,53 +2946,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -3248,27 +3054,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -3451,53 +3249,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -3579,27 +3357,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -3782,53 +3552,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -3910,27 +3660,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -4113,53 +3855,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -4241,27 +3963,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -4444,53 +4158,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -4572,27 +4266,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -4775,53 +4461,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -4903,27 +4569,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -5106,53 +4764,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -5234,27 +4872,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -5437,53 +5067,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -5565,27 +5175,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -5768,53 +5370,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -5896,27 +5478,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -6099,53 +5673,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -6227,27 +5781,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -6430,53 +5976,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -6558,27 +6084,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -6761,53 +6279,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -6889,27 +6387,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -7092,53 +6582,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -7220,27 +6690,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -7423,53 +6885,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -7551,27 +6993,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -7754,53 +7188,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -7882,27 +7296,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -8085,53 +7491,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -8213,27 +7599,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -8416,53 +7794,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -8544,27 +7902,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -8747,53 +8097,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -8875,27 +8205,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -9078,53 +8400,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -9206,27 +8508,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -9409,53 +8703,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -9537,27 +8811,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -9740,53 +9006,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -9868,27 +9114,19 @@ pub unsafe fn prompt_key(
                                 idx = (*pr).index;
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        == 0
-                                    {
+                                    if prompt_space(&(&(*pr).buffer)[idx]) == 0 {
                                         break;
                                     }
                                 }
-                                word_is_separators = prompt_in_list(
-                                    (*pr).word_separators.as_ptr(),
-                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
-                                );
+                                word_is_separators =
+                                    prompt_in_list(&(*pr).word_separators, &(&(*pr).buffer)[idx]);
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
-                                    if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize)
-                                        as *mut utf8_data)
-                                        != 0
+                                    if !(prompt_space(&(&(*pr).buffer)[idx]) != 0
                                         || word_is_separators
                                             != prompt_in_list(
-                                                (*pr).word_separators.as_ptr(),
-                                                prompt_buffer_cells(pr).offset(idx as isize)
-                                                    as *mut utf8_data,
+                                                &(*pr).word_separators,
+                                                &(&(*pr).buffer)[idx],
                                             ))
                                     {
                                         continue;
@@ -10071,53 +9309,33 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             15759124641699640388 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    0 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, false, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             15097225335540574411 => {
-                                prompt_end_word(
-                                    pr,
-                                    size,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_end_word(&*pr, size, c"");
                                 current_block = 5848346009959455809;
                             }
                             4818991882628172305 => {
-                                prompt_end_word(pr, size, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_end_word(&*pr, size, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             5183579720934817709 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_forward_word(&*pr, size, true, c"");
                                 current_block = 5848346009959455809;
                             }
                             17166280686405466987 => {
-                                prompt_forward_word(
-                                    pr,
-                                    size,
-                                    1 as ::core::ffi::c_int,
-                                    (*pr).word_separators.as_ptr(),
-                                );
+                                (*pr).index =
+                                    prompt_forward_word(&*pr, size, true, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             227872999036956190 => {
-                                prompt_backward_word(
-                                    pr,
-                                    b"\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                (*pr).index = prompt_backward_word(&*pr, c"");
                                 current_block = 5848346009959455809;
                             }
                             8252555365493261901 => {
-                                prompt_backward_word(pr, (*pr).word_separators.as_ptr());
+                                (*pr).index = prompt_backward_word(&*pr, &(*pr).word_separators);
                                 current_block = 5848346009959455809;
                             }
                             12682153168616704965 => {
@@ -10361,6 +9579,117 @@ mod prompt_buffer_tests {
         };
         utf8_set(&mut result, byte);
         result
+    }
+
+    #[test]
+    fn word_motion_preserves_tmux_separator_classes_and_end_positions() {
+        // Each row is (Emacs forward, vi forward, end of word, backward),
+        // for every cursor position including the sentinel. Golden indices
+        // come from the pinned tmux e880cf63e0a9 helpers.
+        type Motion = (usize, usize, usize, usize);
+        let cases: &[(&CStr, &CStr, &[Motion])] = &[
+            (c"", c",/", &[(0, 0, 0, 0)]),
+            (c"   ", c",/", &[(3, 3, 3, 0); 4]),
+            (
+                c"ab,cd",
+                c",/",
+                &[
+                    (2, 2, 1, 0),
+                    (2, 2, 2, 0),
+                    (3, 3, 4, 0),
+                    (5, 5, 4, 2),
+                    (5, 5, 5, 3),
+                    (5, 5, 5, 3),
+                ],
+            ),
+            (
+                c"ab,cd",
+                c"",
+                &[
+                    (5, 5, 4, 0),
+                    (5, 5, 4, 0),
+                    (5, 5, 4, 0),
+                    (5, 5, 4, 0),
+                    (5, 5, 5, 0),
+                    (5, 5, 5, 0),
+                ],
+            ),
+            (
+                c"  ab,,é漢 /z  ",
+                c",/",
+                &[
+                    (4, 2, 3, 0),
+                    (4, 4, 3, 0),
+                    (4, 4, 3, 0),
+                    (4, 4, 5, 2),
+                    (6, 6, 5, 2),
+                    (6, 6, 7, 4),
+                    (8, 9, 7, 4),
+                    (8, 9, 9, 6),
+                    (10, 9, 9, 6),
+                    (10, 10, 10, 6),
+                    (11, 13, 13, 9),
+                    (13, 13, 13, 10),
+                    (13, 13, 13, 10),
+                    (13, 13, 13, 10),
+                ],
+            ),
+            (
+                c"  ab,,é漢 /z  ",
+                c"",
+                &[
+                    (8, 2, 7, 0),
+                    (8, 9, 7, 0),
+                    (8, 9, 7, 0),
+                    (8, 9, 7, 2),
+                    (8, 9, 7, 2),
+                    (8, 9, 7, 2),
+                    (8, 9, 7, 2),
+                    (8, 9, 10, 2),
+                    (11, 13, 10, 2),
+                    (11, 13, 10, 2),
+                    (11, 13, 13, 9),
+                    (13, 13, 13, 9),
+                    (13, 13, 13, 9),
+                    (13, 13, 13, 9),
+                ],
+            ),
+            (
+                c"a\tb c",
+                c",/",
+                &[
+                    (3, 4, 2, 0),
+                    (3, 4, 2, 0),
+                    (3, 4, 4, 0),
+                    (5, 5, 4, 0),
+                    (5, 5, 5, 0),
+                    (5, 5, 5, 4),
+                ],
+            ),
+        ];
+        for &(text, separators, expected) in cases {
+            let mut pr = make_prompt(text, 0, None);
+            let size = utf8_strlen(&pr.buffer);
+            assert_eq!(expected.len(), size + 1);
+            for (index, &positions) in expected.iter().enumerate() {
+                pr.index = index;
+                assert_eq!(
+                    (
+                        prompt_forward_word(&pr, size, false, separators),
+                        prompt_forward_word(&pr, size, true, separators),
+                        prompt_end_word(&pr, size, separators),
+                        prompt_backward_word(&pr, separators)
+                    ),
+                    positions,
+                    "{text:?}, separators {separators:?}, cursor {index}",
+                );
+            }
+        }
+        assert_eq!(prompt_in_list(c",/", &cell(0)), 1);
+        let mut wide_space = cell(b' ');
+        wide_space.width = 2;
+        assert_eq!(prompt_space(&wide_space), 0);
+        assert_eq!(prompt_in_list(c" ", &wide_space), 0);
     }
 
     #[test]
