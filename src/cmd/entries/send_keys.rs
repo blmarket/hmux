@@ -89,7 +89,7 @@ unsafe fn cmd_send_keys_inject_key(
     mut args: *mut args,
     mut key: key_code,
 ) -> *mut cmdq_item {
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
@@ -207,7 +207,7 @@ unsafe fn cmd_send_keys_inject_string(
 }
 unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;

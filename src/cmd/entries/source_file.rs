@@ -180,7 +180,7 @@ unsafe fn cmd_source_file_done(
         .cast();
     let bsize = evbuffer_get_length(buffer);
     let mut new_item = std::ptr::null_mut();
-    let target = cmdq_get_target(item);
+    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     if error != 0 {
         cmdq_error(item, |out| {
             write_cstr(out, strerror(error))?;

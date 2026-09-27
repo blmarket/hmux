@@ -38,7 +38,7 @@ pub static cmd_find_window_entry: cmd_entry = {
 };
 unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut s: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;

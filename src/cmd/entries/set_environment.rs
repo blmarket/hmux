@@ -41,7 +41,7 @@ pub static cmd_set_environment_entry: cmd_entry = {
 unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let env: &mut environ;
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

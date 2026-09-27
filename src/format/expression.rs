@@ -3588,7 +3588,7 @@ pub(crate) unsafe fn format_single_from_target_cstring(
     fmt: *const ::core::ffi::c_char,
 ) -> CString {
     let tc = cmdq_get_target_client(item);
-    format_single_from_state_cstring(item, fmt, tc, cmdq_get_target(item))
+    format_single_from_state_cstring(item, fmt, tc, crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
 }
 
 #[cfg(test)]

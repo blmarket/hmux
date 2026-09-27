@@ -126,7 +126,7 @@ fn cmd_set_option_args_parse(
 }
 unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if args_count(args) == 0 as u_int {
         cmdq_error(item, |out| out.write_all(b"missing argument"));
@@ -189,7 +189,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     mut args: *mut args,
     mut window: ::core::ffi::c_int,
 ) -> cmd_retval {
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -299,7 +299,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut append: ::core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut parent: *mut options_entry = ::core::ptr::null_mut::<options_entry>();

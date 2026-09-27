@@ -146,7 +146,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     mut h: u_int,
 ) -> ::core::ffi::c_int {
     let mut tty: *mut tty = &raw mut (*tc).tty;
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut s: *mut session = (*tc).session;
     let mut wl: *mut winlink = (*target).wl;
@@ -536,7 +536,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut s: *mut session = (*tc).session;
     let mut wl: *mut winlink = (*target).wl;
@@ -916,7 +916,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
 }
 unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let target = cmdq_get_target(item);
+    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let event = cmdq_get_event(item);
     let tc = cmdq_get_target_client(item);
     let style = args_get(args, b's');
@@ -1029,7 +1029,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
 unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).s;
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut tty: *mut tty = &raw mut (*tc).tty;

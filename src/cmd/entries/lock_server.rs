@@ -85,7 +85,7 @@ pub static cmd_lock_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_lock_server_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_server_entry) {
         server_lock();

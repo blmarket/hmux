@@ -473,7 +473,7 @@ unsafe fn cmd_join_pane_move(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut c: *mut client = cmdq_get_client(item);
     let mut s: *mut session = (*target).s;
@@ -633,8 +633,8 @@ unsafe fn cmd_join_pane_tile(
 unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut source: *mut cmd_find_state = cmdq_get_source(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut dst_s: *mut session = ::core::ptr::null_mut::<session>();
     let mut src_wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut dst_wl: *mut winlink = ::core::ptr::null_mut::<winlink>();

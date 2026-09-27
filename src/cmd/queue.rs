@@ -202,11 +202,17 @@ pub unsafe fn cmdq_get_target_client(mut item: *mut cmdq_item) -> *mut client {
 pub fn cmdq_get_state(item: &cmdq_item) -> Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>> {
     item.state.as_ref()
 }
-pub unsafe fn cmdq_get_target(mut item: *mut cmdq_item) -> *mut cmd_find_state {
-    return &raw mut (*item).target;
+pub fn cmdq_get_target(item: &cmdq_item) -> &cmd_find_state {
+    &item.target
 }
-pub unsafe fn cmdq_get_source(mut item: *mut cmdq_item) -> *mut cmd_find_state {
-    return &raw mut (*item).source;
+pub fn cmdq_get_target_mut(item: &mut cmdq_item) -> &mut cmd_find_state {
+    &mut item.target
+}
+pub fn cmdq_get_source(item: &cmdq_item) -> &cmd_find_state {
+    &item.source
+}
+pub fn cmdq_get_source_mut(item: &mut cmdq_item) -> &mut cmd_find_state {
+    &mut item.source
 }
 pub unsafe fn cmdq_get_event(mut item: *mut cmdq_item) -> *mut key_event {
     return &raw mut (*cmdq_get_state(&*item).expect("command queue state").get()).event;

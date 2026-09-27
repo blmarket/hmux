@@ -371,7 +371,7 @@ pub unsafe fn hooks_build_events() {
     }
 }
 pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) {
-    let target = cmdq_get_target(item);
+    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut hd = hooks_data {
         name: CStr::from_ptr(name),
         fs: cmd_find_state::default(),

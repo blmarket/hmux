@@ -470,7 +470,7 @@ pub unsafe fn spawn_pane(
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     let mut key: key_code = 0;
     if !item.is_null() {
-        ts = (*cmdq_get_target(item)).s;
+        ts = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s;
         c = cmdq_get_client(item);
     } else {
         ts = s;

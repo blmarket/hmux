@@ -46,7 +46,7 @@ pub static cmd_kill_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wp: *mut window_pane = (*target).wp;
     let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
@@ -67,7 +67,7 @@ unsafe fn cmd_kill_pane_all(
     mut item: *mut cmdq_item,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut target: *mut cmd_find_state = cmdq_get_target(item);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
     let mut wp: *mut window_pane = (*target).wp;

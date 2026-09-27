@@ -1645,8 +1645,8 @@ unsafe fn window_panes_init(
     if self_0.is_null() {
         return ::core::ptr::null_mut::<screen>();
     }
-    source = cmdq_get_source(item);
-    target = cmdq_get_target(item);
+    source = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
+    target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     s = (*target).s;
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
