@@ -223,7 +223,7 @@ pub unsafe fn cmdq_new_state(
     mut current: *mut cmd_find_state,
     mut event: *mut key_event,
     mut flags: ::core::ffi::c_int,
-) -> *mut cmdq_state {
+) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_state>> {
     let snapshot = if event.is_null() {
         key_event {
             client: ::core::ptr::null_mut(),
@@ -234,27 +234,24 @@ pub unsafe fn cmdq_new_state(
     } else {
         (*event).metadata_snapshot()
     };
-    let state = crate::src::shared::rc::new(cmdq_state {
+    let owner = std::rc::Rc::new(std::cell::UnsafeCell::new(cmdq_state {
         flags,
         formats: None,
         event: snapshot,
         current: Default::default(),
-    });
+    }));
+    let state = crate::src::shared::rc::as_ptr(&owner);
     if !current.is_null() && cmd_find_valid_state(&*current) != 0 {
         cmd_find_copy_state(&raw mut (*state).current, current);
     } else {
         cmd_find_clear_state(&raw mut (*state).current, 0 as ::core::ffi::c_int);
     }
-    return state;
-}
-pub unsafe fn cmdq_link_state(mut state: *mut cmdq_state) -> *mut cmdq_state {
-    crate::src::shared::rc::retain(state);
-    return state;
+    return owner;
 }
 pub unsafe fn cmdq_copy_state(
     mut state: *mut cmdq_state,
     mut current: *mut cmd_find_state,
-) -> *mut cmdq_state {
+) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_state>> {
     if !current.is_null() {
         return cmdq_new_state(current, &raw mut (*state).event, (*state).flags);
     }
@@ -263,9 +260,6 @@ pub unsafe fn cmdq_copy_state(
         &raw mut (*state).event,
         (*state).flags,
     );
-}
-pub unsafe fn cmdq_free_state(mut state: *mut cmdq_state) {
-    crate::src::shared::rc::release(state);
 }
 unsafe fn cmdq_destroy_state(state: *mut cmdq_state) {
     drop((*state).formats.take());
@@ -489,34 +483,28 @@ unsafe fn cmdq_remove_group(mut item: *mut cmdq_item) {
 }
 pub unsafe fn cmdq_get_command(
     commands: &std::rc::Rc<std::cell::UnsafeCell<cmd_list>>,
-    mut state: *mut cmdq_state,
+    state: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>>,
 ) -> *mut cmdq_item {
     let cmdlist = crate::src::shared::rc::as_ptr(commands);
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut first: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut last: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut created: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*cmdlist).list.is_empty() {
         return cmdq_get_callback_owned(
             b"cmdq_empty_command\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| CMD_RETURN_NORMAL)),
         );
     }
-    if state.is_null() {
-        state = cmdq_new_state(
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            ::core::ptr::null_mut::<key_event>(),
-            0 as ::core::ffi::c_int,
-        );
-        created = 1 as ::core::ffi::c_int;
-    }
+    let state = state.cloned().unwrap_or_else(|| cmdq_new_state(
+        std::ptr::null_mut(), std::ptr::null_mut(), 0,
+    ));
     for command in &mut (*cmdlist).list {
         let cmd = &mut **command as *mut cmd;
         let entry = cmd_get_entry(&*cmd);
         item = cmdq_new_named_item(Some(entry.name));
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
-        (*item).state = Some(crate::src::shared::rc::take(cmdq_link_state(state)));
+        (*item).state = Some(state.clone());
         (*item).cmd = cmd;
         (*item).cmdlist = Some(commands.clone());
         log_debug(format_args!(
@@ -537,9 +525,6 @@ pub unsafe fn cmdq_get_command(
             (*last).next = item;
         }
         last = item;
-    }
-    if created != 0 {
-        cmdq_free_state(state);
     }
     return first;
 }
@@ -786,11 +771,11 @@ pub unsafe fn cmdq_get_callback_owned(
     });
     (*item).type_0 = CMDQ_CALLBACK;
     (*item).group = 0 as u_int;
-    (*item).state = Some(crate::src::shared::rc::take(cmdq_new_state(
+    (*item).state = Some(cmdq_new_state(
         ::core::ptr::null_mut::<cmd_find_state>(),
         ::core::ptr::null_mut::<key_event>(),
         0 as ::core::ffi::c_int,
-    )));
+    ));
     (*item).cb = cb;
     return item;
 }

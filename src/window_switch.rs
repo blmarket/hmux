@@ -2,7 +2,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
-use crate::src::cmd::queue::{cmdq_free_state, cmdq_new_state};
+use crate::src::cmd::queue::{cmdq_new_state};
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::bytes::write_cstr;
@@ -570,7 +570,7 @@ unsafe fn window_switch_run_command(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut target: Option<CString> = None;
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
+    let state;
     if (*data).matches.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
@@ -619,7 +619,7 @@ unsafe fn window_switch_run_command(
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
-        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), c, state) {
+        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), c, Some(&state)) {
             if !c.is_null() {
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(
@@ -639,7 +639,7 @@ unsafe fn window_switch_run_command(
                 );
             }
         }
-        cmdq_free_state(state);
+
     }
     return 1 as ::core::ffi::c_int;
 }

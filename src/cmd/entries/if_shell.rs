@@ -93,7 +93,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         let Some(cmdlist) = cmdlist else {
             return CMD_RETURN_ERROR;
         };
-        new_item = cmdq_get_command(&cmdlist, cmdq_get_state(item));
+        new_item = cmdq_get_command(&cmdlist, (*item).state.as_ref());
         cmdq_insert_after(item, new_item);
         drop(cmdlist);
         return CMD_RETURN_NORMAL;
@@ -194,12 +194,12 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
             }
             Ok(commands) if item.is_null() => {
                 new_item =
-                    cmdq_get_command(&commands, ::core::ptr::null_mut::<cmdq_state>());
+                    cmdq_get_command(&commands, None);
                 cmdq_append(c, new_item);
                 drop(commands);
             }
             Ok(commands) => {
-                new_item = cmdq_get_command(&commands, cmdq_get_state(item));
+                new_item = cmdq_get_command(&commands, (*item).state.as_ref());
                 cmdq_insert_after(item, new_item);
                 drop(commands);
             }

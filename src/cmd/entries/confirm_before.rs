@@ -150,12 +150,11 @@ unsafe fn cmd_confirm_before_callback(
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
                     new_item = cmdq_get_command(
-                        &cdata.cmdlist,
-                        ::core::ptr::null_mut::<cmdq_state>(),
+                        &cdata.cmdlist, None,
                     );
                     cmdq_append(c, new_item);
                 } else {
-                    new_item = cmdq_get_command(&cdata.cmdlist, cmdq_get_state(item));
+                    new_item = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
                     cmdq_insert_after(item, new_item);
                 }
             }

@@ -13,7 +13,7 @@ use crate::src::cmd::find::{
 };
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
-    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_client, cmdq_get_command,
+    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command,
     cmdq_get_event, cmdq_get_flags, cmdq_get_target, cmdq_insert_after, cmdq_new_state,
     cmdq_running,
 };
@@ -115,7 +115,7 @@ unsafe fn hooks_insert_one(
     mut item: *mut cmdq_item,
     mut hd: *mut hooks_data,
     commands: Option<&std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
-    mut state: *mut cmdq_state,
+    state: &std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>,
 ) -> *mut cmdq_item {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let Some(commands) = commands else { return item; };
@@ -129,7 +129,7 @@ unsafe fn hooks_insert_one(
             log_cstr((s.as_ptr()) as *const _)
         ));
     }
-    new_item = cmdq_get_command(commands, state);
+    new_item = cmdq_get_command(commands, Some(state));
     if !item.is_null() {
         return cmdq_insert_after(item, new_item);
     }
@@ -168,7 +168,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         idx: 0,
     };
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
+    let state;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -221,7 +221,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     } else {
         state = cmdq_new_state(&raw mut fs, cmdq_get_event(item), CMDQ_STATE_NOHOOKS);
     }
-    cmdq_add_formats(state, (*hd).formats.as_ptr());
+    cmdq_add_formats(rc::as_ptr(&state), (*hd).formats.as_ptr());
     if *(*hd).name.as_ptr() as ::core::ffi::c_int == '@' as i32 {
         value = options_get_string(oo, (*hd).name.as_ptr());
         pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
@@ -240,7 +240,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 ));
             }
             1 => {
-                hooks_insert_one(item, hd, pr.cmdlist.as_ref(), state);
+                hooks_insert_one(item, hd, pr.cmdlist.as_ref(), &state);
             }
             _ => {}
         }
@@ -257,18 +257,18 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                         }
                     }
                     1 => {
-                        item = hooks_insert_one(item, hd, pr.cmdlist.as_ref(), state);
+                        item = hooks_insert_one(item, hd, pr.cmdlist.as_ref(), &state);
                     }
                     _ => {}
                 }
             } else {
                 let cmdlist = (*options_array_item_value(a)).commands();
-                item = hooks_insert_one(item, hd, cmdlist, state);
+                item = hooks_insert_one(item, hd, cmdlist, &state);
             }
             a = options_array_next(a);
         }
     }
-    cmdq_free_state(state);
+
 }
 unsafe fn hooks_insert_event(
     item: *mut cmdq_item,

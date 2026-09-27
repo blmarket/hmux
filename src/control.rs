@@ -1,7 +1,7 @@
 use crate::src::session::session_remove_ref;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
+    cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
     cmdq_new_state,
 };
 use crate::src::ffi::libc::{__errno_location, close, memset, poll, strcmp, strlen};
@@ -1024,7 +1024,6 @@ unsafe fn control_error_callback(c: *mut client) {
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
 unsafe fn control_read_callback(c: *mut client) {
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
         let Some(cs) = (*c).control_state.as_deref_mut() else {
             break;
@@ -1047,15 +1046,14 @@ unsafe fn control_read_callback(c: *mut client) {
             (*c).flags |= CLIENT_EXIT as uint64_t;
             break;
         } else {
-            state = cmdq_new_state(
+            let state = cmdq_new_state(
                 ::core::ptr::null_mut::<cmd_find_state>(),
                 ::core::ptr::null_mut::<key_event>(),
                 CMDQ_STATE_CONTROL,
             );
             match cmd_parse_and_append(
                 CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
-                c,
-                state,
+                c, Some(&state),
             ) {
                 Err(error) => {
                     let error_item = cmdq_get_callback_owned(
@@ -1068,7 +1066,7 @@ unsafe fn control_read_callback(c: *mut client) {
                 }
                 Ok(_) => {}
             }
-            cmdq_free_state(state);
+
         }
     }
 }

@@ -76,7 +76,7 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     assert_eq!(parsed.status, CMD_PARSE_SUCCESS, "command={command:?}");
 
     let command_list = parsed.take_cmdlist().unwrap();
-    let item: *mut cmdq_item = cmdq_get_command(&command_list, std::ptr::null_mut());
+    let item: *mut cmdq_item = cmdq_get_command(&command_list, None);
     assert!(!item.is_null(), "command={command:?}");
     drop(command_list);
 
@@ -102,7 +102,7 @@ fn command_queue_name_keeps_entry_label_and_item_pointer() {
         assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
 
         let command_list = parsed.take_cmdlist().unwrap();
-        let item = cmdq_get_command(&command_list, std::ptr::null_mut());
+        let item = cmdq_get_command(&command_list, None);
         assert!(!item.is_null());
         drop(command_list);
 

@@ -348,12 +348,12 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
         }
         Ok(commands) if item.is_null() => {
             new_item =
-                cmdq_get_command(&commands, ::core::ptr::null_mut::<cmdq_state>());
+                cmdq_get_command(&commands, None);
             cmdq_append(c, new_item);
             drop(commands);
         }
         Ok(commands) => {
-            new_item = cmdq_get_command(&commands, cmdq_get_state(item));
+            new_item = cmdq_get_command(&commands, (*item).state.as_ref());
             cmdq_insert_after(item, new_item);
             drop(commands);
         }

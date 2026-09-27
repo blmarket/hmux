@@ -272,8 +272,7 @@ pub struct cmd_entry {
 }
 
 #[repr(C)]
-/// Rc-owned; queue items and callers retain raw strong references released
-/// through `cmdq_free_state`.
+/// Queue items and callers share ownership through ordinary Rc handles.
 pub struct cmdq_state {
     pub flags: ::core::ffi::c_int,
     pub formats: Option<super::format::FormatTreeOwner>,

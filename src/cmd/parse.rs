@@ -486,7 +486,7 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,
     mut c: *mut client,
-    mut state: *mut cmdq_state,
+    state: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>>,
 ) -> Result<cmd_parse_status, Option<CString>> {
     let mut pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -680,7 +680,7 @@ mod parser_collection_tests {
             let result = cmd_parse_from_string(c"display-message retained", &mut input);
             assert_eq!(result.status, CMD_PARSE_SUCCESS);
             let observer = Rc::downgrade(result.cmdlist.as_ref().unwrap());
-            let item = cmdq_get_command(result.cmdlist.as_ref().expect("successful command parse"), std::ptr::null_mut());
+            let item = cmdq_get_command(result.cmdlist.as_ref().expect("successful command parse"), None);
             drop(result);
             assert!(observer.upgrade().is_some());
             assert_eq!((*(*item).cmd).entry.name, c"display-message");

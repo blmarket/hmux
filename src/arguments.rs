@@ -744,7 +744,7 @@ mod ownership_tests {
                     cmd_list_print_cstring(&*rc::as_ptr(&commands), 0).as_bytes(),
                     b"display-message -p expanded"
                 );
-                let item = cmdq_get_command(&commands, std::ptr::null_mut());
+                let item = cmdq_get_command(&commands, None);
                 assert!(!item.is_null());
                 assert!((*item).next.is_null());
                 drop(commands);

@@ -1784,7 +1784,7 @@ unsafe fn window_panes_run_command(
         Ok(commands) => {
             let cmdlist = commands;
             new_item =
-                cmdq_get_command(&cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+                cmdq_get_command(&cmdlist, None);
             cmdq_append(c, new_item);
             drop(cmdlist);
         }

@@ -205,7 +205,7 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
         for _ in 0..32 {
             cmd_list_append(rc::as_ptr(&list), display_message_command());
         }
-        let mut item = cmdq_get_command(&list, std::ptr::null_mut());
+        let mut item = cmdq_get_command(&list, None);
         assert_eq!((*item).cmd as usize, address);
         drop(list);
         let mut count = 0;

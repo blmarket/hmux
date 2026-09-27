@@ -2313,13 +2313,13 @@ pub unsafe fn mode_tree_run_command(
         return;
     }
     // The legacy constructor only reads and copies the supplied find state.
-    let state = crate::src::shared::rc::take(cmdq_new_state(
+    let state = cmdq_new_state(
         fs.map_or(std::ptr::null_mut(), |fs| std::ptr::from_ref(fs).cast_mut()),
         std::ptr::null_mut(),
         0,
-    ));
+    );
     if let Err(mut error) =
-        cmd_parse_and_append(&command, c, crate::src::shared::rc::as_ptr(&state))
+        cmd_parse_and_append(&command, c, Some(&state))
     {
         if !c.is_null() {
             cmd_parse_error_uppercase_first(&mut error);

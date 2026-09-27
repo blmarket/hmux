@@ -4569,7 +4569,7 @@ unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval 
             })),
         );
     } else {
-        new_item = cmdq_get_command(&cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+        new_item = cmdq_get_command(&cmdlist, None);
     }
     cmdq_insert_after(item, new_item);
     return CMD_RETURN_NORMAL;
@@ -4648,7 +4648,7 @@ unsafe fn server_client_dispatch_command(
                         );
                     } else {
                         new_item =
-                            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), ::core::ptr::null_mut::<cmdq_state>());
+                            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None);
                     }
                     drop(pr.cmdlist.take());
                     current_block = 13472856163611868459;

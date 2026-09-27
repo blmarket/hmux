@@ -1,7 +1,7 @@
 use crate::src::shared::key::key_table_owner_ptr;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_command,
+    cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_command,
     cmdq_insert_after, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_print_cstring};
@@ -865,7 +865,7 @@ pub unsafe fn key_bindings_init() {
         }
         cmdq_append(
             ::core::ptr::null_mut::<client>(),
-            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), ::core::ptr::null_mut::<cmdq_state>()),
+            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None),
         );
         drop(pr.cmdlist.take());
         i = i.wrapping_add(1);
@@ -890,7 +890,7 @@ pub unsafe fn key_bindings_dispatch(
     mut fs: *mut cmd_find_state,
 ) -> *mut cmdq_item {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut new_state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
+    let new_state;
     let mut readonly: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
@@ -910,8 +910,8 @@ pub unsafe fn key_bindings_dispatch(
             flags |= CMDQ_STATE_REPEAT;
         }
         new_state = cmdq_new_state(fs, event, flags);
-        new_item = cmdq_get_command(&bd.commands, new_state);
-        cmdq_free_state(new_state);
+        new_item = cmdq_get_command(&bd.commands, Some(&new_state));
+
     }
     if !item.is_null() {
         new_item = cmdq_insert_after(item, new_item);
@@ -1058,7 +1058,6 @@ mod ownership_tests {
             assert_eq!(original_lifetime.strong_count(), 2);
             let replacement = cmd_list_new();
             let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
-            let replacement_ptr = rc::as_ptr(&replacement);
             key_bindings_add(name.as_ptr(), 65, c"replacement".as_ptr(), 0, Some(replacement));
             assert_eq!(original_lifetime.strong_count(), 1);
             key_bindings_reset(name.as_ptr(), 65);

@@ -1,6 +1,6 @@
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
-    cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_free_state,
+    cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state,
     cmdq_get_callback_owned, cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after,
     cmdq_new_state, cmdq_print,
 };
@@ -125,7 +125,7 @@ pub unsafe fn load_cfg(
     };
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
+    let state;
 
     log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
     f = fopen(path, b"rb\0" as *const u8 as *const ::core::ffi::c_char) as *mut FILE;
@@ -173,17 +173,17 @@ pub unsafe fn load_cfg(
     );
 
     cmdq_add_format(
-        state,
+        crate::src::shared::rc::as_ptr(&state),
         c"current_file",
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
+    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
 
     new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
 
     drop(pr.cmdlist.take());
-    cmdq_free_state(state);
+
 
     return 0 as ::core::ffi::c_int;
 }
@@ -215,7 +215,7 @@ pub unsafe fn load_cfg_from_buffer(
     };
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
+    let state;
     if !new_item.is_null() {
         *new_item = ::core::ptr::null_mut::<cmdq_item>();
     }
@@ -253,19 +253,19 @@ pub unsafe fn load_cfg_from_buffer(
         );
     }
     cmdq_add_format(
-        state,
+        crate::src::shared::rc::as_ptr(&state),
         c"current_file",
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
+    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
     if !item.is_null() {
         new_item0 = cmdq_insert_after(item, new_item0);
     } else {
         new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
     }
     drop(pr.cmdlist.take());
-    cmdq_free_state(state);
+
     if !new_item.is_null() {
         *new_item = new_item0;
     }

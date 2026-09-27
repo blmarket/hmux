@@ -1,7 +1,7 @@
 use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_from_window};
 use crate::src::cmd::parse::cmd_parse_and_append;
-use crate::src::cmd::queue::{cmdq_append, cmdq_free_state, cmdq_get_error, cmdq_new_state};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_error, cmdq_new_state};
 use crate::src::format::{
     format_create_defaults, format_free, format_single_cstring, format_single_from_state_cstring,
 };
@@ -564,8 +564,7 @@ pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> :
             .command
             .as_deref()
             .expect("menu command row has a command"),
-        c,
-        state,
+        c, Some(&state),
     ) {
         cmdq_append(
             c,
@@ -576,7 +575,7 @@ pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> :
             ),
         );
     }
-    cmdq_free_state(state);
+
     1
 }
 pub fn menu_resize(md: &mut menu_data, window_width: u_int, window_height: u_int) {
