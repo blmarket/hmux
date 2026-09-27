@@ -124,7 +124,7 @@ pub struct format_tree {
     pub wp: *mut window_pane,
     pub pb: Option<PasteBufferRef>,
     pub item: *mut cmdq_item,
-    pub client: *mut client,
+    pub client: Option<super::client::ClientOwner>,
     pub flags: ::core::ffi::c_int,
     pub tag: u_int,
     pub m: mouse_event,

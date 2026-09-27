@@ -1,3 +1,4 @@
+use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
@@ -7,7 +8,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
-use crate::src::server_client::server_client_unref;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -22,17 +22,14 @@ use std::ffi::{CStr, CString};
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {
-    pub client: *mut client,
+    pub client: Option<ClientOwner>,
     pub item: *mut cmdq_item,
     pub name: Option<CString>,
 }
 
 impl cmd_load_buffer_data {
     unsafe fn release_client(&mut self) {
-        if !self.client.is_null() {
-            let client = std::mem::replace(&mut self.client, std::ptr::null_mut());
-            server_client_unref(client);
-        }
+        drop(self.client.take());
     }
 }
 
@@ -78,7 +75,7 @@ unsafe fn cmd_load_buffer_done(
     if closed == 0 {
         return;
     }
-    let mut tc: *mut client = cdata.client;
+    let mut tc: *mut client = client_owner_ptr(&cdata.client);
     let mut item: *mut cmdq_item = cdata.item;
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -1)
@@ -120,7 +117,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut cdata = Box::new(cmd_load_buffer_data {
-        client: ::core::ptr::null_mut(),
+        client: None,
         item,
         name: None,
     });
@@ -129,8 +126,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }
     if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-        cdata.client = tc;
-        crate::src::shared::rc::retain(tc);
+        cdata.client = ClientOwner::retain(tc);
     }
     let path = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     file_read_with_cmdq_wait(
@@ -159,7 +155,7 @@ mod tests {
     #[test]
     fn file_progress_keeps_segments_until_completion() {
         let mut data = cmd_load_buffer_data {
-            client: std::ptr::null_mut(),
+            client: None,
             item: std::ptr::null_mut(),
             name: None,
         };

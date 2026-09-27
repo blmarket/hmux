@@ -1,3 +1,4 @@
+use crate::src::shared::client::client_owner_ptr;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
 // Private expression parser/evaluator.  The modifier parser, loops,
@@ -913,7 +914,7 @@ pub(super) unsafe fn format_loop_sessions(
 ) -> CString {
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
-    let mut c: *mut client = (*ft).client;
+    let mut c: *mut client = client_owner_ptr(&(*ft).client);
     let mut item: *mut cmdq_item = (*ft).item;
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
@@ -1058,7 +1059,7 @@ pub(super) unsafe fn format_loop_windows(
 ) -> Option<CString> {
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
-    let mut c: *mut client = (*ft).client;
+    let mut c: *mut client = client_owner_ptr(&(*ft).client);
     let mut s: *mut session = (*ft).s;
     let mut item: *mut cmdq_item = (*ft).item;
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -1203,7 +1204,7 @@ pub(super) unsafe fn format_loop_panes(
 ) -> Option<CString> {
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
-    let mut c: *mut client = (*ft).client;
+    let mut c: *mut client = client_owner_ptr(&(*ft).client);
     let mut item: *mut cmdq_item = (*ft).item;
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
@@ -1329,7 +1330,7 @@ pub(super) unsafe fn format_loop_add_option(
             write_cstr(out, name)
         },
     );
-    nft = format_create((*ft).client, (*ft).item, FORMAT_NONE, (*ft).flags);
+    nft = format_create(client_owner_ptr(&(*ft).client), (*ft).item, FORMAT_NONE, (*ft).flags);
     format_add(
         nft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1471,7 +1472,7 @@ pub(super) unsafe fn format_loop_add_array_item(
             out.write_all(b"]")
         },
     );
-    nft = format_create((*ft).client, (*ft).item, FORMAT_NONE, (*ft).flags);
+    nft = format_create(client_owner_ptr(&(*ft).client), (*ft).item, FORMAT_NONE, (*ft).flags);
     format_add(
         nft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1660,7 +1661,7 @@ pub(super) unsafe fn format_loop_environ(
 ) -> CString {
     let mut ft: *mut format_tree = (*es).ft;
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut c: *mut client = (*ft).client;
+    let mut c: *mut client = client_owner_ptr(&(*ft).client);
     let mut item: *mut cmdq_item = (*ft).item;
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1700,8 +1701,8 @@ pub(super) unsafe fn format_loop_environ(
     } else if strcmp(flags, b"c\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
-        if !(*ft).client.is_null() {
-            env = (*(*ft).client).environ.as_deref();
+        if !client_owner_ptr(&(*ft).client).is_null() {
+            env = (*client_owner_ptr(&(*ft).client)).environ.as_deref();
         }
     }
     let Some(env) = env else { return c"".to_owned(); };
@@ -2238,8 +2239,8 @@ pub(super) unsafe fn format_cycle(
         .start_time
         .wrapping_div(count.wrapping_mul(FORMAT_CYCLE_PERIOD as u_int) as uint64_t)
         .wrapping_rem(n as uint64_t) as u_int;
-    if n > 1 as u_int && !(*ft).client.is_null() {
-        format_cycle_start_timer((*ft).client);
+    if n > 1 as u_int && !client_owner_ptr(&(*ft).client).is_null() {
+        format_cycle_start_timer(client_owner_ptr(&(*ft).client));
     }
     start = frames;
     i = 0 as u_int;

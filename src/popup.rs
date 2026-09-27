@@ -1,3 +1,4 @@
+use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::options::options_owner_ptr;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::ffi::libc::memcpy;
@@ -70,7 +71,7 @@ use std::rc::Weak;
 
 pub struct popup_data {
     published: bool,
-    pub c: *mut client,
+    pub c: Option<ClientOwner>,
     pub item: *mut cmdq_item,
     pub flags: ::core::ffi::c_int,
     pub title: Option<std::ffi::CString>,
@@ -243,9 +244,7 @@ impl Drop for popup_data {
                 }
                 cmdq_continue(self.item);
             }
-            if !self.c.is_null() {
-                server_client_unref(self.c);
-            }
+            drop(self.c.take());
             if !self.job.is_null() {
                 job_free(self.job);
             }
@@ -264,7 +263,7 @@ impl Drop for popup_data {
 }
 unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    let mut c: *mut client = (*pd).c;
+    let mut c: *mut client = client_owner_ptr(&(*pd).c);
     let mut s: *mut session = (*c).session;
     let mut o: *mut options = ::core::ptr::null_mut::<options>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -381,10 +380,10 @@ impl PopupRenderSnapshot {
         let border = u_int::from((*pd).border_lines != BOX_LINES_NONE);
         Self {
             popup: popup.handle(),
-            client: if (*pd).c.is_null() {
+            client: if client_owner_ptr(&(*pd).c).is_null() {
                 Weak::new()
             } else {
-                crate::src::shared::rc::downgrade((*pd).c)
+                crate::src::shared::rc::downgrade(client_owner_ptr(&(*pd).c))
             },
             palette: (*pd).palette.downgrade(),
             defaults: (*pd).defaults,
@@ -852,7 +851,7 @@ unsafe fn popup_key(c: *mut client, popup: &PopupGuard, event: *mut key_event) -
 unsafe fn popup_job_update_cb(job: &mut job, popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let evb: &mut evbuffer = &mut *(*job_get_event(job as *mut job)).input;
-    let mut c: *mut client = (*pd).c;
+    let mut c: *mut client = client_owner_ptr(&(*pd).c);
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
@@ -884,8 +883,8 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
     if (*pd).flags & POPUP_CLOSEEXIT != 0
         || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int
     {
-        if popup.is_current(&*(*pd).c) {
-            server_client_clear_overlay((*pd).c);
+        if popup.is_current(&*client_owner_ptr(&(*pd).c)) {
+            server_client_clear_overlay(client_owner_ptr(&(*pd).c));
         }
     }
 }
@@ -1100,8 +1099,7 @@ pub unsafe fn popup_display(
     let pd = popup.as_ptr();
     (*pd).item = item;
     (*pd).flags = flags;
-    (*pd).c = c;
-    crate::src::shared::rc::retain((*pd).c);
+    (*pd).c = ClientOwner::retain(c);
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
     memcpy(
@@ -1411,8 +1409,7 @@ mod tests {
             item.client = c;
             item.flags = CMDQ_WAITING;
             let mut data = Box::new(popup_data::empty());
-            rc::retain(c);
-            data.c = c;
+            data.c = ClientOwner::retain(c);
             data.item = &mut *item;
             data.flags = POPUP_CLOSEEXIT;
             data.published = true;

@@ -346,3 +346,66 @@ pub type overlay_mode_cb =
 
 pub type overlay_check_cb =
     Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> visible_ranges>>;
+
+/// An existing client reference whose release must wait for the event loop.
+/// Unlike a plain Rc field, every drop path preserves client teardown timing.
+pub struct ClientOwner(Option<std::rc::Rc<std::cell::UnsafeCell<client>>>);
+
+impl ClientOwner {
+    /// Retain a live client, or preserve an absent client as None.
+    ///
+    /// # Safety
+    /// A non-null pointer must identify a live Rc-owned client.
+    pub unsafe fn retain(ptr: *mut client) -> Option<Self> {
+        if ptr.is_null() {
+            return None;
+        }
+        super::rc::retain(ptr);
+        Some(Self(Some(super::rc::take(ptr))))
+    }
+
+    pub fn as_ptr(&self) -> *mut client {
+        super::rc::as_ptr(self.0.as_ref().expect("live client owner"))
+    }
+}
+
+impl Drop for ClientOwner {
+    fn drop(&mut self) {
+        if let Some(owner) = self.0.take() {
+            crate::src::server_client::server_client_unref_owned(owner);
+        }
+    }
+}
+
+pub fn client_owner_ptr(owner: &Option<ClientOwner>) -> *mut client {
+    owner.as_ref().map_or(std::ptr::null_mut(), ClientOwner::as_ptr)
+}
+
+#[cfg(test)]
+mod retained_client_tests {
+    use super::*;
+    use crate::src::{reactor, shared::rc};
+
+    #[test]
+    fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {
+        unsafe {
+            for cancel in [false, true] {
+                let ptr = rc::new(client::empty());
+                let observer = rc::downgrade(ptr);
+                let owner = ClientOwner::retain(ptr).unwrap();
+                rc::release(ptr);
+                assert_eq!(owner.as_ptr(), ptr);
+                drop(owner);
+                assert_eq!(observer.strong_count(), 1);
+                if cancel {
+                    reactor::shutdown_runtime();
+                } else {
+                    reactor::event_loop();
+                }
+                assert_eq!(observer.strong_count(), 0);
+                reactor::shutdown_runtime();
+            }
+            assert!(ClientOwner::retain(std::ptr::null_mut()).is_none());
+        }
+    }
+}

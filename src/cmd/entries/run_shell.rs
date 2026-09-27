@@ -1,3 +1,4 @@
+use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
@@ -19,7 +20,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln, event_del,
     event_once_owned,
 };
-use crate::src::server_client::{server_client_get_cwd, server_client_unref};
+use crate::src::server_client::{server_client_get_cwd};
 use crate::src::session::{session_add_ref, session_remove_ref};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -47,7 +48,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::ffi::{CStr, CString};
 
 pub struct cmd_run_shell_data {
-    pub client: *mut client,
+    pub client: Option<ClientOwner>,
     pub cmd: Option<CString>,
     pub state: Option<Box<args_command_state>>,
     pub cwd: CString,
@@ -116,8 +117,8 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             cmdq_print(cdata.item, |out| write_cstr(out, msg));
             return;
         }
-        if !cdata.client.is_null() && !(*cdata.client).session.is_null() {
-            wp = (*(*(*(*cdata.client).session).curw).window).active;
+        if cdata.client.is_some() && !(*client_owner_ptr(&cdata.client)).session.is_null() {
+            wp = (*(*(*(*client_owner_ptr(&cdata.client)).session).curw).window).active;
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
@@ -192,7 +193,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         server_client_get_cwd(c, s)
     };
     let mut cdata = Box::new(cmd_run_shell_data {
-        client: ::core::ptr::null_mut(),
+        client: None,
         cmd: None,
         state: None,
         cwd: CStr::from_ptr(cwd).to_owned(),
@@ -233,14 +234,11 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         cdata.wp_id = -(1 as ::core::ffi::c_int);
     }
     if wait != 0 {
-        cdata.client = c;
+        cdata.client = ClientOwner::retain(c);
         cdata.item = item;
     } else {
-        cdata.client = tc;
+        cdata.client = ClientOwner::retain(tc);
         cdata.flags |= JOB_NOWAIT;
-    }
-    if !cdata.client.is_null() {
-        crate::src::shared::rc::retain(cdata.client);
     }
     if args_has(args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
@@ -274,7 +272,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
-    let mut c: *mut client = cdata.client;
+    let mut c: *mut client = client_owner_ptr(&cdata.client);
     let cmd = cdata.cmd.as_deref();
     let mut item: *mut cmdq_item = cdata.item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -435,9 +433,7 @@ impl Drop for cmd_run_shell_data {
             if !self.s.is_null() {
                 session_remove_ref(self.s, c"cmd_run_shell_free".as_ptr());
             }
-            if !self.client.is_null() {
-                server_client_unref(self.client);
-            }
+            drop(self.client.take());
             drop(self.state.take());
         }
     }

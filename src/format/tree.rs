@@ -122,10 +122,7 @@ unsafe fn format_create_box(
 ) -> Box<format_tree> {
     let mut owner = Box::new(format_tree::default());
     let ft = &raw mut *owner;
-    if !c.is_null() {
-        (*ft).client = c;
-        crate::src::shared::rc::retain(c);
-    }
+    (*ft).client = crate::src::shared::client::ClientOwner::retain(c);
     (*ft).item = item;
     (*ft).tag = tag as u_int;
     (*ft).flags = flags;
@@ -159,9 +156,7 @@ unsafe fn format_clear(ft: *mut format_tree) {
     while let Some((_, entry)) = (*ft).tree.entries.pop_first() {
         drop(entry);
     }
-    if !(*ft).client.is_null() {
-        server_client_unref((*ft).client);
-    }
+    drop((*ft).client.take());
 }
 
 pub unsafe fn format_free(ft: *mut format_tree) {
