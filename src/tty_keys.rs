@@ -1492,7 +1492,7 @@ unsafe fn tty_keys_next1(
         if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint {
             return -(1 as ::core::ffi::c_int);
         }
-        if utf8_from_data(&raw mut ud, &raw mut uc) as ::core::ffi::c_uint
+        if utf8_from_data(&ud, &mut uc) as ::core::ffi::c_uint
             != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             return -(1 as ::core::ffi::c_int);
@@ -2323,7 +2323,7 @@ unsafe fn tty_keys_extended_key(
     {
         if utf8_fromwc(nkey as wchar_t, &raw mut ud) as ::core::ffi::c_uint
             == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            && utf8_from_data(&raw mut ud, &raw mut uc) as ::core::ffi::c_uint
+            && utf8_from_data(&ud, &mut uc) as ::core::ffi::c_uint
                 == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             nkey = uc as key_code;

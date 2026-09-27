@@ -4,7 +4,7 @@ use crate::src::compat::vis::vis;
 use crate::src::ffi::libc::{
     __ctype_b_loc, __errno_location, memcpy, memset, strchr, strlen, strncmp, strtoull, wctomb,
 };
-use crate::src::log::{fatalx, log_cstr_n, log_debug};
+use crate::src::log::{fatalx, log_bytes, log_cstr_n, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
 };
@@ -15,43 +15,13 @@ use crate::src::shared::errno::ERANGE;
 use crate::src::shared::grid::*;
 use crate::src::shared::limits::__LONG_LONG_MAX__;
 use crate::src::shared::options::{options_array_item, options_entry};
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::utf8::*;
-use crate::src::shared::utf8::{wchar_t, UTF8_SIZE};
+use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::vis::VIS_DQ;
+use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
-
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-/// Dynamic entries are Box-owned while indexed; static defaults have
-/// `allocated == 0` and must never be passed to `Box::from_raw`.
-pub struct utf8_width_item {
-    pub wc: wchar_t,
-    pub width: u_int,
-    pub allocated: ::core::ffi::c_int,
-}
-#[derive(Default)]
-pub struct utf8_width_cache {
-    entries: std::collections::BTreeMap<wchar_t, *mut utf8_width_item>,
-}
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct utf8_item {
-    pub index: u_int,
-    pub data: [::core::ffi::c_char; 32],
-    pub size: u_char,
-}
-#[derive(Default)]
-pub struct utf8_data_tree {
-    /// Borrowed aliases of items owned by the index tree for process lifetime.
-    entries: std::collections::BTreeMap<(u_char, Vec<u8>), *mut utf8_item>,
-}
-#[derive(Default)]
-pub struct utf8_index_tree {
-    entries: std::collections::BTreeMap<u_int, Box<utf8_item>>,
-}
 
 pub const __WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX__;
 pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::ffi::c_ulonglong)
@@ -59,978 +29,24 @@ pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::f
     .wrapping_add(1 as ::core::ffi::c_ulonglong);
 pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
 
-// The old comparator ordered entries only by their signed wchar_t value.
-// BTreeMap has the same ordering, while its entry API preserves the tree's
-// duplicate-insertion behavior of returning the existing item.
-fn utf8_width_cache_find(head: &utf8_width_cache, wc: wchar_t) -> *mut utf8_width_item {
-    head.entries
-        .get(&wc)
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
-}
-
-unsafe fn utf8_width_cache_insert(
-    head: &mut utf8_width_cache,
-    elm: &mut utf8_width_item,
-) -> *mut utf8_width_item {
-    match head.entries.entry(elm.wc) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(&raw mut *elm);
-            ::core::ptr::null_mut::<utf8_width_item>()
-        }
-    }
-}
-
-unsafe fn utf8_width_cache_minmax(head: &utf8_width_cache) -> *mut utf8_width_item {
-    let entry = head.entries.iter().next();
-    entry
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
-}
-
-unsafe fn utf8_width_cache_next(
-    head: &utf8_width_cache,
-    elm: &utf8_width_item,
-) -> *mut utf8_width_item {
-    head.entries
-        .range((
-            std::ops::Bound::Excluded(elm.wc),
-            std::ops::Bound::Unbounded,
-        ))
-        .next()
-        .map(|(_, entry)| *entry)
-        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
-}
-
-unsafe fn utf8_width_cache_remove(
-    head: &mut utf8_width_cache,
-    elm: &utf8_width_item,
-) -> *mut utf8_width_item {
-    head.entries
-        .remove(&elm.wc)
-        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
-}
-
-static mut utf8_width_cache: utf8_width_cache = utf8_width_cache {
-    entries: std::collections::BTreeMap::new(),
-};
-static mut utf8_default_width_cache: [utf8_width_item; 162] = [
-    utf8_width_item {
-        wc: 0x261d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x26f9 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x270a as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x270b as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x270c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x270d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1e6 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1e7 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1e8 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1e9 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1ea as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1eb as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1ec as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1ed as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1ee as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1ef as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f0 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f1 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f2 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f3 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f4 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f5 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f6 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f7 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f8 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1f9 as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1fa as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1fb as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1fc as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1fd as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1fe as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f1ff as wchar_t,
-        width: 1 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f385 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3c2 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3c3 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3c4 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3c7 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3ca as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3cb as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3cc as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3fb as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3fc as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3fd as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3fe as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f3ff as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f442 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f443 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f446 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f447 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f448 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f449 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f44a as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f44b as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f44c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f44d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f44e as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f44f as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f450 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f466 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f467 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f468 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f469 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f46b as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f46c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f46d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f46e as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f470 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f471 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f472 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f473 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f474 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f475 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f476 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f477 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f478 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f47c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f481 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f482 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f483 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f485 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f486 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f487 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f48f as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f491 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f4aa as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f574 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f575 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f57a as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f590 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f595 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f596 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f645 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f646 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f647 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f64b as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f64c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f64d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f64e as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f64f as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f6a3 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f6b4 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f6b5 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f6b6 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f6c0 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f6cc as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f90c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f90f as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f918 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f919 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f91a as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f91b as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f91c as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f91d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f91e as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f91f as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f926 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f930 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f931 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f932 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f933 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f934 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f935 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f936 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f937 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f938 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f939 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f93d as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f93e as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f977 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9b5 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9b6 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9b8 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9b9 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9bb as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9cd as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9ce as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9cf as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d1 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d2 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d3 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d4 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d5 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d6 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d7 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d8 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9d9 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9da as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9db as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9dc as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1f9dd as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1fac3 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1fac4 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1fac5 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf0 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf1 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf2 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf3 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf4 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf5 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf6 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf7 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-    utf8_width_item {
-        wc: 0x1faf8 as wchar_t,
-        width: 2 as u_int,
-        allocated: 0,
-    },
-];
-// The old comparator ordered entries by size first and then by memcmp over exactly
-// that many bytes. This key has the same ordering while the map preserves
-// duplicate insertion behavior by retaining the first item for each key.
-unsafe fn utf8_data_key(item: &utf8_item) -> (u_char, Vec<u8>) {
-    let size = item.size;
-    let data = std::slice::from_raw_parts(item.data.as_ptr().cast::<u8>(), size as usize);
-    (size, data.to_vec())
-}
-
-unsafe fn utf8_data_tree_insert(head: &mut utf8_data_tree, elm: &mut utf8_item) -> *mut utf8_item {
-    match head.entries.entry(utf8_data_key(elm)) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(&raw mut *elm);
-            ::core::ptr::null_mut::<utf8_item>()
-        }
-    }
-}
-
-unsafe fn utf8_data_tree_find(head: &utf8_data_tree, item: &utf8_item) -> *mut utf8_item {
-    head.entries
-        .get(&utf8_data_key(item))
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<utf8_item>())
-}
-
-static mut utf8_data_tree: utf8_data_tree = utf8_data_tree {
-    entries: std::collections::BTreeMap::new(),
-};
-// The old comparator ordered entries only by their unsigned index. BTreeMap's
-// key ordering is identical, and its entry API retains RB_INSERT's behavior of
-// returning the existing item without replacing it on duplicate keys.
-unsafe fn utf8_index_tree_insert(
-    head: &mut utf8_index_tree,
-    elm: Box<utf8_item>,
-) -> *mut utf8_item {
-    match head.entries.entry(elm.index) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => {
-            entry.get_mut().as_mut() as *mut utf8_item
-        }
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            ::core::ptr::null_mut::<utf8_item>()
-        }
-    }
-}
-fn utf8_index_tree_find(head: &utf8_index_tree, index: u_int) -> *mut utf8_item {
-    head.entries
-        .get(&index)
-        .map(|item| item.as_ref() as *const utf8_item as *mut utf8_item)
-        .unwrap_or(::core::ptr::null_mut::<utf8_item>())
-}
-static mut utf8_index_tree: utf8_index_tree = utf8_index_tree {
-    entries: std::collections::BTreeMap::new(),
-};
 static mut utf8_no_width: ::core::ffi::c_int = 0;
-static mut utf8_next_index: u_int = 0;
-unsafe fn utf8_item_by_data(mut data: *const u_char, mut size: size_t) -> *mut utf8_item {
-    let mut ui: utf8_item = utf8_item {
-        index: 0,
-        data: [0; 32],
-        size: 0,
-    };
-    memcpy(
-        &raw mut ui.data as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
-        data as *const ::core::ffi::c_void,
-        size,
-    );
-    ui.size = size as u_char;
-    return utf8_data_tree_find(&*(&raw const utf8_data_tree), &ui);
+
+fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
+    UTF8_WIDTHS
+        .lock()
+        .expect("UTF-8 width cache poisoned")
+        .find(wc)
 }
-unsafe fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
-    let mut ui: utf8_item = utf8_item {
-        index: 0,
-        data: [0; 32],
-        size: 0,
-    };
-    ui.index = index;
-    return utf8_index_tree_find(&*(&raw const utf8_index_tree), ui.index);
-}
-unsafe fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
-    return utf8_width_cache_find(&*(&raw const utf8_width_cache), wc);
-}
-unsafe fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) {
-    let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut old: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
+
+unsafe fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
     log_debug(format_args!(
         "Unicode width cache: {:08X}={}",
-        wc as u_int,
-        (width) as u32
+        wc as u_int, width
     ));
-    uw = Box::into_raw(Box::new(utf8_width_item {
-        wc,
-        width,
-        allocated: 1,
-    }));
-    old = utf8_width_cache_insert(&mut *(&raw mut utf8_width_cache), &mut *uw);
-    if !old.is_null() {
-        utf8_width_cache_remove(&mut *(&raw mut utf8_width_cache), &*old);
-        if (*old).allocated != 0 {
-            drop(Box::from_raw(old));
-        }
-        utf8_width_cache_insert(&mut *(&raw mut utf8_width_cache), &mut *uw);
-    }
+    UTF8_WIDTHS
+        .lock()
+        .expect("UTF-8 width cache poisoned")
+        .insert(wc, width);
 }
 unsafe fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -1162,33 +178,12 @@ unsafe fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
     }
 }
 pub unsafe fn utf8_update_width_cache() {
-    let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut uw1: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut i: u_int = 0;
-    uw = utf8_width_cache_minmax(&*(&raw const utf8_width_cache));
-    while !uw.is_null() && {
-        uw1 = utf8_width_cache_next(&*(&raw const utf8_width_cache), &*uw);
-        1 as ::core::ffi::c_int != 0
-    } {
-        utf8_width_cache_remove(&mut *(&raw mut utf8_width_cache), &*uw);
-        if (*uw).allocated != 0 {
-            drop(Box::from_raw(uw));
-        }
-        uw = uw1;
-    }
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[utf8_width_item; 162]>() as usize)
-            .wrapping_div(::core::mem::size_of::<utf8_width_item>() as usize)
-    {
-        utf8_width_cache_insert(
-            &mut *(&raw mut utf8_width_cache),
-            &mut *((&raw mut utf8_default_width_cache as *mut utf8_width_item).offset(i as isize)),
-        );
-        i = i.wrapping_add(1);
-    }
+    UTF8_WIDTHS
+        .lock()
+        .expect("UTF-8 width cache poisoned")
+        .reset_defaults();
+    let mut o: *mut options_entry;
+    let mut a: *mut options_array_item;
     o = options_get(
         global_options,
         b"codepoint-widths\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1199,163 +194,74 @@ pub unsafe fn utf8_update_width_cache() {
         a = options_array_next(a);
     }
 }
-unsafe fn utf8_put_item(
-    mut data: *const u_char,
-    mut size: size_t,
-    mut index: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut ui: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    ui = utf8_item_by_data(data, size);
-    if !ui.is_null() {
-        *index = (*ui).index;
-        log_debug(format_args!(
-            "{}: found {} = {}",
-            "utf8_put_item",
-            log_cstr_n((data) as *const _, size as ::core::ffi::c_int),
-            (*index) as u32
-        ));
-        return 0 as ::core::ffi::c_int;
-    }
-    if utf8_next_index == (0xffffff as ::core::ffi::c_int + 1 as ::core::ffi::c_int) as u_int {
-        return -(1 as ::core::ffi::c_int);
-    }
-    let mut owned = Box::new(utf8_item::default());
-    let fresh2 = utf8_next_index;
-    utf8_next_index = utf8_next_index.wrapping_add(1);
-    owned.index = fresh2;
-    memcpy(
-        owned.data.as_mut_ptr().cast(),
-        data as *const ::core::ffi::c_void,
-        size,
-    );
-    owned.size = size as u_char;
-    ui = owned.as_mut() as *mut utf8_item;
-    assert!(
-        utf8_index_tree_insert(&mut *(&raw mut utf8_index_tree), owned).is_null(),
-        "fresh UTF-8 index must be unique"
-    );
-    utf8_data_tree_insert(&mut *(&raw mut utf8_data_tree), &mut *ui);
-    *index = (*ui).index;
+unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
+    let (index, inserted) = UTF8_ITEMS
+        .lock()
+        .expect("UTF-8 item cache poisoned")
+        .intern(data)?;
     log_debug(format_args!(
-        "{}: added {} = {}",
-        "utf8_put_item",
-        log_cstr_n((data) as *const _, size as ::core::ffi::c_int),
-        (*index) as u32
+        "utf8_put_item: {} {} = {}",
+        if inserted { "added" } else { "found" },
+        log_bytes(data),
+        index,
     ));
-    return 0 as ::core::ffi::c_int;
+    Some(index)
 }
-pub unsafe fn utf8_from_data(mut ud: *const utf8_data, mut uc: *mut utf8_char) -> utf8_state {
-    let mut current_block: u64;
-    let mut index: u_int = 0;
-    if (*ud).width as ::core::ffi::c_int > 2 as ::core::ffi::c_int {
-        fatalx(|out| {
-            write!(
-                out,
-                "invalid UTF-8 width: {}",
-                ((*ud).width as ::core::ffi::c_int) as u32
-            )
-        });
+
+pub unsafe fn utf8_from_data(ud: &utf8_data, uc: &mut utf8_char) -> utf8_state {
+    if ud.width > 2 {
+        fatalx(|out| write!(out, "invalid UTF-8 width: {}", ud.width));
     }
-    if !((*ud).size as ::core::ffi::c_int > UTF8_SIZE) {
-        if (*ud).size as ::core::ffi::c_int <= 3 as ::core::ffi::c_int {
-            index = (((*ud).data[2 as ::core::ffi::c_int as usize] as utf8_char)
-                << 16 as ::core::ffi::c_int
-                | ((*ud).data[1 as ::core::ffi::c_int as usize] as utf8_char)
-                    << 8 as ::core::ffi::c_int
-                | (*ud).data[0 as ::core::ffi::c_int as usize] as utf8_char)
-                as u_int;
-            current_block = 11875828834189669668;
-        } else if utf8_put_item(
-            &raw const (*ud).data as *const u_char,
-            (*ud).size as size_t,
-            &raw mut index,
-        ) != 0 as ::core::ffi::c_int
-        {
-            current_block = 801095099472899353;
-        } else {
-            current_block = 11875828834189669668;
-        }
-        match current_block {
-            801095099472899353 => {}
-            _ => {
-                *uc = (((*ud).size as u_int) << 24 as ::core::ffi::c_int
-                    | ((*ud).width as u_int).wrapping_add(1 as u_int) << 29 as ::core::ffi::c_int
-                    | index) as utf8_char;
-                log_debug(format_args!(
-                    "{}: ({} {} {}) -> {:08x}",
-                    "utf8_from_data",
-                    (*ud).width as ::core::ffi::c_int,
-                    (*ud).size as ::core::ffi::c_int,
-                    log_cstr_n(
-                        (&raw const (*ud).data as *const u_char) as *const _,
-                        (*ud).size as ::core::ffi::c_int
-                    ),
-                    (*uc) as u32
-                ));
-                return UTF8_DONE;
-            }
-        }
-    }
-    if (*ud).width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-        *uc = (0 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
-            | (0 as ::core::ffi::c_int as utf8_char).wrapping_add(1 as utf8_char)
-                << 29 as ::core::ffi::c_int;
-    } else if (*ud).width as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
-        *uc = (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
-            | (1 as ::core::ffi::c_int as utf8_char).wrapping_add(1 as utf8_char)
-                << 29 as ::core::ffi::c_int
-            | 0x20 as utf8_char;
+    let index = if ud.size as usize > ud.data.len() {
+        None
+    } else if ud.size <= 3 {
+        Some((u32::from(ud.data[2]) << 16) | (u32::from(ud.data[1]) << 8) | u32::from(ud.data[0]))
     } else {
-        *uc = (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
-            | (1 as ::core::ffi::c_int as utf8_char).wrapping_add(1 as utf8_char)
-                << 29 as ::core::ffi::c_int
-            | 0x2020 as utf8_char;
+        utf8_put_item(&ud.data[..ud.size as usize])
+    };
+    if let Some(index) = index {
+        *uc = (u32::from(ud.size) << 24) | ((u32::from(ud.width) + 1) << 29) | index;
+        log_debug(format_args!(
+            "utf8_from_data: ({} {} {}) -> {:08x}",
+            ud.width,
+            ud.size,
+            log_bytes(&ud.data[..ud.size as usize]),
+            *uc,
+        ));
+        return UTF8_DONE;
     }
-    return UTF8_ERROR;
+    *uc = match ud.width {
+        0 => 1 << 29,
+        1 => (1 << 24) | (2 << 29) | 0x20,
+        _ => (1 << 24) | (2 << 29) | 0x2020,
+    };
+    UTF8_ERROR
 }
-pub unsafe fn utf8_to_data(mut uc: utf8_char, mut ud: *mut utf8_data) {
-    let mut ui: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    let mut index: u_int = 0;
-    memset(
-        ud as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    );
-    (*ud).have = (uc >> 24 as ::core::ffi::c_int & 0x1f as utf8_char) as u_char;
-    (*ud).size = (*ud).have;
-    (*ud).width = (uc >> 29 as ::core::ffi::c_int).wrapping_sub(1 as utf8_char) as u_char;
-    if (*ud).size as ::core::ffi::c_int <= 3 as ::core::ffi::c_int {
-        (*ud).data[2 as ::core::ffi::c_int as usize] = (uc >> 16 as ::core::ffi::c_int) as u_char;
-        (*ud).data[1 as ::core::ffi::c_int as usize] =
-            (uc >> 8 as ::core::ffi::c_int & 0xff as utf8_char) as u_char;
-        (*ud).data[0 as ::core::ffi::c_int as usize] = (uc & 0xff as utf8_char) as u_char;
+
+pub unsafe fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
+    *ud = utf8_data::default();
+    ud.have = ((uc >> 24) & 0x1f) as u_char;
+    ud.size = ud.have;
+    ud.width = (uc >> 29).wrapping_sub(1) as u_char;
+    if ud.size <= 3 {
+        ud.data[2] = (uc >> 16) as u_char;
+        ud.data[1] = (uc >> 8) as u_char;
+        ud.data[0] = uc as u_char;
     } else {
-        index = (uc & 0xffffff as ::core::ffi::c_int as utf8_char) as u_int;
-        ui = utf8_item_by_index(index);
-        if ui.is_null() {
-            memset(
-                &raw mut (*ud).data as *mut u_char as *mut ::core::ffi::c_void,
-                ' ' as i32,
-                (*ud).size as size_t,
-            );
+        let cache = UTF8_ITEMS.lock().expect("UTF-8 item cache poisoned");
+        let data = &mut ud.data[..ud.size as usize];
+        if let Some(item) = cache.get(uc & 0xffffff) {
+            data.copy_from_slice(&item[..data.len()]);
         } else {
-            memcpy(
-                &raw mut (*ud).data as *mut u_char as *mut ::core::ffi::c_void,
-                &raw mut (*ui).data as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
-                (*ud).size as size_t,
-            );
+            data.fill(b' ');
         }
     }
     log_debug(format_args!(
-        "{}: {:08x} -> ({} {} {})",
-        "utf8_to_data",
-        (uc) as u32,
-        (*ud).width as ::core::ffi::c_int,
-        (*ud).size as ::core::ffi::c_int,
-        log_cstr_n(
-            (&raw mut (*ud).data as *mut u_char) as *const _,
-            (*ud).size as ::core::ffi::c_int
-        )
+        "utf8_to_data: {:08x} -> ({} {} {})",
+        uc,
+        ud.width,
+        ud.size,
+        log_bytes(&ud.data[..ud.size as usize]),
     ));
 }
 pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
@@ -1388,16 +294,14 @@ pub unsafe fn utf8_copy(mut to: *mut utf8_data, mut from: *const utf8_data) {
     }
 }
 unsafe fn utf8_width(mut ud: *mut utf8_data, mut width: *mut ::core::ffi::c_int) -> utf8_state {
-    let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     let mut wc: wchar_t = 0;
     if utf8_towc(ud, &raw mut wc) as ::core::ffi::c_uint
         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return UTF8_ERROR;
     }
-    uw = utf8_find_in_width_cache(wc);
-    if !uw.is_null() {
-        *width = (*uw).width as ::core::ffi::c_int;
+    if let Some(cached) = utf8_find_in_width_cache(wc) {
+        *width = cached as ::core::ffi::c_int;
         log_debug(format_args!(
             "cached width for {:08X} is {}",
             wc as u_int,
@@ -2031,74 +935,74 @@ mod tests {
     }
 
     #[test]
-    fn utf8_index_tree_matches_index_comparator() {
+    fn packed_cells_preserve_inline_and_cached_bytes() {
         unsafe {
-            let mut tree = utf8_index_tree::default();
-            let mut first_item = Box::new(utf8_item::default());
-            first_item.index = 7;
-            let first = first_item.as_mut() as *mut utf8_item;
-            assert!(utf8_index_tree_insert(&mut tree, first_item).is_null());
-
-            let mut zero = Box::new(utf8_item::default());
-            zero.index = 0;
-            assert!(utf8_index_tree_insert(&mut tree, zero).is_null());
-            let mut maximum = Box::new(utf8_item::default());
-            maximum.index = u_int::MAX;
-            assert!(utf8_index_tree_insert(&mut tree, maximum).is_null());
-            let mut duplicate = Box::new(utf8_item::default());
-            duplicate.index = 7;
-            assert_eq!(
-                utf8_index_tree_insert(&mut tree, duplicate),
-                first,
-                "duplicate indexes keep the original item"
-            );
-
-            assert_eq!(
-                tree.entries.keys().copied().collect::<Vec<_>>(),
-                vec![0, 7, u_int::MAX]
-            );
-            assert_eq!(utf8_index_tree_find(&tree, 7), first);
-            assert!(utf8_index_tree_find(&tree, 8).is_null());
+            for width in 0..=2 {
+                for size in 0..=31 {
+                    let mut original = utf8_data {
+                        have: size,
+                        size,
+                        width,
+                        ..utf8_data::default()
+                    };
+                    for (index, byte) in original.data[..size as usize].iter_mut().enumerate() {
+                        *byte = (index as u8).wrapping_mul(31).wrapping_add(0x80);
+                    }
+                    let mut encoded = 0;
+                    assert_eq!(utf8_from_data(&original, &mut encoded), UTF8_DONE);
+                    let mut repeated = 0;
+                    assert_eq!(utf8_from_data(&original, &mut repeated), UTF8_DONE);
+                    assert_eq!(encoded, repeated);
+                    let mut decoded = utf8_data::default();
+                    utf8_to_data(encoded, &mut decoded);
+                    assert_eq!(
+                        (decoded.have, decoded.size, decoded.width),
+                        (size, size, width)
+                    );
+                    assert_eq!(decoded.data, original.data);
+                }
+            }
+            // Inline packing includes three bytes even when the cell size is smaller.
+            let mut cell = utf8_data {
+                size: 1,
+                width: 1,
+                ..utf8_data::default()
+            };
+            cell.data[..3].copy_from_slice(b"abc");
+            let mut encoded = 0;
+            assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
+            assert_eq!(encoded, (1 << 24) | (2 << 29) | 0x636261);
         }
     }
 
     #[test]
-    fn utf8_data_tree_matches_data_comparator() {
-        fn set_data(item: &mut utf8_item, data: &[u8]) {
-            item.size = data.len() as u_char;
-            for (index, byte) in data.iter().copied().enumerate() {
-                item.data[index] = byte as ::core::ffi::c_char;
-            }
-        }
-
+    fn packed_cells_preserve_fallback_and_size_boundary() {
         unsafe {
-            let mut tree = utf8_data_tree::default();
-            let mut items: [utf8_item; 4] = [utf8_item::default(); 4];
-            set_data(&mut items[0], &[0x80]);
-            set_data(&mut items[1], &[0xff]);
-            set_data(&mut items[2], &[0x00, 0x00]);
-            set_data(&mut items[3], &[0x80]);
-            items[3].data[1] = 0x7f as ::core::ffi::c_char;
-
-            let first = &mut items[0] as *mut utf8_item;
-            let duplicate = &mut items[3] as *mut utf8_item;
-            assert!(utf8_data_tree_insert(&mut tree, &mut *first).is_null());
-            assert!(utf8_data_tree_insert(&mut tree, &mut items[1]).is_null());
-            assert!(utf8_data_tree_insert(&mut tree, &mut items[2]).is_null());
-            assert_eq!(
-                utf8_data_tree_insert(&mut tree, &mut *duplicate),
-                first,
-                "duplicate data keeps the original item"
-            );
-
-            assert_eq!(
-                tree.entries.keys().cloned().collect::<Vec<_>>(),
-                vec![(1, vec![0x80]), (1, vec![0xff]), (2, vec![0x00, 0x00])]
-            );
-            assert_eq!(utf8_data_tree_find(&tree, &*duplicate), first);
-            let mut missing = items[0];
-            set_data(&mut missing, &[0x81]);
-            assert!(utf8_data_tree_find(&tree, &missing).is_null());
+            for (width, expected) in [(0, 1 << 29), (1, 0x41000020), (2, 0x41002020)] {
+                let cell = utf8_data {
+                    size: 33,
+                    width,
+                    ..utf8_data::default()
+                };
+                let mut encoded = 0;
+                assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_ERROR);
+                assert_eq!(encoded, expected);
+            }
+            let cell = utf8_data {
+                data: [0xab; 32],
+                size: 32,
+                width: 1,
+                ..utf8_data::default()
+            };
+            let mut encoded = 0;
+            assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
+            // Match tmux's 5-bit size field, including its size-32 overlap with width.
+            assert_eq!(encoded & 0xff000000, 0x60000000);
+            let mut decoded = utf8_data::default();
+            utf8_to_data((4 << 24) | (3 << 29) | 0xfffffe, &mut decoded);
+            assert_eq!((decoded.have, decoded.size, decoded.width), (4, 4, 2));
+            assert_eq!(&decoded.data[..4], b"    ");
+            assert!(decoded.data[4..].iter().all(|&byte| byte == 0));
         }
     }
 
@@ -2124,9 +1028,11 @@ mod tests {
                 (0xE040, 1),
                 ('z' as i32, 2),
             ] {
-                let item = utf8_find_in_width_cache(codepoint);
-                assert!(!item.is_null(), "missing U+{codepoint:04X}");
-                assert_eq!((*item).width, expected, "wrong width for U+{codepoint:04X}");
+                assert_eq!(
+                    utf8_find_in_width_cache(codepoint),
+                    Some(expected),
+                    "wrong width for U+{codepoint:04X}"
+                );
             }
 
             for entry in [
@@ -2145,16 +1051,14 @@ mod tests {
             }
             for codepoint in [0xE030, 0xE041, 0xE022, 'a' as i32, 'b' as i32, '(' as i32] {
                 assert!(
-                    utf8_find_in_width_cache(codepoint).is_null(),
+                    utf8_find_in_width_cache(codepoint).is_none(),
                     "unexpected U+{codepoint:04X}"
                 );
             }
             assert_eq!(utf8_no_width, 0);
 
             for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040, 'z' as i32] {
-                let item = utf8_find_in_width_cache(codepoint);
-                utf8_width_cache_remove(&mut *(&raw mut utf8_width_cache), &*item);
-                drop(Box::from_raw(item));
+                UTF8_WIDTHS.lock().unwrap().remove(codepoint);
             }
         }
     }

@@ -10763,7 +10763,7 @@ pub unsafe fn prompt_key(
                 && key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     > 0x7f as ::core::ffi::c_ulonglong
             {
-                utf8_to_data(key as utf8_char, &raw mut tmp);
+                utf8_to_data(key as utf8_char, &mut tmp);
                 if tmp.size as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
                     return PROMPT_KEY_HANDLED;
                 }

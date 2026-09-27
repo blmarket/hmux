@@ -972,7 +972,7 @@ pub unsafe fn screen_print(
                                 .as_mut_ptr()
                                 .offset((*gce).c2rust_unnamed.offset as isize))
                             .data,
-                            &raw mut ud,
+                            &mut ud,
                         );
                         if ud.size as ::core::ffi::c_int > 0 as ::core::ffi::c_int {
                             if last

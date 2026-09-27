@@ -618,7 +618,7 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
     {
         utf8_to_data(
             (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY) as utf8_char,
-            &raw mut ud,
+            &mut ud,
         );
         if utf8_towc(&raw mut ud, &raw mut wc) as ::core::ffi::c_uint
             == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -682,7 +682,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
             << 32 as ::core::ffi::c_int
         && key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY > 0x7f as ::core::ffi::c_ulonglong
     {
-        utf8_to_data(key as utf8_char, &raw mut ud);
+        utf8_to_data(key as utf8_char, &mut ud);
         input_key_write(
             b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
             bev,
@@ -861,7 +861,7 @@ pub unsafe fn input_key(
                 << 32 as ::core::ffi::c_int
             && key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY > 0x7f as ::core::ffi::c_ulonglong
         {
-            utf8_to_data(key as utf8_char, &raw mut ud);
+            utf8_to_data(key as utf8_char, &mut ud);
             input_key_write(
                 b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
                 bev,

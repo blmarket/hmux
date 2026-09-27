@@ -251,7 +251,7 @@ unsafe fn grid_extended_cell(
     if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
         uc = (*gc).data.width as utf8_char;
     } else {
-        utf8_from_data(&raw const (*gc).data, &raw mut uc);
+        utf8_from_data(&(*gc).data, &mut uc);
     }
     gee = (*gl)
         .extddata
@@ -687,7 +687,7 @@ unsafe fn grid_get_cell1(mut gl: *mut grid_line, mut px: u_int, mut gc: *mut gri
             if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 grid_set_tab(gc, (*gee).data as u_int);
             } else {
-                utf8_to_data((*gee).data, &raw mut (*gc).data);
+                utf8_to_data((*gee).data, &mut (*gc).data);
             }
         }
         return;

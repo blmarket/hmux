@@ -184,7 +184,7 @@ unsafe fn cmd_send_keys_inject_string(
             {
                 key = cell.data[0 as ::core::ffi::c_int as usize] as key_code;
                 current_block_20 = 12147880666119273379;
-            } else if utf8_from_data(cell, &raw mut uc) as ::core::ffi::c_uint
+            } else if utf8_from_data(cell, &mut uc) as ::core::ffi::c_uint
                 != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 current_block_20 = 1054647088692577877;
