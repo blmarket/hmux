@@ -75,7 +75,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
     }
-    if !session_find(newname.as_ptr()).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
+    if !session_find(std::ffi::CStr::from_ptr(newname.as_ptr())).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
         cmdq_error(item, |out| {
             out.write_all(b"duplicate session: ")?;
             out.write_all(newname.as_bytes())

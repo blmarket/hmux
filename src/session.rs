@@ -264,19 +264,19 @@ pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn session_find(name: *const ::core::ffi::c_char) -> Option<Rc<UnsafeCell<session>>> {
+pub unsafe fn session_find(name: &CStr) -> Option<Rc<UnsafeCell<session>>> {
     let index = (*std::ptr::addr_of!(sessions)).storage.as_ref()?;
     let map = index.try_borrow_mut().expect("session index already borrowed");
-    map.get(CStr::from_ptr(name).to_bytes()).cloned()
+    map.get(name.to_bytes()).cloned()
 }
-pub unsafe fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<Rc<UnsafeCell<session>>> {
+pub unsafe fn session_find_by_id_str(s: &CStr) -> Option<Rc<UnsafeCell<session>>> {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut id: u_int = 0;
-    if *s as ::core::ffi::c_int != '$' as i32 {
+    if s.to_bytes().first() != Some(&b'$') {
         return None;
     }
     id = strtonum(
-        s.offset(1 as ::core::ffi::c_int as isize),
+        s.as_ptr().add(1),
         0 as ::core::ffi::c_longlong,
         UINT_MAX as ::core::ffi::c_longlong,
         &raw mut errstr,
@@ -300,9 +300,9 @@ pub unsafe fn session_find_by_id(mut id: u_int) -> Option<Rc<UnsafeCell<session>
     return None;
 }
 pub unsafe fn session_create(
-    mut prefix: *const ::core::ffi::c_char,
-    mut name: *const ::core::ffi::c_char,
-    mut cwd: *const ::core::ffi::c_char,
+    prefix: Option<&CStr>,
+    name: Option<&CStr>,
+    cwd: &CStr,
     env: Box<environ>,
     oo: Option<Box<options>>,
     tio: Option<&termios>,
@@ -310,7 +310,7 @@ pub unsafe fn session_create(
     let owner = session::new();
     let s = crate::src::shared::rc::as_ptr(&owner);
     (*s).tio = tio.copied().map(Box::new);
-    (*s).cwd = Some(CStr::from_ptr(cwd).to_owned());
+    (*s).cwd = Some(cwd.to_owned());
 
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.storage = None;
@@ -318,10 +318,10 @@ pub unsafe fn session_create(
     (*s).environ = Some(env);
     (*s).options = oo;
     status_update_cache(s);
-    if !name.is_null() {
+    if let Some(name) = name {
         drop(session_replace_name(
             &mut *s,
-            CStr::from_ptr(name).to_owned(),
+            name.to_owned(),
         ));
         let fresh0 = next_session_id;
         next_session_id = next_session_id.wrapping_add(1);
@@ -331,13 +331,11 @@ pub unsafe fn session_create(
             let fresh1 = next_session_id;
             next_session_id = next_session_id.wrapping_add(1);
             (*s).id = fresh1;
-            let mut generated = if prefix.is_null() {
-                Vec::new()
-            } else {
-                let mut bytes = CStr::from_ptr(prefix).to_bytes().to_vec();
+            let mut generated = prefix.map_or_else(Vec::new, |prefix| {
+                let mut bytes = prefix.to_bytes().to_vec();
                 bytes.push(b'-');
                 bytes
-            };
+            });
             generated.extend_from_slice((*s).id.to_string().as_bytes());
             drop(session_replace_name(
                 &mut *s,
