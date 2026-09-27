@@ -355,11 +355,8 @@ unsafe fn screen_write_initctx(
     } else {
         ttyctx.redraw_cb = screen_write_redraw_cb(ctx.wp);
         if !ctx.wp.is_null() {
-            tty_default_colours(
-                &raw mut ttyctx.style_ctx.defaults,
-                ctx.wp as *mut window_pane,
-                &raw mut ttyctx.style_ctx.dim,
-            );
+            (ttyctx.style_ctx.defaults, ttyctx.style_ctx.dim) =
+                tty_default_colours(ctx.wp as *mut window_pane);
             ttyctx.style_ctx.palette = &raw mut (*ctx.wp).palette;
             ttyctx.set_client_cb = screen_write_set_client_cb(ctx.wp);
         }

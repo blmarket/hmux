@@ -3233,14 +3233,12 @@ unsafe fn tty_try_colour(
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe fn tty_window_default_style(mut gc: *mut grid_cell, mut wp: *mut window_pane) {
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    (*gc).fg = (*wp).palette.fg;
-    (*gc).bg = (*wp).palette.bg;
+fn tty_window_default_style(palette: &colour_palette) -> grid_cell {
+    grid_cell {
+        fg: palette.fg,
+        bg: palette.bg,
+        ..grid_default_cell
+    }
 }
 unsafe fn tty_style_changed(mut wp: *mut window_pane) {
     let mut oo: *mut options = (*wp).options;
@@ -3261,7 +3259,7 @@ unsafe fn tty_style_changed(mut wp: *mut window_pane) {
         ::core::ptr::null_mut::<winlink>(),
         wp,
     );
-    tty_window_default_style(&raw mut (*wp).cached_active_gc, wp);
+    (*wp).cached_active_gc = tty_window_default_style(&(*wp).palette);
     sy = style_add(
         &raw mut (*wp).cached_active_gc,
         oo,
@@ -3269,7 +3267,7 @@ unsafe fn tty_style_changed(mut wp: *mut window_pane) {
         ft,
     );
     (*wp).cached_active_dim = (*sy).dim as u_int;
-    tty_window_default_style(&raw mut (*wp).cached_gc, wp);
+    (*wp).cached_gc = tty_window_default_style(&(*wp).palette);
     sy = style_add(
         &raw mut (*wp).cached_gc,
         oo,
@@ -3279,36 +3277,28 @@ unsafe fn tty_style_changed(mut wp: *mut window_pane) {
     (*wp).cached_dim = (*sy).dim as u_int;
     format_free(ft);
 }
-pub unsafe fn tty_default_colours(
-    mut gc: *mut grid_cell,
-    mut wp: *mut window_pane,
-    mut dim: *mut u_int,
-) {
+pub unsafe fn tty_default_colours(wp: *mut window_pane) -> (grid_cell, u_int) {
     if (*wp).flags & PANE_STYLECHANGED != 0 {
         tty_style_changed(wp);
     }
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    if wp == (*(*wp).window).active && (*wp).cached_active_gc.fg != 8 as ::core::ffi::c_int {
-        (*gc).fg = (*wp).cached_active_gc.fg;
+    let active = wp == (*(*wp).window).active;
+    let mut gc = grid_default_cell;
+    gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
+        (*wp).cached_active_gc.fg
     } else {
-        (*gc).fg = (*wp).cached_gc.fg;
-    }
-    if wp == (*(*wp).window).active && (*wp).cached_active_gc.bg != 8 as ::core::ffi::c_int {
-        (*gc).bg = (*wp).cached_active_gc.bg;
+        (*wp).cached_gc.fg
+    };
+    gc.bg = if active && (*wp).cached_active_gc.bg != 8 {
+        (*wp).cached_active_gc.bg
     } else {
-        (*gc).bg = (*wp).cached_gc.bg;
-    }
-    if !dim.is_null() {
-        if wp == (*(*wp).window).active {
-            *dim = (*wp).cached_active_dim;
-        } else {
-            *dim = (*wp).cached_dim;
-        }
-    }
+        (*wp).cached_gc.bg
+    };
+    let dim = if active {
+        (*wp).cached_active_dim
+    } else {
+        (*wp).cached_dim
+    };
+    (gc, dim)
 }
 pub unsafe fn tty_default_attributes(tty: *mut tty, bg: u_int, style_ctx: Option<&tty_style_ctx>) {
     let mut gc = grid_default_cell;

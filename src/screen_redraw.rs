@@ -1284,7 +1284,7 @@ unsafe fn redraw_draw_pane_span(
     };
     let mut px: u_int = 0;
     let mut py: u_int = 0;
-    tty_default_colours(&raw mut defaults, wp, &raw mut style_ctx.dim);
+    (defaults, style_ctx.dim) = tty_default_colours(wp);
     style_ctx.defaults = defaults;
     style_ctx.palette = &raw mut (*wp).palette;
     style_ctx.hyperlinks = (*s).hyperlinks;
@@ -1630,7 +1630,7 @@ unsafe fn redraw_draw_scrollbar_span(
     );
     slgc.fg = gc.bg;
     slgc.bg = gc.fg;
-    tty_default_colours(&raw mut pad_gc, wp, ::core::ptr::null_mut::<u_int>());
+    pad_gc = tty_default_colours(wp).0;
     sb_w = (*sb_style).width as u_int;
     sb_pad = (*sb_style).pad as u_int;
     off = x.wrapping_sub((*span).x);

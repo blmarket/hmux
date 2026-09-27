@@ -4144,7 +4144,7 @@ pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int
     };
     c = window_pane_get_bg_control_client(wp);
     if c == -(1 as ::core::ffi::c_int) {
-        tty_default_colours(&raw mut defaults, wp, ::core::ptr::null_mut::<u_int>());
+        defaults = tty_default_colours(wp).0;
         if defaults.bg == 8 as ::core::ffi::c_int || defaults.bg == 9 as ::core::ffi::c_int {
             c = window_get_bg_client(wp);
         } else {

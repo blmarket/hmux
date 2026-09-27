@@ -5089,7 +5089,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         }
         c = window_pane_get_fg_control_client(wp);
         if c == -(1 as ::core::ffi::c_int) {
-            tty_default_colours(&raw mut defaults, wp, ::core::ptr::null_mut::<u_int>());
+            defaults = tty_default_colours(wp).0;
             if defaults.fg == 8 as ::core::ffi::c_int || defaults.fg == 9 as ::core::ffi::c_int {
                 c = window_pane_get_fg(wp);
             } else {

@@ -555,7 +555,7 @@ unsafe fn format_cb_pane_fg(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    tty_default_colours(&raw mut gc, wp, ::core::ptr::null_mut::<u_int>());
+    gc = tty_default_colours(wp).0;
     return Some(colour_format(gc.fg));
 }
 unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
@@ -603,7 +603,7 @@ unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    tty_default_colours(&raw mut gc, wp, ::core::ptr::null_mut::<u_int>());
+    gc = tty_default_colours(wp).0;
     return Some(colour_format(gc.bg));
 }
 unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CString> {
