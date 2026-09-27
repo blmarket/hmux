@@ -1,9 +1,6 @@
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_from_window};
 use crate::src::cmd::parse::cmd_parse_and_append;
-use crate::src::cmd::queue::{
-    cmdq_append, cmdq_free_state, cmdq_get_error, cmdq_get_event, cmdq_new_state,
-};
-use crate::src::ffi::libc::memcpy;
+use crate::src::cmd::queue::{cmdq_append, cmdq_free_state, cmdq_get_error, cmdq_new_state};
 use crate::src::format::{
     format_create_defaults, format_free, format_single_cstring, format_single_from_state_cstring,
 };
@@ -20,9 +17,7 @@ use crate::src::screen_write::{
 use crate::src::server_fn::{server_redraw_window, server_redraw_window_menu};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
-use crate::src::shared::command::cmd_parse_input;
-use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
-use crate::src::shared::format::format_tree;
+use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
@@ -35,13 +30,10 @@ use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-use crate::src::shared::options::options;
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::style::*;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::window;
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
 use std::ffi::{CStr, CString};
@@ -165,155 +157,66 @@ pub unsafe fn menu_create(title: &CStr) -> Box<menu> {
     });
     owner
 }
-unsafe fn menu_reapply_styles(mut md: *mut menu_data) {
-    let mut o: *mut options = (*(*md).w).options;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut sytmp: style = style {
-        gc: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        ignore: 0,
-        dim: 0,
-        fill: 0,
-        align: STYLE_ALIGN_DEFAULT,
-        list: STYLE_LIST_OFF,
-        range_type: STYLE_RANGE_NONE,
-        range_argument: 0,
-        range_string: [0; 16],
-        width: 0,
-        width_percentage: 0,
-        pad: 0,
-        default_type: STYLE_DEFAULT_BASE,
-        link: 0,
-    };
-    ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
-        (*md).fs.s,
-        (*md).fs.wl,
-        (*md).fs.wp,
+unsafe fn menu_reapply_styles(md: &mut menu_data) {
+    let options = (*md.w).options;
+    let ft = format_create_defaults(
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        md.fs.s,
+        md.fs.wl,
+        md.fs.wp,
     );
-    memcpy(
-        &raw mut (*md).style_gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    style_apply(
-        &raw mut (*md).style_gc,
-        o,
-        b"menu-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
-    if !(*md).style.is_none() {
-        style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(
-            &raw mut sytmp,
-            &raw mut (*md).style_gc,
-            ((*md).style)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*md).style_gc.fg = sytmp.gc.fg;
-            (*md).style_gc.bg = sytmp.gc.bg;
-        }
-    }
-    memcpy(
-        &raw mut (*md).selected_style_gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    style_apply(
-        &raw mut (*md).selected_style_gc,
-        o,
-        b"menu-selected-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
-    if !(*md).selected_style.is_none() {
-        style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(
-            &raw mut sytmp,
-            &raw mut (*md).selected_style_gc,
-            ((*md).selected_style)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*md).selected_style_gc.fg = sytmp.gc.fg;
-            (*md).selected_style_gc.bg = sytmp.gc.bg;
-        }
-    }
-    memcpy(
-        &raw mut (*md).border_style_gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    style_apply(
-        &raw mut (*md).border_style_gc,
-        o,
-        b"menu-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
-    if !(*md).border_style.is_none() {
-        style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(
-            &raw mut sytmp,
-            &raw mut (*md).border_style_gc,
-            ((*md).border_style)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*md).border_style_gc.fg = sytmp.gc.fg;
-            (*md).border_style_gc.bg = sytmp.gc.bg;
+    let mut parsed = style::default();
+    for (cell, option, override_style) in [
+        (&mut md.style_gc, c"menu-style", md.style.as_deref()),
+        (
+            &mut md.selected_style_gc,
+            c"menu-selected-style",
+            md.selected_style.as_deref(),
+        ),
+        (
+            &mut md.border_style_gc,
+            c"menu-border-style",
+            md.border_style.as_deref(),
+        ),
+    ] {
+        *cell = grid_default_cell;
+        style_apply(cell, options, option.as_ptr(), ft);
+        if let Some(override_style) = override_style {
+            style_set(&mut parsed, &raw const grid_default_cell);
+            if style_parse(&mut parsed, cell, override_style.as_ptr()) == 0 {
+                cell.fg = parsed.gc.fg;
+                cell.bg = parsed.gc.bg;
+            }
         }
     }
     format_free(ft);
 }
-pub unsafe fn menu_update(mut md: *mut menu_data) {
-    let mut s: *mut screen = &raw mut (*md).s;
-    let menu = &(*md).menu;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
-        s: ::core::ptr::null_mut::<screen>(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
+
+pub unsafe fn menu_update(md: &mut menu_data) {
     menu_reapply_styles(md);
-    screen_write_start(&mut ctx, s);
-    screen_write_clearscreen(&mut ctx, 8 as u_int);
-    if (*md).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
+    let menu = &md.menu;
+    let mut ctx = screen_write_ctx::default();
+    screen_write_start(&mut ctx, &mut md.s);
+    screen_write_clearscreen(&mut ctx, 8);
+    if md.border_lines != BOX_LINES_NONE {
         screen_write_box(
             &mut ctx,
-            (*menu).width.wrapping_add(4 as u_int),
-            (*menu).count.wrapping_add(2 as u_int),
-            (*md).border_lines,
-            Some(&(*md).border_style_gc),
-            Some((*menu).title.as_c_str()),
+            menu.width.wrapping_add(4),
+            menu.count.wrapping_add(2),
+            md.border_lines,
+            Some(&md.border_style_gc),
+            Some(&menu.title),
         );
     }
     screen_write_menu(
         &mut ctx,
-        &*menu,
-        (*md).choice,
-        (*md).border_lines,
-        &(*md).style_gc,
-        Some(&(*md).border_style_gc),
-        &(*md).selected_style_gc,
+        menu,
+        md.choice,
+        md.border_lines,
+        &md.style_gc,
+        Some(&md.border_style_gc),
+        &md.selected_style_gc,
     );
     screen_write_stop(&mut ctx);
 }
@@ -647,99 +550,75 @@ pub fn menu_resize(md: &mut menu_data, window_width: u_int, window_height: u_int
 }
 pub unsafe fn menu_display(
     menu: Box<menu>,
-    mut flags: ::core::ffi::c_int,
-    mut starting_choice: ::core::ffi::c_int,
-    mut item: *mut cmdq_item,
+    flags: ::core::ffi::c_int,
+    starting_choice: ::core::ffi::c_int,
+    event: Option<&key_event>,
     mut px: u_int,
     mut py: u_int,
-    mut c: *mut client,
+    c: *mut client,
     mut lines: box_lines,
-    mut style: *const ::core::ffi::c_char,
-    mut selected_style: *const ::core::ffi::c_char,
-    mut border_style: *const ::core::ffi::c_char,
-    mut fs: *mut cmd_find_state,
+    style: Option<&CStr>,
+    selected_style: Option<&CStr>,
+    border_style: Option<&CStr>,
+    fs: *mut cmd_find_state,
     cb: menu_choice_cb,
 ) {
-    let mut md: *mut menu_data = ::core::ptr::null_mut::<menu_data>();
-    let mut event: *mut key_event = ::core::ptr::null_mut::<key_event>();
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut o: *mut options = ::core::ptr::null_mut::<options>();
-    if fs.is_null() {
-        w = (*(*(*c).session).curw).window;
+    let w = if fs.is_null() {
+        (*(*(*c).session).curw).window
     } else {
-        w = (*fs).w;
-    }
-    o = (*w).options;
-    sx = (*menu).width.wrapping_add(4 as u_int);
-    sy = (*menu).count.wrapping_add(2 as u_int);
+        (*fs).w
+    };
+    let sx = menu.width.wrapping_add(4);
+    let sy = menu.count.wrapping_add(2);
     if sx >= (*w).sx {
-        px = 0 as u_int;
+        px = 0;
     } else if px.wrapping_add(sx) > (*w).sx {
         px = (*w).sx.wrapping_sub(sx);
     }
     if sy >= (*w).sy {
-        py = 0 as u_int;
+        py = 0;
     } else if py.wrapping_add(sy) > (*w).sy {
         py = (*w).sy.wrapping_sub(sy);
     }
     (*w).menu_last_px = px;
     (*w).menu_last_py = py;
-    if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
-        lines = options_get_number(
-            o,
-            b"menu-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as box_lines;
+    if lines == BOX_LINES_DEFAULT {
+        lines = options_get_number((*w).options, c"menu-border-lines".as_ptr()) as box_lines;
     }
     let mut owner = Box::new(menu_data {
-        style: (!style.is_null()).then(|| CStr::from_ptr(style).to_owned()),
-        selected_style: (!selected_style.is_null())
-            .then(|| CStr::from_ptr(selected_style).to_owned()),
-        border_style: (!border_style.is_null()).then(|| CStr::from_ptr(border_style).to_owned()),
+        w,
+        flags,
+        border_lines: lines,
+        style: style.map(CStr::to_owned),
+        selected_style: selected_style.map(CStr::to_owned),
+        border_style: border_style.map(CStr::to_owned),
+        key: event.map_or(KEYC_NONE, |event| event.key),
+        m: event.map_or_else(mouse_event::default, |event| event.m),
+        px,
+        py,
+        choice: if flags & MENU_NOMOUSE != 0 {
+            menu_initial_choice(&menu, starting_choice)
+        } else {
+            -1
+        },
+        cb,
         ..menu_data::new(menu)
     });
-
-    md = &raw mut *owner;
-    (*md).w = w;
-    (*md).flags = flags;
-    (*md).border_lines = lines;
-    (*md).key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
-    if !item.is_null() {
-        event = cmdq_get_event(item);
-        (*md).key = (*event).key;
-        memcpy(
-            &raw mut (*md).m as *mut ::core::ffi::c_void,
-            &raw mut (*event).m as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<mouse_event>() as size_t,
-        );
-    }
     if !fs.is_null() {
-        cmd_find_copy_state(&raw mut (*md).fs, fs);
-    } else if cmd_find_from_window(&raw mut (*md).fs, w, 0 as ::core::ffi::c_int)
-        != 0 as ::core::ffi::c_int
-    {
-        cmd_find_clear_state(&raw mut (*md).fs, 0 as ::core::ffi::c_int);
+        cmd_find_copy_state(&mut owner.fs, fs);
+    } else if cmd_find_from_window(&mut owner.fs, w, 0) != 0 {
+        cmd_find_clear_state(&mut owner.fs, 0);
     }
-    screen_init(&mut (*md).s, sx, sy, 0 as u_int);
-    if !(*md).flags & MENU_NOMOUSE != 0 {
-        (*md).s.mode |= MODE_MOUSE_ALL | MODE_MOUSE_BUTTON;
+    screen_init(&mut owner.s, sx, sy, 0);
+    if flags & MENU_NOMOUSE == 0 {
+        owner.s.mode |= MODE_MOUSE_ALL | MODE_MOUSE_BUTTON;
     }
-    (*md).s.mode &= !MODE_CURSOR;
-    (*md).px = px;
-    (*md).py = py;
-    (*md).choice = if flags & MENU_NOMOUSE != 0 {
-        menu_initial_choice(&(*md).menu, starting_choice)
-    } else {
-        -1
-    };
-    (*md).cb = cb;
-    menu_close((*md).w);
-    let md = Box::into_raw(owner).cast::<menu_data>();
-    (*(*md).w).menu = md;
-    redraw_invalidate_scene((*md).w);
-    window_update_focus((*md).w);
-    server_redraw_window((*md).w);
+    owner.s.mode &= !MODE_CURSOR;
+    menu_close(w);
+    (*w).menu = Box::into_raw(owner);
+    redraw_invalidate_scene(w);
+    window_update_focus(w);
+    server_redraw_window(w);
 }
 
 #[cfg(test)]

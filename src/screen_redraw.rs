@@ -2452,7 +2452,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
     }
     redraw_set_draw_context(&raw mut dctx, scene);
     if !(*w).menu.is_null() {
-        menu_update((*w).menu);
+        menu_update(&mut *(*w).menu);
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
         loop_0 = window_pane_first((*scene).w);

@@ -1702,14 +1702,14 @@ unsafe fn mode_tree_display_menu(
         menu,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         x,
         y,
         c,
         BOX_LINES_DEFAULT,
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        None,
+        None,
+        None,
         ::core::ptr::null_mut::<cmd_find_state>(),
         Some(Box::new(move |selection| {
             if let MenuSelection::Selected { key, .. } = selection {
