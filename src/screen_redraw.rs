@@ -11,6 +11,7 @@ use crate::src::screen_write::{
     screen_write_clear_dirty, screen_write_start, screen_write_stop, screen_write_stop_sync,
 };
 use crate::src::server::{marked_pane, server_is_marked};
+use crate::src::server_client::server_client_overlay_draw;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_NONE, CELL_UD};
 use crate::src::shared::client::client;
@@ -2011,12 +2012,7 @@ unsafe fn redraw_draw_scene(
         }
     }
     if flags & REDRAW_OVERLAY != 0 {
-        if let Some(mut overlay_draw) = (*c).overlay_draw.take() {
-            overlay_draw(&mut *c);
-            if (*c).overlay_draw.is_none() {
-                (*c).overlay_draw = Some(overlay_draw);
-            }
-        }
+        server_client_overlay_draw(c);
     }
     tty_reset(tty);
     log_debug(format_args!(

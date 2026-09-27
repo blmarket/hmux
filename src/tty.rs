@@ -18,7 +18,8 @@ use crate::src::reactor::{
 use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
 use crate::src::server_client::{
-    server_client_ensure_ranges, server_client_lost, server_client_ranges_is_empty,
+    server_client_ensure_ranges, server_client_lost, server_client_overlay_check,
+    server_client_ranges_is_empty,
 };
 use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
@@ -1890,23 +1891,15 @@ pub unsafe fn tty_check_overlay_range(
     mut nx: u_int,
 ) -> *mut visible_ranges {
     let mut c: *mut client = (*tty).client;
-    if (*c).overlay_check.is_none() {
+    if let Some(ranges) = server_client_overlay_check(c, px, py, nx) {
+        (*tty).r = ranges;
+    } else {
         server_client_ensure_ranges(&raw mut (*tty).r, 1 as u_int);
         (&mut (*tty).r.storage)[0].px = px;
         (&mut (*tty).r.storage)[0].nx = nx;
         (*tty).r.used = 1 as u_int;
-        return &raw mut (*tty).r;
     }
-    let mut overlay_check = (*c)
-        .overlay_check
-        .take()
-        .expect("non-null overlay check callback");
-    let ranges = overlay_check(&mut *c, px, py, nx);
-    if (*c).overlay_check.is_none() {
-        (*c).overlay_check = Some(overlay_check);
-    }
-    (*tty).r = ranges;
-    return &raw mut (*tty).r;
+    &raw mut (*tty).r
 }
 pub unsafe fn tty_sync_start(mut tty: *mut tty) {
     if (*tty).flags & TTY_BLOCK != 0 {
