@@ -921,160 +921,113 @@ fn prompt_in_list(separators: &CStr, cell: &utf8_data) -> ::core::ffi::c_int {
 fn prompt_space(cell: &utf8_data) -> ::core::ffi::c_int {
     (cell.size == 1 && cell.width == 1 && cell.data[0] == b' ') as ::core::ffi::c_int
 }
-unsafe fn prompt_keypad_key(mut key: key_code) -> key_code {
-    if key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS != 0 {
+fn prompt_keypad_key(key: key_code) -> key_code {
+    if key & KEYC_MASK_MODIFIERS != 0 {
         return key;
     }
     match key {
-        8589934623 => return '/' as i32 as key_code,
-        8589934624 => return '*' as i32 as key_code,
-        8589934625 => return '-' as i32 as key_code,
-        8589934626 => return '7' as i32 as key_code,
-        8589934627 => return '8' as i32 as key_code,
-        8589934628 => return '9' as i32 as key_code,
-        8589934629 => return '+' as i32 as key_code,
-        8589934630 => return '4' as i32 as key_code,
-        8589934631 => return '5' as i32 as key_code,
-        8589934632 => return '6' as i32 as key_code,
-        8589934633 => return '1' as i32 as key_code,
-        8589934634 => return '2' as i32 as key_code,
-        8589934635 => return '3' as i32 as key_code,
-        8589934636 => return '\r' as i32 as key_code,
-        8589934637 => return '0' as i32 as key_code,
-        8589934638 => return '.' as i32 as key_code,
-        _ => {}
+        KEYC_KP_SLASH => b'/' as key_code,
+        KEYC_KP_STAR => b'*' as key_code,
+        KEYC_KP_MINUS => b'-' as key_code,
+        KEYC_KP_SEVEN => b'7' as key_code,
+        KEYC_KP_EIGHT => b'8' as key_code,
+        KEYC_KP_NINE => b'9' as key_code,
+        KEYC_KP_PLUS => b'+' as key_code,
+        KEYC_KP_FOUR => b'4' as key_code,
+        KEYC_KP_FIVE => b'5' as key_code,
+        KEYC_KP_SIX => b'6' as key_code,
+        KEYC_KP_ONE => b'1' as key_code,
+        KEYC_KP_TWO => b'2' as key_code,
+        KEYC_KP_THREE => b'3' as key_code,
+        KEYC_KP_ENTER => b'\r' as key_code,
+        KEYC_KP_ZERO => b'0' as key_code,
+        KEYC_KP_PERIOD => b'.' as key_code,
+        _ => key,
     }
-    return key;
 }
-unsafe fn prompt_translate_key(
-    mut pr: *mut prompt,
-    mut key: key_code,
-    mut new_key: *mut key_code,
-    mut redraw: *mut ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    if !(*pr).flags & PROMPT_COMMANDMODE != 0 {
-        match key {
-            35184372088929 | 35184372088931 | 35184372088933 | 35184372088935 | 35184372088936
-            | 9 | 35184372088939 | 35184372088942 | 35184372088944 | 35184372088948
-            | 35184372088949 | 35184372088950 | 35184372088951 | 35184372088953 | 10 | 13
-            | 35192962023453 | 35192962023454 | 8589934599 | 8589934613 | 8589934620
-            | 8589934615 | 8589934614 | 8589934621 | 8589934622 | 8589934619 => {
-                *new_key = key;
-                return 1 as ::core::ffi::c_int;
-            }
-            27 | 35184372088923 => {
-                (*pr).flags |= PROMPT_COMMANDMODE;
-                if (*pr).index != 0 as size_t {
-                    (*pr).index = (*pr).index.wrapping_sub(1);
-                }
-                *redraw = 1 as ::core::ffi::c_int;
-                return 0 as ::core::ffi::c_int;
-            }
-            _ => {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PromptTranslatedKey {
+    Handled,
+    Process(key_code),
+    Append(key_code),
+}
+
+fn prompt_translate_key(
+    pr: &mut prompt,
+    key: key_code,
+    redraw: &mut ::core::ffi::c_int,
+) -> PromptTranslatedKey {
+    use PromptTranslatedKey::{Append, Handled, Process};
+
+    if pr.flags & PROMPT_COMMANDMODE == 0 {
+        if key == 27 || key == KEYC_CTRL | b'[' as key_code {
+            pr.flags |= PROMPT_COMMANDMODE;
+            pr.index = pr.index.saturating_sub(1);
+            *redraw = 1;
+            return Handled;
         }
-        *new_key = key;
-        return 2 as ::core::ffi::c_int;
+        if matches!(
+            key,
+            9 | 10
+                | 13
+                | KEYC_BSPACE
+                | KEYC_DC
+                | KEYC_DOWN
+                | KEYC_END
+                | KEYC_HOME
+                | KEYC_LEFT
+                | KEYC_RIGHT
+                | KEYC_UP
+        ) || key == KEYC_LEFT | KEYC_CTRL
+            || key == KEYC_RIGHT | KEYC_CTRL
+            || b"aceghknptuvwy"
+                .iter()
+                .any(|&byte| key == KEYC_CTRL | byte as key_code)
+        {
+            return Process(key);
+        }
+        return Append(key);
     }
+
     match key {
-        8589934599 => {
-            *new_key = KEYC_LEFT as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
+        KEYC_BSPACE => return Process(KEYC_LEFT),
+        KEYC_DC | KEYC_DOWN | KEYC_LEFT | KEYC_RIGHT | KEYC_UP | 10 | 13 => {
+            return Process(key);
         }
-        65 | 73 | 67 | 115 | 97 => {
-            (*pr).flags &= !PROMPT_COMMANDMODE;
-            *redraw = 1 as ::core::ffi::c_int;
-        }
-        83 => {
-            (*pr).flags &= !PROMPT_COMMANDMODE;
-            *redraw = 1 as ::core::ffi::c_int;
-            *new_key = ('u' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        105 => {
-            (*pr).flags &= !PROMPT_COMMANDMODE;
-            *redraw = 1 as ::core::ffi::c_int;
-            return 0 as ::core::ffi::c_int;
-        }
-        27 | 35184372088923 => return 0 as ::core::ffi::c_int,
         _ => {}
     }
-    match key {
-        65 | 36 => {
-            *new_key = KEYC_END as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
+    if key == KEYC_CTRL | b'h' as key_code || key == KEYC_CTRL | b'c' as key_code {
+        return Process(key);
+    }
+    let Ok(byte) = u8::try_from(key) else {
+        return Handled;
+    };
+    match byte {
+        b'A' | b'I' | b'C' | b's' | b'a' | b'S' | b'i' => {
+            pr.flags &= !PROMPT_COMMANDMODE;
+            *redraw = 1;
         }
-        73 | 48 | 94 => {
-            *new_key = KEYC_HOME as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        67 | 68 => {
-            *new_key = ('k' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        8589934599 | 88 => {
-            *new_key = KEYC_BSPACE as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        98 => {
-            *new_key = ('b' as i32 as ::core::ffi::c_ulonglong | KEYC_META) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        66 => {
-            *new_key = ('B' as i32 as ::core::ffi::c_ulonglong | KEYC_VI) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        100 => {
-            *new_key = ('u' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        101 => {
-            *new_key = ('e' as i32 as ::core::ffi::c_ulonglong | KEYC_VI) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        69 => {
-            *new_key = ('E' as i32 as ::core::ffi::c_ulonglong | KEYC_VI) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        119 => {
-            *new_key = ('w' as i32 as ::core::ffi::c_ulonglong | KEYC_VI) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        87 => {
-            *new_key = ('W' as i32 as ::core::ffi::c_ulonglong | KEYC_VI) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        112 => {
-            *new_key = ('y' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        113 => {
-            *new_key = ('c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL) as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        115 | 8589934613 | 120 => {
-            *new_key = KEYC_DC as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        8589934620 | 106 => {
-            *new_key = KEYC_DOWN as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        8589934621 | 104 => {
-            *new_key = KEYC_LEFT as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        97 | 8589934622 | 108 => {
-            *new_key = KEYC_RIGHT as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        8589934619 | 107 => {
-            *new_key = KEYC_UP as ::core::ffi::c_ulong as key_code;
-            return 1 as ::core::ffi::c_int;
-        }
-        35184372088936 | 35184372088931 | 10 | 13 => return 1 as ::core::ffi::c_int,
         _ => {}
     }
-    return 0 as ::core::ffi::c_int;
+    match byte {
+        b'A' | b'$' => Process(KEYC_END),
+        b'I' | b'0' | b'^' => Process(KEYC_HOME),
+        b'C' | b'D' => Process(KEYC_CTRL | b'k' as key_code),
+        b'X' => Process(KEYC_BSPACE),
+        b'b' => Process(KEYC_META | b'b' as key_code),
+        b'B' => Process(KEYC_VI | b'B' as key_code),
+        b'd' | b'S' => Process(KEYC_CTRL | b'u' as key_code),
+        b'e' | b'E' | b'w' | b'W' => Process(KEYC_VI | key),
+        b'p' => Process(KEYC_CTRL | b'y' as key_code),
+        b'q' => Process(KEYC_CTRL | b'c' as key_code),
+        b's' | b'x' => Process(KEYC_DC),
+        b'j' => Process(KEYC_DOWN),
+        b'h' => Process(KEYC_LEFT),
+        b'a' | b'l' => Process(KEYC_RIGHT),
+        b'k' => Process(KEYC_UP),
+        _ => Handled,
+    }
 }
 fn prompt_save_copied(pr: &mut prompt, idx: size_t) {
     let count = pr.index.wrapping_sub(idx);
@@ -1408,14 +1361,16 @@ pub unsafe fn prompt_key(
         current_block = 1115217863795707468;
     } else {
         if (*pr).keys == MODEKEY_VI {
-            match prompt_translate_key(pr, key, &raw mut key, redraw) {
-                1 => {
+            match prompt_translate_key(&mut *pr, key, &mut *redraw) {
+                PromptTranslatedKey::Process(translated) => {
+                    key = translated;
                     current_block = 11090587058695514569;
                 }
-                2 => {
+                PromptTranslatedKey::Append(translated) => {
+                    key = translated;
                     current_block = 1115217863795707468;
                 }
-                _ => return PROMPT_KEY_HANDLED,
+                PromptTranslatedKey::Handled => return PROMPT_KEY_HANDLED,
             }
         } else {
             current_block = 11090587058695514569;
@@ -9568,6 +9523,57 @@ mod prompt_buffer_tests {
             assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), 1);
             assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), c"new ");
         }
+    }
+
+    #[test]
+    fn vi_translation_preserves_mode_switches_and_multibyte_cursor_edits() {
+        let mut pr = make_prompt(c"é漢Z", 3, None);
+        pr.keys = MODEKEY_VI;
+        // Expected text and cursor positions follow the pinned tmux vi
+        // insert/command transitions, including backspace as a movement.
+        for (key, expected, index, command) in [
+            (27, c"é漢Z", 2, true),
+            (KEYC_BSPACE, c"é漢Z", 1, true),
+            (b'a' as key_code, c"é漢Z", 2, false),
+            (KEYC_KP_PLUS, c"é漢+Z", 3, false),
+            (27, c"é漢+Z", 2, true),
+            (b's' as key_code, c"é漢Z", 2, false),
+            (b'!' as key_code, c"é漢!Z", 3, false),
+            (27, c"é漢!Z", 2, true),
+            (b'S' as key_code, c"", 0, false),
+        ] {
+            let mut redraw = 0;
+            unsafe {
+                assert_eq!(prompt_key(&mut *pr, key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
+            }
+            assert_eq!(redraw, 1);
+            assert_eq!(pr.index, index);
+            assert_eq!(pr.flags & PROMPT_COMMANDMODE != 0, command);
+            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+        }
+
+        // A translated key must preserve an already pending redraw. Only
+        // changing vi modes requests a new one, including at an empty input.
+        let mut redraw = 7;
+        let modified_keypad = KEYC_KP_PLUS | KEYC_CTRL;
+        assert_eq!(prompt_keypad_key(modified_keypad), modified_keypad);
+        assert_eq!(
+            prompt_translate_key(&mut pr, modified_keypad, &mut redraw),
+            PromptTranslatedKey::Append(modified_keypad)
+        );
+        assert_eq!(redraw, 7);
+        assert_eq!(
+            prompt_translate_key(&mut pr, 27, &mut redraw),
+            PromptTranslatedKey::Handled
+        );
+        assert_eq!((pr.index, redraw), (0, 1));
+        redraw = 7;
+        assert_eq!(
+            prompt_translate_key(&mut pr, 27, &mut redraw),
+            PromptTranslatedKey::Handled
+        );
+        assert_eq!((pr.index, redraw), (0, 7));
     }
 
     #[test]
