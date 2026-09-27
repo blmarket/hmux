@@ -515,7 +515,7 @@ unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::f
         grid_duplicate_lines(dg, (*dg).hsize, sg, (*sg).hsize, sy);
     } else {
         if collected > 0 as u_int {
-            grid_free_lines(dg, 0 as u_int, collected);
+            grid_free_lines(&mut *dg, 0 as u_int, collected);
             let live = old_hsize.wrapping_add(sy) as usize;
             (&mut (*dg).linedata)[..live].rotate_left(collected as usize);
         }

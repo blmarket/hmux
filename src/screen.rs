@@ -79,7 +79,9 @@ pub unsafe fn screen_reinit(mut s: *mut screen, mut check: ::core::ffi::c_int) {
     if check != 0 {
         grid_check_is_clear();
     }
-    grid_clear_lines((*s).grid, (*(*s).grid).hsize, (*(*s).grid).sy, 8 as u_int);
+    let hsize = (*(*s).grid).hsize;
+    let sy = (*(*s).grid).sy;
+    grid_clear_lines(&mut *(*s).grid, hsize, sy, 8);
     screen_clear_selection(s);
     screen_free_titles(s);
     screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
@@ -404,7 +406,8 @@ unsafe fn screen_resize_y(
             *cy = (*cy).wrapping_sub(available);
         }
     }
-    grid_adjust_lines(gd, (*gd).hsize.wrapping_add(sy));
+    let lines = (*gd).hsize.wrapping_add(sy);
+    grid_adjust_lines(&mut *gd, lines);
     if sy > oldy {
         needed = sy.wrapping_sub(oldy);
         available = (*gd).hscrolled;
@@ -420,7 +423,7 @@ unsafe fn screen_resize_y(
         needed = needed.wrapping_sub(available);
         i = (*gd).hsize.wrapping_add(sy).wrapping_sub(needed);
         while i < (*gd).hsize.wrapping_add(sy) {
-            grid_empty_line(gd, i, 8 as u_int);
+            grid_empty_line(&mut *gd, i, 8 as u_int);
             i = i.wrapping_add(1);
         }
     }

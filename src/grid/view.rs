@@ -100,7 +100,7 @@ pub unsafe fn grid_view_scroll_region_up(
         rupper = (*gd).hsize.wrapping_add(rupper);
         rlower = (*gd).hsize.wrapping_add(rlower);
         grid_move_lines(
-            gd,
+            &mut *gd,
             rupper,
             rupper.wrapping_add(1 as u_int),
             rlower.wrapping_sub(rupper),
@@ -117,7 +117,7 @@ pub unsafe fn grid_view_scroll_region_down(
     rupper = (*gd).hsize.wrapping_add(rupper);
     rlower = (*gd).hsize.wrapping_add(rlower);
     grid_move_lines(
-        gd,
+        &mut *gd,
         rupper.wrapping_add(1 as u_int),
         rupper,
         rlower.wrapping_sub(rupper),
@@ -134,7 +134,7 @@ pub unsafe fn grid_view_insert_lines(
     py = (*gd).hsize.wrapping_add(py);
     sy = (*gd).hsize.wrapping_add((*gd).sy);
     grid_move_lines(
-        gd,
+        &mut *gd,
         py.wrapping_add(ny),
         py,
         sy.wrapping_sub(py).wrapping_sub(ny),
@@ -156,7 +156,7 @@ pub unsafe fn grid_view_insert_lines_region(
         .wrapping_sub(py)
         .wrapping_sub(ny);
     grid_move_lines(
-        gd,
+        &mut *gd,
         rlower.wrapping_add(1 as u_int).wrapping_sub(ny2),
         py,
         ny2,
@@ -181,7 +181,7 @@ pub unsafe fn grid_view_delete_lines(
     py = (*gd).hsize.wrapping_add(py);
     sy = (*gd).hsize.wrapping_add((*gd).sy);
     grid_move_lines(
-        gd,
+        &mut *gd,
         py,
         py.wrapping_add(ny),
         sy.wrapping_sub(py).wrapping_sub(ny),
@@ -203,7 +203,7 @@ pub unsafe fn grid_view_delete_lines_region(
         .wrapping_add(1 as u_int)
         .wrapping_sub(py)
         .wrapping_sub(ny);
-    grid_move_lines(gd, py, py.wrapping_add(ny), ny2, bg);
+    grid_move_lines(&mut *gd, py, py.wrapping_add(ny), ny2, bg);
     grid_clear(
         gd,
         0 as u_int,

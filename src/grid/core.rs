@@ -331,10 +331,8 @@ unsafe fn grid_line_set_time(mut gl: *mut grid_line) {
         (*gl).time = (current_time as __time_t - start_time.tv_sec + 1 as __time_t) as u_int;
     };
 }
-pub unsafe fn grid_adjust_lines(mut gd: *mut grid, mut lines: u_int) {
-    (*gd)
-        .linedata
-        .resize_with(lines as usize, grid_line::default);
+pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {
+    gd.linedata.resize_with(lines as usize, grid_line::default);
 }
 unsafe fn grid_clear_cell(
     mut gd: *mut grid,
@@ -403,15 +401,12 @@ pub fn grid_set_tab(gc: &mut grid_cell, width: u_int) {
     gc.data.width = gc.data.size;
     gc.data.data[..gc.data.size as usize].fill(b' ');
 }
-unsafe fn grid_free_line(mut gd: *mut grid, mut py: u_int) {
-    (&mut (*gd).linedata)[py as usize] = grid_line::default();
+fn grid_free_line(gd: &mut grid, py: u_int) {
+    gd.linedata[py as usize] = grid_line::default();
 }
-pub unsafe fn grid_free_lines(mut gd: *mut grid, mut py: u_int, mut ny: u_int) {
-    let mut yy: u_int = 0;
-    yy = py;
-    while yy < py.wrapping_add(ny) {
-        grid_free_line(gd, yy);
-        yy = yy.wrapping_add(1);
+pub fn grid_free_lines(gd: &mut grid, py: u_int, ny: u_int) {
+    for row in py..py.wrapping_add(ny) {
+        grid_free_line(gd, row);
     }
 }
 pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
@@ -457,7 +452,7 @@ pub unsafe fn grid_compare(ga: &grid, gb: &grid) -> i32 {
 }
 
 unsafe fn grid_trim_history(mut gd: *mut grid, mut ny: u_int) {
-    grid_free_lines(gd, 0, ny);
+    grid_free_lines(&mut *gd, 0, ny);
     let live = (*gd).hsize.wrapping_add((*gd).sy) as usize;
     (&mut (*gd).linedata)[..live].rotate_left(ny as usize);
 }
@@ -493,7 +488,7 @@ pub unsafe fn grid_remove_history(mut gd: *mut grid, mut ny: u_int) {
     start = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(ny);
     yy = 0 as u_int;
     while yy < ny {
-        grid_free_line(gd, start.wrapping_add(yy));
+        grid_free_line(&mut *gd, start.wrapping_add(yy));
         yy = yy.wrapping_add(1);
     }
     (*gd).hsize = (*gd).hsize.wrapping_sub(ny);
@@ -504,7 +499,7 @@ pub unsafe fn grid_scroll_history(mut gd: *mut grid, mut bg: u_int) {
     (*gd)
         .linedata
         .resize_with(yy.wrapping_add(1 as u_int) as usize, grid_line::default);
-    grid_empty_line(gd, yy, bg);
+    grid_empty_line(&mut *gd, yy, bg);
     (*gd).hscrolled = (*gd).hscrolled.wrapping_add(1);
     grid_compact_line((*gd).linedata.as_mut_ptr().offset((*gd).hsize as isize) as *mut grid_line);
     grid_line_set_time((*gd).linedata.as_mut_ptr().offset((*gd).hsize as isize) as *mut grid_line);
@@ -541,7 +536,7 @@ pub unsafe fn grid_scroll_history_region(
     gl_history = (*gd).linedata.as_mut_ptr().add(history);
     grid_line_set_time(gl_history);
     (&mut (*gd).linedata)[upper as usize..=lower as usize].rotate_left(1);
-    grid_empty_line(gd, lower, bg);
+    grid_empty_line(&mut *gd, lower, bg);
     (*gd).hscrolled = (*gd).hscrolled.wrapping_add(1);
     (*gd).hsize = (*gd).hsize.wrapping_add(1);
     (*gd).scroll_added = (*gd).scroll_added.wrapping_add(1);
@@ -570,10 +565,10 @@ unsafe fn grid_expand_line(mut gd: *mut grid, mut py: u_int, mut sx: u_int, mut 
     }
     (*gl).cellsize = sx as u_short;
 }
-pub unsafe fn grid_empty_line(mut gd: *mut grid, mut py: u_int, mut bg: u_int) {
-    (&mut (*gd).linedata)[py as usize] = grid_line::default();
-    if !(bg == 8 as u_int || bg == 9 as u_int) {
-        grid_expand_line(gd, py, (*gd).sx, bg);
+pub unsafe fn grid_empty_line(gd: &mut grid, py: u_int, bg: u_int) {
+    gd.linedata[py as usize] = grid_line::default();
+    if bg != 8 && bg != 9 {
+        grid_expand_line(gd, py, gd.sx, bg);
     }
 }
 pub unsafe fn grid_peek_line(gd: &grid, py: u_int) -> Option<&grid_line> {
@@ -746,7 +741,7 @@ pub unsafe fn grid_clear(
         return;
     }
     if px == 0 as u_int && nx == (*gd).sx {
-        grid_clear_lines(gd, py, ny, bg);
+        grid_clear_lines(&mut *gd, py, ny, bg);
         return;
     }
     if grid_check_y(
@@ -800,101 +795,46 @@ pub unsafe fn grid_clear(
         yy = yy.wrapping_add(1);
     }
 }
-pub unsafe fn grid_clear_lines(mut gd: *mut grid, mut py: u_int, mut ny: u_int, mut bg: u_int) {
-    let mut yy: u_int = 0;
-    if ny == 0 as u_int {
-        return;
-    }
-    if grid_check_y(
-        &*gd,
-        "grid_clear_lines",
-        py,
-    ) != 0 as ::core::ffi::c_int
+pub unsafe fn grid_clear_lines(gd: &mut grid, py: u_int, ny: u_int, bg: u_int) {
+    if ny == 0
+        || grid_check_y(gd, "grid_clear_lines", py) != 0
+        || grid_check_y(gd, "grid_clear_lines", py.wrapping_add(ny).wrapping_sub(1)) != 0
     {
         return;
     }
-    if grid_check_y(
-        &*gd,
-        "grid_clear_lines",
-        py.wrapping_add(ny).wrapping_sub(1 as u_int),
-    ) != 0 as ::core::ffi::c_int
-    {
-        return;
+    for row in py..py.wrapping_add(ny) {
+        grid_free_line(gd, row);
+        grid_empty_line(gd, row, bg);
     }
-    yy = py;
-    while yy < py.wrapping_add(ny) {
-        grid_free_line(gd, yy);
-        grid_empty_line(gd, yy, bg);
-        yy = yy.wrapping_add(1);
-    }
-    if py != 0 as u_int {
-        let ref mut fresh1 = (*(*gd)
-            .linedata
-            .as_mut_ptr()
-            .offset(py.wrapping_sub(1 as u_int) as isize))
-        .flags;
-        *fresh1 = (*fresh1 as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
+    if py != 0 {
+        gd.linedata[(py - 1) as usize].flags &= !GRID_LINE_WRAPPED as u_short;
     }
 }
-pub unsafe fn grid_move_lines(
-    mut gd: *mut grid,
-    mut dy: u_int,
-    mut py: u_int,
-    mut ny: u_int,
-    mut bg: u_int,
-) {
-    let mut yy: u_int = 0;
-    if ny == 0 as u_int || py == dy {
+pub unsafe fn grid_move_lines(gd: &mut grid, dy: u_int, py: u_int, ny: u_int, bg: u_int) {
+    if ny == 0 || py == dy {
         return;
     }
-    if grid_check_y(
-        &*gd,
-        "grid_move_lines",
+    let source_end = py.wrapping_add(ny);
+    let destination_end = dy.wrapping_add(ny);
+    for row in [
         py,
-    ) != 0 as ::core::ffi::c_int
-    {
-        return;
-    }
-    if grid_check_y(
-        &*gd,
-        "grid_move_lines",
-        py.wrapping_add(ny).wrapping_sub(1 as u_int),
-    ) != 0 as ::core::ffi::c_int
-    {
-        return;
-    }
-    if grid_check_y(
-        &*gd,
-        "grid_move_lines",
+        source_end.wrapping_sub(1),
         dy,
-    ) != 0 as ::core::ffi::c_int
-    {
-        return;
-    }
-    if grid_check_y(
-        &*gd,
-        "grid_move_lines",
-        dy.wrapping_add(ny).wrapping_sub(1 as u_int),
-    ) != 0 as ::core::ffi::c_int
-    {
-        return;
-    }
-    yy = dy;
-    while yy < dy.wrapping_add(ny) {
-        if !(yy >= py && yy < py.wrapping_add(ny)) {
-            grid_free_line(gd, yy);
+        destination_end.wrapping_sub(1),
+    ] {
+        if grid_check_y(gd, "grid_move_lines", row) != 0 {
+            return;
         }
-        yy = yy.wrapping_add(1);
     }
-    if dy != 0 as u_int {
-        let ref mut fresh2 = (*(*gd)
-            .linedata
-            .as_mut_ptr()
-            .offset(dy.wrapping_sub(1 as u_int) as isize))
-        .flags;
-        *fresh2 = (*fresh2 as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
+    for row in dy..destination_end {
+        if row < py || row >= source_end {
+            grid_free_line(gd, row);
+        }
     }
-    let lines = &mut (*gd).linedata;
+    if dy != 0 {
+        gd.linedata[(dy - 1) as usize].flags &= !GRID_LINE_WRAPPED as u_short;
+    }
+    let lines = &mut gd.linedata;
     if dy < py {
         for offset in 0..ny as usize {
             lines[dy as usize + offset] = std::mem::take(&mut lines[py as usize + offset]);
@@ -904,20 +844,13 @@ pub unsafe fn grid_move_lines(
             lines[dy as usize + offset] = std::mem::take(&mut lines[py as usize + offset]);
         }
     }
-    yy = py;
-    while yy < py.wrapping_add(ny) {
-        if yy < dy || yy >= dy.wrapping_add(ny) {
-            grid_empty_line(gd, yy, bg);
+    for row in py..source_end {
+        if row < dy || row >= destination_end {
+            grid_empty_line(gd, row, bg);
         }
-        yy = yy.wrapping_add(1);
     }
-    if py != 0 as u_int && (py < dy || py >= dy.wrapping_add(ny)) {
-        let ref mut fresh3 = (*(*gd)
-            .linedata
-            .as_mut_ptr()
-            .offset(py.wrapping_sub(1 as u_int) as isize))
-        .flags;
-        *fresh3 = (*fresh3 as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
+    if py != 0 && (py < dy || py >= destination_end) {
+        gd.linedata[(py - 1) as usize].flags &= !GRID_LINE_WRAPPED as u_short;
     }
 }
 pub unsafe fn grid_move_cells(
@@ -1633,7 +1566,7 @@ pub unsafe fn grid_duplicate_lines(
     if sy.wrapping_add(ny) > (*src).hsize.wrapping_add((*src).sy) {
         ny = (*src).hsize.wrapping_add((*src).sy).wrapping_sub(sy);
     }
-    grid_free_lines(dst, dy, ny);
+    grid_free_lines(&mut *dst, dy, ny);
     yy = 0 as u_int;
     while yy < ny {
         srcl = (*src).linedata.as_mut_ptr().offset(sy as isize) as *mut grid_line;
@@ -2601,6 +2534,53 @@ mod storage_tests {
             })
             .collect()
     }
+
+    #[test]
+    fn borrowed_line_moves_preserve_overlap_flags_and_fill_backgrounds() {
+        unsafe {
+            for bg in [8, (COLOUR_FLAG_RGB | 0x123456) as u_int] {
+                for (destination, source, count, expected, wrapped) in [
+                    (0, 1, 3, b"BCD ", [true, true, true, false]),
+                    (1, 0, 3, b" ABC", [false, false, true, true]),
+                    (2, 0, 1, b" BAD", [false, false, true, true]),
+                    (0, 2, 1, b"CB D", [true, false, false, true]),
+                    (4, 0, 1, b"ABCD", [true; 4]),
+                    (0, 4, 1, b"ABCD", [true; 4]),
+                    (0, 3, 2, b"ABCD", [true; 4]),
+                    (0, 3, 0, b"ABCD", [true; 4]),
+                ] {
+                    let mut owner = labeled_grid();
+                    for line in owner.linedata.iter_mut() {
+                        line.flags |= GRID_LINE_WRAPPED as u_short;
+                    }
+                    grid_move_lines(&mut owner, destination, source, count, bg);
+                    assert_eq!(labels(&mut owner), expected);
+                    for (row, &is_wrapped) in wrapped.iter().enumerate() {
+                        assert_eq!(
+                            owner.linedata[row].flags as i32 & GRID_LINE_WRAPPED != 0,
+                            is_wrapped,
+                        );
+                        if expected[row] == b' ' {
+                            let mut cell = grid_default_cell;
+                            grid_get_cell(&owner, 0, row as u_int, &mut cell);
+                            assert_eq!(cell.bg, bg as i32);
+                        }
+                    }
+                }
+            }
+            let mut owner = labeled_grid();
+            for line in owner.linedata.iter_mut() {
+                line.flags |= GRID_LINE_WRAPPED as u_short;
+            }
+            grid_clear_lines(&mut owner, 1, 2, 8);
+            assert_eq!(labels(&mut owner), b"A  D");
+            assert!(owner.linedata[..3]
+                .iter()
+                .all(|line| line.flags as i32 & GRID_LINE_WRAPPED == 0));
+            assert_ne!(owner.linedata[3].flags as i32 & GRID_LINE_WRAPPED, 0);
+        }
+    }
+
     #[test]
     fn line_moves_history_rotation_and_deep_clones_keep_independent_cells() {
         unsafe {
@@ -2615,9 +2595,9 @@ mod storage_tests {
                 owner.linedata[0].extddata.as_ptr(),
                 copy.linedata[0].extddata.as_ptr()
             );
-            grid_move_lines(&raw mut *owner, 0, 1, 3, 8);
+            grid_move_lines(&mut *owner, 0, 1, 3, 8);
             assert_eq!(labels(&mut owner), b"BCD ");
-            grid_move_lines(&raw mut *owner, 1, 0, 3, 8);
+            grid_move_lines(&mut *owner, 1, 0, 3, 8);
             assert_eq!(labels(&mut owner), b" BCD");
             assert_eq!(labels(&mut copy), b"ABCD");
             drop(owner);
