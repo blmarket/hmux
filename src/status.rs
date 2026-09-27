@@ -343,7 +343,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
     }
-    if (*(*sl).screen.grid).sx != width || (*(*sl).screen.grid).sy != lines {
+    if (*sl).screen.grid().sx != width || (*sl).screen.grid().sy != lines {
         screen_resize(&raw mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
         force = 1 as ::core::ffi::c_int;
         changed = force;
@@ -691,7 +691,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    if grid_compare(&*(*sl).active_screen().grid, &*old_screen.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
@@ -841,7 +841,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     pdd.cursor_x = &raw mut (*sl).prompt_cx;
     prompt_draw((*c).prompt, &raw mut pdd);
     screen_write_stop(&raw mut ctx);
-    if grid_compare(&*(*sl).active_screen().grid, &*old_screen.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
     }
@@ -922,39 +922,39 @@ mod status_screen_tests {
             c.tty.sy = 24;
             status_init(&mut *c);
             let base = &raw mut c.status.screen;
-            let base_grid = c.status.screen.grid;
+            let base_grid = c.status.screen.grid() as *const grid as usize;
             assert!(c.status.active.is_none());
             assert_eq!(c.status.active_screen() as *mut screen, base);
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'B';
-            grid_set_cell(&mut *base_grid, 0, 0, &cell);
+            grid_set_cell(c.status.screen.grid_mut(), 0, 0, &cell);
 
             // A prompt and a message share one temporary screen.
             status_push_screen(&mut *c);
             let temporary = c.status.active_screen() as *mut screen;
-            let temporary_grid = c.status.active_screen().grid;
+            let temporary_grid = c.status.active_screen().grid() as *const grid as usize;
             assert_ne!(temporary, base);
             assert_ne!(temporary_grid, base_grid);
             cell.data.data[0] = b'T';
-            grid_set_cell(&mut *temporary_grid, 0, 0, &cell);
+            grid_set_cell(c.status.active_screen().grid_mut(), 0, 0, &cell);
             status_push_screen(&mut *c);
             assert_eq!(c.status.screen_users, 2);
             assert_eq!(c.status.active_screen() as *mut screen, temporary);
             status_pop_screen(&mut *c);
             assert_eq!(c.status.screen_users, 1);
-            assert_eq!(c.status.active_screen().grid, temporary_grid);
-            grid_get_cell(&*temporary_grid, 0, 0, &mut cell);
+            assert_eq!(c.status.active_screen().grid() as *const grid as usize, temporary_grid);
+            grid_get_cell(c.status.active_screen().grid(), 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'T');
 
             status_pop_screen(&mut *c);
             assert_eq!(c.status.screen_users, 0);
             assert!(c.status.active.is_none());
             assert_eq!(c.status.active_screen() as *mut screen, base);
-            assert_eq!(c.status.screen.grid, base_grid);
-            grid_get_cell(&*base_grid, 0, 0, &mut cell);
+            assert_eq!(c.status.screen.grid() as *const grid as usize, base_grid);
+            grid_get_cell(c.status.screen.grid(), 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'B');
             status_free(&mut *c);
-            assert!(c.status.screen.grid.is_null());
+            assert!(c.status.screen.grid.is_none());
 
             // Teardown also releases an active temporary screen without a pop.
             status_init(&mut *c);
@@ -962,7 +962,7 @@ mod status_screen_tests {
             assert!(c.status.active.is_some());
             status_free(&mut *c);
             assert!(c.status.active.is_none());
-            assert!(c.status.screen.grid.is_null());
+            assert!(c.status.screen.grid.is_none());
 
             options_free(global_options);
             options_free(global_s_options);

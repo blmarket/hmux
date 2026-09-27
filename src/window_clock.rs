@@ -680,7 +680,7 @@ unsafe fn window_clock_init(
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;
-    screen_init(s, (*(*wp).base.grid).sx, (*(*wp).base.grid).sy, 0 as u_int);
+    screen_init(s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
     (*s).mode &= !MODE_CURSOR;
     window_clock_draw_screen(wme);
     return s;
@@ -814,17 +814,17 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         );
     }
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
-    if ((*(*s).grid).sx as size_t)
+    if ((*s).grid().sx as size_t)
         < (6 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char))
-        || (*(*s).grid).sy < 6 as u_int
+        || (*s).grid().sy < 6 as u_int
     {
-        if (*(*s).grid).sx as size_t >= strlen(&raw mut tim as *mut ::core::ffi::c_char)
-            && (*(*s).grid).sy != 0 as u_int
+        if (*s).grid().sx as size_t >= strlen(&raw mut tim as *mut ::core::ffi::c_char)
+            && (*s).grid().sy != 0 as u_int
         {
-            x = ((*(*s).grid).sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
+            x = ((*s).grid().sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
                 strlen(&raw mut tim as *mut ::core::ffi::c_char).wrapping_div(2 as size_t),
             ) as u_int;
-            y = (*(*s).grid).sy.wrapping_div(2 as u_int);
+            y = (*s).grid().sy.wrapping_div(2 as u_int);
             screen_write_cursormove(
                 &raw mut ctx,
                 x as ::core::ffi::c_int,
@@ -845,10 +845,10 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         screen_write_stop(&raw mut ctx);
         return;
     }
-    x = ((*(*s).grid).sx.wrapping_div(2 as u_int) as size_t)
+    x = ((*s).grid().sx.wrapping_div(2 as u_int) as size_t)
         .wrapping_sub((3 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char)))
         as u_int;
-    y = (*(*s).grid)
+    y = (*s).grid()
         .sy
         .wrapping_div(2 as u_int)
         .wrapping_sub(3 as u_int);

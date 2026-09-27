@@ -516,12 +516,12 @@ pub unsafe fn grid_reader_cursor_back_to_indentation(gr: &mut grid_reader<'_>) {
 mod tests {
     use super::*;
     use crate::src::grid::{
-        grid_create_box, grid_default_cell, grid_set_cell, grid_set_padding, grid_set_tab,
+        grid_create, grid_default_cell, grid_set_cell, grid_set_padding, grid_set_tab,
     };
     use crate::src::text::utf8::utf8_fromcstr_vec;
 
     unsafe fn sample_grid() -> Box<grid> {
-        let mut owner = grid_create_box(8, 4, 0);
+        let mut owner = grid_create(8, 4, 0);
         for (row, text) in [c"ab   中,", c"  cd", c"  tail", c""].iter().enumerate() {
             let mut column = 0;
             for data in utf8_fromcstr_vec(text)

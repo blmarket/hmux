@@ -216,7 +216,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     let mut f: *const ::core::ffi::c_char = (*data).filter.as_ptr();
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
-    let mut sx: u_int = (*(*data).screen.grid).sx;
+    let mut sx: u_int = (*data).screen.grid().sx;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
@@ -270,7 +270,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     (*data).matches = m;
 }
 unsafe fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
-    let mut sy: u_int = (*(*data).screen.grid).sy;
+    let mut sy: u_int = (*data).screen.grid().sy;
     if sy <= 1 as u_int {
         return 0 as u_int;
     }
@@ -310,10 +310,10 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         bg: 0,
     };
     let mut s: *mut screen = &raw mut (*data).screen;
-    let mut sx: u_int = (*(*s).grid).sx;
+    let mut sx: u_int = (*s).grid().sx;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    let mut sy: u_int = (*(*s).grid).sy;
+    let mut sy: u_int = (*s).grid().sy;
     let mut visible: u_int = 0;
     let mut idx: u_int = 0;
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
@@ -428,7 +428,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)
                 {
-                    grid_get_cell(&*(*s).grid, j, i, &mut gc);
+                    grid_get_cell((*s).grid(), j, i, &mut gc);
                     gc.attr = mgc.attr;
                     gc.fg = mgc.fg;
                     gc.bg = mgc.bg;
@@ -520,7 +520,7 @@ unsafe fn window_switch_init(
         (*data).filter.as_ptr(),
     );
     s = &raw mut (*data).screen;
-    screen_init(s, (*(*wp).base.grid).sx, (*(*wp).base.grid).sy, 0 as u_int);
+    screen_init(s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
@@ -697,8 +697,8 @@ unsafe fn window_switch_key(
             return;
         }
         if !(*data).prompt.is_null()
-            && (*(*data).screen.grid).sy != 0 as u_int
-            && y == (*(*data).screen.grid).sy.wrapping_sub(1 as u_int)
+            && (*data).screen.grid().sy != 0 as u_int
+            && y == (*data).screen.grid().sy.wrapping_sub(1 as u_int)
             && (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int
             && (*m).b & MOUSE_MASK_DRAG as u_int == 0
             && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
@@ -707,7 +707,7 @@ unsafe fn window_switch_key(
                 (*data).prompt,
                 x,
                 0 as u_int,
-                (*(*data).screen.grid).sx,
+                (*data).screen.grid().sx,
                 &raw mut redraw,
             );
             if redraw != 0

@@ -2,16 +2,13 @@
 //! string, including tabs, wide-cell padding, and UTF-8 bytes.
 
 use hmux2::src::format::format_grid_line;
-use hmux2::src::grid::{
-    grid_create, grid_default_cell, grid_destroy, grid_set_cell, grid_set_padding,
-};
+use hmux2::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding};
 use hmux2::src::shared::grid::GRID_FLAG_TAB;
 
 #[test]
 fn grid_line_converts_cells_and_returns_an_owned_string() {
     unsafe {
-        let gd = grid_create(8, 2, 0);
-        assert!(!gd.is_null());
+        let mut gd = grid_create(8, 2, 0);
         assert!(format_grid_line(&*gd, 0).is_none());
 
         let mut cell = grid_default_cell;
@@ -38,7 +35,7 @@ fn grid_line_converts_cells_and_returns_an_owned_string() {
 
         let result = format_grid_line(&*gd, 0).unwrap();
         assert_eq!(result.as_bytes(), "A\t漢Z".as_bytes());
-        grid_destroy(gd);
+        drop(gd);
         // The returned allocation must remain valid after the grid is gone.
         assert_eq!(result.as_bytes(), "A\t漢Z".as_bytes());
     }

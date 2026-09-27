@@ -15,14 +15,14 @@ unsafe fn cell_at(grid: &grid, x: u32, y: u32) -> grid_cell {
 fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
     unsafe {
         let mut s = screen::empty();
-        s.grid = grid_create(8, 3, 10);
+        s.grid = Some(grid_create(8, 3, 10));
         let mut cell = grid_default_cell;
         cell.data.data[0] = b'H';
-        grid_set_cell(&mut *s.grid, 0, 0, &cell);
-        grid_scroll_history(&mut *s.grid, 8);
+        grid_set_cell(s.grid_mut(), 0, 0, &cell);
+        grid_scroll_history(s.grid_mut(), 8);
         cell.data.data[0] = b'A';
         cell.fg = 0x2123456;
-        grid_set_cell(&mut *s.grid, 0, 1, &cell);
+        grid_set_cell(s.grid_mut(), 0, 1, &cell);
         s.cx = 3;
         s.cy = 1;
 
@@ -31,13 +31,13 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         assert_eq!((snapshot.sx, snapshot.sy, snapshot.hsize), (8, 3, 0));
         assert_eq!(cell_at(snapshot, 0, 0).data.data[0], b'A');
         assert_eq!(cell_at(snapshot, 0, 0).fg, 0x2123456);
-        assert_eq!(cell_at(&*s.grid, 0, 0).data.data[0], b'H');
-        assert_eq!(cell_at(&*s.grid, 0, 1).data.data[0], b' ');
-        assert_eq!((*s.grid).flags & GRID_HISTORY, 0);
+        assert_eq!(cell_at(s.grid(), 0, 0).data.data[0], b'H');
+        assert_eq!(cell_at(s.grid(), 0, 1).data.data[0], b' ');
+        assert_eq!(s.grid().flags & GRID_HISTORY, 0);
 
         cell.data.data[0] = b'B';
         cell.fg = 2;
-        grid_set_cell(&mut *s.grid, 0, 1, &cell);
+        grid_set_cell(s.grid_mut(), 0, 1, &cell);
         s.cx = 1;
         s.cy = 0;
         assert_eq!(screen_alternate_on(&mut s, &mut cell, 1), 0);
@@ -50,20 +50,31 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
         screen_resize(&mut s, 12, 5, 0);
         assert_eq!(screen_alternate_off(&mut s, &mut cell, 1), 1);
         assert!(s.saved_grid.is_none());
-        assert_eq!(((*s.grid).sx, (*s.grid).sy, (*s.grid).hsize), (12, 5, 0));
+        assert_eq!((s.grid().sx, s.grid().sy, s.grid().hsize), (12, 5, 0));
         // Growing the restored screen pulls the history row into the viewport.
         // Reflow maps a cursor on an empty row to its first column.
         assert_eq!((s.cx, s.cy), (0, 2));
         assert_eq!(cell.fg, 0x2123456);
-        assert_eq!(cell_at(&*s.grid, 0, 0).data.data[0], b'H');
-        assert_eq!(cell_at(&*s.grid, 0, 1).data.data[0], b'A');
-        assert_ne!((*s.grid).flags & GRID_HISTORY, 0);
+        assert_eq!(cell_at(s.grid(), 0, 0).data.data[0], b'H');
+        assert_eq!(cell_at(s.grid(), 0, 1).data.data[0], b'A');
+        assert_ne!(s.grid().flags & GRID_HISTORY, 0);
 
         // Reenter and free while the snapshot is still owned by the screen.
         assert_eq!(screen_alternate_on(&mut s, &mut cell, 0), 1);
         screen_free(&mut s);
         assert!(s.saved_grid.is_none());
-        assert!(s.grid.is_null());
+        assert!(s.grid.is_none());
+
+        // A moved screen record also owns both allocations through ordinary drop.
+        s.grid = Some(grid_create(8, 3, 0));
+        grid_set_cell(s.grid_mut(), 0, 0, &cell);
+        assert_eq!(screen_alternate_on(&mut s, &mut cell, 0), 1);
+        let moved = s;
+        assert_eq!(
+            cell_at(moved.saved_grid.as_deref().unwrap(), 0, 0).fg,
+            0x2123456
+        );
+        drop(moved);
     }
 }
 
@@ -71,7 +82,7 @@ fn alternate_snapshot_survives_mutation_and_resize_then_restores() {
 fn leaving_without_a_snapshot_still_restores_and_clamps_the_saved_cursor() {
     unsafe {
         let mut s = screen::empty();
-        s.grid = grid_create(8, 3, 0);
+        s.grid = Some(grid_create(8, 3, 0));
         s.saved_cx = 40;
         s.saved_cy = 20;
         s.saved_cell = grid_default_cell;

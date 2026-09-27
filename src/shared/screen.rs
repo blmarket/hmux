@@ -28,7 +28,7 @@ pub struct screen {
     pub title: CString,
     pub path: Option<CString>,
     pub titles: VecDeque<CString>,
-    pub grid: *mut grid,
+    pub grid: Option<Box<grid>>,
     pub cx: u_int,
     pub cy: u_int,
     pub cstyle: screen_cursor_style,
@@ -52,6 +52,14 @@ pub struct screen {
 }
 
 impl screen {
+    pub fn grid(&self) -> &grid {
+        self.grid.as_deref().expect("screen is initialized")
+    }
+
+    pub fn grid_mut(&mut self) -> &mut grid {
+        self.grid.as_deref_mut().expect("screen is initialized")
+    }
+
     /// A valid empty record for paths that initialize a screen in place.
     /// All scalar and pointer fields retain their translated zero state while
     /// the drop-bearing owners are initialized with their Rust invariants.

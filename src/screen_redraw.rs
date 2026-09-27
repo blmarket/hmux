@@ -1505,7 +1505,7 @@ unsafe fn redraw_draw_status_span(
     let mut wp: *mut window_pane = (*span).data.c2rust_unnamed.st.wp;
     let mut s: *mut screen = &raw mut (*wp).status_screen;
     let mut px: u_int = 0;
-    let mut sx: u_int = (*(*s).grid).sx;
+    let mut sx: u_int = (*s).grid().sx;
     px = (*span)
         .data
         .c2rust_unnamed
@@ -1596,7 +1596,7 @@ unsafe fn redraw_draw_scrollbar_span(
     let mut cm_y: ::core::ffi::c_int = 0;
     let mut cm_size: ::core::ffi::c_int = 0;
     if window_pane_mode(wp) == WINDOW_PANE_NO_MODE {
-        total_height = (*(*s).grid).sy.wrapping_add((*(*s).grid).hsize);
+        total_height = (*s).grid().sy.wrapping_add((*s).grid().hsize);
         if total_height == 0 as u_int {
             return;
         }

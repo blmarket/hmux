@@ -440,8 +440,8 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
     };
     let mut remain_on_exit: ::core::ffi::c_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut sx: u_int = (*(*wp).base.grid).sx;
-    let mut sy: u_int = (*(*wp).base.grid).sy;
+    let mut sx: u_int = (*wp).base.grid().sx;
+    let mut sy: u_int = (*wp).base.grid().sy;
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
         kill(getpid(), SIGCHLD);

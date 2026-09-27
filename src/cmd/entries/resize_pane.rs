@@ -89,12 +89,12 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut status: ::core::ffi::c_int = 0;
     let mut opposite: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut i: ::core::ffi::c_ulong = 0;
-    let mut gd: *mut grid = (*wp).base.grid;
+    let mut gd: *mut grid = (*wp).base.grid_mut();
     if args_has(args, 'T' as i32 as u_char) != 0 {
         if !(*wp).modes.active.is_null() {
             return CMD_RETURN_NORMAL;
         }
-        adjust = (*(*wp).base.grid)
+        adjust = (*wp).base.grid()
             .sy
             .wrapping_sub(1 as u_int)
             .wrapping_sub((*wp).base.cy) as ::core::ffi::c_int;

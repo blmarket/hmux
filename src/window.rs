@@ -2896,10 +2896,10 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
 unsafe fn window_pane_free(mut wp: *mut window_pane) {
     log_debug(format_args!("pane %{} freed", ((*wp).id) as u32));
     window_pane_set_searchstr(&mut *wp, None);
-    if !(*wp).status_screen.grid.is_null() {
+    if (*wp).status_screen.grid.is_some() {
         screen_free(&raw mut (*wp).status_screen);
     }
-    if !(*wp).base.grid.is_null() {
+    if (*wp).base.grid.is_some() {
         screen_free(&raw mut (*wp).base);
     }
     if !(*wp).options.is_null() {
@@ -3561,8 +3561,8 @@ pub unsafe fn window_pane_search(
         None
     };
     i = 0 as u_int;
-    while i < (*(*s).grid).sy {
-        let mut line = grid_view_string_cells_bytes(&*(*s).grid, i, (*(*s).grid).sx);
+    while i < (*s).grid().sy {
+        let mut line = grid_view_string_cells_bytes((*s).grid(), i, (*s).grid().sx);
         if let Some(nul) = line.iter().position(|&byte| byte == 0) {
             line.truncate(nul);
         }
@@ -3601,7 +3601,7 @@ pub unsafe fn window_pane_search(
         i = i.wrapping_add(1);
     }
     drop(regex_owner);
-    if i == (*(*s).grid).sy {
+    if i == (*s).grid().sy {
         return 0 as u_int;
     }
     return i.wrapping_add(1 as u_int);

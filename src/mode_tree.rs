@@ -553,7 +553,7 @@ pub unsafe fn mode_tree_start(
     (*mtd).sortcb = sortcb;
     (*mtd).helpcb = helpcb;
     *s = &raw mut (*mtd).screen;
-    screen_init(*s, (*(*wp).base.grid).sx, (*(*wp).base.grid).sy, 0 as u_int);
+    screen_init(*s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
     (**s).mode &= !MODE_CURSOR;
     return mtd;
 }
@@ -572,23 +572,23 @@ unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut height: u_int = 0;
     if (*mtd).heightcb.is_some() {
-        height = (*mtd).heightcb.as_mut().expect("non-null height callback")((*(*s).grid).sy);
-        if height < (*(*s).grid).sy {
-            (*mtd).height = (*(*s).grid).sy.wrapping_sub(height);
+        height = (*mtd).heightcb.as_mut().expect("non-null height callback")((*s).grid().sy);
+        if height < (*s).grid().sy {
+            (*mtd).height = (*s).grid().sy.wrapping_sub(height);
         }
     } else if (*mtd).preview == MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int {
-        (*mtd).height = (*(*s).grid)
+        (*mtd).height = (*s).grid()
             .sy
             .wrapping_div(3 as u_int)
             .wrapping_mul(2 as u_int);
         if (*mtd).height > mode_tree_line_count(&*mtd) {
-            (*mtd).height = (*(*s).grid).sy.wrapping_div(2 as u_int);
+            (*mtd).height = (*s).grid().sy.wrapping_div(2 as u_int);
         }
         if (*mtd).height < 10 as u_int {
-            (*mtd).height = (*(*s).grid).sy;
+            (*mtd).height = (*s).grid().sy;
         }
     } else if (*mtd).preview == MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int {
-        (*mtd).height = (*(*s).grid).sy.wrapping_div(4 as u_int);
+        (*mtd).height = (*s).grid().sy.wrapping_div(4 as u_int);
         if (*mtd).height > mode_tree_line_count(&*mtd) {
             (*mtd).height = mode_tree_line_count(&*mtd);
         }
@@ -596,10 +596,10 @@ unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
             (*mtd).height = 2 as u_int;
         }
     } else {
-        (*mtd).height = (*(*s).grid).sy;
+        (*mtd).height = (*s).grid().sy;
     }
-    if (*(*s).grid).sy.wrapping_sub((*mtd).height) < 2 as u_int {
-        (*mtd).height = (*(*s).grid).sy;
+    if (*s).grid().sy.wrapping_sub((*mtd).height) < 2 as u_int {
+        (*mtd).height = (*s).grid().sy;
     }
 }
 pub unsafe fn mode_tree_build(mut mtd: *mut mode_tree_data) {
@@ -637,11 +637,11 @@ pub unsafe fn mode_tree_build(mut mtd: *mut mode_tree_data) {
         tag = Some((*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).tag);
     }
     mode_tree_set_current(mtd, tag.unwrap_or(UINT64_MAX as uint64_t));
-    (*mtd).width = (*(*s).grid).sx;
+    (*mtd).width = (*s).grid().sx;
     if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
         mode_tree_set_height(mtd);
     } else {
-        (*mtd).height = (*(*s).grid).sy;
+        (*mtd).height = (*s).grid().sy;
     }
     mode_tree_check_selected(mtd);
 }
@@ -1184,7 +1184,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     }
     format_free(ft);
     if !((*mtd).preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
-        sy = (*(*s).grid).sy;
+        sy = (*s).grid().sy;
         if !(sy <= 4 as u_int
             || h < 2 as u_int
             || sy.wrapping_sub(h) <= 4 as u_int
@@ -1318,8 +1318,8 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, mut ctx: *mut scre
         area_width: 0,
         prompt_line: 0,
     };
-    let mut sx: u_int = (*(*s).grid).sx;
-    let mut sy: u_int = (*(*s).grid).sy;
+    let mut sx: u_int = (*s).grid().sx;
+    let mut sy: u_int = (*s).grid().sy;
     let mut py: u_int = 0;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
@@ -1788,8 +1788,8 @@ unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen
     let help = (*mtd).helpcb.map(|callback| callback());
     let lines: &[&'static CStr] = help.map_or(&[], |info| info.lines);
     let item = help.map_or(c"item", |info| info.item);
-    let mut sx: u_int = (*(*s).grid).sx;
-    let mut sy: u_int = (*(*s).grid).sy;
+    let mut sx: u_int = (*s).grid().sx;
+    let mut sy: u_int = (*s).grid().sy;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut w = help
@@ -1918,11 +1918,11 @@ pub unsafe fn mode_tree_key(
             {
                 result = PROMPT_KEY_NOT_HANDLED;
             } else {
-                sx = (*(*mtd).screen.grid).sx;
+                sx = (*mtd).screen.grid().sx;
                 if (*mtd).prompt_top != 0 {
                     py = 0 as u_int;
                 } else {
-                    py = (*(*mtd).screen.grid).sy.wrapping_sub(1 as u_int);
+                    py = (*mtd).screen.grid().sy.wrapping_sub(1 as u_int);
                 }
                 if y == py {
                     result = prompt_mouse(prompt, x, 0 as u_int, sx, &raw mut redraw);
@@ -2458,8 +2458,7 @@ mod mode_tree_tests {
                 nested_build(&mut *state);
                 None
             }));
-            let mut grid_owner = crate::src::grid::grid_create_box(80, 24, 0);
-            (*mtd).screen.grid = &raw mut *grid_owner;
+            (*mtd).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
 
             mode_tree_build(mtd);
             assert_eq!((*mtd).lines.len(), 65);
@@ -2475,8 +2474,7 @@ mod mode_tree_tests {
             mode_tree_build(mtd);
             assert!((*mtd).lines.is_empty());
             mode_tree_free_items(&raw mut (*mtd).children);
-            (*mtd).screen.grid = std::ptr::null_mut();
-            drop(grid_owner);
+            drop((*mtd).screen.grid.take());
             mode_tree_remove_ref(mtd);
             drop(Box::from_raw(state));
         }

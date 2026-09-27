@@ -348,7 +348,7 @@ pub fn grid_free_lines(gd: &mut grid, py: u_int, ny: u_int) {
         grid_free_line(gd, row);
     }
 }
-pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
+pub unsafe fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
     let mut owner = Box::new(grid::default());
     owner.sx = sx;
     owner.sy = sy;
@@ -359,12 +359,6 @@ pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box
     owner.linedata.resize_with(sy as usize, grid_line::default);
     grid_check_is_clear();
     owner
-}
-pub unsafe fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> *mut grid {
-    Box::into_raw(grid_create_box(sx, sy, hlimit))
-}
-pub unsafe fn grid_destroy(gd: *mut grid) {
-    drop(Box::from_raw(gd));
 }
 pub unsafe fn grid_compare(ga: &grid, gb: &grid) -> i32 {
     if ga.sx != gb.sx || ga.sy != gb.sy {
@@ -1166,7 +1160,7 @@ unsafe fn grid_reflow_split(target: &mut grid, gd: &mut grid, sx: u_int, yy: u_i
 }
 pub unsafe fn grid_reflow(gd: &mut grid, sx: u_int) {
     // Reflow keeps the temporary grid on the heap and transfers its owned lines.
-    let mut target = grid_create_box(gd.sx, 0, 0);
+    let mut target = grid_create(gd.sx, 0, 0);
     let mut cell = grid_cell::default();
     for row in 0..gd.hsize.wrapping_add(gd.sy) {
         let line = &mut gd.linedata[row as usize];
@@ -1534,7 +1528,7 @@ mod storage_tests {
             );
             let mut screen = screen::empty();
             screen.hyperlinks = table.as_ptr();
-            let mut gd = grid_create_box(2, 1, 0);
+            let mut gd = grid_create(2, 1, 0);
             let mut cell = grid_default_cell;
             cell.link = link;
             utf8_set(&mut cell.data, b'A');
@@ -1640,7 +1634,7 @@ mod storage_tests {
     #[test]
     fn borrowed_bulk_writes_keep_embedded_nuls_bytes_and_empty_extent() {
         unsafe {
-            let mut owner = grid_create_box(16, 3, 0);
+            let mut owner = grid_create(16, 3, 0);
             let bytes = [0, b'A' as std::ffi::c_char, 0xff_u8 as std::ffi::c_char];
             let mut cell = grid_default_cell;
             for row in 0..2 {
@@ -1677,7 +1671,7 @@ mod storage_tests {
         unsafe {
             let bg = (COLOUR_FLAG_RGB | 0xabcdef) as u_int;
             for (destination, source, expected) in [(0, 1, b"BCDE "), (1, 0, b" ABCD")] {
-                let mut owner = grid_create_box(8, 1, 0);
+                let mut owner = grid_create(8, 1, 0);
                 for (column, byte) in b"ABCDE".iter().enumerate() {
                     let mut cell = grid_default_cell;
                     cell.fg = COLOUR_FLAG_RGB | *byte as i32;
@@ -1696,7 +1690,7 @@ mod storage_tests {
                     }
                 }
             }
-            let mut owner = grid_create_box(16, 1, 0);
+            let mut owner = grid_create(16, 1, 0);
             grid_clear(&mut owner, 5, 0, 3, 1, 8);
             assert_eq!(owner.linedata[0].cellsize, 0);
             grid_clear(&mut owner, 5, 0, 3, 1, bg);
@@ -1839,7 +1833,7 @@ mod storage_tests {
     #[test]
     fn borrowed_line_lookup_covers_history_and_rejects_spare_storage() {
         unsafe {
-            let mut owner = grid_create_box(8, 2, 10);
+            let mut owner = grid_create(8, 2, 10);
             grid_scroll_history(&mut *owner, 8);
             grid_adjust_lines(&mut *owner, 4);
             owner.linedata[0].time = 1;
@@ -1889,8 +1883,8 @@ mod storage_tests {
     #[test]
     fn grid_comparison_keeps_allocated_line_sizes_and_physical_row_origin() {
         unsafe {
-            let mut a = grid_create_box(2, 1, 10);
-            let mut b = grid_create_box(2, 1, 10);
+            let mut a = grid_create(2, 1, 10);
+            let mut b = grid_create(2, 1, 10);
             assert_eq!(grid_compare(&a, &b), 0);
             grid_set_cell(&mut *a, 0, 0, &grid_default_cell);
             assert_eq!(grid_compare(&a, &b), 1);
@@ -1943,7 +1937,7 @@ mod storage_tests {
     #[test]
     fn borrowed_cell_reads_cover_defaults_compact_extended_and_tab_storage() {
         unsafe {
-            let mut owner = grid_create_box(16, 1, 0);
+            let mut owner = grid_create(16, 1, 0);
             let default = grid_default_cell;
             let mut actual = grid_cell::default();
             for (x, y) in [(0, 0), (u_int::MAX, 0), (0, u_int::MAX)] {
@@ -1984,7 +1978,7 @@ mod storage_tests {
     #[test]
     fn borrowed_line_queries_keep_wide_space_and_tab_padding_widths() {
         unsafe {
-            let mut owner = grid_create_box(8, 1, 0);
+            let mut owner = grid_create(8, 1, 0);
             let mut cell = grid_default_cell;
             grid_set_tab(&mut cell, 3);
             grid_set_cell(&mut *owner, 2, 0, &cell);
@@ -2012,7 +2006,7 @@ mod storage_tests {
     }
 
     unsafe fn labeled_grid() -> Box<grid> {
-        let mut owner = grid_create_box(8, 4, 1);
+        let mut owner = grid_create(8, 4, 1);
         for (y, byte) in b"ABCD".iter().enumerate() {
             let mut cell = grid_default_cell;
             cell.data.data[0] = *byte;
@@ -2080,7 +2074,7 @@ mod storage_tests {
     #[test]
     fn wrapped_positions_keep_line_ends_empty_rows_and_history_coordinates() {
         unsafe {
-            let mut gd = grid_create_box(8, 5, 10);
+            let mut gd = grid_create(8, 5, 10);
             gd.sy = 3;
             gd.hsize = 2;
             for (row, (used, wrapped)) in [(3, true), (2, false), (0, false), (4, true), (1, false)]
@@ -2122,7 +2116,7 @@ mod storage_tests {
     fn reflow_splits_and_joins_wrapped_rows_with_metadata_and_scroll_position() {
         unsafe {
             for extended in [false, true] {
-                let mut gd = grid_create_box(5, 4, 20);
+                let mut gd = grid_create(5, 4, 20);
                 gd.sy = 3;
                 gd.hsize = 1;
                 gd.hscrolled = 1;
@@ -2184,7 +2178,7 @@ mod storage_tests {
     #[test]
     fn reflow_keeps_wide_cells_padding_and_links_when_joining_a_split_tail() {
         unsafe {
-            let mut gd = grid_create_box(3, 2, 10);
+            let mut gd = grid_create(3, 2, 10);
             let mut cell = grid_default_cell;
             cell.data = crate::src::text::utf8::utf8_fromcstr_vec(c"漢")[0];
             cell.link = 7;
@@ -2250,7 +2244,7 @@ mod storage_tests {
     fn line_moves_history_rotation_and_deep_clones_keep_independent_cells() {
         unsafe {
             let mut owner = labeled_grid();
-            let mut copy = grid_create_box(8, 4, 0);
+            let mut copy = grid_create(8, 4, 0);
             grid_duplicate_lines(&mut copy, 0, &owner, 0, 4);
             assert_ne!(
                 owner.linedata[0].celldata.as_ptr(),

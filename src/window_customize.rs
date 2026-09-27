@@ -651,8 +651,8 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
     if (*data).editor.is_null() {
         return;
     }
-    sx = (*(*s).grid).sx;
-    sy = (*(*s).grid).sy;
+    sx = (*s).grid().sx;
+    sy = (*s).grid().sy;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
     }

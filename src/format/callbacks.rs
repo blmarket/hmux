@@ -451,7 +451,7 @@ unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    gd = (*wp).base.grid;
+    gd = (*wp).base.grid_mut();
     i = 0 as u_int;
     while i < (*gd).hsize.wrapping_add((*gd).sy) {
         let gl = grid_get_line(&*gd, i);
@@ -488,7 +488,7 @@ unsafe fn format_cb_history_all_bytes(mut ft: *mut format_tree) -> Option<CStrin
     if wp.is_null() {
         return None;
     }
-    gd = (*wp).base.grid;
+    gd = (*wp).base.grid_mut();
     lines = (*gd).hsize.wrapping_add((*gd).sy);
     i = 0 as u_int;
     while i < lines {
@@ -522,7 +522,7 @@ unsafe fn format_cb_pane_tabs(mut ft: *mut format_tree) -> Option<CString> {
     }
     let mut tabs = String::new();
     i = 0 as u_int;
-    while i < (*(*wp).base.grid).sx {
+    while i < (*wp).base.grid().sx {
         if crate::src::screen::screen_has_tab(&(*wp).base, i) {
             if !tabs.is_empty() {
                 tabs.push(',');
@@ -747,7 +747,7 @@ unsafe fn format_cb_cursor_character(mut ft: *mut format_tree) -> Option<CString
     if wp.is_null() {
         return None;
     }
-    grid_view_get_cell(&*(*wp).base.grid, (*wp).base.cx, (*wp).base.cy, &mut gc);
+    grid_view_get_cell((*wp).base.grid(), (*wp).base.cx, (*wp).base.cy, &mut gc);
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
         value = Some(
             CString::new(std::slice::from_raw_parts(
@@ -804,7 +804,7 @@ unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
         }
         return None;
     }
-    gd = (*wp).base.grid;
+    gd = (*wp).base.grid_mut();
     return format_grid_word_cstring(&*gd, x, (*gd).hsize.wrapping_add(y));
 }
 unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString> {
@@ -839,7 +839,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
         }
         return None;
     }
-    gd = (*wp).base.grid;
+    gd = (*wp).base.grid_mut();
     return format_grid_hyperlink_cstring(&*gd, x, (*gd).hsize.wrapping_add(y), &*(*wp).screen);
 }
 unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
@@ -874,7 +874,7 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
         }
         return None;
     }
-    gd = (*wp).base.grid;
+    gd = (*wp).base.grid_mut();
     return format_grid_line_cstring(&*gd, (*gd).hsize.wrapping_add(y));
 }
 unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CString> {
@@ -1388,7 +1388,7 @@ unsafe fn format_cb_history_added(mut ft: *mut format_tree) -> Option<CString> {
         return Some(
             CString::new(format!(
                 "{}",
-                ((*(*(*ft).wp).base.grid).scroll_added) as u32
+                ((*(*ft).wp).base.grid().scroll_added) as u32
             ))
             .expect("formatted numbers contain no NUL"),
         );
@@ -1399,7 +1399,7 @@ unsafe fn format_cb_history_collected(mut ft: *mut format_tree) -> Option<CStrin
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         return Some(
-            CString::new(format!("{}", ((*(*wp).base.grid).scroll_collected) as u32))
+            CString::new(format!("{}", ((*wp).base.grid().scroll_collected) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -1409,7 +1409,7 @@ unsafe fn format_cb_history_generation(mut ft: *mut format_tree) -> Option<CStri
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         return Some(
-            CString::new(format!("{}", ((*(*wp).base.grid).scroll_generation) as u32))
+            CString::new(format!("{}", ((*wp).base.grid().scroll_generation) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -1418,7 +1418,7 @@ unsafe fn format_cb_history_generation(mut ft: *mut format_tree) -> Option<CStri
 unsafe fn format_cb_history_limit(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         return Some(
-            CString::new(format!("{}", ((*(*(*ft).wp).base.grid).hlimit) as u32))
+            CString::new(format!("{}", ((*(*ft).wp).base.grid().hlimit) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -1427,7 +1427,7 @@ unsafe fn format_cb_history_limit(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_history_size(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         return Some(
-            CString::new(format!("{}", ((*(*(*ft).wp).base.grid).hsize) as u32))
+            CString::new(format!("{}", ((*(*ft).wp).base.grid().hsize) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }

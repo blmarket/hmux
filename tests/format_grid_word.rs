@@ -2,9 +2,7 @@
 //! drops.
 
 use hmux2::src::format::format_grid_word;
-use hmux2::src::grid::{
-    grid_create, grid_default_cell, grid_destroy, grid_set_cell, grid_set_padding,
-};
+use hmux2::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding};
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
 use hmux2::src::tmux::global_s_options;
@@ -22,8 +20,7 @@ fn grid_word_collects_wide_cells_and_returns_owned_strings() {
         options_default(s_options, definition);
         global_s_options = s_options;
 
-        let gd = grid_create(8, 1, 0);
-        assert!(!gd.is_null());
+        let mut gd = grid_create(8, 1, 0);
         let mut cell = grid_default_cell;
         for (x, byte) in [(0, b'H'), (1, b'i'), (2, b' ')] {
             cell.data.data[0] = byte;
@@ -51,7 +48,7 @@ fn grid_word_collects_wide_cells_and_returns_owned_strings() {
         assert_eq!(second.as_bytes(), "漢Z".as_bytes());
         assert!(format_grid_word(&*gd, 6, 0).is_none());
 
-        grid_destroy(gd);
+        drop(gd);
         global_s_options = saved_s_options;
         options_free(s_options);
         assert_eq!(first.as_bytes(), b"Hi");

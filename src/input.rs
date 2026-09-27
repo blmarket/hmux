@@ -2617,12 +2617,12 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         }
         9 => {
             cx = (*s).cx;
-            if !(cx >= (*(*s).grid).sx.wrapping_sub(1 as u_int)) {
-                line = (*s).cy.wrapping_add((*(*s).grid).hsize);
-                grid_get_cell(&*(*s).grid, cx, line, &mut first_gc);
+            if !(cx >= (*s).grid().sx.wrapping_sub(1 as u_int)) {
+                line = (*s).cy.wrapping_add((*s).grid().hsize);
+                grid_get_cell((*s).grid(), cx, line, &mut first_gc);
                 loop {
                     if has_content == 0 {
-                        grid_get_cell(&*(*s).grid, cx, line, &mut gc);
+                        grid_get_cell((*s).grid(), cx, line, &mut gc);
                         if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                             || *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
                                 != ' ' as i32
@@ -2635,7 +2635,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     if screen_has_tab(&*s, cx) {
                         break;
                     }
-                    if !(cx < (*(*s).grid).sx.wrapping_sub(1 as u_int)) {
+                    if !(cx < (*s).grid().sx.wrapping_sub(1 as u_int)) {
                         break;
                     }
                 }
@@ -2645,7 +2645,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 {
                     (*s).cx = cx;
                 } else {
-                    grid_get_cell(&*(*s).grid, (*s).cx, line, &mut gc);
+                    grid_get_cell((*s).grid(), (*s).cx, line, &mut gc);
                     grid_set_tab(&mut gc, width);
                     screen_write_collect_add(sctx, &raw mut gc);
                 }
@@ -2716,7 +2716,7 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
         }
         5 => {
-            if (*s).cx < (*(*s).grid).sx {
+            if (*s).cx < (*s).grid().sx {
                 let column = (*s).cx;
                 screen_set_tab(&mut *s, column, true);
             }
@@ -2796,8 +2796,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     match (*entry).type_0 {
         0 => {
             cx = (*s).cx;
-            if cx > (*(*s).grid).sx.wrapping_sub(1 as u_int) {
-                cx = (*(*s).grid).sx.wrapping_sub(1 as u_int);
+            if cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
+                cx = (*s).grid().sx.wrapping_sub(1 as u_int);
             }
             n = input_get(
                 ictx,
@@ -3037,7 +3037,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 ictx,
                 1 as u_int,
                 1 as ::core::ffi::c_int,
-                (*(*s).grid).sy as ::core::ffi::c_int,
+                (*s).grid().sy as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) && m != -(1 as ::core::ffi::c_int) {
                 screen_write_scrollregion(
@@ -3386,7 +3386,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if !(n == -(1 as ::core::ffi::c_int)) {
-                m = (*(*s).grid).sx.wrapping_sub((*s).cx) as ::core::ffi::c_int;
+                m = (*s).grid().sx.wrapping_sub((*s).cx) as ::core::ffi::c_int;
                 if n > m {
                     n = m;
                 }
@@ -3469,7 +3469,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    if (*s).cx < (*(*s).grid).sx {
+                    if (*s).cx < (*s).grid().sx {
                         let column = (*s).cx;
                         screen_set_tab(&mut *s, column, false);
                     }
@@ -3760,8 +3760,8 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let mut s: *mut screen = (*sctx).s;
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut x: u_int = (*(*s).grid).sx;
-    let mut y: u_int = (*(*s).grid).sy;
+    let mut x: u_int = (*s).grid().sx;
+    let mut y: u_int = (*s).grid().sy;
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
     if !wp.is_null() {
@@ -5346,7 +5346,7 @@ unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::
 unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut s: *mut screen = (*ictx).ctx.s;
-    let mut gd: *mut grid = (*s).grid;
+    let mut gd: *mut grid = (*s).grid_mut();
     let mut line: u_int = (*s).cy.wrapping_add((*gd).hsize);
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut status: ::core::ffi::c_int = 0;

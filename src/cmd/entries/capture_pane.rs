@@ -98,7 +98,7 @@ fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
     CString::new(bytes).expect("colour text and hexadecimal suffix contain no NUL")
 }
 unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
-    let mut gd: *mut grid = s.grid;
+    let gd = s.grid();
     let mut hl: *mut hyperlinks = s.hyperlinks;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -180,7 +180,7 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
 }
 unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     let s = &wp.base;
-    let mut gd: *mut grid = s.grid;
+    let gd = s.grid();
     let mut buf = Vec::new();
     let mut p: [::core::ffi::c_char; 11] = [0; 11];
     let mut yy: u_int = 0;
@@ -362,7 +362,7 @@ unsafe fn cmd_capture_pane_history(
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    sx = (*wp.base.grid).sx;
+    sx = wp.base.grid().sx;
     let (gd, s) = if args_has(args, b'a') != 0 {
         let Some(saved) = wp.base.saved_grid.as_deref() else {
             if args_has(args, b'q') == 0 {
@@ -382,7 +382,7 @@ unsafe fn cmd_capture_pane_history(
         } else {
             &wp.base
         };
-        (&*s.grid, s)
+        (s.grid(), s)
     };
     Sflag = args_get(args, 'S' as i32 as u_char);
     if !Sflag.is_null()
@@ -578,7 +578,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cmd_get_entry(self_0) == &raw const cmd_clear_history_entry {
         window_pane_reset_mode_all(wp);
-        grid_clear_history(&mut *((*wp).base.grid));
+        grid_clear_history((*wp).base.grid_mut());
         if args_has(args, 'H' as i32 as u_char) != 0 {
             screen_reset_hyperlinks((*wp).screen);
         }

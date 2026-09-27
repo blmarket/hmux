@@ -113,7 +113,7 @@ unsafe fn window_set_fill_cell(
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    grid_view_get_cell(&*s.grid, 0 as u_int, 0 as u_int, &mut new_gc);
+    grid_view_get_cell(s.grid(), 0 as u_int, 0 as u_int, &mut new_gc);
     if new_gc.data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
         memcpy(
             gc as *mut ::core::ffi::c_void,
@@ -330,7 +330,7 @@ pub unsafe fn window_make_pane_status(
     );
     screen_write_stop(&raw mut ctx);
     format_free(ft);
-    if grid_compare(&*(*wp).status_screen.grid, &*old.grid) == 0 as ::core::ffi::c_int {
+    if grid_compare((*wp).status_screen.grid(), old.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old);
         return 0 as ::core::ffi::c_int;
     }

@@ -176,13 +176,13 @@ unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
         scrolled: 0,
         bg: 0,
     };
-    let mut sx: u_int = (*(*src).grid).sx;
-    let mut sy: u_int = (*(*src).grid).sy;
+    let mut sx: u_int = (*src).grid().sx;
+    let mut sy: u_int = (*src).grid().sy;
     (*data).preview = Some(Box::new(screen::empty()));
     let dst = (*data).preview.as_deref_mut().unwrap() as *mut screen;
     screen_init(dst, sx, sy, 0 as u_int);
     screen_write_start(&raw mut ctx, dst);
-    screen_write_fast_copy(&raw mut ctx, src, 0 as u_int, (*(*src).grid).hsize, sx, sy);
+    screen_write_fast_copy(&raw mut ctx, src, 0 as u_int, (*src).grid().hsize, sx, sy);
     screen_write_stop(&raw mut ctx);
     (*dst).mode = (*src).mode;
     (*dst).cx = (*src).cx;
@@ -1410,13 +1410,13 @@ unsafe fn window_panes_draw_pane(
         .map_or(::core::ptr::null_mut(), |preview| preview as *mut screen);
     if !preview.is_null()
         && wp == (*data).wp
-        && sx <= (*(*preview).grid).sx
-        && sy <= (*(*preview).grid).sy
+        && sx <= (*preview).grid().sx
+        && sy <= (*preview).grid().sy
     {
         s = preview;
     }
     if osx <= dsx && osy <= dsy {
-        screen_write_fast_copy(ctx, s, 0 as u_int, (*(*s).grid).hsize, sx, sy);
+        screen_write_fast_copy(ctx, s, 0 as u_int, (*s).grid().hsize, sx, sy);
     } else {
         screen_write_preview(ctx, s, sx, sy);
     }
@@ -1472,8 +1472,8 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     }
     osx = (*root).g.sx;
     osy = (*root).g.sy;
-    sx = (*(*data).screen.grid).sx;
-    sy = (*(*data).screen.grid).sy;
+    sx = (*data).screen.grid().sx;
+    sy = (*data).screen.grid().sy;
     window_panes_free_areas(data);
     screen_write_start(&raw mut ctx, &raw mut (*data).screen);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
@@ -1527,8 +1527,8 @@ unsafe fn window_panes_init(
         tv_sec: 0,
         tv_usec: 0,
     };
-    let mut sx: u_int = (*(*wp).base.grid).sx;
-    let mut sy: u_int = (*(*wp).base.grid).sy;
+    let mut sx: u_int = (*wp).base.grid().sx;
+    let mut sy: u_int = (*wp).base.grid().sy;
     let mut delay: u_int = 0;
     if item.is_null() {
         return ::core::ptr::null_mut::<screen>();

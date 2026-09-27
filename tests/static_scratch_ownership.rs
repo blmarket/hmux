@@ -1,5 +1,5 @@
 use hmux2::src::{
-    grid::{grid_create, grid_default_cell, grid_destroy, grid_set_cell, grid_string_cells_bytes},
+    grid::{grid_create, grid_default_cell, grid_set_cell, grid_string_cells_bytes},
     input_keys::input_key_get_mouse,
     shared::{
         client::{client, CLIENT_UTF8},
@@ -105,7 +105,7 @@ fn codeset_conversion_preserves_cells_and_independent_results() {
 #[test]
 fn capture_attributes_continue_across_lines_but_not_between_captures() {
     unsafe {
-        let grid = grid_create(1, 3, 0);
+        let mut grid = grid_create(1, 3, 0);
         let mut cell = grid_default_cell;
         cell.fg = 1;
         cell.data.data[0] = b'A';
@@ -141,6 +141,6 @@ fn capture_attributes_continue_across_lines_but_not_between_captures() {
             grid_string_cells_bytes(&*grid, 0, 0, 1, None, flags, None),
             b"A"
         );
-        grid_destroy(grid);
+        drop(grid);
     }
 }

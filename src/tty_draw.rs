@@ -125,7 +125,7 @@ pub unsafe fn tty_draw_line(
     mut style_ctx: *const tty_style_ctx,
 ) {
     let mut current_block: u64;
-    let mut gd: *mut grid = (*s).grid;
+    let mut gd: *mut grid = (*s).grid_mut();
     let mut gcp: *const grid_cell = ::core::ptr::null::<grid_cell>();
     let mut converted = grid_cell::default();
     let mut gc: grid_cell = grid_cell {
@@ -217,10 +217,10 @@ pub unsafe fn tty_draw_line(
         return;
     }
     cellsize = (*grid_get_line(&*gd, (*gd).hsize.wrapping_add(py))).cellsize as u_int;
-    if (*(*s).grid).sx > cellsize {
+    if (*s).grid().sx > cellsize {
         ex = cellsize;
     } else {
-        ex = (*(*s).grid).sx;
+        ex = (*s).grid().sx;
     }
     log_debug(format_args!(
         "{}: drawing {}-{},{} (end {}) at {},{}; defaults: fg={}, bg={}",

@@ -196,7 +196,7 @@ pub unsafe fn grid_view_string_cells_bytes(gd: &grid, py: u_int, nx: u_int) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::grid::core::{grid_create_box, grid_default_cell};
+    use crate::src::grid::core::{grid_create, grid_default_cell};
     use crate::src::shared::colour::COLOUR_FLAG_RGB;
 
     unsafe fn row_labels(gd: &grid) -> Vec<u8> {
@@ -213,7 +213,7 @@ mod tests {
     fn visible_scroll_regions_preserve_history_and_outside_rows() {
         unsafe {
             for history in [false, true] {
-                let mut gd = grid_create_box(8, 4, 10);
+                let mut gd = grid_create(8, 4, 10);
                 let mut cell = grid_default_cell;
                 cell.data.data[0] = b'H';
                 grid_set_cell(&mut gd, 0, 0, &cell);
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn clear_into_history_uses_last_used_row_and_preserves_empty_scroll_count() {
         unsafe {
-            let mut gd = grid_create_box(8, 4, 10);
+            let mut gd = grid_create(8, 4, 10);
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'H';
             grid_set_cell(&mut gd, 0, 0, &cell);

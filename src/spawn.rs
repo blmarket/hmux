@@ -739,8 +739,8 @@ pub unsafe fn spawn_pane(
         0 as ::core::ffi::c_int,
         ::core::mem::size_of::<winsize>() as size_t,
     );
-    ws.ws_col = (*(*new_wp).base.grid).sx as ::core::ffi::c_ushort;
-    ws.ws_row = (*(*new_wp).base.grid).sy as ::core::ffi::c_ushort;
+    ws.ws_col = (*new_wp).base.grid().sx as ::core::ffi::c_ushort;
+    ws.ws_row = (*new_wp).base.grid().sy as ::core::ffi::c_ushort;
     ws.ws_xpixel = (*w).xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = (*w).ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
     sigfillset(&raw mut set);
