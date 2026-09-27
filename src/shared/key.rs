@@ -1476,10 +1476,8 @@ impl key_event {
         }
     }
 
-    pub fn bytes_ptr_len(&self) -> Option<(*mut ::core::ffi::c_char, size_t)> {
-        self.bytes
-            .as_ref()
-            .map(|bytes| (bytes.as_ptr().cast_mut().cast(), bytes.len()))
+    pub fn bytes_ptr_len(&self) -> Option<&[u8]> {
+        self.bytes.as_deref()
     }
 }
 

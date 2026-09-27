@@ -3105,8 +3105,8 @@ unsafe fn server_client_key_callback(
                             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
                                 current_block = 1578459965781631232;
                             } else {
-                                if let Some((buf, len)) = (*event).bytes_ptr_len() {
-                                    window_pane_paste(wp, key, buf, len);
+                                if let Some(bytes) = (*event).bytes_ptr_len() {
+                                    window_pane_paste(wp, key, bytes.as_ptr().cast_mut().cast(), bytes.len());
                                 }
                                 key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
                                 current_block = 1578459965781631232;
@@ -5424,9 +5424,7 @@ mod key_event_owner_tests {
         let absent = key_event::new(1, mouse, None);
         let empty = key_event::new(1, mouse, Some(Vec::new()));
         assert!(absent.bytes_ptr_len().is_none());
-        let (ptr, len) = empty.bytes_ptr_len().unwrap();
-        assert!(!ptr.is_null());
-        assert_eq!(len, 0);
+        assert_eq!(empty.bytes_ptr_len(), Some([].as_slice()));
         assert!(empty.metadata_snapshot().bytes.is_none());
     }
 
