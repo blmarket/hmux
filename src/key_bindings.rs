@@ -108,7 +108,7 @@ pub unsafe fn key_bindings_add(
         tablename: Some(table.name.clone()),
         flags: if repeat != 0 { KEY_BINDING_REPEAT } else { 0 },
     });
-    let s = cmd_list_print_cstring(&*bd.cmdlist(), 0);
+    let s = cmd_list_print_cstring(&*bd.cmdlist().get(), 0);
     let key_string = key_string_format(key, true);
     table.key_bindings.insert(bd);
     log_debug(format_args!(
@@ -867,7 +867,7 @@ pub unsafe fn key_bindings_dispatch(
     if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
         readonly = 1 as ::core::ffi::c_int;
     } else {
-        readonly = cmd_list_all_have(bd.cmdlist());
+        readonly = cmd_list_all_have(bd.cmdlist().get());
     }
     if readonly == 0 {
         new_item = cmdq_get_callback_owned(
@@ -1037,7 +1037,7 @@ mod ownership_tests {
             let bd = key_bindings_get(&*table, 65).unwrap();
             assert_eq!(bd.note.as_deref(), Some(c"original"));
             assert_eq!(bd.flags, KEY_BINDING_REPEAT);
-            assert_eq!(bd.cmdlist(), original_ptr);
+            assert_eq!(bd.cmdlist().get(), original_ptr);
             assert_eq!(original_lifetime.strong_count(), 2);
             key_bindings_add(
                 name,
@@ -1046,7 +1046,7 @@ mod ownership_tests {
                 0,
                 None,
             );
-            assert_eq!(key_bindings_get(&*table, 65).unwrap().cmdlist(), original_ptr);
+            assert_eq!(key_bindings_get(&*table, 65).unwrap().cmdlist().get(), original_ptr);
             assert_eq!(original_lifetime.strong_count(), 2);
             key_bindings_add(name, 66, std::ptr::null(), 0, Some(cmd_list_new()));
             key_bindings_reset(name.as_ptr(), 66);
@@ -1071,7 +1071,7 @@ mod ownership_tests {
             let retained_table = table_lifetime.upgrade().unwrap();
             let command = key_bindings_get(&*table, 65).unwrap().command();
             key_bindings_add(name, 65, std::ptr::null(), 0, Some(cmd_list_new()));
-            assert_eq!(command.cmdlist(), original_ptr);
+            assert_eq!(command.cmdlist().get(), original_ptr);
             assert_eq!(command.key, 65);
             assert_eq!(command.flags, KEY_BINDING_REPEAT);
             assert_eq!(original_lifetime.strong_count(), 1);

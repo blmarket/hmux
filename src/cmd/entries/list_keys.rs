@@ -194,7 +194,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         |out| write_cstr(out, key_string.as_ptr()),
     );
     let command = cmd_list_print_cstring(
-        &*bd.cmdlist(),
+        &*bd.cmdlist().get(),
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
     format_add(

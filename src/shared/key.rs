@@ -1560,8 +1560,8 @@ pub struct key_binding {
 
 impl key_binding {
     /// Borrow the retained command list for the remaining legacy command APIs.
-    pub fn cmdlist(&self) -> *mut cmd_list {
-        super::rc::as_ptr(&self.commands)
+    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+        &self.commands
     }
 
     /// Release the binding borrow before queueing or calling code that can
@@ -1582,8 +1582,8 @@ pub struct KeyBindingCommand {
 }
 
 impl KeyBindingCommand {
-    pub fn cmdlist(&self) -> *mut cmd_list {
-        super::rc::as_ptr(&self.commands)
+    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+        &self.commands
     }
 }
 

@@ -980,8 +980,8 @@ unsafe fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> :
     if bd.flags != default_bd.flags || bd.note != default_bd.note {
         return 1;
     }
-    let cmd = cmd_list_print_cstring(&*bd.cmdlist(), 0);
-    let default_cmd = cmd_list_print_cstring(&*default_bd.cmdlist(), 0);
+    let cmd = cmd_list_print_cstring(&*bd.cmdlist().get(), 0);
+    let default_cmd = cmd_list_print_cstring(&*default_bd.cmdlist().get(), 0);
     (cmd.as_bytes() != default_cmd.as_bytes()) as ::core::ffi::c_int
 }
 unsafe fn window_customize_build_array(
@@ -1428,7 +1428,7 @@ unsafe fn window_customize_build_keys(
                 None,
                 0 as ::core::ffi::c_int,
             );
-            let tmp = cmd_list_print_cstring(&*bd.cmdlist(), 0);
+            let tmp = cmd_list_print_cstring(&*bd.cmdlist().get(), 0);
             let text = window_customize_key_detail(tmp.as_bytes());
             let mti = mode_tree_add(
                 (*data).data_ptr(),
@@ -1902,7 +1902,7 @@ unsafe fn window_customize_draw_key(
     if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
-    let cmd = cmd_list_print_cstring(&*bd.cmdlist(), 0);
+    let cmd = cmd_list_print_cstring(&*bd.cmdlist().get(), 0);
     if window_customize_write_value(
         ctx,
         cx,
@@ -1916,7 +1916,7 @@ unsafe fn window_customize_draw_key(
         return;
     }
     if let Some(default_bd) = key_bindings_get_default(&*kt, bd.key) {
-        let default_cmd = cmd_list_print_cstring(&*default_bd.cmdlist(), 0);
+        let default_cmd = cmd_list_print_cstring(&*default_bd.cmdlist().get(), 0);
         if cmd.as_bytes() != default_cmd.as_bytes()
             && window_customize_write_value(
                 ctx,
@@ -3683,7 +3683,7 @@ unsafe fn window_customize_start_edit(
         let bd = (*kt).key_bindings.get(item.key).expect("live binding");
         if name.as_ref() == c"Command" {
             value = Cow::Owned(cmd_list_print_cstring(
-                &*bd.cmdlist(),
+                &*bd.cmdlist().get(),
                 0 as ::core::ffi::c_int,
             ));
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_COMMAND;
@@ -4261,7 +4261,7 @@ unsafe fn window_customize_set_key(
     } else if s.as_ref() == c"Command" {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
-        let value = cmd_list_print_cstring(&*bd.cmdlist(), 0 as ::core::ffi::c_int);
+        let value = cmd_list_print_cstring(&*bd.cmdlist().get(), 0 as ::core::ffi::c_int);
         let mut new_item = window_customize_new_item();
 
         new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
