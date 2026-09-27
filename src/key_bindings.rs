@@ -58,12 +58,6 @@ pub unsafe fn key_bindings_get_table(
     key_tables_insert(&raw mut key_tables, table.clone());
     Some(table)
 }
-pub unsafe fn key_bindings_first_table() -> *mut key_table {
-    return key_tables_minmax(&*std::ptr::addr_of!(key_tables));
-}
-pub unsafe fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
-    return key_tables_next(&*table);
-}
 pub fn key_bindings_get(table: &key_table, key: key_code) -> Option<&key_binding> {
     table.key_bindings.get(key)
 }
@@ -74,17 +68,11 @@ pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key
 
 /// Retain the tables while callers borrow their bindings for listing.
 pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
-    let mut tables = Vec::new();
-    let mut table = key_bindings_first_table();
-    while !table.is_null() {
-        tables.push(
-            (*table).observer
-                .upgrade()
-                .expect("live key table"),
-        );
-        table = key_bindings_next_table(table);
-    }
-    tables
+    let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() else {
+        return Vec::new();
+    };
+    let map = index.try_borrow_mut().expect("key table index already borrowed");
+    map.values().cloned().collect()
 }
 
 pub unsafe fn key_bindings_add(
@@ -184,9 +172,8 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
 
 /// Snapshot startup defaults with their own command-list reference and note.
 unsafe fn key_bindings_init_done() -> cmd_retval {
-    let mut table = key_bindings_first_table();
-    while !table.is_null() {
-        let table_ref = &mut *table;
+    for owner in key_bindings_tables() {
+        let table_ref = &mut *owner.get();
         for bd in table_ref.key_bindings.iter() {
             table_ref.default_key_bindings.insert(Box::new(key_binding {
                 key: bd.key,
@@ -196,7 +183,6 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
                 flags: bd.flags,
             }));
         }
-        table = key_bindings_next_table(table);
     }
     CMD_RETURN_NORMAL
 }

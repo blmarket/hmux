@@ -29,8 +29,8 @@ use crate::src::hooks::{
     hooks_monitor_to_cstring,
 };
 use crate::src::key_bindings::{
-    key_bindings_add, key_bindings_first_table, key_bindings_get, key_bindings_get_default,
-    key_bindings_get_table, key_bindings_next_table, key_bindings_remove, key_bindings_reset,
+    key_bindings_add, key_bindings_tables, key_bindings_get, key_bindings_get_default,
+    key_bindings_get_table, key_bindings_remove, key_bindings_reset,
     key_bindings_set_note,
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
@@ -1796,12 +1796,11 @@ unsafe fn window_customize_build(
         b"is_environment\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(b"0"),
     );
-    kt = key_bindings_first_table();
-    while !kt.is_null() {
+    for table_owner in key_bindings_tables() {
+        kt = table_owner.get();
         if (*kt).key_bindings.storage.is_some() {
             window_customize_build_keys(data, kt, ft, filter, &raw mut fs);
         }
-        kt = key_bindings_next_table(kt);
     }
     format_free(ft);
 }
