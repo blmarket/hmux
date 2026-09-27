@@ -525,7 +525,7 @@ pub unsafe fn screen_write_putc(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     utf8_set(&mut gc.data, ch);
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
 }
 /// Measure literal C-string bytes using the screen's display-width rules.
 pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
@@ -666,7 +666,7 @@ pub unsafe fn screen_write_text(
         i = idx;
         while i < end {
             gc.data = utf8_copy(&cells[i as usize]);
-            screen_write_cell(ctx, &raw mut gc);
+            screen_write_cell(&mut *ctx, &gc);
             i = i.wrapping_add(1);
         }
         idx = next;
@@ -771,7 +771,7 @@ pub unsafe fn screen_write_nputs(
                 break;
             } else {
                 size = size.wrapping_add((*ud).width as size_t);
-                screen_write_cell(ctx, &raw mut gc);
+                screen_write_cell(&mut *ctx, &gc);
             }
         } else {
             if maxlen > 0 as ssize_t && size.wrapping_add(1 as size_t) > maxlen as size_t {
@@ -1011,11 +1011,11 @@ pub unsafe fn screen_write_hline(
     } else {
         screen_write_box_border_set(lines, CELL_LR, &raw mut gc);
     }
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
     screen_write_box_border_set(lines, CELL_LR, &raw mut gc);
     i = 1 as u_int;
     while i < nx.wrapping_sub(1 as u_int) {
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
         i = i.wrapping_add(1);
     }
     if right != 0 {
@@ -1023,7 +1023,7 @@ pub unsafe fn screen_write_hline(
     } else {
         screen_write_box_border_set(lines, CELL_LR, &raw mut gc);
     }
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_vline(
@@ -1245,30 +1245,30 @@ pub unsafe fn screen_write_box(
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     screen_write_box_border_set(lines, CELL_RD, &raw mut gc);
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
     screen_write_box_border_set(lines, CELL_LR, &raw mut gc);
     i = 1 as u_int;
     while i < nx.wrapping_sub(1 as u_int) {
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
         i = i.wrapping_add(1);
     }
     screen_write_box_border_set(lines, CELL_LD, &raw mut gc);
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
     screen_write_set_cursor(
         ctx,
         cx as ::core::ffi::c_int,
         cy.wrapping_add(ny).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
     );
     screen_write_box_border_set(lines, CELL_RU, &raw mut gc);
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
     screen_write_box_border_set(lines, CELL_LR, &raw mut gc);
     i = 1 as u_int;
     while i < nx.wrapping_sub(1 as u_int) {
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
         i = i.wrapping_add(1);
     }
     screen_write_box_border_set(lines, CELL_LU, &raw mut gc);
-    screen_write_cell(ctx, &raw mut gc);
+    screen_write_cell(&mut *ctx, &gc);
     screen_write_box_border_set(lines, CELL_UD, &raw mut gc);
     i = 1 as u_int;
     while i < ny.wrapping_sub(1 as u_int) {
@@ -1277,13 +1277,13 @@ pub unsafe fn screen_write_box(
             cx as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
         );
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
         screen_write_set_cursor(
             ctx,
             cx.wrapping_add(nx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
         );
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
         i = i.wrapping_add(1);
     }
     if !title.is_null() {
@@ -1372,7 +1372,7 @@ pub unsafe fn screen_write_preview(
             cx.wrapping_add((*src).cx.wrapping_sub(px)) as ::core::ffi::c_int,
             cy.wrapping_add((*src).cy.wrapping_sub(py)) as ::core::ffi::c_int,
         );
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
     }
 }
 pub unsafe fn screen_write_mode_set(mut ctx: *mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
@@ -3918,20 +3918,19 @@ pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
         screen_write_insert_clears(ctx, (*s).cx, xx.wrapping_sub((*s).cx));
     }
 }
-pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *const grid_cell) {
-    let mut s: *mut screen = (*ctx).s;
+pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cell) {
+    let mut s: *mut screen = ctx.s;
     let mut sx: u_int = (*s).grid().sx;
     let mut collect: ::core::ffi::c_int = 0;
     collect = 1 as ::core::ffi::c_int;
-    if (*gc).data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-        || (*gc).data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
-        || *(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int
-            >= 0x7f as ::core::ffi::c_int
+    if gc.data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
+        || gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
+        || gc.data.data[0] as ::core::ffi::c_int >= 0x7f as ::core::ffi::c_int
     {
         collect = 0 as ::core::ffi::c_int;
-    } else if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+    } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
         collect = 0 as ::core::ffi::c_int;
-    } else if (*gc).attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
+    } else if gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
         collect = 0 as ::core::ffi::c_int;
     } else if !(*s).mode & MODE_WRAP != 0 {
         collect = 0 as ::core::ffi::c_int;
@@ -3951,8 +3950,7 @@ pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *
         return;
     }
     if (*s).cx > sx.wrapping_sub(1 as u_int)
-        || screen_write_current_item(&mut *ctx).used
-            > sx.wrapping_sub(1 as u_int).wrapping_sub((*s).cx)
+        || screen_write_current_item(ctx).used > sx.wrapping_sub(1 as u_int).wrapping_sub((*s).cx)
     {
         screen_write_collect_end(ctx);
     }
@@ -3963,11 +3961,11 @@ pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *
             ((*s).cx) as u32,
             ((*s).cy) as u32
         ));
-        screen_write_current_item(&mut *ctx).wrapped = 1 as ::core::ffi::c_int;
+        screen_write_current_item(ctx).wrapped = 1 as ::core::ffi::c_int;
         screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
     }
-    let ci = screen_write_current_item(&mut *ctx);
+    let ci = screen_write_current_item(ctx);
     if ci.used == 0 {
         ci.gc = *gc;
     }
@@ -3981,14 +3979,13 @@ pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *
     }
     let used = ci.used;
     ci.used = used.wrapping_add(1);
-    row.data[(*s).cx.wrapping_add(used) as usize] = (*gc).data.data[0] as ::core::ffi::c_char;
+    row.data[(*s).cx.wrapping_add(used) as usize] = gc.data.data[0] as ::core::ffi::c_char;
 }
-pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const grid_cell) {
+pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let mut r = Vec::new();
-    let mut s: *mut screen = (*ctx).s;
-    let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
-    let mut gd: *mut grid = (*s).grid_mut();
-    let mut ud: *const utf8_data = &raw const (*gc).data;
+    let mut s: *mut screen = ctx.s;
+    let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
+    let ud = &gc.data;
     let mut tmp_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -4062,7 +4059,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     };
     let mut sx: u_int = (*s).grid().sx;
     let mut sy: u_int = (*s).grid().sy;
-    let mut width: u_int = (*ud).width as u_int;
+    let mut width: u_int = ud.width as u_int;
     let mut xx: u_int = 0;
     let mut not_wrap: u_int = 0;
     let mut i: u_int = 0;
@@ -4073,10 +4070,10 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+    if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return;
     }
-    if screen_write_combine(&mut *ctx, &*gc) != 0 as ::core::ffi::c_int {
+    if screen_write_combine(ctx, gc) != 0 as ::core::ffi::c_int {
         return;
     }
     screen_write_collect_flush(
@@ -4120,8 +4117,8 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     );
     let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
     if gl.flags as ::core::ffi::c_int & GRID_LINE_EXTENDED != 0 {
-        grid_view_get_cell(&*gd, (*s).cx, (*s).cy, &mut now_gc);
-        if screen_write_overwrite(&mut *gd, (*s).cx, (*s).cy, &now_gc, width) != 0 {
+        grid_view_get_cell((*s).grid(), (*s).cx, (*s).cy, &mut now_gc);
+        if screen_write_overwrite((*s).grid_mut(), (*s).cx, (*s).cy, &now_gc, width) != 0 {
             redraw = 1 as ::core::ffi::c_int;
             skip = 0 as ::core::ffi::c_int;
         }
@@ -4134,58 +4131,50 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
             (xx) as u32,
             ((*s).cy) as u32
         ));
-        grid_view_set_padding(&mut *gd, xx, (*s).cy, (*gc).bg);
+        grid_view_set_padding((*s).grid_mut(), xx, (*s).cy, gc.bg);
         skip = 0 as ::core::ffi::c_int;
         xx = xx.wrapping_add(1);
     }
     if skip != 0 {
-        let gl = grid_get_line(&*gd, (*gd).hsize.wrapping_add((*s).cy));
+        let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
         if (*s).cx >= gl.cellsize as u_int {
-            skip = grid_cells_equal(&*gc, &grid_default_cell) as ::core::ffi::c_int;
+            skip = grid_cells_equal(gc, &grid_default_cell) as ::core::ffi::c_int;
         } else {
             let gce = &gl.celldata[(*s).cx as usize];
             if gce.flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
                 skip = 0 as ::core::ffi::c_int;
-            } else if (*gc).flags as ::core::ffi::c_int != gce.flags as ::core::ffi::c_int {
+            } else if gc.flags as ::core::ffi::c_int != gce.flags as ::core::ffi::c_int {
                 skip = 0 as ::core::ffi::c_int;
-            } else if (*gc).attr as ::core::ffi::c_int
+            } else if gc.attr as ::core::ffi::c_int
                 != gce.c2rust_unnamed.data.attr as ::core::ffi::c_int
             {
                 skip = 0 as ::core::ffi::c_int;
-            } else if (*gc).fg != gce.c2rust_unnamed.data.fg as ::core::ffi::c_int {
+            } else if gc.fg != gce.c2rust_unnamed.data.fg as ::core::ffi::c_int {
                 skip = 0 as ::core::ffi::c_int;
-            } else if (*gc).bg != gce.c2rust_unnamed.data.bg as ::core::ffi::c_int {
+            } else if gc.bg != gce.c2rust_unnamed.data.bg as ::core::ffi::c_int {
                 skip = 0 as ::core::ffi::c_int;
-            } else if (*gc).data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
+            } else if gc.data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
                 skip = 0 as ::core::ffi::c_int;
-            } else if (*gc).data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
+            } else if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int {
                 skip = 0 as ::core::ffi::c_int;
             } else if gce.c2rust_unnamed.data.data as ::core::ffi::c_int
-                != (*gc).data.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                != gc.data.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
             {
                 skip = 0 as ::core::ffi::c_int;
             }
         }
     }
     selected = screen_check_selection(&*s, (*s).cx, (*s).cy);
-    if selected != 0 && !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
-        memcpy(
-            &raw mut tmp_gc as *mut ::core::ffi::c_void,
-            gc as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
+    if selected != 0 && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
+        tmp_gc = *gc;
         tmp_gc.flags = (tmp_gc.flags as ::core::ffi::c_int | GRID_FLAG_SELECTED) as u_char;
-        grid_view_set_cell(&mut *gd, (*s).cx, (*s).cy, &tmp_gc);
-    } else if selected == 0 && (*gc).flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
-        memcpy(
-            &raw mut tmp_gc as *mut ::core::ffi::c_void,
-            gc as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
+        grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, &tmp_gc);
+    } else if selected == 0 && gc.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
+        tmp_gc = *gc;
         tmp_gc.flags = (tmp_gc.flags as ::core::ffi::c_int & !GRID_FLAG_SELECTED) as u_char;
-        grid_view_set_cell(&mut *gd, (*s).cx, (*s).cy, &tmp_gc);
+        grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, &tmp_gc);
     } else if skip == 0 {
-        grid_view_set_cell(&mut *gd, (*s).cx, (*s).cy, &*gc);
+        grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, gc);
     }
     if selected != 0 {
         skip = 0 as ::core::ffi::c_int;
@@ -4237,17 +4226,13 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         return;
     }
     if selected != 0 {
-        if let Some(selected) = screen_select_cell(&*s, &*gc) {
+        if let Some(selected) = screen_select_cell(&*s, gc) {
             tmp_gc = selected;
         }
     } else {
-        memcpy(
-            &raw mut tmp_gc as *mut ::core::ffi::c_void,
-            gc as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
+        tmp_gc = *gc;
     }
-    ttyctx.cell = &raw mut tmp_gc;
+    ttyctx.cell = &tmp_gc;
     i = 0 as u_int;
     vis = 0 as u_int;
     while (i as usize) < r.len() {
@@ -4264,6 +4249,7 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         return;
     }
     utf8_set(&mut tmp_gc.data, ' ' as i32 as u_char);
+    ttyctx.cell = &tmp_gc;
     if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
         return;
     }

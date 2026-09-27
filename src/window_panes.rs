@@ -887,7 +887,7 @@ unsafe fn window_panes_draw_borders(
                     yy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_cell(ctx, &raw mut border_gc);
+                screen_write_cell(&mut *ctx, &border_gc);
             }
             xx = xx.wrapping_add(1);
         }
@@ -999,7 +999,7 @@ unsafe fn window_panes_draw_floating_border(
                     yy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_cell(ctx, &raw mut border_gc);
+                screen_write_cell(&mut *ctx, &border_gc);
             }
             xx = xx.wrapping_add(1);
         }

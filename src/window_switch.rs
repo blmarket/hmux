@@ -438,7 +438,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
                         i as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_cell(&raw mut ctx, &raw mut gc);
+                    screen_write_cell(&mut ctx, &gc);
                 }
                 j = j.wrapping_add(1);
             }

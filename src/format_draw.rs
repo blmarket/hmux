@@ -884,7 +884,7 @@ unsafe fn format_draw_many(mut ctx: *mut screen_write_ctx, mut sy: *mut style, m
     utf8_set(&mut (*sy).gc.data, ch as u_char);
     i = 0 as u_int;
     while i < n {
-        screen_write_cell(ctx, &raw mut (*sy).gc);
+        screen_write_cell(&mut *ctx, &(*sy).gc);
         i = i.wrapping_add(1);
     }
 }
@@ -1132,11 +1132,7 @@ pub unsafe fn format_draw(
                     width[current as usize].wrapping_add(n.wrapping_div(2 as u_int));
                 if even != 0 {
                     utf8_set(&mut *ud, '[' as i32 as u_char);
-                    screen_write_cell(
-                        (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
-                            as *mut screen_write_ctx,
-                        &raw mut sy.gc,
-                    );
+                    screen_write_cell(&mut ctx[current as usize], &sy.gc);
                     width[current as usize] = width[current as usize].wrapping_add(1);
                 }
             }
@@ -1175,11 +1171,7 @@ pub unsafe fn format_draw(
                     cp = cp.offset(1);
                 }
             }
-            screen_write_cell(
-                (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
-                    as *mut screen_write_ctx,
-                &raw mut sy.gc,
-            );
+            screen_write_cell(&mut ctx[current as usize], &sy.gc);
             width[current as usize] = width[current as usize].wrapping_add((*ud).width as u_int);
         } else {
             end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));

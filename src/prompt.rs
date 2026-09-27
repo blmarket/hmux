@@ -485,7 +485,7 @@ unsafe fn prompt_redraw_character(
     } else {
         (*gc).data = utf8_copy(&*ud);
     }
-    screen_write_cell(ctx, gc);
+    screen_write_cell(&mut *ctx, &*gc);
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn prompt_redraw_quote(
@@ -572,7 +572,7 @@ unsafe fn prompt_draw_complete(
             break;
         }
         gc.data = utf8_copy(cell);
-        screen_write_cell(ctx, &raw mut gc);
+        screen_write_cell(&mut *ctx, &gc);
         width = width.wrapping_add(cell.width as u_int);
     }
 }

@@ -2064,7 +2064,7 @@ unsafe fn input_stop_utf8(mut ictx: *mut input_ctx) {
     };
     if (*ictx).utf8started != 0 {
         (*ictx).cell.cell.data = utf8_copy(&rc);
-        screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
+        screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
     }
     (*ictx).utf8started = 0 as ::core::ffi::c_int;
 }
@@ -2509,7 +2509,7 @@ unsafe fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     }
     utf8_set(&mut (*ictx).cell.cell.data, (*ictx).ch as u_char);
-    screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
+    screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
     (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
     (*ictx).cell.cell.attr =
@@ -2647,7 +2647,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 } else {
                     grid_get_cell((*s).grid(), (*s).cx, line, &mut gc);
                     grid_set_tab(&mut gc, width);
-                    screen_write_collect_add(sctx, &raw mut gc);
+                    screen_write_collect_add(&mut *sctx, &gc);
                 }
             }
         }
@@ -3408,7 +3408,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     (*ictx).cell.cell.data = utf8_copy(&(*ictx).last);
                     i = 0 as ::core::ffi::c_int;
                     while i < n {
-                        screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
+                        screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
                         i += 1;
                     }
                 }
@@ -4782,7 +4782,7 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         ((*ud).width as ::core::ffi::c_int) as u8
     ));
     (*ictx).cell.cell.data = utf8_copy(&*ud);
-    screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
+    screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
     (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
     return 0 as ::core::ffi::c_int;

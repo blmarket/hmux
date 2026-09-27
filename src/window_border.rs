@@ -309,7 +309,7 @@ pub unsafe fn window_make_pane_status(
     while i < width {
         cell_type = redraw_get_status_border_cell_type(spans, &raw mut span_index, i);
         window_get_border_cell(wp, pane_lines, cell_type, &raw mut gc);
-        screen_write_cell(&raw mut ctx, &raw mut gc);
+        screen_write_cell(&mut ctx, &gc);
         i = i.wrapping_add(1);
     }
     gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;

@@ -6863,7 +6863,7 @@ unsafe fn window_copy_write_one(
                     i = i.wrapping_add(1);
                 }
             } else {
-                screen_write_cell(ctx, &raw mut gc);
+                screen_write_cell(&mut *ctx, &gc);
             }
         } else {
             screen_write_putc(ctx, &raw const grid_default_cell, ' ' as i32 as u_char);
