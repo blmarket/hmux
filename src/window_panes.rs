@@ -1,3 +1,4 @@
+use crate::src::session::session_remove_ref;
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
@@ -135,8 +136,12 @@ pub const WINDOW_PANES_BORDER_R: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_U: ::core::ffi::c_int = 4;
 pub const WINDOW_PANES_BORDER_D: ::core::ffi::c_int = 8;
 unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<Rc<UnsafeCell<session>>> {
-    (*data).session.upgrade()
-        .filter(|owner| session_alive(rc::as_ptr(owner)) != 0)
+    let owner = (*data).session.upgrade()?;
+    if session_alive(rc::as_ptr(&owner)) == 0 {
+        session_remove_ref(owner, c"window_panes_session");
+        return None;
+    }
+    Some(owner)
 }
 
 // The caller holds session_owner through every use of the raw output
@@ -156,12 +161,17 @@ unsafe fn window_panes_get_source(
         return 0 as ::core::ffi::c_int;
     }
     s = session_find_by_id((*data).source_session);
-    *session_owner = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
+    let next_owner = if s.is_null() { None } else { rc::downgrade(s).upgrade() };
+    if let Some(owner) = std::mem::replace(session_owner, next_owner) {
+        session_remove_ref(owner, c"window_panes_get_source");
+    }
     if !s.is_null() {
         wl = winlink_find_by_window(&raw mut (*s).windows, w);
     }
     if wl.is_null() {
-        *session_owner = window_panes_session(data);
+        if let Some(owner) = std::mem::replace(session_owner, window_panes_session(data)) {
+            session_remove_ref(owner, c"window_panes_get_source");
+        }
         s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     }
     if !s.is_null() {
@@ -353,6 +363,9 @@ unsafe fn window_panes_get_border_cell(
         ft,
     );
     format_free(ft);
+    if let Some(owner) = session_owner {
+        session_remove_ref(owner, c"window_panes_get_border_cell");
+    }
 }
 unsafe fn window_panes_map_x(mut x: u_int, mut osx: u_int, mut dsx: u_int) -> ::core::ffi::c_int {
     if osx <= dsx {
@@ -1121,6 +1134,9 @@ unsafe fn window_panes_draw_format(
     let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw };
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if sx == 0 as u_int {
+        if let Some(owner) = session_owner {
+            session_remove_ref(owner, c"window_panes_draw_format");
+        }
         return;
     }
     format = options_get_string(
@@ -1128,6 +1144,9 @@ unsafe fn window_panes_draw_format(
         b"display-panes-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *format as ::core::ffi::c_int == '\0' as i32 {
+        if let Some(owner) = session_owner {
+            session_remove_ref(owner, c"window_panes_draw_format");
+        }
         return;
     }
     window_panes_get_source(
@@ -1138,6 +1157,12 @@ unsafe fn window_panes_draw_format(
         &mut source_session_owner,
     );
     if s.is_null() {
+        if let Some(owner) = session_owner {
+            session_remove_ref(owner, c"window_panes_draw_format");
+        }
+        if let Some(owner) = source_session_owner {
+            session_remove_ref(owner, c"window_panes_draw_format");
+        }
         return;
     }
     let expanded = format_single_cstring(
@@ -1163,6 +1188,12 @@ unsafe fn window_panes_draw_format(
             ::core::ptr::null_mut::<style_ranges>(),
             0 as ::core::ffi::c_int,
         );
+    }
+    if let Some(owner) = session_owner {
+        session_remove_ref(owner, c"window_panes_draw_format");
+    }
+    if let Some(owner) = source_session_owner {
+        session_remove_ref(owner, c"window_panes_draw_format");
     }
 }
 unsafe fn window_panes_draw_number(
@@ -1255,6 +1286,9 @@ unsafe fn window_panes_draw_number(
         }) as size_t;
     }
     if (sx as size_t) < len {
+        if let Some(owner) = session_owner {
+            session_remove_ref(owner, c"window_panes_draw_number");
+        }
         return;
     }
     window_panes_get_source(
@@ -1334,6 +1368,12 @@ unsafe fn window_panes_draw_number(
         if format != 0 && sy > 1 as u_int {
             window_panes_draw_format(data, ctx, wp, x, y, sx, &raw mut fgc);
         }
+        if let Some(owner) = session_owner {
+            session_remove_ref(owner, c"window_panes_draw_number");
+        }
+        if let Some(owner) = source_session_owner {
+            session_remove_ref(owner, c"window_panes_draw_number");
+        }
         return;
     }
     px = (sx as size_t).wrapping_sub(width).wrapping_div(2 as size_t) as u_int;
@@ -1364,6 +1404,12 @@ unsafe fn window_panes_draw_number(
         ptr = ptr.offset(1);
     }
     if sy <= 6 as u_int {
+        if let Some(owner) = session_owner {
+            session_remove_ref(owner, c"window_panes_draw_number");
+        }
+        if let Some(owner) = source_session_owner {
+            session_remove_ref(owner, c"window_panes_draw_number");
+        }
         return;
     }
     window_panes_draw_format(data, ctx, wp, x, y, sx, &raw mut fgc);
@@ -1381,6 +1427,12 @@ unsafe fn window_panes_draw_number(
         screen_write_puts(&mut *ctx, &fgc, |out| {
             write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
         });
+    }
+    if let Some(owner) = session_owner {
+        session_remove_ref(owner, c"window_panes_draw_number");
+    }
+    if let Some(owner) = source_session_owner {
+        session_remove_ref(owner, c"window_panes_draw_number");
     }
 }
 unsafe fn window_panes_draw_pane(
@@ -1508,6 +1560,9 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         &mut source_session_owner,
     ) == 0
     {
+        if let Some(owner) = source_session_owner {
+            session_remove_ref(owner, c"window_panes_draw_screen");
+        }
         return;
     }
     root = (*w).saved_layout_root_ptr();
@@ -1515,6 +1570,9 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         root = (*w).layout_root_ptr();
     }
     if root.is_null() {
+        if let Some(owner) = source_session_owner {
+            session_remove_ref(owner, c"window_panes_draw_screen");
+        }
         return;
     }
     osx = (*root).g.sx;
@@ -1552,6 +1610,9 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     }
     screen_write_stop(&mut ctx);
     (*mode_pane).flags |= PANE_REDRAW;
+    if let Some(owner) = source_session_owner {
+        session_remove_ref(owner, c"window_panes_draw_screen");
+    }
 }
 unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
@@ -1770,9 +1831,16 @@ unsafe fn window_panes_key_pane(
         &mut source_session_owner,
     ) == 0
     {
+        if let Some(owner) = source_session_owner {
+            session_remove_ref(owner, c"window_panes_key_pane");
+        }
         return ::core::ptr::null_mut::<window_pane>();
     }
-    return window_pane_at_index(w, index);
+    let result = window_pane_at_index(w, index);
+    if let Some(owner) = source_session_owner {
+        session_remove_ref(owner, c"window_panes_key_pane");
+    }
+    return result;
 }
 unsafe fn window_panes_get_target(
     mut wme: *mut window_mode_entry,
@@ -1856,7 +1924,7 @@ mod session_observer_tests {
     use crate::src::session::{sessions, sessions_insert, sessions_remove};
 
     #[test]
-    fn session_observer_rejects_removed_sessions_and_guard_keeps_allocation_alive() {
+    fn session_observer_rejects_removed_sessions_and_defers_guard_cleanup() {
         unsafe {
             let saved = std::ptr::replace(
                 &raw mut sessions,
@@ -1885,10 +1953,13 @@ mod session_observer_tests {
             assert_eq!(rc::as_ptr(&guard), session);
             sessions_remove(&raw mut sessions, session);
             assert!(window_panes_session(&mut mode).is_none());
+            assert_eq!(observer.strong_count(), 3, "rejected upgrade release is deferred");
+            crate::src::reactor::event_loop();
+            assert_eq!(observer.strong_count(), 2);
             rc::release(session);
             assert!(observer.upgrade().is_some(), "guard keeps allocation alive");
-            drop(guard);
-            assert!(observer.upgrade().is_none());
+            session_remove_ref(guard, c"session-observer-test");
+            assert!(observer.upgrade().is_some(), "guard cleanup is deferred");
             shutdown_runtime();
             assert!(observer.upgrade().is_none());
             assert!(window_panes_session(&mut mode).is_none());

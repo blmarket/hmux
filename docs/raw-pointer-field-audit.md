@@ -82,7 +82,7 @@ records so the original inventory remains traceable.
 | `key_tables.storage`, `key_table_entry.owner`, `client.keytable` | Registry and client fields now hold their existing `Rc<UnsafeCell<key_table>>` references. Weak traversal indexes follow the typed registry. Removal transfers the registry reference back to the legacy caller; client switch/cleanup takes its owner at the former unref point. |
 | `EventPayloadValue::Client/Session/Window/Pane` | Existing retained references are stored as `Rc<UnsafeCell<_>>`. Item Drop still detaches the value before invoking the original model-specific release function, preserving deferred release and last-window-close notifications. |
 | `cmd_if_shell_data.client`, `cmd_load_buffer_data.client`, `cmd_run_shell_data.client`, `popup_data.c`, `format_tree.client`, `client_file.c` | `Option<ClientOwner>` holds each existing retained reference. Drop uses deferred client release even on early exits; explicit teardown takes the owner at the original point. Readers project only a raw observer, without a client-lifetime borrow. |
-| `cmd_run_shell_data.s`, `monitor_set.session` | `Option<Rc<UnsafeCell<session>>>` holds the retained session reference. Teardown takes it at the same point as before and explicitly defers release without storing diagnostic labels. Current/last-session observers in clients remain raw. |
+| `cmd_run_shell_data.s`, `monitor_set.session` | `Option<Rc<UnsafeCell<session>>>` holds the retained session reference. Teardown takes it at the same point as before and calls `session_remove_ref` directly without storing diagnostic labels. Current/last-session observers in clients remain raw. |
 | `window_switch_modedata.matches` | Row indices into the mode-owned list. Rebuild clears the indices before replacing rows; bounded filtering/sorting borrows end before rendering or commands. Filtering, ranking, list growth and replacement are covered by a regression. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
@@ -162,10 +162,11 @@ the queue's Rc-file observer. Other production-shaped lifecycle fixtures remain.
 The panes mode's session observer now stores `Weak<UnsafeCell<session>>`.
 Drawing and source selection retain operation guards through all session uses;
 the source resolver passes its guard to the caller alongside its output pointers.
-Removed sessions are rejected even while their allocations survive. Guards now
-use ordinary Rc drops; the final guard can destroy the allocation immediately.
-This timing difference is tracked in [tmux conformance gaps](tmux-conformance-gaps.md#session-reference-release).
-A regression covers registry removal and physical expiration.
+Removed sessions are rejected even while their allocations survive. Every former
+`SessionOwner` holder explicitly moves its Rc into `session_remove_ref`, including
+early returns, rejected upgrades, and source guard replacement. This preserves
+deferred cleanup without a wrapper or stored diagnostic labels. Regressions cover
+registry removal, early and normal monitor exits, and deferred physical expiration.
 
 ## Validation
 

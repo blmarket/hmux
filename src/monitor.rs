@@ -1,3 +1,4 @@
+use crate::src::session::session_remove_ref;
 use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
@@ -216,6 +217,7 @@ unsafe fn monitor_check_session(
         &value,
         &raw mut (*me).last,
     );
+    session_remove_ref(session_owner, c"monitor_check_session");
 }
 unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
@@ -240,6 +242,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
     };
     wp = window_pane_find_by_id((*me).id);
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
+        session_remove_ref(session_owner, c"monitor_check_pane");
         return;
     }
     w = (*wp).window as *mut window;
@@ -262,6 +265,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         }
         wl = window_winlinks_next(w, wl);
     }
+    session_remove_ref(session_owner, c"monitor_check_pane");
 }
 unsafe fn monitor_check_all_panes_one(
     mut ms: *mut monitor_set,
@@ -298,6 +302,7 @@ unsafe fn monitor_check_all_panes_one(
     }
     (*mp).generation = (*ms).generation;
     monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
+    session_remove_ref(session_owner, c"monitor_check_all_panes_one");
 }
 unsafe fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
@@ -336,6 +341,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
     };
     w = window_find_by_id((*me).id);
     if w.is_null() {
+        session_remove_ref(session_owner, c"monitor_check_window");
         return;
     }
     wl = window_winlinks_first(w);
@@ -365,6 +371,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         }
         wl = window_winlinks_next(w, wl);
     }
+    session_remove_ref(session_owner, c"monitor_check_window");
 }
 unsafe fn monitor_check_all_windows_one(
     mut ms: *mut monitor_set,
@@ -409,6 +416,7 @@ unsafe fn monitor_check_all_windows_one(
         &value,
         &raw mut (*mw).last,
     );
+    session_remove_ref(session_owner, c"monitor_check_all_windows_one");
 }
 unsafe fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
@@ -456,6 +464,7 @@ unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
         me = me1;
     }
     format_free(ft);
+    session_remove_ref(session_owner, c"monitor_check_sessions");
 }
 unsafe fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -529,6 +538,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
         }
         me = me1;
     }
+    session_remove_ref(session_owner, c"monitor_check_all_panes");
 }
 unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
@@ -577,6 +587,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
         }
         me = me1;
     }
+    session_remove_ref(session_owner, c"monitor_check_all_windows");
 }
 unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     let mut ms: *mut monitor_set = data as *mut monitor_set;
@@ -596,7 +607,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     let mut have_all_windows: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     log_debug(format_args!("{}: timer fired", "monitor_timer"));
     event_add(&raw mut (*ms).timer, &raw mut tv);
-    let Some(_session_owner) = monitor_get_session(ms, c) else { return };
+    let Some(session_owner) = monitor_get_session(ms, c) else { return };
     me = monitor_items_minmax(&(*ms).items);
     while !me.is_null() {
         match (*me).type_0 as ::core::ffi::c_uint {
@@ -623,6 +634,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     if have_all_windows != 0 {
         monitor_check_all_windows(ms);
     }
+    session_remove_ref(session_owner, c"monitor_timer");
 }
 unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
     Box::into_raw(Box::new(monitor_set {
@@ -662,7 +674,7 @@ unsafe fn monitor_clear(mut ms: *mut monitor_set) {
             me = me1;
         }
         if let Some(session) = (*ms).session.take() {
-            rc::release_later(session);
+            session_remove_ref(session, c"monitor_clear");
         }
     }
 }
@@ -1159,6 +1171,44 @@ pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window 
 #[cfg(test)]
 mod last_owner_tests {
     use super::*;
+
+    #[test]
+    fn session_guards_defer_release_on_early_return_normal_exit_and_teardown() {
+        use crate::src::reactor::{event_loop, shutdown_runtime};
+        use crate::src::session::{sessions_insert, sessions_remove};
+
+        unsafe {
+            let saved = std::ptr::replace(
+                &raw mut sessions,
+                crate::src::shared::session::sessions { storage: None },
+            );
+            let session = rc::new(session::empty());
+            (*session).name = c"monitor-release-test".to_owned();
+            sessions_insert(&raw mut sessions, session);
+            let observer = rc::downgrade(session);
+            let set = monitor_create_session(session, std::rc::Rc::new(|_| {}));
+            rc::release(session);
+            let mut item = monitor_item::empty();
+            item.id = u32::MAX;
+
+            // Missing pane and window both return after acquiring a guard.
+            monitor_check_pane(set, &mut item);
+            monitor_check_window(set, &mut item);
+            // Empty scans exercise the normal exit paths.
+            monitor_check_all_panes(set);
+            monitor_check_all_windows(set);
+            assert_eq!(observer.strong_count(), 5);
+            event_loop();
+            assert_eq!(observer.strong_count(), 1);
+
+            sessions_remove(&raw mut sessions, session);
+            monitor_destroy(set);
+            assert_eq!(observer.strong_count(), 1);
+            shutdown_runtime();
+            assert!(observer.upgrade().is_none());
+            sessions = saved;
+        }
+    }
 
     struct Capture {
         set: *mut monitor_set,

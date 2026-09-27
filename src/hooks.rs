@@ -1,3 +1,4 @@
+use crate::src::session::session_remove_ref;
 use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::shared::rc;
 use crate::src::window::window_pane_upgrade;
@@ -520,6 +521,9 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         }
     }
     events_fire(change.name.as_ptr(), ep);
+    if let Some(owner) = session_owner {
+        session_remove_ref(owner, c"hooks_monitor_cb");
+    }
 }
 pub unsafe fn hooks_monitor_add(
     mut oo: *mut options,

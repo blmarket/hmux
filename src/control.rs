@@ -1,3 +1,4 @@
+use crate::src::session::session_remove_ref;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
@@ -1443,7 +1444,10 @@ unsafe fn control_sub_change(change: &monitor_change) {
     let s = crate::src::shared::rc::as_ptr(&session_owner);
     let wl = change.wl;
     let pane_owner = change.wp.as_ref().and_then(|pane| crate::src::window::window_pane_upgrade(pane));
-    if change.wp.is_some() && pane_owner.is_none() { return; }
+    if change.wp.is_some() && pane_owner.is_none() {
+        session_remove_ref(session_owner, c"control_sub_change");
+        return;
+    }
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     if !wp.is_null() {
@@ -1483,6 +1487,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
             out.write_all(change.value.to_bytes())
         });
     };
+    session_remove_ref(session_owner, c"control_sub_change");
 }
 pub unsafe fn control_start(mut c: *mut client) {
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {

@@ -1,3 +1,4 @@
+use crate::src::session::session_remove_ref;
 use crate::src::shared::client::{ClientOwner, client_owner_ptr};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
@@ -426,7 +427,7 @@ impl Drop for cmd_run_shell_data {
         unsafe {
             event_del(&mut self.timer);
             if let Some(session) = self.s.take() {
-                rc::release_later(session);
+                session_remove_ref(session, c"cmd_run_shell_data::drop");
             }
             drop(self.client.take());
             drop(self.state.take());
