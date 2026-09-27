@@ -110,32 +110,8 @@ impl control_state {
     }
 }
 
-unsafe fn control_state_owner(cs: *mut control_state) -> *mut control_state {
-    cs.cast()
-}
-
-#[doc(hidden)]
-/// Allocate the owner backing a control client's state pointer.
-pub fn control_state_new() -> *mut control_state {
-    let owner = Box::into_raw(Box::new(control_state::new()));
-    owner
-}
-
-#[doc(hidden)]
-/// Release an allocated state after its external resources and indexes are gone.
-///
-/// # Safety
-/// `cs` must be a live pointer returned by `control_state_new`, and it must not
-/// be used after this call. Callers must first release its events and monitor
-/// set. Pane, window, and block collections own their allocations.
-pub unsafe fn control_state_free(cs: *mut control_state) {
-    if !cs.is_null() {
-        drop(Box::from_raw(control_state_owner(cs)));
-    }
-}
-
-unsafe fn control_first_block(cs: *mut control_state) -> *mut control_block {
-    (*control_state_owner(cs)).block(0)
+fn control_first_block(cs: &control_state) -> *mut control_block {
+    cs.block(0)
 }
 
 fn control_first_pane_block(cp: &control_pane) -> *mut control_block {
@@ -151,11 +127,8 @@ fn control_remove_pane_block(cp: &mut control_pane, block: *mut control_block) {
     cp.blocks.remove(index).expect("located pane block");
 }
 
-unsafe fn control_add_block(
-    cs: *mut control_state,
-    owner: Box<control_block>,
-) -> *mut control_block {
-    (*control_state_owner(cs)).add_block(owner)
+fn control_add_block(cs: &mut control_state, owner: Box<control_block>) -> *mut control_block {
+    cs.add_block(owner)
 }
 
 #[cfg(test)]
@@ -166,18 +139,18 @@ mod control_queue_tests {
     fn state_block_owner_preserves_order_addresses_and_reply_accounting() {
         unsafe {
             let mut owner = control_state::new();
-            let cs = &raw mut owner;
+            let cs = &mut owner;
 
             let output = control_add_block(cs, control_block::new(None, 10));
             let reply_text = CString::new(b"reply-\xff".as_slice()).unwrap();
             let reply = control_add_block(cs, control_block::new(Some(reply_text), 0));
-            (*cs).queued_reply_bytes = 8;
+            cs.queued_reply_bytes = 8;
             for size in 1..=64 {
                 control_add_block(cs, control_block::new(None, size));
             }
 
             assert_eq!(control_first_block(cs), output);
-            assert_eq!((*control_state_owner(cs)).block(1), reply);
+            assert_eq!(cs.block(1), reply);
             assert_eq!(
                 std::ffi::CStr::from_ptr(
                     ((*reply).line)
@@ -190,10 +163,10 @@ mod control_queue_tests {
 
             control_free_block(cs, output);
             assert_eq!(control_first_block(cs), reply);
-            assert_eq!((*cs).queued_reply_bytes, 8);
+            assert_eq!(cs.queued_reply_bytes, 8);
             control_free_block(cs, reply);
-            assert_eq!((*control_state_owner(cs)).block(0), control_first_block(cs));
-            assert_eq!((*cs).queued_reply_bytes, 0);
+            assert_eq!(cs.block(0), control_first_block(cs));
+            assert_eq!(cs.queued_reply_bytes, 0);
         }
     }
 
@@ -214,7 +187,7 @@ mod control_queue_tests {
     fn pane_block_handles_keep_order_and_addresses_while_state_owns_blocks() {
         unsafe {
             let mut owner = control_state::new();
-            let cs = &raw mut owner;
+            let cs = &mut owner;
             let first = control_add_block(cs, control_block::new(None, 12));
             let middle = control_add_block(cs, control_block::new(None, 23));
             let last = control_add_block(cs, control_block::new(None, 34));
@@ -232,8 +205,8 @@ mod control_queue_tests {
             control_free_block(cs, middle);
             assert_eq!(control_first_pane_block(&pane), first);
             assert_eq!((*last).size, 34);
-            assert_eq!((*control_state_owner(cs)).block(0), first);
-            assert_eq!((*control_state_owner(cs)).block(1), last);
+            assert_eq!(cs.block(0), first);
+            assert_eq!(cs.block(1), last);
             control_remove_pane_block(&mut pane, first);
             control_free_block(cs, first);
             assert_eq!(control_first_pane_block(&pane), last);
@@ -287,20 +260,19 @@ mod control_queue_tests {
     #[test]
     fn resetting_panes_drops_output_and_pending_ids_but_keeps_replies() {
         unsafe {
-            let mut owner = control_state::new();
-            let cs = &raw mut owner;
             let mut client = client::empty();
-            client.control_state = cs;
+            client.control_state = Some(Box::new(control_state::new()));
+            let owner = client.control_state.as_deref_mut().unwrap();
             let mut wp = window_pane::empty();
             let reply = control_add_block(
-                cs,
+                owner,
                 control_block::new(Some(CString::new("reply").unwrap()), 0),
             );
             owner.queued_reply_bytes = 6;
             for id in [4, 9] {
                 wp.id = id;
                 wp.offset.used = 123;
-                let block = control_add_block(cs, control_block::new(None, 10));
+                let block = control_add_block(owner, control_block::new(None, 10));
                 let pane = control_add_pane(&mut owner.panes, &wp);
                 pane.blocks.push_back(block);
                 pane.pending_flag = 1;
@@ -309,6 +281,7 @@ mod control_queue_tests {
             }
             assert_eq!(owner.pending_snapshot(), [4, 9]);
             control_reset_offsets(&raw mut client);
+            let owner = client.control_state.as_deref_mut().unwrap();
             assert!(owner.panes.storage.is_none());
             assert!(owner.pending_panes.is_empty());
             assert_eq!(owner.pending_count, 0);
@@ -316,6 +289,7 @@ mod control_queue_tests {
             assert_eq!(owner.block(0), reply);
             assert_eq!(owner.queued_reply_bytes, 6);
             control_reset_offsets(&raw mut client);
+            let owner = client.control_state.as_deref_mut().unwrap();
             wp.id = 4;
             wp.offset.used = 456;
             let pane = control_add_pane(&mut owner.panes, &wp);
@@ -323,6 +297,143 @@ mod control_queue_tests {
             assert_eq!(pane.pending_flag, 0);
             assert!(pane.blocks.is_empty());
             assert!(owner.pending_snapshot().is_empty());
+        }
+    }
+
+    #[test]
+    fn stop_keeps_state_owned_until_monitor_and_stream_callbacks_are_released() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        struct CleanupProbe {
+            client: *mut client,
+            label: &'static str,
+            order: Rc<RefCell<Vec<&'static str>>>,
+        }
+        impl Drop for CleanupProbe {
+            fn drop(&mut self) {
+                unsafe {
+                    assert!((*self.client).control_state.is_some());
+                }
+                self.order.borrow_mut().push(self.label);
+            }
+        }
+
+        unsafe {
+            for shared_stream in [false, true] {
+                let mut client = client::empty();
+                if shared_stream {
+                    client.flags = CLIENT_CONTROLCONTROL as uint64_t;
+                }
+                client.control_state = Some(Box::new(control_state::new()));
+                let c = &raw mut client;
+                let order = Rc::new(RefCell::new(Vec::new()));
+                let probe = CleanupProbe {
+                    client: c,
+                    label: "monitor",
+                    order: order.clone(),
+                };
+                let subs = monitor_create_client(
+                    c,
+                    monitor_callback(move |_| {
+                        let _ = &probe;
+                    }),
+                );
+                let probe = CleanupProbe {
+                    client: c,
+                    label: "read",
+                    order: order.clone(),
+                };
+                let read_event = bufferevent_new(
+                    -1,
+                    bufferevent_data_callback(move |_| {
+                        let _ = &probe;
+                    }),
+                    None,
+                    None,
+                );
+                let write_event = if shared_stream {
+                    read_event
+                } else {
+                    let probe = CleanupProbe {
+                        client: c,
+                        label: "write",
+                        order: order.clone(),
+                    };
+                    bufferevent_new(
+                        -1,
+                        None,
+                        bufferevent_data_callback(move |_| {
+                            let _ = &probe;
+                        }),
+                        None,
+                    )
+                };
+                let cs = client.control_state.as_deref_mut().unwrap();
+                cs.subs = subs;
+                cs.read_event = read_event;
+                cs.write_event = write_event;
+                cs.windows.set(4, 80, 24);
+                cs.deferred.push_back(CString::new("deferred").unwrap());
+                control_add_block(
+                    cs,
+                    control_block::new(Some(CString::new("reply").unwrap()), 0),
+                );
+                let output = control_add_block(cs, control_block::new(None, 10));
+                let wp = window_pane::empty();
+                let pane = control_add_pane(&mut cs.panes, &wp);
+                pane.blocks.push_back(output);
+                pane.pending_flag = 1;
+                cs.pending_panes.push_back(wp.id);
+                cs.pending_count = 1;
+
+                control_stop(c);
+                assert!(client.control_state.is_none());
+                assert_eq!(
+                    *order.borrow(),
+                    if shared_stream {
+                        vec!["monitor", "read"]
+                    } else {
+                        vec!["monitor", "write", "read"]
+                    }
+                );
+                control_stop(c);
+                control_read_callback(c);
+                control_write_callback(c);
+            }
+        }
+    }
+
+    #[test]
+    fn formatting_can_reenter_notifications_or_stop_the_owned_state() {
+        unsafe {
+            let mut client = client::empty();
+            client.control_state = Some(Box::new(control_state::new()));
+            client.control_state.as_deref_mut().unwrap().guard_depth = 1;
+            let c = &raw mut client;
+            control_notify_write(c, |out| {
+                control_notify_write(c, |out| out.write_all(b"inner"));
+                out.write_all(b"outer")
+            });
+            let cs = client.control_state.as_deref().unwrap();
+            assert_eq!(
+                cs.deferred
+                    .iter()
+                    .map(|line| line.as_bytes())
+                    .collect::<Vec<_>>(),
+                [b"inner".as_slice(), b"outer".as_slice()]
+            );
+            control_write(c, |out| {
+                control_stop(c);
+                out.write_all(b"stopped while formatting reply")
+            });
+            assert!(client.control_state.is_none());
+            client.control_state = Some(Box::new(control_state::new()));
+            control_notify_write(c, |out| {
+                control_stop(c);
+                out.write_all(b"stopped while formatting notification")
+            });
+            assert!(client.control_state.is_none());
         }
     }
 
@@ -358,7 +469,15 @@ mod control_queue_tests {
     }
 }
 
-unsafe fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_block) {
+unsafe fn control_free_block(cs: &mut control_state, cb: *mut control_block) {
+    control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, cb);
+}
+
+unsafe fn control_release_block(
+    blocks: &mut VecDeque<Box<control_block>>,
+    queued_reply_bytes: &mut size_t,
+    cb: *mut control_block,
+) {
     let mut size: size_t = 0;
     if (*cb).size == 0 as size_t && !(*cb).line.is_none() {
         size = (*cb)
@@ -367,13 +486,12 @@ unsafe fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_bl
             .expect("reply block has an owned line")
             .as_bytes_with_nul()
             .len();
-        if (*cs).queued_reply_bytes > size {
-            (*cs).queued_reply_bytes = (*cs).queued_reply_bytes.wrapping_sub(size);
+        if *queued_reply_bytes > size {
+            *queued_reply_bytes = queued_reply_bytes.wrapping_sub(size);
         } else {
-            (*cs).queued_reply_bytes = 0 as size_t;
+            *queued_reply_bytes = 0 as size_t;
         }
     }
-    let blocks = &mut (*cs).all_blocks;
     let index = blocks
         .iter()
         .position(|owner| std::ptr::eq(&**owner, cb))
@@ -430,12 +548,15 @@ pub unsafe fn control_clear_window_size(c: *mut client, window: u_int) {
     }
 }
 
-unsafe fn control_discard_pane(mut c: *mut client, cp: &mut control_pane) {
-    let mut cs: *mut control_state = (*c).control_state;
-    while let Some(cb) = cp.blocks.pop_front() {
-        control_free_block(cs, cb);
+unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
+    let Some(cp) = cs.panes.get_mut(pane) else {
+        return;
+    };
+    while let Some(block) = cp.blocks.pop_front() {
+        control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, block);
     }
 }
+
 unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*c).session.is_null() {
@@ -456,14 +577,19 @@ unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut windo
     return wp;
 }
 pub unsafe fn control_reset_offsets(c: *mut client) {
-    let cs = (*c).control_state;
-    if let Some(panes) = (*cs).panes.storage.take() {
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    if let Some(panes) = cs.panes.storage.take() {
         for (_, mut pane) in *panes {
-            control_discard_pane(c, &mut pane);
+            while let Some(block) = pane.blocks.pop_front() {
+                control_free_block(cs, block);
+            }
         }
     }
-    (*cs).pending_panes.clear();
-    (*cs).pending_count = 0;
+    cs.pending_panes.clear();
+    cs.pending_count = 0;
 }
 pub unsafe fn control_pane_offset<'a>(
     cs: &'a mut control_state,
@@ -488,7 +614,13 @@ pub unsafe fn control_pane_offset<'a>(
     Some(&mut cp.offset)
 }
 pub unsafe fn control_set_pane_on(c: *mut client, wp: *mut window_pane) {
-    let Some(cp) = (*(*c).control_state).panes.get_mut((*wp).id) else {
+    let Some(cp) = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state")
+        .panes
+        .get_mut((*wp).id)
+    else {
         return;
     };
     if cp.flags & CONTROL_PANE_OFF != 0 {
@@ -498,14 +630,25 @@ pub unsafe fn control_set_pane_on(c: *mut client, wp: *mut window_pane) {
     }
 }
 pub unsafe fn control_set_pane_off(c: *mut client, wp: *mut window_pane) {
-    let cp = control_add_pane(&mut (*(*c).control_state).panes, &*wp);
-    control_discard_pane(c, cp);
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    control_add_pane(&mut cs.panes, &*wp);
+    control_discard_pane(cs, (*wp).id);
+    let cp = cs.panes.get_mut((*wp).id).expect("indexed control pane");
     cp.offset.used = (*wp).offset.used;
     cp.queued.used = (*wp).offset.used;
     cp.flags |= CONTROL_PANE_OFF;
 }
 pub unsafe fn control_continue_pane(c: *mut client, wp: *mut window_pane) {
-    let Some(cp) = (*(*c).control_state).panes.get_mut((*wp).id) else {
+    let Some(cp) = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state")
+        .panes
+        .get_mut((*wp).id)
+    else {
         return;
     };
     if cp.flags & CONTROL_PANE_PAUSED != 0 {
@@ -516,33 +659,37 @@ pub unsafe fn control_continue_pane(c: *mut client, wp: *mut window_pane) {
     }
 }
 pub unsafe fn control_pause_pane(c: *mut client, wp: *mut window_pane) {
-    let cp = control_add_pane(&mut (*(*c).control_state).panes, &*wp);
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    let cp = control_add_pane(&mut cs.panes, &*wp);
     if cp.flags & CONTROL_PANE_PAUSED == 0 {
         cp.flags |= CONTROL_PANE_PAUSED;
-        control_discard_pane(c, cp);
+        control_discard_pane(cs, (*wp).id);
         control_notify_write(c, |out| write!(out, "%pause %{}", (*wp).id));
     }
 }
 pub unsafe fn control_reset_pane(c: *mut client, wp: *mut window_pane) {
-    let cs = (*c).control_state;
-    if cs.is_null() {
-        return;
-    }
-    let Some(cp) = (*cs).panes.get_mut((*wp).id) else {
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
         return;
     };
-    control_discard_pane(c, cp);
-    cp.offset.used = (*wp).offset.used;
-    cp.queued.used = (*wp).offset.used;
+    control_discard_pane(cs, (*wp).id);
+    if let Some(cp) = cs.panes.get_mut((*wp).id) {
+        cp.offset.used = (*wp).offset.used;
+        cp.queued.used = (*wp).offset.used;
+    }
 }
 unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> ::core::ffi::c_int {
-    let mut cs: *mut control_state = (*c).control_state;
+    let Some(cs) = (*c).control_state.as_deref() else {
+        return 1;
+    };
     let mut size: size_t = 0;
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_DISCARD != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    size = evbuffer_get_length(&*((*(*cs).write_event).output));
-    size = size.wrapping_add((*cs).queued_reply_bytes);
+    size = evbuffer_get_length(&*((*cs.write_event).output));
+    size = size.wrapping_add(cs.queued_reply_bytes);
     size = size.wrapping_add(added);
     if size < CONTROL_MAXIMUM_REPLY_BUFFER as size_t {
         return 0 as ::core::ffi::c_int;
@@ -567,12 +714,14 @@ unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> :
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn control_write_line(c: *mut client, line: CString) {
-    let mut cs: *mut control_state = (*c).control_state;
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let size = line.as_bytes_with_nul().len() as size_t;
     if control_check_reply_buffer(c, size) != 0 {
         return;
     }
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
+        return;
+    };
     if control_first_block(cs).is_null() {
         log_debug(format_args!(
             "{}: {}: writing line: {}",
@@ -586,20 +735,20 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
             log_cstr((line.as_ptr()) as *const _)
         ));
         bufferevent_write(
-            (*cs).write_event,
+            cs.write_event,
             line.as_ptr() as *const ::core::ffi::c_void,
             size.wrapping_sub(1 as size_t),
         );
         bufferevent_write(
-            (*cs).write_event,
+            cs.write_event,
             b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
             1 as size_t,
         );
-        bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
+        bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
         return;
     }
     cb = control_add_block(cs, control_block::new(Some(line), 0));
-    (*cs).queued_reply_bytes = (*cs).queued_reply_bytes.wrapping_add(size);
+    cs.queued_reply_bytes = cs.queued_reply_bytes.wrapping_add(size);
     (*cb).t = get_timer();
     log_debug(format_args!(
         "{}: {}: storing line: {}",
@@ -617,20 +766,25 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
                 as *const _
         )
     ));
-    bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
+    bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
 }
-unsafe fn control_flush_deferred(mut c: *mut client) {
-    let mut cs: *mut control_state = (*c).control_state;
-    while let Some(line) = (*control_state_owner(cs)).deferred.pop_front() {
+unsafe fn control_flush_deferred(c: *mut client) {
+    loop {
+        let line = (*c)
+            .control_state
+            .as_deref_mut()
+            .and_then(|cs| cs.deferred.pop_front());
+        let Some(line) = line else {
+            break;
+        };
         control_write_line(c, line);
     }
 }
 pub unsafe fn control_write(
-    mut c: *mut client,
+    c: *mut client,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut cs: *mut control_state = (*c).control_state;
-    if cs.is_null() {
+    if (*c).control_state.is_none() {
         return;
     }
     let line = format_message_with(write);
@@ -643,14 +797,13 @@ pub unsafe fn control_write_guard(
     mut number: u_int,
     mut flags: ::core::ffi::c_int,
 ) {
-    let mut cs: *mut control_state = (*c).control_state;
-    if cs.is_null() {
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
         return;
-    }
+    };
     if strcmp(guard, b"begin\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
-        (*cs).guard_depth += 1;
+        cs.guard_depth += 1;
     }
     control_write(c, |out| {
         out.write_all(b"%")?;
@@ -663,12 +816,15 @@ pub unsafe fn control_write_guard(
             (flags) as i32
         )
     });
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
+        return;
+    };
     if strcmp(guard, b"begin\0" as *const u8 as *const ::core::ffi::c_char)
         != 0 as ::core::ffi::c_int
-        && (*cs).guard_depth > 0 as ::core::ffi::c_int
+        && cs.guard_depth > 0 as ::core::ffi::c_int
         && {
-            (*cs).guard_depth -= 1;
-            (*cs).guard_depth == 0 as ::core::ffi::c_int
+            cs.guard_depth -= 1;
+            cs.guard_depth == 0 as ::core::ffi::c_int
         }
     {
         control_flush_deferred(c);
@@ -678,12 +834,14 @@ pub unsafe fn control_notify_write(
     mut c: *mut client,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut cs: *mut control_state = (*c).control_state;
-    if cs.is_null() {
+    if (*c).control_state.is_none() {
         return;
     }
     let line = format_message_with(write);
-    if (*cs).guard_depth == 0 as ::core::ffi::c_int {
+    let Some(cs) = (*c).control_state.as_deref_mut() else {
+        return;
+    };
+    if cs.guard_depth == 0 as ::core::ffi::c_int {
         control_write_line(c, line);
         return;
     }
@@ -698,7 +856,7 @@ pub unsafe fn control_notify_write(
         ),
         log_cstr((line.as_ptr()) as *const _)
     ));
-    (*control_state_owner(cs)).deferred.push_back(line);
+    cs.deferred.push_back(line);
 }
 unsafe fn control_check_age(
     mut c: *mut client,
@@ -708,8 +866,11 @@ unsafe fn control_check_age(
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut t: uint64_t = 0;
     let mut age: uint64_t = 0;
-    let cs = (*c).control_state;
-    cb = control_first_pane_block((*cs).panes.get(pane).expect("indexed control pane"));
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    cb = control_first_pane_block(cs.panes.get(pane).expect("indexed control pane"));
     if cb.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -734,9 +895,9 @@ unsafe fn control_check_age(
         if age < (*c).pause_age as uint64_t {
             return 0 as ::core::ffi::c_int;
         }
-        let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+        let cp = cs.panes.get_mut(pane).expect("indexed control pane");
         cp.flags |= CONTROL_PANE_PAUSED;
-        control_discard_pane(c, cp);
+        control_discard_pane(cs, pane);
         control_notify_write(c, |out| write!(out, "%pause %{}", ((*wp).id) as u32));
     } else {
         if age < CONTROL_MAXIMUM_AGE as uint64_t {
@@ -749,7 +910,10 @@ unsafe fn control_check_age(
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane) {
-    let mut cs: *mut control_state = (*c).control_state;
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
     let pane = (*wp).id;
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut new_size: size_t = 0;
@@ -762,16 +926,20 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
         return;
     }
     if (*c).flags & (CONTROL_IGNORE_FLAGS | CLIENT_EXIT) as uint64_t != 0 {
-        if (*cs).panes.get(pane).is_none() {
+        if cs.panes.get(pane).is_none() {
             return;
         }
     } else {
-        let cp = control_add_pane(&mut (*cs).panes, &*wp);
+        let cp = control_add_pane(&mut cs.panes, &*wp);
         if !(cp.flags & (CONTROL_PANE_OFF | CONTROL_PANE_PAUSED) != 0) {
             if control_check_age(c, wp, pane) != 0 {
                 return;
             }
-            let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+            let cs = (*c)
+                .control_state
+                .as_deref_mut()
+                .expect("control client state");
+            let cp = cs.panes.get_mut(pane).expect("indexed control pane");
             window_pane_get_new_data(wp, &raw mut cp.queued, &raw mut new_size);
             if new_size == 0 as size_t {
                 return;
@@ -779,7 +947,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
             window_pane_update_used_data(wp, &raw mut cp.queued, new_size);
             cb = control_add_block(cs, control_block::new(None, new_size));
             (*cb).t = get_timer();
-            let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+            let cp = cs.panes.get_mut(pane).expect("indexed control pane");
             cp.blocks.push_back(cb);
             log_debug(format_args!(
                 "{}: {}: new output block of {} for %{}",
@@ -805,11 +973,11 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                     ),
                     ((*wp).id) as u32
                 ));
-                (*cs).pending_panes.push_back(pane);
+                cs.pending_panes.push_back(pane);
                 cp.pending_flag = 1 as ::core::ffi::c_int;
-                (*cs).pending_count = (*cs).pending_count.wrapping_add(1);
+                cs.pending_count = cs.pending_count.wrapping_add(1);
             }
-            bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
+            bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
             return;
         }
     }
@@ -824,7 +992,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
         ),
         ((*wp).id) as u32
     ));
-    let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+    let cp = cs.panes.get_mut(pane).expect("indexed control pane");
     window_pane_update_used_data(wp, &raw mut cp.offset, SIZE_MAX as size_t);
     window_pane_update_used_data(wp, &raw mut cp.queued, SIZE_MAX as size_t);
 }
@@ -851,17 +1019,16 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
     );
     return CMD_RETURN_NORMAL;
 }
-unsafe fn control_error_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut c: *mut client = data as *mut client;
+unsafe fn control_error_callback(c: *mut client) {
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
-unsafe fn control_read_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut c: *mut client = data as *mut client;
-    let mut cs: *mut control_state = (*c).control_state;
-    let buffer: &mut evbuffer = &mut *(*(*cs).read_event).input;
+unsafe fn control_read_callback(c: *mut client) {
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
-        let Some(line) = evbuffer_readln(buffer) else {
+        let Some(cs) = (*c).control_state.as_deref() else {
+            break;
+        };
+        let Some(line) = evbuffer_readln(&mut *(*cs.read_event).input) else {
             break;
         };
         log_debug(format_args!(
@@ -905,11 +1072,14 @@ unsafe fn control_read_callback(mut data: *mut ::core::ffi::c_void) {
     }
 }
 pub unsafe fn control_all_done(mut c: *mut client) -> ::core::ffi::c_int {
-    let mut cs: *mut control_state = (*c).control_state;
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
     if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    return (evbuffer_get_length(&*((*(*cs).write_event).output)) == 0 as size_t)
+    return (evbuffer_get_length(&*((*cs.write_event).output)) == 0 as size_t)
         as ::core::ffi::c_int;
 }
 pub unsafe fn control_wait_exit() {
@@ -954,7 +1124,10 @@ pub unsafe fn control_wait_exit() {
     }
 }
 unsafe fn control_flush_all_blocks(mut c: *mut client) {
-    let mut cs: *mut control_state = (*c).control_state;
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
     loop {
         let cb = control_first_block(cs);
         if cb.is_null() || (*cb).size != 0 as size_t {
@@ -977,7 +1150,7 @@ unsafe fn control_flush_all_blocks(mut c: *mut client) {
             )
         ));
         bufferevent_write(
-            (*cs).write_event,
+            cs.write_event,
             ((*cb).line)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
@@ -989,7 +1162,7 @@ unsafe fn control_flush_all_blocks(mut c: *mut client) {
             ),
         );
         bufferevent_write(
-            (*cs).write_event,
+            cs.write_event,
             b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
             1 as size_t,
         );
@@ -1071,7 +1244,10 @@ unsafe fn control_append_data(
     return message;
 }
 unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
-    let mut cs: *mut control_state = (*c).control_state;
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
     log_debug(format_args!(
         "{}: {}: {}",
         "control_write_data",
@@ -1092,14 +1268,13 @@ unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
         b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
         1 as size_t,
     );
-    bufferevent_write_buffer((*cs).write_event, &mut *message);
+    bufferevent_write_buffer(cs.write_event, &mut *message);
 }
 unsafe fn control_write_pending(
     mut c: *mut client,
     pane: u_int,
     mut limit: size_t,
 ) -> ::core::ffi::c_int {
-    let mut cs: *mut control_state = (*c).control_state;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut message: Option<Box<evbuffer>> = None;
     let mut used: size_t = 0 as size_t;
@@ -1109,13 +1284,20 @@ unsafe fn control_write_pending(
     let mut t: uint64_t = get_timer();
     wp = control_window_pane(c, pane);
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
-        let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
-        control_discard_pane(c, cp);
+        control_discard_pane(
+            (*c).control_state
+                .as_deref_mut()
+                .expect("control client state"),
+            pane,
+        );
         control_flush_all_blocks(c);
         return 0 as ::core::ffi::c_int;
     }
     while used != limit
-        && !(*cs)
+        && !(*c)
+            .control_state
+            .as_deref()
+            .expect("control client state")
             .panes
             .get(pane)
             .expect("indexed control pane")
@@ -1126,7 +1308,11 @@ unsafe fn control_write_pending(
             message = None;
             break;
         } else {
-            cb = control_first_pane_block((*cs).panes.get(pane).expect("indexed control pane"));
+            let cs = (*c)
+                .control_state
+                .as_deref_mut()
+                .expect("control client state");
+            cb = control_first_pane_block(cs.panes.get(pane).expect("indexed control pane"));
             if (*cb).t < t {
                 age = t.wrapping_sub((*cb).t);
             } else {
@@ -1154,7 +1340,7 @@ unsafe fn control_write_pending(
             used = used.wrapping_add(size);
             message = Some(control_append_data(
                 c,
-                (*cs).panes.get_mut(pane).expect("indexed control pane"),
+                cs.panes.get_mut(pane).expect("indexed control pane"),
                 age,
                 message,
                 wp,
@@ -1163,7 +1349,7 @@ unsafe fn control_write_pending(
             (*cb).size = (*cb).size.wrapping_sub(size);
             if (*cb).size == 0 as size_t {
                 control_remove_pane_block(
-                    (*cs).panes.get_mut(pane).expect("indexed control pane"),
+                    cs.panes.get_mut(pane).expect("indexed control pane"),
                     cb,
                 );
                 control_free_block(cs, cb);
@@ -1182,70 +1368,71 @@ unsafe fn control_write_pending(
     if let Some(message) = message {
         control_write_data(c, message);
     }
-    return !(*cs)
+    return !(*c)
+        .control_state
+        .as_deref()
+        .expect("control client state")
         .panes
         .get(pane)
         .expect("indexed control pane")
         .blocks
         .is_empty() as ::core::ffi::c_int;
 }
-unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut c: *mut client = data as *mut client;
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut space: size_t = 0;
-    let mut limit: size_t = 0;
+unsafe fn control_write_callback(c: *mut client) {
+    if (*c).control_state.is_none() {
+        return;
+    }
     control_flush_all_blocks(c);
-    while evbuffer_get_length(&(*(*cs).write_event).output) < CONTROL_BUFFER_HIGH as size_t {
-        if (*cs).pending_count == 0 as u_int {
+    loop {
+        let Some(cs) = (*c).control_state.as_deref() else {
+            return;
+        };
+        let buffered = evbuffer_get_length(&*(*cs.write_event).output);
+        if buffered >= CONTROL_BUFFER_HIGH as size_t || cs.pending_count == 0 {
             break;
         }
-        space = (CONTROL_BUFFER_HIGH as size_t)
-            .wrapping_sub(evbuffer_get_length(&(*(*cs).write_event).output));
+        let space = (CONTROL_BUFFER_HIGH as size_t).wrapping_sub(buffered);
         log_debug(format_args!(
             "{}: {}: {} bytes available, {} panes",
             "control_write_callback",
             log_cstr(
-                (((*c).name)
+                (*c).name
                     .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                    .map_or(std::ptr::null(), |name| name.as_ptr())
             ),
-            (space) as usize,
-            ((*cs).pending_count) as u32
+            space,
+            cs.pending_count
         ));
-        limit = space
-            .wrapping_div((*cs).pending_count as size_t)
-            .wrapping_div(3 as size_t);
-        if limit < CONTROL_WRITE_MINIMUM as size_t {
-            limit = CONTROL_WRITE_MINIMUM as size_t;
-        }
-        let pending = (*control_state_owner(cs)).pending_snapshot();
+        let limit = (space / cs.pending_count as size_t / 3).max(CONTROL_WRITE_MINIMUM as size_t);
+        let pending = cs.pending_snapshot();
         for pane in pending {
-            if evbuffer_get_length(&(*(*cs).write_event).output) >= CONTROL_BUFFER_HIGH as size_t {
+            let Some(cs) = (*c).control_state.as_deref() else {
+                return;
+            };
+            if evbuffer_get_length(&*(*cs.write_event).output) >= CONTROL_BUFFER_HIGH as size_t {
                 break;
             }
-            if !(*control_state_owner(cs))
-                .pending_panes
-                .iter()
-                .any(|queued| *queued == pane)
-            {
+            if !cs.pending_panes.contains(&pane) {
                 continue;
             }
-            if !(control_write_pending(c, pane, limit) != 0) {
-                let owner = &mut *control_state_owner(cs);
-                if owner.remove_pending(pane) {
-                    owner
-                        .panes
+            if control_write_pending(c, pane, limit) == 0 {
+                let Some(cs) = (*c).control_state.as_deref_mut() else {
+                    return;
+                };
+                if cs.remove_pending(pane) {
+                    cs.panes
                         .get_mut(pane)
                         .expect("indexed control pane")
                         .pending_flag = 0;
-                    owner.pending_count = owner.pending_count.wrapping_sub(1);
+                    cs.pending_count = cs.pending_count.wrapping_sub(1);
                 }
             }
         }
     }
-    if evbuffer_get_length(&(*(*cs).write_event).output) == 0 as size_t {
-        bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
+    if let Some(cs) = (*c).control_state.as_deref() {
+        if evbuffer_get_length(&*(*cs.write_event).output) == 0 {
+            bufferevent_disable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+        }
     }
 }
 unsafe fn control_sub_change(change: &monitor_change) {
@@ -1293,7 +1480,6 @@ unsafe fn control_sub_change(change: &monitor_change) {
     };
 }
 pub unsafe fn control_start(mut c: *mut client) {
-    let mut cs: *mut control_state = ::core::ptr::null_mut::<control_state>();
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         close((*c).out_fd);
         (*c).out_fd = -(1 as ::core::ffi::c_int);
@@ -1301,75 +1487,79 @@ pub unsafe fn control_start(mut c: *mut client) {
         setblocking((*c).out_fd, 0 as ::core::ffi::c_int);
     }
     setblocking((*c).fd, 0 as ::core::ffi::c_int);
-    cs = control_state_new();
-    (*c).control_state = cs;
-    (*cs).panes.storage = None;
-    (*cs).windows.storage = None;
-    (*cs).subs = monitor_create_client(
+    (*c).control_state = Some(Box::new(control_state::new()));
+    let subs = monitor_create_client(
         c,
         monitor_callback(|change| unsafe { control_sub_change(change) }),
     ) as *mut monitor_set;
-    (*cs).read_event = bufferevent_new(
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    cs.subs = subs;
+    cs.read_event = bufferevent_new(
         (*c).fd,
-        bufferevent_data_callback(move |_| unsafe {
-            control_read_callback(c as *mut ::core::ffi::c_void)
-        }),
-        bufferevent_data_callback(move |_| unsafe {
-            control_write_callback(c as *mut ::core::ffi::c_void)
-        }),
-        bufferevent_event_callback(move |_, _| unsafe {
-            control_error_callback(c as *mut ::core::ffi::c_void)
-        }),
+        bufferevent_data_callback(move |_| unsafe { control_read_callback(c) }),
+        bufferevent_data_callback(move |_| unsafe { control_write_callback(c) }),
+        bufferevent_event_callback(move |_, _| unsafe { control_error_callback(c) }),
     );
-    if (*cs).read_event.is_null() {
+    if cs.read_event.is_null() {
         fatalx(|out| out.write_all(b"out of memory"));
     }
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-        (*cs).write_event = (*cs).read_event;
+        cs.write_event = cs.read_event;
     } else {
-        (*cs).write_event = bufferevent_new(
+        cs.write_event = bufferevent_new(
             (*c).out_fd,
             None,
-            bufferevent_data_callback(move |_| unsafe {
-                control_write_callback(c as *mut ::core::ffi::c_void)
-            }),
-            bufferevent_event_callback(move |_, _| unsafe {
-                control_error_callback(c as *mut ::core::ffi::c_void)
-            }),
+            bufferevent_data_callback(move |_| unsafe { control_write_callback(c) }),
+            bufferevent_event_callback(move |_, _| unsafe { control_error_callback(c) }),
         );
-        if (*cs).write_event.is_null() {
+        if cs.write_event.is_null() {
             fatalx(|out| out.write_all(b"out of memory"));
         }
     }
-    bufferevent_setwatermark((*cs).write_event);
+    bufferevent_setwatermark(cs.write_event);
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         bufferevent_write(
-            (*cs).write_event,
+            cs.write_event,
             b"\x1BP1000p\0" as *const u8 as *const ::core::ffi::c_char
                 as *const ::core::ffi::c_void,
             7 as size_t,
         );
-        bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
+        bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
     }
 }
 pub unsafe fn control_ready(mut c: *mut client) {
     bufferevent_enable(
-        (*(*c).control_state).read_event,
+        (*c).control_state
+            .as_deref_mut()
+            .expect("control client state")
+            .read_event,
         EV_READ as ::core::ffi::c_short,
     );
 }
 pub unsafe fn control_discard(c: *mut client) {
-    let cs = (*c).control_state;
-    if let Some(panes) = (*cs).panes.storage.as_mut() {
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    if let Some(panes) = cs.panes.storage.as_mut() {
         for cp in panes.values_mut() {
-            control_discard_pane(c, cp);
+            while let Some(block) = cp.blocks.pop_front() {
+                control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, block);
+            }
         }
     }
-    bufferevent_disable((*cs).read_event, EV_READ as ::core::ffi::c_short);
+    bufferevent_disable(cs.read_event, EV_READ as ::core::ffi::c_short);
 }
+
 pub unsafe fn control_discard_all(mut c: *mut client) {
-    let mut cs: *mut control_state = (*c).control_state;
     control_discard(c);
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
     loop {
         let cb = control_first_block(cs);
         if cb.is_null() {
@@ -1377,21 +1567,26 @@ pub unsafe fn control_discard_all(mut c: *mut client) {
         }
         control_free_block(cs, cb);
     }
-    (*cs).queued_reply_bytes = 0 as size_t;
-    bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
+    cs.queued_reply_bytes = 0 as size_t;
+    bufferevent_disable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
 }
-pub unsafe fn control_stop(mut c: *mut client) {
-    let mut cs: *mut control_state = (*c).control_state;
-    if cs.is_null() {
+pub unsafe fn control_stop(c: *mut client) {
+    let Some(cs) = (*c).control_state.as_deref() else {
         return;
+    };
+    let (subs, read_event, write_event) = (cs.subs, cs.read_event, cs.write_event);
+    // Keep the owner published until callbacks and external resources are gone.
+    monitor_destroy(subs);
+    if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t == 0 {
+        bufferevent_free(write_event);
     }
-    monitor_destroy((*cs).subs);
-    if !(*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-        bufferevent_free((*cs).write_event);
-    }
-    bufferevent_free((*cs).read_event);
+    bufferevent_free(read_event);
     control_reset_offsets(c);
-    (*cs).windows.storage = None;
+    let cs = (*c)
+        .control_state
+        .as_deref_mut()
+        .expect("control client state");
+    cs.windows.storage = None;
     loop {
         let cb = control_first_block(cs);
         if cb.is_null() {
@@ -1399,8 +1594,7 @@ pub unsafe fn control_stop(mut c: *mut client) {
         }
         control_free_block(cs, cb);
     }
-    (*c).control_state = ::core::ptr::null_mut::<control_state>();
-    control_state_free(cs);
+    drop((*c).control_state.take());
 }
 pub unsafe fn control_add_sub(
     mut c: *mut client,
@@ -1409,12 +1603,20 @@ pub unsafe fn control_add_sub(
     mut id: ::core::ffi::c_int,
     mut format: *const ::core::ffi::c_char,
 ) {
-    let mut cs: *mut control_state = (*c).control_state;
-    monitor_add((*cs).subs, name, type_0, id, format, MONITOR_NOTIFY_INITIAL);
+    let subs = (*c)
+        .control_state
+        .as_deref()
+        .expect("control client state")
+        .subs;
+    monitor_add(subs, name, type_0, id, format, MONITOR_NOTIFY_INITIAL);
 }
 pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
-    let mut cs: *mut control_state = (*c).control_state;
-    monitor_remove((*cs).subs, name);
+    let subs = (*c)
+        .control_state
+        .as_deref()
+        .expect("control client state")
+        .subs;
+    monitor_remove(subs, name);
 }
 
 impl control_panes {

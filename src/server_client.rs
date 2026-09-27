@@ -3455,8 +3455,14 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             if !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                 off = 0 as ::core::ffi::c_int;
             } else {
-                let wpo =
-                    control_pane_offset(&mut *(*c).control_state, (*c).flags, (*wp).id, &mut flag);
+                let wpo = control_pane_offset(
+                    (*c).control_state
+                        .as_deref_mut()
+                        .expect("control client state"),
+                    (*c).flags,
+                    (*wp).id,
+                    &mut flag,
+                );
                 if wpo.is_none() {
                     if flag == 0 {
                         off = 0 as ::core::ffi::c_int;
@@ -3519,7 +3525,9 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             while !c.is_null() {
                 if !((*c).session.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0) {
                     if let Some(wpo) = control_pane_offset(
-                        &mut *(*c).control_state,
+                        (*c).control_state
+                            .as_deref_mut()
+                            .expect("control client state"),
                         (*c).flags,
                         (*wp).id,
                         &mut flag,

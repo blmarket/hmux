@@ -38,7 +38,7 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
             if !c.is_null()
                 && (*c).flags & CLIENT_CONTROL as uint64_t != 0
                 && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-                && !(*c).control_state.is_null()
+                && (*c).control_state.is_some()
             {
                 control_notify_write(c, |out| {
                     write!(out, "%pane-mode-changed %{}", ((*wp).id) as u32)
@@ -56,7 +56,7 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 out.write_all(b"%pane-mode-changed ")?;
@@ -87,7 +87,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null())
+            && (*c).control_state.is_some())
             || (*c).session.is_null())
         {
             s = (*c).session;
@@ -120,7 +120,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 write!(
@@ -147,7 +147,7 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null())
+            && (*c).control_state.is_some())
             || (*c).session.is_null())
         {
             cs = (*c).session;
@@ -175,7 +175,7 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null())
+            && (*c).control_state.is_some())
             || (*c).session.is_null())
         {
             cs = (*c).session;
@@ -203,7 +203,7 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null())
+            && (*c).control_state.is_some())
             || (*c).session.is_null())
         {
             cs = (*c).session;
@@ -236,7 +236,7 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null())
+            && (*c).control_state.is_some())
             || (*c).session.is_null())
         {
             if cc == c {
@@ -273,7 +273,7 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 out.write_all(b"%client-detached ")?;
@@ -300,7 +300,7 @@ unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) 
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 write!(out, "%session-renamed ${} ", ((*s).id) as u32)?;
@@ -317,7 +317,7 @@ unsafe fn control_session_created_cb(_name: &CStr, _payload: &mut event_payload)
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| out.write_all(b"%sessions-changed"));
         }
@@ -331,7 +331,7 @@ unsafe fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) 
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| out.write_all(b"%sessions-changed"));
         }
@@ -350,7 +350,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 write!(
@@ -376,7 +376,7 @@ unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payl
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 out.write_all(b"%paste-buffer-changed ")?;
@@ -398,7 +398,7 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
-            && !(*c).control_state.is_null()
+            && (*c).control_state.is_some()
         {
             control_notify_write(c, |out| {
                 out.write_all(b"%paste-buffer-deleted ")?;
