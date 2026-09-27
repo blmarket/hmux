@@ -357,7 +357,7 @@ pub unsafe fn hooks_valid_event_name(mut name: *const ::core::ffi::c_char) -> ::
     if *name as ::core::ffi::c_int == '@' as i32 {
         return 1 as ::core::ffi::c_int;
     }
-    oe = options_search(name);
+    oe = options_search(name).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     return (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
 }
 pub unsafe fn hooks_build_events() {

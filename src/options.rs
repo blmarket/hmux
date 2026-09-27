@@ -818,16 +818,9 @@ pub fn options_parse_owned(input: &CStr) -> Option<OwnedOptionName> {
         array_key,
     })
 }
-pub unsafe fn options_search(mut name: *const ::core::ffi::c_char) -> *const options_table_entry {
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    oe = &raw const options_table as *const options_table_entry;
-    while !(*oe).name_ptr().is_null() {
-        if strcmp((*oe).name_ptr(), name) == 0 as ::core::ffi::c_int {
-            return oe;
-        }
-        oe = oe.offset(1);
-    }
-    return ::core::ptr::null::<options_table_entry>();
+pub unsafe fn options_search(name: *const ::core::ffi::c_char) -> Option<&'static options_table_entry> {
+    let name = CStr::from_ptr(name);
+    options_table.iter().find(|entry| entry.name == Some(name))
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionMatchFailure {

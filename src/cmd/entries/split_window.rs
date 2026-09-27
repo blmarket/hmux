@@ -256,7 +256,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if value.is_null() {
         lines = window_get_pane_lines(w);
     } else {
-        oe = options_search(b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char);
+        oe = options_search(b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
         lines = options_find_choice(oe, value, &raw mut choice_cause) as pane_lines;
         if let Some(cause) = choice_cause.as_ref() {
             cmdq_error(item, |out| {
