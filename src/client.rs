@@ -958,8 +958,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         MSG_WRITE_CLOSE => {
             file_write_close(&raw mut client_files, imsg);
         }
-        // Obsolete protocol messages have no current MSG_* constants.
-        211..=213 => {
+        MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
             fprintf(
                 stderr,
                 b"server version is too old for client\n\0" as *const u8

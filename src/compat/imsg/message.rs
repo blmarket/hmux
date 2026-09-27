@@ -19,6 +19,10 @@ pub const MSG_EXEC: msgtype = 217;
 pub const MSG_WAKEUP: msgtype = 216;
 pub const MSG_UNLOCK: msgtype = 215;
 pub const MSG_SUSPEND: msgtype = 214;
+// Legacy stream messages, recognized to reject incompatible servers.
+pub const MSG_STDOUT: msgtype = 213;
+pub const MSG_STDIN: msgtype = 212;
+pub const MSG_STDERR: msgtype = 211;
 pub const MSG_SHUTDOWN: msgtype = 210;
 pub const MSG_SHELL: msgtype = 209;
 pub const MSG_RESIZE: msgtype = 208;
