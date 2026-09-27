@@ -68,23 +68,15 @@ pub struct control_pane_entry {
 
 #[repr(C)]
 pub struct control_windows {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, *mut control_window>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<u32, Box<control_window>>>>,
 }
 
 #[repr(C)]
-/// Box-owned by the control client; the window-ID index borrows its address.
-/// Unlink before `control_clear_window_size` or `control_stop` consumes it.
+/// Owned by the control client's window-ID index.
 pub struct control_window {
     pub window: u_int,
     pub sx: u_int,
     pub sy: u_int,
-    pub entry: control_window_entry,
-}
-
-#[repr(C)]
-pub struct control_window_entry {
-    /// Weak traversal handle into the window ID index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, *mut control_window>>>,
 }
 
 #[repr(C)]

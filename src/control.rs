@@ -29,7 +29,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::control::{
     control_block, control_pane, control_pane_entry, control_panes, control_state, control_window,
-    control_window_entry, control_windows,
+    control_windows,
 };
 use crate::src::shared::errno::{EAGAIN, EINTR};
 use crate::src::shared::event::*;
@@ -334,45 +334,34 @@ mod control_queue_tests {
     }
 
     #[test]
-    fn window_index_weak_observers_clear_and_expire_after_removal() {
-        unsafe {
-            fn window(id: u_int) -> *mut control_window {
-                Box::into_raw(Box::new(control_window {
-                    window: id,
-                    sx: 0,
-                    sy: 0,
-                    entry: control_window_entry { owner: None },
-                }))
-            }
+    fn window_index_owns_overrides_and_borrows_stable_entries() {
+        let mut index = control_windows { storage: None };
+        assert!(index.get(4).is_none());
+        index.remove(4);
+        assert!(index.storage.is_none());
 
-            let mut index = control_windows { storage: None };
-            let mut other = control_windows { storage: None };
-            let first = window(4);
-            let second = window(9);
-            let duplicate = window(4);
-            assert!(control_windows_insert(&raw mut index, first).is_null());
-            assert!(control_windows_insert(&raw mut index, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
-            assert_eq!(control_windows_insert(&raw mut index, duplicate), first);
-            assert!((*duplicate).entry.owner.is_none());
-            assert!(control_windows_remove(&raw mut other, first).is_null());
-            assert!((*first).entry.owner.is_some());
-
-            let mut moved = index;
-            assert_eq!(control_windows_minmax(&moved), first);
-            assert_eq!(control_windows_next(&*first), second);
-            assert_eq!(control_windows_remove(&raw mut moved, first), first);
-            assert!((*first).entry.owner.is_none());
-            drop(Box::from_raw(first));
-            assert_eq!(control_windows_remove(&raw mut moved, second), second);
-            drop(Box::from_raw(second));
-            drop(Box::from_raw(duplicate));
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
+        index.set(4, 80, 24);
+        let address = index.get(4).unwrap() as *const control_window as usize;
+        for id in 5..100 {
+            index.set(id, id, id + 1);
         }
+        index.set(4, 120, 40);
+        let mut moved = index;
+        let first = moved.get(4).unwrap();
+        assert_eq!(first as *const control_window as usize, address);
+        assert_eq!((first.sx, first.sy), (120, 40));
+        moved.remove(4);
+        assert!(moved.get(4).is_none());
+        assert_eq!(moved.get(9).unwrap().sx, 9);
+        // Dropping a populated index owns cleanup for all remaining overrides.
+        drop(moved);
+
+        let mut index = control_windows { storage: None };
+        index.set(4, 80, 24);
+        index.remove(4);
+        assert!(index.storage.is_none());
+        index.set(4, 90, 30);
+        assert_eq!(index.get(4).unwrap().sy, 30);
     }
 }
 
@@ -439,71 +428,36 @@ unsafe fn control_add_pane(mut c: *mut client, mut wp: *mut window_pane) -> *mut
     );
     return cp;
 }
-unsafe fn control_get_window(mut c: *mut client, mut window: u_int) -> *mut control_window {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cw: control_window = control_window {
-        window: window,
-        sx: 0,
-        sy: 0,
-        entry: control_window_entry { owner: None },
-    };
-    if cs.is_null() {
-        return ::core::ptr::null_mut::<control_window>();
+pub unsafe fn control_set_window_size(c: *mut client, window: u_int, sx: u_int, sy: u_int) {
+    if let Some(cs) = (*c).control_state.as_mut() {
+        cs.windows.set(window, sx, sy);
     }
-    return control_windows_find(&(*cs).windows, &cw);
 }
-pub unsafe fn control_set_window_size(
-    mut c: *mut client,
-    mut window: u_int,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
-    if cs.is_null() {
-        return;
-    }
-    cw = control_get_window(c, window);
-    if cw.is_null() {
-        cw = Box::into_raw(Box::new(control_window {
-            window,
-            sx: 0,
-            sy: 0,
-            entry: control_window_entry { owner: None },
-        }));
-        (*cw).window = window;
-        control_windows_insert(&raw mut (*cs).windows, cw);
-    }
-    (*cw).sx = sx;
-    (*cw).sy = sy;
-}
+
 pub unsafe fn control_get_window_size(
-    mut c: *mut client,
-    mut window: u_int,
-    mut sx: *mut u_int,
-    mut sy: *mut u_int,
+    c: *mut client,
+    window: u_int,
+    sx: *mut u_int,
+    sy: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
-    cw = control_get_window(c, window);
-    if cw.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    *sx = (*cw).sx;
-    *sy = (*cw).sy;
-    return 1 as ::core::ffi::c_int;
+    let Some(cw) = (*c)
+        .control_state
+        .as_ref()
+        .and_then(|cs| cs.windows.get(window))
+    else {
+        return 0;
+    };
+    *sx = cw.sx;
+    *sy = cw.sy;
+    1
 }
-pub unsafe fn control_clear_window_size(mut c: *mut client, mut window: u_int) {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
-    if cs.is_null() {
-        return;
-    }
-    cw = control_get_window(c, window);
-    if !cw.is_null() {
-        control_windows_remove(&raw mut (*cs).windows, cw);
-        drop(Box::from_raw(cw));
+
+pub unsafe fn control_clear_window_size(c: *mut client, window: u_int) {
+    if let Some(cs) = (*c).control_state.as_mut() {
+        cs.windows.remove(window);
     }
 }
+
 unsafe fn control_discard_pane(mut c: *mut client, mut cp: *mut control_pane) {
     let mut cs: *mut control_state = (*c).control_state;
     while let Some(cb) = (*cp).blocks.pop_front() {
@@ -1470,8 +1424,6 @@ pub unsafe fn control_discard_all(mut c: *mut client) {
 }
 pub unsafe fn control_stop(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
-    let mut cw1: *mut control_window = ::core::ptr::null_mut::<control_window>();
     if cs.is_null() {
         return;
     }
@@ -1481,15 +1433,7 @@ pub unsafe fn control_stop(mut c: *mut client) {
     }
     bufferevent_free((*cs).read_event);
     control_reset_offsets(c);
-    cw = control_windows_minmax(&(*cs).windows);
-    while !cw.is_null() && {
-        cw1 = control_windows_next(&*cw);
-        1 as ::core::ffi::c_int != 0
-    } {
-        control_windows_remove(&raw mut (*cs).windows, cw);
-        drop(Box::from_raw(cw));
-        cw = cw1;
-    }
+    (*cs).windows.storage = None;
     loop {
         let cb = control_first_block(cs);
         if cb.is_null() {
@@ -1616,89 +1560,27 @@ pub unsafe fn control_panes_next(elm: &control_pane) -> *mut control_pane {
         })
 }
 
-fn control_windows_key(elm: &control_window) -> u32 {
-    elm.window
-}
-pub unsafe fn control_windows_find(
-    head: &control_windows,
-    elm: &control_window,
-) -> *mut control_window {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("control window index already borrowed");
-    let key = control_windows_key(elm);
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
-}
-pub unsafe fn control_windows_insert(
-    head: *mut control_windows,
-    elm: *mut control_window,
-) -> *mut control_window {
-    let key = control_windows_key(&*elm);
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("control window index already borrowed");
-    match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            (*elm).entry.owner = Some(observer);
+impl control_windows {
+    fn get(&self, window: u_int) -> Option<&control_window> {
+        self.storage.as_ref()?.get(&window).map(Box::as_ref)
+    }
+
+    fn set(&mut self, window: u_int, sx: u_int, sy: u_int) {
+        let map = self.storage.get_or_insert_with(Box::default);
+        let entry = map
+            .entry(window)
+            .or_insert_with(|| Box::new(control_window { window, sx, sy }));
+        entry.sx = sx;
+        entry.sy = sy;
+    }
+
+    fn remove(&mut self, window: u_int) {
+        let Some(map) = self.storage.as_mut() else {
+            return;
+        };
+        map.remove(&window);
+        if map.is_empty() {
+            self.storage = None;
         }
     }
-    std::ptr::null_mut()
-}
-pub unsafe fn control_windows_remove(
-    head: *mut control_windows,
-    elm: *mut control_window,
-) -> *mut control_window {
-    if elm.is_null() {
-        return std::ptr::null_mut();
-    }
-    let key = control_windows_key(&*elm);
-    let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let empty = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("control window index already borrowed");
-        if map.get(&key).copied() != Some(elm) {
-            return std::ptr::null_mut();
-        }
-        map.remove(&key);
-        map.is_empty()
-    };
-    (*elm).entry.owner = None;
-    if empty {
-        (*head).storage = None;
-    }
-    elm
-}
-pub unsafe fn control_windows_minmax(head: &control_windows) -> *mut control_window {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("control window index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
-}
-pub unsafe fn control_windows_next(elm: &control_window) -> *mut control_window {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("control window index already borrowed"),
-    };
-    let key = control_windows_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
