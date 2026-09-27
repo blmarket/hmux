@@ -167,7 +167,7 @@ pub unsafe fn cmd_attach_session(
         }
         if Eflag == 0 {
             environ_update(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 (*c).environ.as_deref().expect("client environment"),
                 (*s).environ.as_deref_mut().expect("session environment"),
             );
@@ -200,7 +200,7 @@ pub unsafe fn cmd_attach_session(
         }
         if Eflag == 0 {
             environ_update(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 (*c).environ.as_deref().expect("client environment"),
                 (*s).environ.as_deref_mut().expect("session environment"),
             );

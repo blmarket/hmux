@@ -2029,7 +2029,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         && (*s).grid().flags & GRID_HISTORY != 0
         && !ctx.wp.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*ctx.wp).options),
+            options_owner_ptr(&mut (*ctx.wp).options).map_or(std::ptr::null_mut(), |options| options),
             b"scroll-on-clear\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
@@ -2234,7 +2234,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     if (*s).grid().flags & GRID_HISTORY != 0
         && !ctx.wp.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*ctx.wp).options),
+            options_owner_ptr(&mut (*ctx.wp).options).map_or(std::ptr::null_mut(), |options| options),
             b"scroll-on-clear\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
@@ -3394,7 +3394,7 @@ pub unsafe fn screen_write_alternateon(
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     if !wp.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*wp).options),
+            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
             b"alternate-screen\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0
     {
@@ -3438,7 +3438,7 @@ pub unsafe fn screen_write_alternateoff(
     let mut wp: *mut window_pane = ctx.wp as *mut window_pane;
     if !wp.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*wp).options),
+            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
             b"alternate-screen\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0
     {

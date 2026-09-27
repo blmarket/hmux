@@ -293,7 +293,7 @@ unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut c
 unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
-    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),

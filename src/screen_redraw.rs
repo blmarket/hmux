@@ -193,7 +193,7 @@ unsafe fn redraw_set_context(mut c: *mut client, mut bctx: *mut redraw_build_ctx
     (*bctx).sx = view.sx;
     (*bctx).sy = view.sy;
     (*bctx).ind = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-border-indicators\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
 }
@@ -1131,7 +1131,7 @@ unsafe fn redraw_get_default_border_style(
     let scene = dctx.scene;
     let mut c: *mut client = scene.c;
     let mut s: *mut session = (*c).session;
-    let mut oo: *mut options = options_owner_ptr(&mut (*scene.w).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*scene.w).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut dgc: *mut grid_cell = &mut dctx.default_gc;
     if !dctx.flags & REDRAW_DEFAULT_SET != 0 {
@@ -1692,7 +1692,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> redraw_draw_ctx<'_> {
     if server_is_marked(s, (*s).curw, marked_pane.wp) != 0 {
         dctx.marked = marked_pane.wp;
     }
-    if options_get_number(options_owner_ptr(&mut (*s).options), c"status-position".as_ptr()) == 0 {
+    if options_get_number(options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options), c"status-position".as_ptr()) == 0 {
         dctx.flags |= REDRAW_STATUS_TOP;
     }
     if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term), TTYC_BIDI) != 0 {

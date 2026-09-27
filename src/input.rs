@@ -3175,7 +3175,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         };
                     } else {
                         if !(*ictx).wp.is_null() {
-                            oo = options_owner_ptr(&mut (*(*ictx).wp).options);
+                            oo = options_owner_ptr(&mut (*(*ictx).wp).options).map_or(std::ptr::null_mut(), |options| options);
                         } else {
                             oo = global_w_options;
                         }
@@ -4474,7 +4474,7 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         } else {
             if !wp.is_null() {
-                oo = options_owner_ptr(&mut (*wp).options);
+                oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
             } else {
                 oo = global_w_options;
             }
@@ -4514,7 +4514,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     if wp.is_null() {
         oo = global_w_options;
     } else {
-        oo = options_owner_ptr(&mut (*wp).options);
+        oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     }
     if (*ictx).flags & INPUT_DISCARD != 0 {
         log_debug(format_args!(
@@ -4613,7 +4613,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         0 | 2 => {
             if !wp.is_null()
                 && options_get_number(
-                    options_owner_ptr(&mut (*wp).options),
+                    options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
                     b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
                 ) != 0
                 && screen_set_title(
@@ -4697,7 +4697,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
     ));
     if !wp.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*wp).options),
+            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
             b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         && screen_set_title(
@@ -4728,7 +4728,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         return;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*(*ictx).wp).options),
+        options_owner_ptr(&mut (*(*ictx).wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"allow-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -4746,7 +4746,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
     }
     w = (*wp).window as *mut window;
     if (*ictx).input_len == 0 as size_t {
-        o = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*w).options)), std::ffi::CStr::from_ptr(b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
+        o = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options)), std::ffi::CStr::from_ptr(b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
         if !o.is_null() {
             options_remove_or_default(
                 o,
@@ -4755,7 +4755,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
             );
         }
         if options_get_number(
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0
         {
@@ -4767,7 +4767,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         }
     } else {
         options_set_number(
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_longlong,
         );

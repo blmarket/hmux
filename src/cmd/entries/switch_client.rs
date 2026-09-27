@@ -196,7 +196,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     if args_has(args, 'E' as i32 as u_char) == 0 {
         environ_update(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             (*tc).environ.as_deref().expect("client environment"),
             (*s).environ.as_deref_mut().expect("session environment"),
         );

@@ -275,12 +275,12 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_send_prefix_entry) {
         if args_has(args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
             ) as key_code;
         } else {
             key = options_get_number(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
             ) as key_code;
         }

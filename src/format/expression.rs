@@ -215,16 +215,16 @@ pub(super) unsafe fn format_find(
         let name = parsed.name.as_ptr();
         o = options_get(global_options, name);
         if o.is_null() && !(*ft).wp.is_null() {
-            o = options_get(options_owner_ptr(&mut (*(*ft).wp).options), name);
+            o = options_get(options_owner_ptr(&mut (*(*ft).wp).options).map_or(std::ptr::null_mut(), |options| options), name);
         }
         if o.is_null() && !(*ft).w.is_null() {
-            o = options_get(options_owner_ptr(&mut (*(*ft).w).options), name);
+            o = options_get(options_owner_ptr(&mut (*(*ft).w).options).map_or(std::ptr::null_mut(), |options| options), name);
         }
         if o.is_null() {
             o = options_get(global_w_options, name);
         }
         if o.is_null() && !(*ft).s.is_null() {
-            o = options_get(options_owner_ptr(&mut (*(*ft).s).options), name);
+            o = options_get(options_owner_ptr(&mut (*(*ft).s).options).map_or(std::ptr::null_mut(), |options| options), name);
         }
         if o.is_null() {
             o = options_get(global_s_options, name);
@@ -1039,7 +1039,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     format_add(nft, key.as_ptr(), |out| {
         write!(out, "{}", ((wl == (*s).curw) as ::core::ffi::c_int) as i32)
     });
-    let o_root = options_owner_ptr(&mut (*(*wl).window_ptr()).options);
+    let o_root = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
     o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
@@ -1610,18 +1610,18 @@ pub(super) unsafe fn format_loop_options(
             if global != 0 {
                 oo = global_w_options;
             } else if !(*ft).w.is_null() {
-                oo = options_owner_ptr(&mut (*(*ft).w).options);
+                oo = options_owner_ptr(&mut (*(*ft).w).options).map_or(std::ptr::null_mut(), |options| options);
             }
         } else if !strchr(flags, 's' as i32).is_null() {
             if global != 0 {
                 oo = global_s_options;
             } else if !(*ft).s.is_null() {
-                oo = options_owner_ptr(&mut (*(*ft).s).options);
+                oo = options_owner_ptr(&mut (*(*ft).s).options).map_or(std::ptr::null_mut(), |options| options);
             }
         } else if !strchr(flags, 'p' as i32).is_null() {
             if !(global != 0) {
                 if !(*ft).wp.is_null() {
-                    oo = options_owner_ptr(&mut (*(*ft).wp).options);
+                    oo = options_owner_ptr(&mut (*(*ft).wp).options).map_or(std::ptr::null_mut(), |options| options);
                 }
             }
         } else if global != 0 {

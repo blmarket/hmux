@@ -757,14 +757,14 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     );
     style_apply(
         &raw mut gc,
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"clock-mode-colour\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
     format_free(ft);
     colour = gc.fg;
     style = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"clock-mode-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     screen_write_start(&mut ctx, s);

@@ -358,7 +358,7 @@ unsafe fn window_panes_get_border_cell(
     );
     style_apply(
         gc,
-        options_owner_ptr(&mut (*(*wp).window).options),
+        options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options),
         b"display-panes-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
@@ -1140,7 +1140,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     format = options_get_string(
-        options_owner_ptr(&mut (*(*mode_pane).window).options),
+        options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
         b"display-panes-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *format as ::core::ffi::c_int == '\0' as i32 {
@@ -1215,7 +1215,7 @@ unsafe fn window_panes_draw_number(
     let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw };
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1650,7 +1650,7 @@ unsafe fn window_panes_init(
     s = (*target).s;
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"display-panes-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as u_int;
     } else {

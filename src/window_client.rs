@@ -502,7 +502,7 @@ unsafe fn window_client_draw_info(
         );
         style_apply(
             &raw mut gc,
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
             ::core::ptr::null_mut::<format_tree>(),
         );
@@ -614,7 +614,7 @@ unsafe fn window_client_draw(
     );
     style_apply(
         &raw mut gc,
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );

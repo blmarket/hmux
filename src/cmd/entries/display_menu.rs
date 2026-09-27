@@ -202,7 +202,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             top = 0 as ::core::ffi::c_int;
         }
         position = options_get_number(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
         ) as u_int;
         line = 0 as u_int;
@@ -609,7 +609,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     );
     lines = status_line_size(&*tc);
     position = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if status_at_line(&*tc) != -(1 as ::core::ffi::c_int) && lines != 0 as u_int {
@@ -922,7 +922,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
-    let o = options_owner_ptr(&mut (*(*(*(*target).s).curw).window_ptr()).options);
+    let o = options_owner_ptr(&mut (*(*(*(*target).s).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
         if std::ffi::CStr::from_ptr(args_get(&*(args), b'C').map_or(std::ptr::null(), |value| value.as_ptr())) == c"-" {
@@ -1054,7 +1054,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
-    let mut o: *mut options = options_owner_ptr(&mut (*(*(*s).curw).window_ptr()).options);
+    let mut o: *mut options = options_owner_ptr(&mut (*(*(*s).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if args_has(args, 'C' as i32 as u_char) != 0 {
         server_client_clear_overlay(tc);
@@ -1159,7 +1159,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             }
                             if count == 0 as u_int {
                                 shellcmd = options_get_string(
-                                    options_owner_ptr(&mut (*s).options),
+                                    options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                                     b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
                             } else if count == 1 as u_int {
@@ -1171,7 +1171,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             {
                                 shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
                                 shell = options_get_string(
-                                    options_owner_ptr(&mut (*s).options),
+                                    options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                                     b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
                                 if checkshell(shell) == 0 {

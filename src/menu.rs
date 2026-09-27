@@ -164,7 +164,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let Some(window) = md.w.upgrade() else {
         return;
     };
-    let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options);
+    let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options).map_or(std::ptr::null_mut(), |options| options);
     let ft = format_create_defaults(
         std::ptr::null_mut(),
         std::ptr::null_mut(),
@@ -636,7 +636,7 @@ pub unsafe fn menu_display(
     (*w).menu_last_px = px;
     (*w).menu_last_py = py;
     if lines == BOX_LINES_DEFAULT {
-        lines = options_get_number(options_owner_ptr(&mut (*w).options), c"menu-border-lines".as_ptr()) as box_lines;
+        lines = options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), c"menu-border-lines".as_ptr()) as box_lines;
     }
     let owner = MenuOwner::new(menu_data {
         w: window.clone(),

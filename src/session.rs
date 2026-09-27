@@ -481,7 +481,7 @@ pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeva
         tv.tv_usec = 0 as __suseconds_t;
         tv.tv_sec = tv.tv_usec as __time_t;
         tv.tv_sec = options_get_number(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"lock-after-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as __time_t;
         if tv.tv_sec != 0 as __time_t {
@@ -993,7 +993,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
     let mut new_curw_idx: ::core::ffi::c_int = 0;
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     new_idx = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     new_curw_idx = 0 as ::core::ffi::c_int;
@@ -1069,7 +1069,7 @@ pub unsafe fn session_update_history(mut s: *mut session) {
     let mut limit: u_int = 0;
     let mut osize: u_int = 0;
     limit = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);

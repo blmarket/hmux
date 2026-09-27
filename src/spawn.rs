@@ -343,7 +343,7 @@ pub unsafe fn spawn_window(
         if idx == -(1 as ::core::ffi::c_int) {
             idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
                 - options_get_number(
-                    options_owner_ptr(&mut (*s).options),
+                    options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
@@ -403,7 +403,7 @@ pub unsafe fn spawn_window(
                 CStr::from_ptr((*sc).name).to_owned(),
             ));
             options_set_number(
-                options_owner_ptr(&mut (*w).options),
+                options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_longlong,
             );
@@ -524,7 +524,7 @@ pub unsafe fn spawn_pane(
         cwd = Some(CStr::from_ptr(server_client_get_cwd(c, ts)).to_owned());
     }
     hlimit = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if (*sc).flags & SPAWN_RESPAWN != 0 {
@@ -599,7 +599,7 @@ pub unsafe fn spawn_pane(
     if (*sc).argv.is_empty() {
         if (*sc).flags & SPAWN_RESPAWN == 0 {
             cmd = options_get_string(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
@@ -657,7 +657,7 @@ pub unsafe fn spawn_pane(
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
         tmp = options_get_string(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if checkshell(tmp) == 0 {
@@ -1169,7 +1169,7 @@ pub(crate) unsafe fn spawn_editor(
     }
     window_pop_zoom(w);
     options_set_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );

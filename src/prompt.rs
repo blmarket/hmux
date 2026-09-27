@@ -107,7 +107,7 @@ fn prompt_write_flags(
     Ok(())
 }
 pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&mut session>) {
-    let oo = s.map_or(global_s_options, |s| options_owner_ptr(&mut s.options));
+    let oo = s.map_or(global_s_options, |s| options_owner_ptr(&mut s.options).map_or(std::ptr::null_mut(), |options| options));
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],

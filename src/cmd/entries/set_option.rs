@@ -444,7 +444,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                     current_block = 10095721787123848864;
                                     break;
                                 }
-                                po = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*loop_0).options)), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
+                                po = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*loop_0).options).map_or(std::ptr::null_mut(), |options| options)), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
                                 if !po.is_null() {
                                     if options_remove_or_default(po, array_key, &raw mut cause)
                                         != 0 as ::core::ffi::c_int

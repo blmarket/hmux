@@ -1088,11 +1088,11 @@ pub unsafe fn window_create(
     (*w).ypixel = ypixel;
     (*w).options = Some(crate::src::options::options_create_owned(global_w_options));
     (*w).sb = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     (*w).sb_pos = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     (*w).winlinks.storage = None;
@@ -2032,7 +2032,7 @@ pub unsafe fn window_pane_at_index(mut w: *mut window, mut idx: u_int) -> *mut w
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut n: u_int = 0;
     n = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     wp = window_pane_first(w);
@@ -2077,7 +2077,7 @@ pub unsafe fn window_pane_index(mut wp: *mut window_pane, mut i: *mut u_int) -> 
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     *i = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     wq = window_pane_first(w);
@@ -2808,7 +2808,7 @@ unsafe fn window_pane_create(
     let owner = window_pane::new();
     wp = crate::src::shared::rc::as_ptr(&owner);
     (*wp).window = w as *mut window;
-    (*wp).options = Some(crate::src::options::options_create_owned(options_owner_ptr(&mut (*w).options)));
+    (*wp).options = Some(crate::src::options::options_create_owned(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options)));
     (*wp).flags = PANE_STYLECHANGED;
     (*wp).cmd_status = -(1 as ::core::ffi::c_int);
     let fresh2 = next_window_pane_id;
@@ -2823,9 +2823,9 @@ unsafe fn window_pane_create(
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     (*wp).control_bg = -(1 as ::core::ffi::c_int);
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
-    style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, options_owner_ptr(&mut (*wp).options));
+    style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
     colour_palette_init(&mut (*wp).palette);
-    colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options));
+    colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen = &raw mut (*wp).base;
     window_pane_default_cursor(wp);
@@ -3510,7 +3510,7 @@ unsafe fn window_pane_copy_paste(
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(loop_0) != 0
             && options_get_number(
-                options_owner_ptr(&mut (*loop_0).options),
+                options_owner_ptr(&mut (*loop_0).options).map_or(std::ptr::null_mut(), |options| options),
                 b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
             ) != 0
         {
@@ -3534,7 +3534,7 @@ unsafe fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(loop_0) != 0
             && options_get_number(
-                options_owner_ptr(&mut (*loop_0).options),
+                options_owner_ptr(&mut (*loop_0).options).map_or(std::ptr::null_mut(), |options| options),
                 b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
             ) != 0
         {
@@ -3573,7 +3573,7 @@ pub unsafe fn window_pane_paste(
     ));
     bufferevent_write((*wp).event, buf as *const ::core::ffi::c_void, len);
     if options_get_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
@@ -3633,7 +3633,7 @@ pub unsafe fn window_pane_key(
         return 0 as ::core::ffi::c_int;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
@@ -4139,7 +4139,7 @@ pub unsafe fn window_pane_update_used_data(
     (*wpo).used = (*wpo).used.wrapping_add(size);
 }
 pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
-    screen_set_default_cursor(&mut *(*wp).screen, options_owner_ptr(&mut (*wp).options));
+    screen_set_default_cursor(&mut *(*wp).screen, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
 }
 pub unsafe fn window_pane_mode(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     if !(*wp).modes.active.is_null() {
@@ -4203,7 +4203,7 @@ pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
         return;
     }
     delay = options_get_number(
-        options_owner_ptr(&mut (*(*wp).window).options),
+        options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-scrollbars-timeout\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     tv.tv_sec = delay.wrapping_div(1000 as u_int) as __time_t;
@@ -4446,7 +4446,7 @@ pub unsafe fn window_pane_status_get_range(
 }
 pub unsafe fn window_get_pane_lines(mut w: *mut window) -> pane_lines {
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    oo = options_owner_ptr(&mut (*w).options);
+    oo = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
     return options_get_number(
         oo,
         b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4455,9 +4455,9 @@ pub unsafe fn window_get_pane_lines(mut w: *mut window) -> pane_lines {
 pub unsafe fn window_pane_get_pane_lines(mut wp: *mut window_pane) -> pane_lines {
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     if window_pane_is_floating(wp) == 0 {
-        oo = options_owner_ptr(&mut (*(*wp).window).options);
+        oo = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
     } else {
-        oo = options_owner_ptr(&mut (*wp).options);
+        oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     }
     return options_get_number(
         oo,
@@ -4467,7 +4467,7 @@ pub unsafe fn window_pane_get_pane_lines(mut wp: *mut window_pane) -> pane_lines
 pub unsafe fn window_get_pane_status(mut w: *mut window) -> ::core::ffi::c_int {
     let mut status: ::core::ffi::c_int = 0;
     status = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-border-status\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if status == PANE_STATUS_TOP_FLOATING || status == PANE_STATUS_BOTTOM_FLOATING {
@@ -4494,7 +4494,7 @@ pub unsafe fn window_pane_get_pane_status(mut wp: *mut window_pane) -> ::core::f
         return 0 as ::core::ffi::c_int;
     }
     status = options_get_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-border-status\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if status == PANE_STATUS_TOP_FLOATING {
@@ -5005,7 +5005,7 @@ mod zoom_teardown_tests {
                 entry.name == Some(c"pane-border-status")
             })
             .unwrap();
-        options_default(options_owner_ptr(&mut (*w).options), entry);
+        options_default(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), entry);
         let pane_owner = window_pane::new();
             let pane = crate::src::shared::rc::as_ptr(&pane_owner);
         window_pane_tree_insert(&raw mut all_window_panes, pane_owner);

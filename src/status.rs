@@ -84,7 +84,7 @@ unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     tv.tv_usec = 0 as __suseconds_t;
     tv.tv_sec = tv.tv_usec as __time_t;
     tv.tv_sec = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-interval\0" as *const u8 as *const ::core::ffi::c_char,
     ) as __time_t;
     if tv.tv_sec != 0 as __time_t {
@@ -110,7 +110,7 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
     }
     if !s.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"status\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
@@ -127,13 +127,13 @@ pub unsafe fn status_timer_start_all() {
 }
 pub unsafe fn status_update_cache(mut s: *mut session) {
     (*s).statuslines = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if (*s).statuslines == 0 as u_int {
         (*s).statusat = -(1 as ::core::ffi::c_int);
     } else if options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {
@@ -174,7 +174,7 @@ pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
         return 0 as u_int;
     }
     line = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"message-line\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if line >= lines {
@@ -319,19 +319,19 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     style_apply(
         &raw mut gc,
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
     fg = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-fg\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
     }
     bg = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-bg\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
@@ -352,7 +352,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     }
     screen_write_start(&mut ctx, &raw mut (*sl).screen);
     o = options_get(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if o.is_null() {
@@ -491,7 +491,7 @@ pub unsafe fn status_message_set(
     });
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
-            options_owner_ptr(&mut (*(*c).session).options),
+            options_owner_ptr(&mut (*(*c).session).options).map_or(std::ptr::null_mut(), |options| options),
             b"display-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
     }
@@ -533,7 +533,7 @@ pub unsafe fn status_message_clear(mut c: *mut client) {
 }
 unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
     let sy = options_string_to_style(
-        options_owner_ptr(&mut (*c.session).options),
+        options_owner_ptr(&mut (*c.session).options).map_or(std::ptr::null_mut(), |options| options),
         c"message-style".as_ptr(),
         std::ptr::null_mut(),
     )
@@ -613,7 +613,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     style_apply(
         &raw mut gc,
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
@@ -644,7 +644,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
     msgfmt = options_get_string(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_time_cstring(ft, msgfmt);
@@ -769,7 +769,7 @@ unsafe fn status_prompt_screen_line(c: &client) -> u_int {
     let tty = &c.tty;
     let mut n: u_int = 0;
     if options_get_number(
-        options_owner_ptr(&mut (*c.session).options),
+        options_owner_ptr(&mut (*c.session).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {

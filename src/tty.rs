@@ -3222,7 +3222,7 @@ fn tty_window_default_style(palette: &colour_palette) -> grid_cell {
     }
 }
 unsafe fn tty_style_changed(mut wp: *mut window_pane) {
-    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sy: *mut style = ::core::ptr::null_mut::<style>();
     log_debug(format_args!("%{}: style changed", ((*wp).id) as u32));

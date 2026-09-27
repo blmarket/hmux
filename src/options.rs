@@ -232,8 +232,8 @@ unsafe fn options_value_to_cstring(
 }
 /// Project only the owning field for a legacy raw-pointer call. The result is
 /// an observer, valid only while the box remains installed and live.
-pub fn options_owner_ptr(owner: &mut Option<Box<options>>) -> *mut options {
-    owner.as_deref_mut().map_or(std::ptr::null_mut(), |root| root)
+pub fn options_owner_ptr(owner: &mut Option<Box<options>>) -> Option<&mut options> {
+    owner.as_deref_mut()
 }
 
 pub fn options_create_owned(parent: *mut options) -> Box<options> {
@@ -1118,7 +1118,7 @@ pub unsafe fn options_scope_from_name(
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = options_owner_ptr(&mut (*s).options);
+                *oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
                 scope = OPTIONS_TABLE_SESSION;
             }
             current_block_38 = 980989089337379490;
@@ -1137,7 +1137,7 @@ pub unsafe fn options_scope_from_name(
                         b"no current pane\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 } else {
-                    *oo = options_owner_ptr(&mut (*wp).options);
+                    *oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
                     scope = OPTIONS_TABLE_PANE;
                 }
                 current_block_38 = 980989089337379490;
@@ -1169,7 +1169,7 @@ pub unsafe fn options_scope_from_name(
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = options_owner_ptr(&mut (*(*wl).window_ptr()).options);
+                *oo = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
                 scope = OPTIONS_TABLE_WINDOW;
             }
         }
@@ -1208,7 +1208,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = options_owner_ptr(&mut (*wp).options);
+        *oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
         return 0x8 as ::core::ffi::c_int;
     } else if window != 0 || args_has(args, 'w' as i32 as u_char) != 0 {
         if args_has(args, 'g' as i32 as u_char) != 0 {
@@ -1230,7 +1230,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = options_owner_ptr(&mut (*(*wl).window_ptr()).options);
+        *oo = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
         return 0x4 as ::core::ffi::c_int;
     } else {
         if args_has(args, 'g' as i32 as u_char) != 0 {
@@ -1252,7 +1252,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = options_owner_ptr(&mut (*s).options);
+        *oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
         return 0x2 as ::core::ffi::c_int;
     };
 }
@@ -1638,7 +1638,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             if !(*w).active.is_null() {
-                if options_get_number(options_owner_ptr(&mut (*w).options), name) != 0 {
+                if options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), name) != 0 {
                     (*(*w).active).flags |= PANE_CHANGED;
                 }
             }
@@ -1784,7 +1784,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
-            colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options));
+            colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
             wp = window_pane_tree_next(&*wp);
         }
     }
@@ -1804,11 +1804,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         w = windows_minmax(&*std::ptr::addr_of!(windows));
         while !w.is_null() {
             (*w).sb = options_get_number(
-                options_owner_ptr(&mut (*w).options),
+                options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
                 b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
             (*w).sb_pos = options_get_number(
-                options_owner_ptr(&mut (*w).options),
+                options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
                 b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
@@ -1833,7 +1833,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         while !wp.is_null() {
-            style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, options_owner_ptr(&mut (*wp).options));
+            style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
             wp = window_pane_tree_next(&*wp);
         }
         w = windows_minmax(&*std::ptr::addr_of!(windows));

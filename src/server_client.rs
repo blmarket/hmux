@@ -1127,7 +1127,7 @@ pub unsafe fn server_client_get_key_table(mut c: *mut client) -> *const ::core::
         return b"root\0" as *const u8 as *const ::core::ffi::c_char;
     }
     name = options_get_string(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"key-table\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *name as ::core::ffi::c_int == '\0' as i32 {
@@ -1622,7 +1622,7 @@ pub unsafe fn server_client_exec(mut c: *mut client, mut cmd: *const ::core::ffi
     }
     if !s.is_null() {
         shell = options_get_string(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else {
@@ -2359,7 +2359,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         if !wp.is_null()
             && wp != (*w).active
             && options_get_number(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
             ) != 0
         {
@@ -2556,7 +2556,7 @@ unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_in
         return 0 as ::core::ffi::c_int;
     }
     t = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"assume-paste-time\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if t == 0 as ::core::ffi::c_int {
@@ -2614,7 +2614,7 @@ unsafe fn server_client_update_latest(mut c: *mut client) {
     }
     (*w).latest = c as *mut ::core::ffi::c_void;
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) == WINDOW_SIZE_LATEST as ::core::ffi::c_longlong
     {
@@ -2633,7 +2633,7 @@ unsafe fn server_client_repeat_time(mut c: *mut client, bd: &KeyBindingCommand) 
         return 0 as u_int;
     }
     repeat = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if repeat == 0 as u_int {
@@ -2641,7 +2641,7 @@ unsafe fn server_client_repeat_time(mut c: *mut client, bd: &KeyBindingCommand) 
     }
     if !(*c).flags & CLIENT_REPEAT as uint64_t != 0 || bd.key != (*c).last_key {
         initial = options_get_number(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"initial-repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as u_int;
         if initial != 0 as u_int {
@@ -2676,14 +2676,14 @@ unsafe fn server_client_handle_dead_key(
         return 0 as ::core::ffi::c_int;
     }
     remain_on_exit = options_get_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if remain_on_exit != 3 as ::core::ffi::c_int && remain_on_exit != 4 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     options_set_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
@@ -2804,7 +2804,7 @@ unsafe fn server_client_key_callback(
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int)
                     && options_get_number(
-                        options_owner_ptr(&mut (*s).options),
+                        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                         b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
                     ) == 0
                 {
@@ -2869,11 +2869,11 @@ unsafe fn server_client_key_callback(
                         first = table;
                         '_table_changed: loop {
                             prefix = options_get_number(
-                                options_owner_ptr(&mut (*s).options),
+                                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                                 b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                             ) as key_code;
                             prefix2 = options_get_number(
-                                options_owner_ptr(&mut (*s).options),
+                                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                                 b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
                             ) as key_code;
                             key0 = (key as ::core::ffi::c_ulonglong
@@ -3786,7 +3786,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     let mut wp: *mut window_pane = (*w).active;
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut s: *const screen = std::ptr::null();
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*c).session).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*c).session).options).map_or(std::ptr::null_mut(), |options| options);
     let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cursor: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0;
@@ -4304,7 +4304,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
     }
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
         if options_get_number(
-            options_owner_ptr(&mut (*s).options),
+            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
             b"set-titles\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
@@ -4338,7 +4338,7 @@ unsafe fn server_client_set_title(mut c: *mut client) {
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     template = options_get_string(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"set-titles-string\0" as *const u8 as *const ::core::ffi::c_char,
     );
     ft = format_create(

@@ -860,7 +860,7 @@ unsafe fn window_tree_draw_session(
     }
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(&mut (*(*mode_pane).window).options),
+        options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -915,7 +915,7 @@ unsafe fn window_tree_draw_session(
             loop_0 = loop_0.wrapping_add(1);
         } else {
             w = (*wl).window_ptr();
-            oo = options_owner_ptr(&mut (*w).options);
+            oo = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
                 ::core::ptr::null_mut::<cmdq_item>(),
@@ -1124,7 +1124,7 @@ unsafe fn window_tree_draw_window(
     }
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(&mut (*(*mode_pane).window).options),
+        options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -1179,7 +1179,7 @@ unsafe fn window_tree_draw_window(
             if loop_0 < start {
                 loop_0 = loop_0.wrapping_add(1);
             } else {
-                oo = options_owner_ptr(&mut (*wp).options);
+                oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
                 ft = format_create(
                     ::core::ptr::null_mut::<client>(),
                     ::core::ptr::null_mut::<cmdq_item>(),
@@ -1343,7 +1343,7 @@ unsafe fn window_tree_draw_info(
             }
             window_tree_border_cell(
                 &raw mut gc,
-                options_owner_ptr(&mut (*(*mode_pane).window).options),
+                options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
                 ::core::ptr::null_mut::<format_tree>(),
             );
             screen_write_cursormove(
@@ -1403,7 +1403,7 @@ unsafe fn window_tree_draw_info(
     if sx > 14 as u_int && i < sy {
         window_tree_border_cell(
             &raw mut gc,
-            options_owner_ptr(&mut (*(*mode_pane).window).options),
+            options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
             ::core::ptr::null_mut::<format_tree>(),
         );
         screen_write_cursormove(

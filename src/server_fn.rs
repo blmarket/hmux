@@ -253,7 +253,7 @@ pub unsafe fn server_lock_client(mut c: *mut client) {
         return;
     }
     cmd = options_get_string(
-        options_owner_ptr(&mut (*(*c).session).options),
+        options_owner_ptr(&mut (*(*c).session).options).map_or(std::ptr::null_mut(), |options| options),
         b"lock-command\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *cmd as ::core::ffi::c_int == '\0' as i32
@@ -337,7 +337,7 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
 pub unsafe fn server_renumber_session(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
@@ -403,7 +403,7 @@ pub unsafe fn server_link_window(
     if dstidx == -(1 as ::core::ffi::c_int) {
         dstidx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
             - options_get_number(
-                options_owner_ptr(&mut (*dst).options),
+                options_owner_ptr(&mut (*dst).options).map_or(std::ptr::null_mut(), |options| options),
                 b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
             )) as ::core::ffi::c_int;
     }
@@ -471,7 +471,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
         return;
     }
     remain_on_exit = options_get_number(
-        options_owner_ptr(&mut (*wp).options),
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     let mut current_block_37: u64;
@@ -508,7 +508,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
                 );
             }
             s = options_get_string(
-                options_owner_ptr(&mut (*wp).options),
+                options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
                 b"remain-on-exit-format\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if *s as ::core::ffi::c_int != '\0' as i32 {
@@ -632,7 +632,7 @@ pub unsafe fn server_destroy_session(mut s: *mut session) {
     };
     let mut detach_on_destroy: ::core::ffi::c_int = 0;
     detach_on_destroy = options_get_number(
-        options_owner_ptr(&mut (*s).options),
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"detach-on-destroy\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if detach_on_destroy == 0 as ::core::ffi::c_int {
@@ -683,7 +683,7 @@ pub unsafe fn server_check_unattached() {
         let name = sessions_key(&*s);
         if !((*s).attached != 0 as u_int) {
             match options_get_number(
-                options_owner_ptr(&mut (*s).options),
+                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 b"destroy-unattached\0" as *const u8 as *const ::core::ffi::c_char,
             ) {
                 0 => {}

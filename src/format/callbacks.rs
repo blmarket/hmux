@@ -2118,7 +2118,7 @@ unsafe fn format_cb_pane_search_string(mut ft: *mut format_tree) -> Option<CStri
 unsafe fn format_cb_pane_synchronized(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if options_get_number(
-            options_owner_ptr(&mut (*(*ft).wp).options),
+            options_owner_ptr(&mut (*(*ft).wp).options).map_or(std::ptr::null_mut(), |options| options),
             b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
@@ -2611,7 +2611,7 @@ unsafe fn format_cb_window_manual_height(mut ft: *mut format_tree) -> Option<CSt
         return None;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) != WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong
     {
@@ -2798,7 +2798,7 @@ unsafe fn format_cb_window_manual_width(mut ft: *mut format_tree) -> Option<CStr
         return None;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) != WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong
     {

@@ -723,7 +723,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     window_pane_list_remove(src_w, src_wp);
     window_pane_z_remove(src_w, src_wp);
     (*src_wp).window = dst_w as *mut window;
-    options_set_parent(options_owner_ptr(&mut (*src_wp).options), options_owner_ptr(&mut (*dst_w).options));
+    options_set_parent(options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*dst_w).options).map_or(std::ptr::null_mut(), |options| options));
     (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     if flags & SPAWN_BEFORE != 0 {
         window_pane_list_insert_before(dst_w, dst_wp, src_wp);
@@ -733,7 +733,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_pane_z_insert_after(dst_w, dst_wp, src_wp);
     }
     layout_assign_pane(lc, src_wp, 0 as ::core::ffi::c_int);
-    colour_palette_from_option(Some(&mut (*src_wp).palette), options_owner_ptr(&mut (*src_wp).options));
+    colour_palette_from_option(Some(&mut (*src_wp).palette), options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options));
     recalculate_sizes();
     server_redraw_window(src_w);
     server_redraw_window(dst_w);

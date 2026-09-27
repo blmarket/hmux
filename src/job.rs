@@ -125,7 +125,7 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         if !s.is_null() {
-            oo = options_owner_ptr(&mut (*s).options);
+            oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
         } else {
             oo = global_s_options;
         }

@@ -87,7 +87,7 @@ unsafe fn alerts_action_applies(
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut action: ::core::ffi::c_int = 0;
-    action = options_get_number(options_owner_ptr(&mut (*(*wl).session).options), name) as ::core::ffi::c_int;
+    action = options_get_number(options_owner_ptr(&mut (*(*wl).session).options).map_or(std::ptr::null_mut(), |options| options), name) as ::core::ffi::c_int;
     if action == ALERT_ANY {
         return 1 as ::core::ffi::c_int;
     }
@@ -117,7 +117,7 @@ pub unsafe fn alerts_check_session(mut s: *mut session) {
 unsafe fn alerts_enabled(mut w: *mut window, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if flags & WINDOW_BELL != 0 {
         if options_get_number(
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"monitor-bell\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
@@ -126,7 +126,7 @@ unsafe fn alerts_enabled(mut w: *mut window, mut flags: ::core::ffi::c_int) -> :
     }
     if flags & WINDOW_ACTIVITY != 0 {
         if options_get_number(
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"monitor-activity\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
@@ -135,7 +135,7 @@ unsafe fn alerts_enabled(mut w: *mut window, mut flags: ::core::ffi::c_int) -> :
     }
     if flags & WINDOW_SILENCE != 0 {
         if options_get_number(
-            options_owner_ptr(&mut (*w).options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             b"monitor-silence\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0 as ::core::ffi::c_longlong
         {
@@ -170,7 +170,7 @@ unsafe fn alerts_reset(mut w: *mut window) {
     tv.tv_usec = 0 as __suseconds_t;
     tv.tv_sec = tv.tv_usec as __time_t;
     tv.tv_sec = options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"monitor-silence\0" as *const u8 as *const ::core::ffi::c_char,
     ) as __time_t;
     log_debug(format_args!(
@@ -215,7 +215,7 @@ unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"monitor-bell\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -262,7 +262,7 @@ unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"monitor-activity\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -311,7 +311,7 @@ unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"monitor-silence\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {
@@ -360,7 +360,7 @@ unsafe fn alerts_set_message(
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut visual: ::core::ffi::c_int = 0;
-    visual = options_get_number(options_owner_ptr(&mut (*(*wl).session).options), option) as ::core::ffi::c_int;
+    visual = options_get_number(options_owner_ptr(&mut (*(*wl).session).options).map_or(std::ptr::null_mut(), |options| options), option) as ::core::ffi::c_int;
     c = clients.first();
     while !c.is_null() {
         if !((*c).session != (*wl).session || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {

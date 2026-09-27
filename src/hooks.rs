@@ -191,15 +191,15 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         if fs.s.is_null() {
             oo = global_s_options;
         } else {
-            oo = options_owner_ptr(&mut (*fs.s).options);
+            oo = options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options);
         }
         o = options_get(oo, (*hd).name.as_ptr());
         if o.is_null() && !fs.wp.is_null() {
-            oo = options_owner_ptr(&mut (*fs.wp).options);
+            oo = options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options);
             o = options_get(oo, (*hd).name.as_ptr());
         }
         if o.is_null() && !fs.wl.is_null() {
-            oo = options_owner_ptr(&mut (*(*fs.wl).window_ptr()).options);
+            oo = options_owner_ptr(&mut (*(*fs.wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
             o = options_get(oo, (*hd).name.as_ptr());
         }
     }

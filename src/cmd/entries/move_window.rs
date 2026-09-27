@@ -141,7 +141,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     if sflag == 0
         && options_get_number(
-            options_owner_ptr(&mut (*src).options),
+            options_owner_ptr(&mut (*src).options).map_or(std::ptr::null_mut(), |options| options),
             b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {

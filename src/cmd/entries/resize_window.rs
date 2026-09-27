@@ -147,7 +147,7 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         );
     }
     options_set_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
         WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong,
     );

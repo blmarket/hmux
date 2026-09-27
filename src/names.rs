@@ -59,7 +59,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         return;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -165,7 +165,7 @@ unsafe fn format_window_name(w: *mut window) -> CString {
     format_defaults_window(ft, w);
     format_defaults_pane(ft, (*w).active);
     fmt = options_get_string(
-        options_owner_ptr(&mut (*w).options),
+        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let name = format_expand_cstring(ft, fmt);

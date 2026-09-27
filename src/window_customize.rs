@@ -431,10 +431,10 @@ unsafe fn window_customize_get_tree(
         0 | 1 => return ::core::ptr::null_mut::<options>(),
         2 => return global_options,
         3 => return global_s_options,
-        4 => return options_owner_ptr(&mut (*(*fs).s).options),
+        4 => return options_owner_ptr(&mut (*(*fs).s).options).map_or(std::ptr::null_mut(), |options| options),
         5 => return global_w_options,
-        6 => return options_owner_ptr(&mut (*(*fs).w).options),
-        7 => return options_owner_ptr(&mut (*(*fs).wp).options),
+        6 => return options_owner_ptr(&mut (*(*fs).w).options).map_or(std::ptr::null_mut(), |options| options),
+        7 => return options_owner_ptr(&mut (*(*fs).wp).options).map_or(std::ptr::null_mut(), |options| options),
         8 | 9 => return ::core::ptr::null_mut::<options>(),
         _ => {}
     }
@@ -1717,7 +1717,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(&mut (*fs.s).options),
+        options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1732,9 +1732,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(&mut (*fs.w).options),
+        options_owner_ptr(&mut (*fs.w).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(&mut (*fs.wp).options),
+        options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
         ft,
         filter,
         &raw mut fs,
@@ -1747,7 +1747,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(&mut (*fs.s).options),
+        options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1762,9 +1762,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(&mut (*fs.w).options),
+        options_owner_ptr(&mut (*fs.w).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(&mut (*fs.wp).options),
+        options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
         ft,
         filter,
         &raw mut fs,
@@ -4748,7 +4748,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(&mut (*fs.s).options),
+            options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4758,7 +4758,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(&mut (*fs.wp).options),
+            options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4768,7 +4768,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(&mut (*fs.s).options),
+            options_owner_ptr(&mut (*fs.s).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4778,7 +4778,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(&mut (*fs.wp).options),
+            options_owner_ptr(&mut (*fs.wp).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;

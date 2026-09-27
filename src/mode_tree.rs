@@ -757,7 +757,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -1423,7 +1423,7 @@ pub unsafe fn mode_tree_set_prompt(
     let mut pd = prompt_create_data::default();
     if !c.is_null() && !(*c).session.is_null() {
         s = (*c).session;
-        oo = options_owner_ptr(&mut (*s).options);
+        oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
     } else {
         s = ::core::ptr::null_mut::<session>();
         oo = global_s_options;
@@ -1772,7 +1772,7 @@ unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut box_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
