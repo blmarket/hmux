@@ -853,7 +853,7 @@ pub unsafe fn status_prompt_key(
             return PROMPT_KEY_NOT_HANDLED;
         }
         let (ax, aw) = status_message_area(&*c);
-        result = prompt_mouse((*c).prompt, (*m).x, ax, aw, &raw mut redraw);
+        result = prompt_mouse(&mut *(*c).prompt, (*m).x, ax, aw, Some(&mut redraw));
     } else {
         result = prompt_key((*c).prompt, key, &raw mut redraw);
     }

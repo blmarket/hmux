@@ -266,7 +266,7 @@ pub unsafe fn prompt_free(mut pr: *mut prompt) {
     if let Some(callback) = (*pr).freecb.take() {
         callback();
     }
-    prompt_clear_complete(pr);
+    prompt_clear_complete(&mut *pr);
     drop(Box::from_raw(pr));
 }
 fn prompt_last(pr: &prompt) -> &CStr {
@@ -359,7 +359,7 @@ pub unsafe fn prompt_update(
         ::core::mem::size_of::<[u_int; 2]>() as size_t,
     );
     (*pr).closed = 0 as ::core::ffi::c_int;
-    prompt_clear_complete(pr);
+    prompt_clear_complete(&mut *pr);
     format_free(ft);
 }
 pub unsafe fn prompt_closed(mut pr: *mut prompt) -> ::core::ffi::c_int {
@@ -637,12 +637,12 @@ unsafe fn prompt_layout(
     (pl, expanded)
 }
 unsafe fn prompt_mouse_complete(
-    mut pr: *mut prompt,
+    pr: &mut prompt,
     mut x: u_int,
     mut cx: u_int,
     mut ax: u_int,
     mut aw: u_int,
-    mut redraw: *mut ::core::ffi::c_int,
+    mut redraw: Option<&mut ::core::ffi::c_int>,
 ) -> prompt_key_result {
     let mut avail: u_int = 0;
     let mut clicked: u_int = 0;
@@ -650,13 +650,13 @@ unsafe fn prompt_mouse_complete(
     let mut i: u_int = 0;
     let mut start: u_int = 0;
     let mut width: u_int = 0;
-    let Some(display) = (*pr).completion.display.as_deref() else {
+    let Some(display) = pr.completion.display.as_deref() else {
         return PROMPT_KEY_NOT_HANDLED;
     };
-    if (*pr).completion.names.is_empty() {
+    if pr.completion.names.is_empty() {
         return PROMPT_KEY_NOT_HANDLED;
     }
-    if (*pr).index != utf8_strlen(&(*pr).buffer) {
+    if pr.index != utf8_strlen(&pr.buffer) {
         return PROMPT_KEY_NOT_HANDLED;
     }
     if cx < ax || cx.wrapping_sub(ax) >= aw || x < cx {
@@ -673,20 +673,18 @@ unsafe fn prompt_mouse_complete(
     }
     end = 0 as u_int;
     i = 0 as u_int;
-    while (i as usize) < (*pr).completion.names.len() {
+    while (i as usize) < pr.completion.names.len() {
         start = end.wrapping_add(1 as u_int);
-        end = start.wrapping_add(utf8_cstrwidth(
-            &(&(*pr).completion.names)[i as usize],
-        ));
+        end = start.wrapping_add(utf8_cstrwidth(&pr.completion.names[i as usize]));
         if clicked < start || clicked >= end {
             i = i.wrapping_add(1);
         } else {
-            let mut replacement = (&(*pr).completion.names)[i as usize].as_bytes().to_vec();
+            let mut replacement = pr.completion.names[i as usize].as_bytes().to_vec();
             replacement.push(b' ');
             let replacement = CString::new(replacement).expect("completion name contains no NUL");
-            if prompt_replace_complete(pr, replacement.as_ptr()) != 0 {
+            if prompt_replace_complete(pr, Some(&replacement)) != 0 {
                 prompt_clear_complete(pr);
-                if !redraw.is_null() {
+                if let Some(redraw) = redraw {
                     *redraw = 1 as ::core::ffi::c_int;
                 }
             }
@@ -825,13 +823,12 @@ pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_dr
     pl.cursor_x
 }
 pub unsafe fn prompt_mouse(
-    mut pr: *mut prompt,
+    pr: &mut prompt,
     mut x: u_int,
     mut ax: u_int,
     mut aw: u_int,
-    mut redraw: *mut ::core::ffi::c_int,
+    mut redraw: Option<&mut ::core::ffi::c_int>,
 ) -> prompt_key_result {
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut sy: style = style {
         gc: grid_cell {
@@ -869,15 +866,22 @@ pub unsafe fn prompt_mouse(
     if x < ax || x >= ax.wrapping_add(aw) {
         return PROMPT_KEY_NOT_HANDLED;
     }
-    let (pl, _) = prompt_layout(&*pr, ax, aw, Some(&mut sy));
+    let (pl, _) = prompt_layout(pr, ax, aw, Some(&mut sy));
     if pl.input_width == 0 as u_int {
         return PROMPT_KEY_HANDLED;
     }
-    pwidth = utf8_strwidth(&(*pr).buffer, -(1 as ::core::ffi::c_int) as ssize_t);
-    if (*pr).flags & PROMPT_QUOTENEXT != 0 {
+    pwidth = utf8_strwidth(&pr.buffer, -(1 as ::core::ffi::c_int) as ssize_t);
+    if pr.flags & PROMPT_QUOTENEXT != 0 {
         pwidth = pwidth.wrapping_add(1);
     }
-    result = prompt_mouse_complete(pr, x, pl.cursor_x, pl.content_x, pl.content_width, redraw);
+    result = prompt_mouse_complete(
+        pr,
+        x,
+        pl.cursor_x,
+        pl.content_x,
+        pl.content_width,
+        redraw.as_deref_mut(),
+    );
     if result as ::core::ffi::c_uint
         != PROMPT_KEY_NOT_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -893,22 +897,19 @@ pub unsafe fn prompt_mouse(
     }
     width = 0 as u_int;
     idx = 0 as size_t;
-    while (*prompt_buffer_cells(pr).offset(idx as isize)).size as ::core::ffi::c_int
-        != 0 as ::core::ffi::c_int
-    {
-        ud = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
+    for cell in pr.buffer.iter().take_while(|cell| cell.size != 0) {
         if width >= target {
             break;
         }
-        width = width.wrapping_add((*ud).width as u_int);
-        idx = idx.wrapping_add(1);
+        width = width.wrapping_add(cell.width as u_int);
+        idx += 1;
     }
-    if idx == (*pr).index {
+    if idx == pr.index {
         return PROMPT_KEY_HANDLED;
     }
-    (*pr).index = idx;
+    pr.index = idx;
     prompt_clear_complete(pr);
-    if !redraw.is_null() {
+    if let Some(redraw) = redraw {
         *redraw = 1 as ::core::ffi::c_int;
     }
     return PROMPT_KEY_HANDLED;
@@ -1166,86 +1167,55 @@ unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn prompt_replace_complete(
-    mut pr: *mut prompt,
-    mut s: *const ::core::ffi::c_char,
+    pr: &mut prompt,
+    replacement: Option<&CStr>,
 ) -> ::core::ffi::c_int {
-    let mut word: [::core::ffi::c_char; 64] = [0; 64];
-    let mut allocated: Option<CString> = None;
-    let mut size: size_t = 0;
-    let mut idx: size_t = 0;
-    let mut used: size_t = 0;
-    let mut first: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut last: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    idx = (*pr).index;
-    if idx != 0 as size_t {
-        idx = idx.wrapping_sub(1);
+    let mut word = [0_u8; 64];
+    let size = utf8_strlen(&pr.buffer);
+    let index = pr.index.saturating_sub(1);
+    let mut first = index;
+    while first > 0 && prompt_space(&pr.buffer[first]) == 0 {
+        first -= 1;
     }
-    size = utf8_strlen(&(*pr).buffer);
-    first = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
-    while first > prompt_buffer_cells(pr) && prompt_space(&*first) == 0 {
-        first = first.offset(-1);
+    while pr.buffer[first].size != 0 && prompt_space(&pr.buffer[first]) != 0 {
+        first += 1;
     }
-    while (*first).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
-        && prompt_space(&*first) != 0
-    {
-        first = first.offset(1);
+    let mut last = index;
+    while pr.buffer[last].size != 0 && prompt_space(&pr.buffer[last]) == 0 {
+        last += 1;
     }
-    last = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
-    while (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int && prompt_space(&*last) == 0
-    {
-        last = last.offset(1);
+    while last > 0 && prompt_space(&pr.buffer[last]) != 0 {
+        last -= 1;
     }
-    while last > prompt_buffer_cells(pr) && prompt_space(&*last) != 0 {
-        last = last.offset(-1);
-    }
-    if (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        last = last.offset(1);
+    if pr.buffer[last].size != 0 {
+        last += 1;
     }
     if last < first {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
-    let first_index = first.offset_from(prompt_buffer_cells(pr)) as usize;
-    let last_index = last.offset_from(prompt_buffer_cells(pr)) as usize;
-    if s.is_null() {
-        used = 0 as size_t;
-        ud = first;
-        while ud < last {
-            if used.wrapping_add((*ud).size as size_t)
-                >= ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as usize
-            {
-                break;
+    let completed = if replacement.is_none() {
+        let mut used = 0;
+        for cell in &pr.buffer[first..last] {
+            let bytes = &cell.data[..cell.size as usize];
+            if used + bytes.len() >= word.len() {
+                return 0;
             }
-            memcpy(
-                (&raw mut word as *mut ::core::ffi::c_char).offset(used as isize)
-                    as *mut ::core::ffi::c_void,
-                &raw mut (*ud).data as *mut u_char as *const ::core::ffi::c_void,
-                (*ud).size as size_t,
-            );
-            used = used.wrapping_add((*ud).size as size_t);
-            ud = ud.offset(1);
+            word[used..used + bytes.len()].copy_from_slice(bytes);
+            used += bytes.len();
         }
-        if ud != last {
-            return 0 as ::core::ffi::c_int;
-        }
-        word[used as usize] = '\0' as i32 as ::core::ffi::c_char;
-    }
-    if s.is_null() {
-        allocated = prompt_complete(
-            pr,
-            CStr::from_ptr(word.as_ptr()),
-            first.offset_from(prompt_buffer_cells(pr)) as ::core::ffi::c_long as u_int,
-        );
-        let Some(completion) = allocated.as_ref() else {
-            return 0 as ::core::ffi::c_int;
-        };
-        s = completion.as_ptr();
-    }
-    let replacement_bytes = CStr::from_ptr(s).to_bytes();
-    let mut replacement =
-        Vec::with_capacity(first_index + replacement_bytes.len() + size + 1 - last_index);
-    let buffer = &(*pr).buffer;
-    replacement.extend_from_slice(&buffer[..first_index]);
+        // Quoted control cells may contain NUL, which ends the C completion word.
+        let word =
+            CStr::from_bytes_until_nul(&word[..used + 1]).expect("terminated completion word");
+        prompt_complete(pr, word, first as u_int)
+    } else {
+        None
+    };
+    let Some(replacement) = replacement.or(completed.as_deref()) else {
+        return 0;
+    };
+    let replacement_bytes = replacement.to_bytes();
+    let mut cells = Vec::with_capacity(first + replacement_bytes.len() + size + 1 - last);
+    cells.extend_from_slice(&pr.buffer[..first]);
     for &byte in replacement_bytes {
         let mut cell = utf8_data {
             data: [0; 32],
@@ -1254,12 +1224,12 @@ unsafe fn prompt_replace_complete(
             width: 0,
         };
         utf8_set(&mut cell, byte);
-        replacement.push(cell);
+        cells.push(cell);
     }
-    replacement.extend_from_slice(&buffer[last_index..=size]);
-    (*pr).buffer = replacement;
-    (*pr).index = first_index + replacement_bytes.len();
-    return 1 as ::core::ffi::c_int;
+    cells.extend_from_slice(&pr.buffer[last..=size]);
+    pr.buffer = cells;
+    pr.index = first + replacement_bytes.len();
+    1
 }
 fn prompt_forward_word(pr: &prompt, size: usize, vi: bool, separators: &CStr) -> usize {
     let buffer = &pr.buffer;
@@ -1403,7 +1373,7 @@ pub unsafe fn prompt_key(
     let mut result: prompt_key_result = PROMPT_KEY_HANDLED;
     let mut word_is_separators: ::core::ffi::c_int = 0;
     (*pr).closed = 0 as ::core::ffi::c_int;
-    prompt_clear_complete(pr);
+    prompt_clear_complete(&mut *pr);
     if (*pr).flags & PROMPT_KEY != 0 {
         let key_string = key_string_format(key, false);
         if prompt_fire_callback(
@@ -1723,11 +1693,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2026,11 +1992,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2329,11 +2291,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2632,11 +2590,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -2935,11 +2889,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -3238,11 +3188,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -3541,11 +3487,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -3844,11 +3786,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -4147,11 +4085,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -4450,11 +4384,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -4753,11 +4683,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5056,11 +4982,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5359,11 +5281,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5662,11 +5580,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -5965,11 +5879,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -6268,11 +6178,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -6571,11 +6477,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -6874,11 +6776,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -7177,11 +7075,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -7480,11 +7374,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -7783,11 +7673,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8086,11 +7972,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8389,11 +8271,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8692,11 +8570,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -8995,11 +8869,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -9298,11 +9168,7 @@ pub unsafe fn prompt_key(
                                 }
                             }
                             460814018713664829 => {
-                                if prompt_replace_complete(
-                                    pr,
-                                    ::core::ptr::null::<::core::ffi::c_char>(),
-                                ) != 0
-                                {
+                                if prompt_replace_complete(&mut *pr, None) != 0 {
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
@@ -9479,24 +9345,24 @@ fn prompt_complete_prefix(list: &[CString]) -> CString {
     }
     CString::new(&first[..prefix_len]).expect("completion names contain no NUL")
 }
-unsafe fn prompt_clear_complete(mut pr: *mut prompt) {
-    (*pr).completion.names = Vec::new();
-    (*pr).completion.display = None;
+fn prompt_clear_complete(pr: &mut prompt) {
+    pr.completion.names = Vec::new();
+    pr.completion.display = None;
 }
-unsafe fn prompt_store_complete(mut pr: *mut prompt, list: Vec<CString>) {
+fn prompt_store_complete(pr: &mut prompt, list: Vec<CString>) {
     prompt_clear_complete(pr);
-    (*pr).completion.names = list;
+    pr.completion.names = list;
     let mut display = Vec::new();
-    for name in &(*pr).completion.names {
+    for name in &pr.completion.names {
         display.push(b' ');
         display.extend_from_slice(name.as_bytes());
     }
-    (*pr).completion.display = Some(CString::new(display).expect("names contain no NUL"));
+    pr.completion.display = Some(CString::new(display).expect("names contain no NUL"));
 }
-unsafe fn prompt_complete(mut pr: *mut prompt, word: &CStr, mut offset: u_int) -> Option<CString> {
+unsafe fn prompt_complete(pr: &mut prompt, word: &CStr, mut offset: u_int) -> Option<CString> {
     let mut list: Vec<CString>;
     let mut i: u_int = 0;
-    if (*pr).type_0 as ::core::ffi::c_uint
+    if pr.type_0 as ::core::ffi::c_uint
         != PROMPT_TYPE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
         || offset != 0 as u_int
         || word.to_bytes().is_empty()
@@ -9700,13 +9566,32 @@ mod prompt_buffer_tests {
         pr.buffer.push(cell(b'!'));
 
         unsafe {
-            assert_eq!(prompt_replace_complete(&mut *pr, replacement.as_ptr()), 1);
-            assert_eq!(
-                utf8_tocstr_cstring(&pr.buffer).as_bytes(),
-                b"cmd \xff tail"
-            );
+            assert_eq!(prompt_replace_complete(&mut *pr, Some(&replacement)), 1);
+            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_bytes(), b"cmd \xff tail");
             assert_eq!(pr.index, 5);
             assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+
+            for (input, index, replaced, expected, next) in [
+                (c"", 0, 1, c"new ", 4),
+                (c"cmd old tail", 0, 1, c"new  old tail", 4),
+                (c"cmd old tail", 4, 0, c"cmd old tail", 4),
+                (c"cmd old tail", 5, 1, c"cmd new  tail", 8),
+                (c"cmd old tail", 12, 1, c"cmd old new ", 12),
+                (c"   ", 0, 0, c"   ", 0),
+                (c"   ", 3, 0, c"   ", 3),
+                (c"é漢 old", 1, 1, c"new  old", 4),
+            ] {
+                let mut pr = make_prompt(input, index, None);
+                assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), replaced);
+                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
+                assert_eq!(pr.index, next);
+            }
+            // Explicit replacement (mouse completion) does not use the
+            // 64-byte scratch word needed by command-name lookup.
+            let long = CString::new(vec![b'x'; 64]).unwrap();
+            let mut pr = make_prompt(&long, 64, None);
+            assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), 1);
+            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), c"new ");
         }
     }
 

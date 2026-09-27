@@ -702,11 +702,11 @@ unsafe fn window_switch_key(
             && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
         {
             result = prompt_mouse(
-                (*data).prompt,
+                &mut *(*data).prompt,
                 x,
                 0 as u_int,
                 (*data).screen.grid().sx,
-                &raw mut redraw,
+                Some(&mut redraw),
             );
             if redraw != 0
                 || result as ::core::ffi::c_uint

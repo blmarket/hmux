@@ -3338,7 +3338,7 @@ pub unsafe fn window_pane_prompt_key(
                 py = (*wp).sy.wrapping_sub(1 as u_int);
             }
             if y == py {
-                result = prompt_mouse(prompt, x, 0 as u_int, (*wp).sx, &raw mut redraw);
+                result = prompt_mouse(&mut *prompt, x, 0 as u_int, (*wp).sx, Some(&mut redraw));
             } else {
                 result = PROMPT_KEY_NOT_HANDLED;
             }

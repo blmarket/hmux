@@ -1922,7 +1922,7 @@ pub unsafe fn mode_tree_key(
                     py = (*mtd).screen.grid().sy.wrapping_sub(1 as u_int);
                 }
                 if y == py {
-                    result = prompt_mouse(prompt, x, 0 as u_int, sx, &raw mut redraw);
+                    result = prompt_mouse(&mut *prompt, x, 0 as u_int, sx, Some(&mut redraw));
                 } else {
                     result = PROMPT_KEY_NOT_HANDLED;
                 }
