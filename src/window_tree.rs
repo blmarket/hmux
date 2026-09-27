@@ -366,7 +366,7 @@ unsafe fn window_tree_build_pane(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut idx: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    window_pane_index(wp, &raw mut idx);
+    idx = window_pane_index(wp).expect("pane belongs to window ordering");
     let item_owner = window_tree_add_item(
         &mut (*data).item_list,
         window_tree_itemdata {
@@ -2267,7 +2267,7 @@ unsafe fn window_tree_key(
                 }
                 3 => {
                     if !(nwp.is_null()
-                        || window_pane_index(nwp, &raw mut idx) != 0 as ::core::ffi::c_int)
+                        || !window_pane_index(nwp).map(|value| { idx = value; }).is_some())
                     {
                         Some(CString::new(format!("Kill pane {idx}? ")).unwrap())
                     } else {

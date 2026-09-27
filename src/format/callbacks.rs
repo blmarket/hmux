@@ -1923,7 +1923,7 @@ unsafe fn format_cb_pane_id(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_index(mut ft: *mut format_tree) -> Option<CString> {
     let mut idx: u_int = 0;
-    if !(*ft).wp.is_null() && window_pane_index((*ft).wp, &raw mut idx) == 0 as ::core::ffi::c_int {
+    if !(*ft).wp.is_null() && window_pane_index((*ft).wp).map(|value| { idx = value; }).is_some() {
         return Some(
             CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
         );
@@ -2261,7 +2261,7 @@ unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_z(mut ft: *mut format_tree) -> Option<CString> {
     let mut idx: u_int = 0;
-    if !(*ft).wp.is_null() && window_pane_zindex((*ft).wp, &raw mut idx) == 0 as ::core::ffi::c_int
+    if !(*ft).wp.is_null() && window_pane_zindex((*ft).wp).map(|value| { idx = value; }).is_some()
     {
         return Some(
             CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),

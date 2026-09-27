@@ -213,17 +213,17 @@ unsafe fn sort_pane_cmp(
                 as ::core::ffi::c_int;
         }
         2 => {
-            window_pane_index(a, &raw mut ai);
-            window_pane_index(b, &raw mut bi);
-            result = ai.wrapping_sub(bi) as ::core::ffi::c_int;
+            let ai = window_pane_index(a);
+            let bi = window_pane_index(b);
+            result = (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as ::core::ffi::c_int;
         }
         4 => {
             result = strcmp((*(*a).screen).title.as_ptr(), (*(*b).screen).title.as_ptr());
         }
         7 => {
-            window_pane_zindex(a, &raw mut ai);
-            window_pane_zindex(b, &raw mut bi);
-            result = ai.wrapping_sub(bi) as ::core::ffi::c_int;
+            let ai = window_pane_zindex(a);
+            let bi = window_pane_zindex(b);
+            result = (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as ::core::ffi::c_int;
         }
         3 | 5 | 8 | _ => {}
     }

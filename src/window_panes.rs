@@ -1487,7 +1487,7 @@ unsafe fn window_panes_draw_pane(
     {
         return;
     }
-    if window_pane_index(wp, &raw mut pane) != 0 as ::core::ffi::c_int {
+    if !window_pane_index(wp).map(|value| { pane = value; }).is_some() {
         return;
     }
     window_panes_add_area(data, wp, x, y, sx, sy);

@@ -503,7 +503,7 @@ unsafe fn window_customize_scope_text(
     let mut idx: u_int = 0;
     match scope as ::core::ffi::c_uint {
         7 => {
-            window_pane_index(fs.wp, &raw mut idx);
+            idx = window_pane_index(fs.wp).expect("pane belongs to window ordering");
             CString::new(format!("pane {idx}")).expect("pane index contains no NUL")
         }
         4 | 9 => {

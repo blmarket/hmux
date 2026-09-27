@@ -529,7 +529,7 @@ pub unsafe fn spawn_pane(
     ) as u_int;
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         if (*(*sc).wp0).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
-            window_pane_index((*sc).wp0, &raw mut idx);
+            idx = window_pane_index((*sc).wp0).expect("pane belongs to window ordering");
             set_spawn_cause(
                 cause.as_mut(),
                 &[

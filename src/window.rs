@@ -2073,61 +2073,58 @@ pub unsafe fn window_pane_previous_by_number(
     }
     return wp;
 }
-pub unsafe fn window_pane_index(mut wp: *mut window_pane, mut i: *mut u_int) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_index(wp: *mut window_pane) -> Option<u32> {
+    let mut i: u32;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    *i = options_get_number(
+    i = options_get_number(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     wq = window_pane_first(w);
     while !wq.is_null() {
         if wp == wq {
-            return 0 as ::core::ffi::c_int;
+            return Some(i);
         }
-        *i = (*i).wrapping_add(1);
+        i = i.wrapping_add(1);
         wq = window_pane_next(wq);
     }
-    return -(1 as ::core::ffi::c_int);
+    None
 }
-pub unsafe fn window_pane_zindex(
-    mut wp: *mut window_pane,
-    mut i: *mut u_int,
-) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_zindex(wp: *mut window_pane) -> Option<u32> {
+    let mut i: u32;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    *i = 0 as u_int;
+    i = 0 as u_int;
     wq = window_pane_z_first(w);
     while !wq.is_null() {
         if wq == wp {
             if window_pane_is_floating(wp) == 0 {
-                *i = (*i).wrapping_add(1);
+                i = i.wrapping_add(1);
             }
-            return 0 as ::core::ffi::c_int;
+            return Some(i);
         }
         if window_pane_is_floating(wq) != 0 {
-            *i = (*i).wrapping_add(1);
+            i = i.wrapping_add(1);
         }
         wq = window_pane_z_next(wq);
     }
-    return -(1 as ::core::ffi::c_int);
+    None
 }
-pub unsafe fn window_pane_last_index(
-    mut wp: *mut window_pane,
-    mut i: *mut u_int,
-) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_last_index(wp: *mut window_pane) -> Option<u32> {
+    let mut i: u32;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    *i = 0 as u_int;
+    i = 0 as u_int;
     wq = window_pane_stack_first(w);
     while !wq.is_null() {
         if wq == wp {
-            return 0 as ::core::ffi::c_int;
+            return Some(i);
         }
-        *i = (*i).wrapping_add(1);
+        i = i.wrapping_add(1);
         wq = window_pane_stack_next(w, wq);
     }
-    return -(1 as ::core::ffi::c_int);
+    None
 }
 pub unsafe fn window_count_panes(
     mut w: *mut window,

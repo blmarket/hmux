@@ -205,15 +205,15 @@ unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
         }
         if wp == (*(*wp).window).active {
             ls.extend_from_slice(b",\"a\":true");
-        } else if window_pane_last_index(wp, &raw mut i) == 0 as ::core::ffi::c_int {
+        } else if window_pane_last_index(wp).map(|value| { i = value; }).is_some() {
             ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());
         }
-        if window_pane_index(wp, &raw mut i) != 0 as ::core::ffi::c_int {
+        if !window_pane_index(wp).map(|value| { i = value; }).is_some() {
             return -(1 as ::core::ffi::c_int);
         }
         ls.extend_from_slice(format!(",\"i\":{}", i).as_bytes());
         if (*lc).flags & LAYOUT_CELL_FLOATING != 0
-            && window_pane_zindex(wp, &raw mut i) == 0 as ::core::ffi::c_int
+            && window_pane_zindex(wp).map(|value| { i = value; }).is_some()
         {
             ls.extend_from_slice(format!(",\"z\":{}", i).as_bytes());
         }
