@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_tolower_loc, memcmp, memset, strchr};
+use crate::src::ffi::libc::{__ctype_tolower_loc, memcmp, strchr};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::shared::abi::__int32_t;
@@ -19,14 +19,12 @@ pub struct fuzzy_char {
     pub offset: u_int,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub struct fuzzy_term {
+pub struct fuzzy_term<'a> {
     pub inverse: ::core::ffi::c_int,
     pub exact: ::core::ffi::c_int,
     pub prefix: ::core::ffi::c_int,
     pub suffix: ::core::ffi::c_int,
-    pub text: *const ::core::ffi::c_char,
-    pub len: size_t,
+    pub text: &'a [u8],
 }
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
@@ -575,54 +573,46 @@ unsafe fn fuzzy_match_exact(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn fuzzy_parse_term(
-    mut start: *const ::core::ffi::c_char,
-    mut end: *const ::core::ffi::c_char,
-    mut term: *mut fuzzy_term,
-) -> ::core::ffi::c_int {
-    memset(
-        term as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<fuzzy_term>() as size_t,
-    );
-    if start == end {
-        return 0 as ::core::ffi::c_int;
+fn fuzzy_parse_term(mut text: &[u8]) -> Option<fuzzy_term<'_>> {
+    let mut term = fuzzy_term {
+        inverse: 0,
+        exact: 0,
+        prefix: 0,
+        suffix: 0,
+        text: &[],
+    };
+    if text.first()? == &b'!' {
+        term.inverse = 1;
+        text = &text[1..];
     }
-    if *start as ::core::ffi::c_int == '!' as i32 {
-        (*term).inverse = 1 as ::core::ffi::c_int;
-        start = start.offset(1);
+    match text.first()? {
+        b'\'' => {
+            term.exact = 1;
+            text = &text[1..];
+        }
+        b'^' => {
+            term.exact = 1;
+            term.prefix = 1;
+            text = &text[1..];
+        }
+        _ => {}
     }
-    if start == end {
-        return 0 as ::core::ffi::c_int;
+    if text.last()? == &b'$' {
+        term.exact = 1;
+        term.suffix = 1;
+        text = &text[..text.len() - 1];
     }
-    if *start as ::core::ffi::c_int == '\'' as i32 {
-        (*term).exact = 1 as ::core::ffi::c_int;
-        start = start.offset(1);
-    } else if *start as ::core::ffi::c_int == '^' as i32 {
-        (*term).exact = 1 as ::core::ffi::c_int;
-        (*term).prefix = 1 as ::core::ffi::c_int;
-        start = start.offset(1);
+    if text.is_empty() {
+        return None;
     }
-    if start == end {
-        return 0 as ::core::ffi::c_int;
+    if term.inverse != 0 {
+        term.exact = 1;
     }
-    if *end.offset(-(1 as ::core::ffi::c_int) as isize) as ::core::ffi::c_int == '$' as i32 {
-        (*term).exact = 1 as ::core::ffi::c_int;
-        (*term).suffix = 1 as ::core::ffi::c_int;
-        end = end.offset(-1);
-    }
-    if start == end {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*term).inverse != 0 {
-        (*term).exact = 1 as ::core::ffi::c_int;
-    }
-    (*term).text = start;
-    (*term).len = end.offset_from(start) as ::core::ffi::c_long as size_t;
-    return 1 as ::core::ffi::c_int;
+    term.text = text;
+    Some(term)
 }
 unsafe fn fuzzy_match_term(
-    mut term: *const fuzzy_term,
+    term: &fuzzy_term<'_>,
     mut tok: *mut utf8_data,
     mut cs: *mut fuzzy_char,
     mut ncs: u_int,
@@ -633,18 +623,18 @@ unsafe fn fuzzy_match_term(
     let mut toklen: u_int = 0;
     let mut value: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut matched_term: ::core::ffi::c_int = 0;
-    toklen = fuzzy_decode((*term).text, (*term).len, tok);
-    if (*term).exact != 0 {
+    toklen = fuzzy_decode(term.text.as_ptr().cast(), term.text.len(), tok);
+    if term.exact != 0 {
         matched_term = fuzzy_match_exact(
             tok,
             toklen,
             cs,
             ncs,
             fold,
-            (*term).prefix,
-            (*term).suffix,
+            term.prefix,
+            term.suffix,
             &raw mut value,
-            if (*term).inverse != 0 {
+            if term.inverse != 0 {
                 ::core::ptr::null_mut::<::core::ffi::c_char>()
             } else {
                 matched
@@ -658,14 +648,14 @@ unsafe fn fuzzy_match_term(
             ncs,
             fold,
             &raw mut value,
-            if (*term).inverse != 0 {
+            if term.inverse != 0 {
                 ::core::ptr::null_mut::<::core::ffi::c_char>()
             } else {
                 matched
             },
         );
     }
-    if (*term).inverse != 0 {
+    if term.inverse != 0 {
         return (matched_term == 0) as ::core::ffi::c_int;
     }
     if matched_term == 0 {
@@ -675,8 +665,7 @@ unsafe fn fuzzy_match_term(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn fuzzy_match_group(
-    mut start: *const ::core::ffi::c_char,
-    mut end: *const ::core::ffi::c_char,
+    group: &[u8],
     mut tok: *mut utf8_data,
     mut cs: *mut fuzzy_char,
     mut ncs: u_int,
@@ -684,38 +673,21 @@ unsafe fn fuzzy_match_group(
     mut score: *mut ::core::ffi::c_int,
     mut matched: *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut cp: *const ::core::ffi::c_char = start;
-    let mut sp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut term: fuzzy_term = fuzzy_term {
-        inverse: 0,
-        exact: 0,
-        prefix: 0,
-        suffix: 0,
-        text: ::core::ptr::null::<::core::ffi::c_char>(),
-        len: 0,
-    };
-    let mut any: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    *score = 0 as ::core::ffi::c_int;
-    while cp != end {
-        while cp != end && *cp as ::core::ffi::c_int == ' ' as i32 {
-            cp = cp.offset(1);
-        }
-        if cp == end {
-            break;
-        }
-        sp = cp;
-        while cp != end && *cp as ::core::ffi::c_int != ' ' as i32 {
-            cp = cp.offset(1);
-        }
-        if fuzzy_parse_term(sp, cp, &raw mut term) == 0 {
-            return 0 as ::core::ffi::c_int;
-        }
-        any = 1 as ::core::ffi::c_int;
-        if fuzzy_match_term(&raw mut term, tok, cs, ncs, fold, score, matched) == 0 {
-            return 0 as ::core::ffi::c_int;
+    let mut any = 0;
+    *score = 0;
+    for text in group
+        .split(|byte| *byte == b' ')
+        .filter(|text| !text.is_empty())
+    {
+        let Some(term) = fuzzy_parse_term(text) else {
+            return 0;
+        };
+        any = 1;
+        if fuzzy_match_term(&term, tok, cs, ncs, fold, score, matched) == 0 {
+            return 0;
         }
     }
-    return any;
+    any
 }
 pub(crate) unsafe fn fuzzy_match_owned(
     pattern: &CStr,
@@ -740,20 +712,14 @@ pub(crate) unsafe fn fuzzy_match_owned(
     let mut wc: u_int = 0;
     let mut wr: u_int = 0;
     let mut wa: u_int = 0;
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut sp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bestscore: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut groupscore: ::core::ffi::c_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut fold: ::core::ffi::c_int = 0;
     if width == 0 as u_int {
         return None;
     }
-    cp = pattern.as_ptr();
-    while *cp as ::core::ffi::c_int == ' ' as i32 || *cp as ::core::ffi::c_int == '|' as i32 {
-        cp = cp.offset(1);
-    }
-    if *cp as ::core::ffi::c_int == '\0' as i32 {
+    let pattern = pattern.to_bytes();
+    if pattern.iter().all(|byte| matches!(byte, b' ' | b'|')) {
         if let Some(score) = score.as_deref_mut() {
             *score = 0 as u_int;
         }
@@ -763,16 +729,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
                 as usize
         ]);
     }
-    fold = 1 as ::core::ffi::c_int;
-    cp = pattern.as_ptr();
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int >= 'A' as i32 && *cp as ::core::ffi::c_int <= 'Z' as i32 {
-            fold = 0 as ::core::ffi::c_int;
-            break;
-        } else {
-            cp = cp.offset(1);
-        }
-    }
+    let fold = (!pattern.iter().any(u8::is_ascii_uppercase)) as ::core::ffi::c_int;
     cs = fuzzy_scan(text, &mut widths);
     ncs = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
@@ -784,24 +741,12 @@ pub(crate) unsafe fn fuzzy_match_owned(
             size: 0,
             width: 0,
         };
-        pattern.to_bytes_with_nul().len()
+        pattern.len() + 1
     ];
-    cp = pattern.as_ptr();
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        while *cp as ::core::ffi::c_int == ' ' as i32 || *cp as ::core::ffi::c_int == '|' as i32 {
-            cp = cp.offset(1);
-        }
-        if *cp as ::core::ffi::c_int == '\0' as i32 {
-            break;
-        }
-        sp = cp;
-        while *cp as ::core::ffi::c_int != '\0' as i32 && *cp as ::core::ffi::c_int != '|' as i32 {
-            cp = cp.offset(1);
-        }
+    for group in pattern.split(|byte| *byte == b'|') {
         matched.fill(0);
         if fuzzy_match_group(
-            sp,
-            cp,
+            group,
             tok.as_mut_ptr(),
             cs.as_mut_ptr(),
             ncs,
@@ -905,6 +850,33 @@ pub(crate) unsafe fn fuzzy_match_owned(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn borrowed_terms_preserve_operators_and_group_boundaries() {
+        unsafe {
+            for (pattern, text, expected) in [
+                (c"^ab$", c"ab", Some(0b11)),
+                (c"^ab$", c"abc", None),
+                (c"'ab", c"axb", None),
+                (c"!ab", c"axb", Some(0)),
+                (c"!ab", c"zab", None),
+                (c"!^ab$", c"abc", Some(0)),
+                (c"!^ab$", c"ab", None),
+                (c"  ^ab  cd$ | missing ", c"abcd", Some(0b1111)),
+                (c"missing||^ab$|", c"ab", Some(0b11)),
+                (c"^é$", c"é", Some(1)),
+                // The text scanner skips invalid high bytes.
+                (c"^\xff$", c"\xff", None),
+                (c" | ", c"ab", Some(0)),
+            ] {
+                let mask = fuzzy_match_owned(pattern, text, 8, None);
+                assert_eq!(mask.map(|mask| mask[0]), expected, "{pattern:?}");
+            }
+            for pattern in [c"!", c"'", c"^", c"$", c"!^$", c"'$", c"ab ^"] {
+                assert!(fuzzy_match_owned(pattern, c"ab", 8, None).is_none());
+            }
+        }
+    }
 
     #[test]
     fn bracketed_style_controls_fuzzy_match_columns() {
