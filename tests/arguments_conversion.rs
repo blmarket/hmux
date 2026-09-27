@@ -1,5 +1,9 @@
+use hmux2::src::shared::command::cmd_list;
+use hmux2::src::shared::rc;
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::ptr;
+use std::rc::Rc;
 
 use hmux2::src::arguments::{
     args_copy, args_create, args_first_value, args_parse as parse_args,
@@ -10,9 +14,9 @@ use hmux2::src::arguments::{
 use hmux2::src::cmd::queue::{
     cmdq_free_detached, cmdq_get_callback1, cmdq_get_error, cmdq_get_name,
 };
-use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
+use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::ffi::libc::snprintf;
-use hmux2::src::shared::arguments::{args, args_parse, args_value, ARGS_PARSE_COMMANDS};
+use hmux2::src::shared::arguments::{args, args_parse, ArgumentValue, ARGS_PARSE_COMMANDS};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
@@ -22,14 +26,12 @@ fn error_message(error: ArgumentValueError) -> &'static [u8] {
     error.message().to_bytes()
 }
 
-unsafe fn borrowed_string_value(value: &CStr) -> args_value {
-    args_value::borrowed_string(value.as_ptr())
+fn borrowed_string_value(value: &CStr) -> ArgumentValue<'_> {
+    ArgumentValue::borrowed_string(value)
 }
 
-unsafe fn borrowed_commands_value(
-    cmdlist: *mut hmux2::src::shared::command::cmd_list,
-) -> args_value {
-    args_value::borrowed_commands(cmdlist)
+fn borrowed_commands_value(cmdlist: &Rc<UnsafeCell<cmd_list>>) -> ArgumentValue<'_> {
+    ArgumentValue::borrowed_commands(cmdlist)
 }
 
 #[test]
@@ -162,7 +164,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
     unsafe {
         let mut args = args_create();
         let cmdlist = cmd_list_new();
-        args_set_owned_commands(&mut *args, b'c', cmdlist, 0);
+        args_set_owned_commands(&mut args, b'c', rc::take(cmdlist), 0);
 
         assert_eq!(
             args_strtonum_result(&mut *args, b'c', 0, 100),
@@ -174,12 +176,12 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         );
 
         let value = args_first_value(&*args, b'c').unwrap();
-        let rendered = cmd_list_print(&*value.cmdlist(), 0);
+        let rendered = cmd_list_print(&*rc::as_ptr(value.as_commands().unwrap()), 0);
         assert_eq!(rendered.as_bytes(), b"");
         drop(args);
 
         let mut args = args_create();
-        args_push_positional_commands(&mut *args, cmd_list_new());
+        args_push_positional_commands(&mut args, rc::take(cmd_list_new()));
         let first = args_string(&mut *args, 0);
         let second = args_string(&mut *args, 0);
         assert_eq!(first, second);
@@ -198,10 +200,10 @@ fn borrowed_parser_command_retains_only_while_stored() {
     }
 
     unsafe {
-        let cmdlist = cmd_list_new();
+        let cmdlist = rc::take(cmd_list_new());
         let values = [
-            args_value::borrowed_string(c"command".as_ptr()),
-            args_value::borrowed_commands(cmdlist),
+            ArgumentValue::borrowed_string(c"command"),
+            ArgumentValue::borrowed_commands(&cmdlist),
         ];
         let mut spec = args_parse {
             template: c"".as_ptr(),
@@ -210,14 +212,15 @@ fn borrowed_parser_command_retains_only_while_stored() {
             cb: Some(commands),
         };
         let stored = parse_args(&spec, &values).expect("valid command argument");
-        assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 2);
+        assert_eq!(Rc::strong_count(&cmdlist), 2);
         drop(stored);
-        assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
+        assert_eq!(Rc::strong_count(&cmdlist), 1);
 
         spec.lower = 2;
         assert!(parse_args(&spec, &values).is_err());
-        assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
-        cmd_list_free(cmdlist);
+        assert_eq!(Rc::strong_count(&cmdlist), 1);
+        drop(values);
+        drop(cmdlist);
     }
 }
 
@@ -235,11 +238,11 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 
     unsafe {
         let command = cstring("command");
-        let command_lists = [cmd_list_new(), cmd_list_new()];
+        let command_lists = [rc::take(cmd_list_new()), rc::take(cmd_list_new())];
         let values = [
             borrowed_string_value(command.as_c_str()),
-            borrowed_commands_value(command_lists[0]),
-            borrowed_commands_value(command_lists[1]),
+            borrowed_commands_value(&command_lists[0]),
+            borrowed_commands_value(&command_lists[1]),
         ];
         let spec = args_parse {
             template: c"".as_ptr(),
@@ -248,9 +251,8 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             cb: Some(command_argument),
         };
         let mut args = parse_args(&spec, &values).expect("valid command arguments");
-        for cmdlist in command_lists {
-            cmd_list_free(cmdlist);
-        }
+        drop(values);
+        drop(command_lists);
 
         let first = (&(*args).values)[0].cached.as_ref().unwrap().as_ptr();
         assert!(!first.is_null());
@@ -276,10 +278,10 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 fn rejected_command_argument_keeps_source_value_ownership() {
     unsafe {
         let command = cstring("command");
-        let command_list = cmd_list_new();
+        let command_list = rc::take(cmd_list_new());
         let values = [
             borrowed_string_value(command.as_c_str()),
-            borrowed_commands_value(command_list),
+            borrowed_commands_value(&command_list),
         ];
         let spec = args_parse {
             template: c"".as_ptr(),
@@ -295,6 +297,7 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             hmux2::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),
         };
         assert_eq!(error.to_bytes(), b"argument 1 must be \"string\"");
-        cmd_list_free(command_list);
+        drop(values);
+        drop(command_list);
     }
 }

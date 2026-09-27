@@ -85,6 +85,7 @@ use crate::src::options::{
 };
 use crate::src::session::session_find_by_id;
 use crate::src::shared::abi::*;
+use crate::src::shared::arguments::ArgumentValue;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_value};
 pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list, cmdq_item};
@@ -405,7 +406,7 @@ fn cmd_new_owned(file: Option<&CStr>) -> Box<cmd> {
 }
 
 pub unsafe fn cmd_parse(
-    values: &[args_value],
+    values: &[ArgumentValue<'_>],
     file: Option<&CStr>,
     line: u_int,
     parse_flags: ::core::ffi::c_int,
@@ -413,7 +414,7 @@ pub unsafe fn cmd_parse(
     let Some(command) = values.first().filter(|value| value.type_0() == ARGS_STRING) else {
         return Err(CString::new("no command").unwrap());
     };
-    let entry = cmd_find(CStr::from_ptr(command.string_ptr()))?;
+    let entry = cmd_find(command.as_string().expect("command name"))?;
     let args = match args_parse(&(*entry).args, values) {
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {

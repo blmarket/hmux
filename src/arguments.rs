@@ -99,41 +99,28 @@ fn args_last_value(args: &args, flag: u_char) -> Option<&args_value> {
         .map(Box::as_ref)
 }
 
-unsafe fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
-    let value = args_last_value(args, flag)?;
-    if (*value).type_0() as ::core::ffi::c_uint
-        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*value).string_ptr().is_null()
-    {
-        return None;
-    }
-    Some(CStr::from_ptr(value.string_ptr()))
+fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
+    args_last_value(args, flag)?.as_string()
 }
-unsafe fn args_copy_value(from: &args_value) -> args_value {
-    match from.type_0() as ::core::ffi::c_uint {
-        2 => {
-            let cmdlist = from.cmdlist();
-            crate::src::shared::rc::retain(cmdlist);
-            args_value::commands(cmdlist)
-        }
-        1 => args_value::string(CStr::from_ptr(from.string_ptr()).to_owned()),
-        0 | _ => args_value::empty(),
+fn args_copy_value(from: &ArgumentValue<'_>) -> args_value {
+    from.to_owned()
+}
+fn args_type_to_string(kind: args_type) -> &'static CStr {
+    match kind {
+        ARGS_NONE => c"NONE",
+        ARGS_STRING => c"STRING",
+        ARGS_COMMANDS => c"COMMANDS",
+        _ => c"INVALID",
     }
 }
-unsafe fn args_type_to_string(mut type_0: args_type) -> *const ::core::ffi::c_char {
-    match type_0 as ::core::ffi::c_uint {
-        0 => return b"NONE\0" as *const u8 as *const ::core::ffi::c_char,
-        1 => return b"STRING\0" as *const u8 as *const ::core::ffi::c_char,
-        2 => return b"COMMANDS\0" as *const u8 as *const ::core::ffi::c_char,
-        _ => {}
-    }
-    return b"INVALID\0" as *const u8 as *const ::core::ffi::c_char;
-}
-unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
+unsafe fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> {
     match value.type_0() as ::core::ffi::c_uint {
         0 => Cow::Borrowed(CStr::from_bytes_with_nul_unchecked(b"\0")),
-        1 => Cow::Borrowed(CStr::from_ptr(value.string_ptr())),
-        2 => Cow::Owned(cmd_list_print_cstring(&*value.cmdlist(), 0)),
+        1 => Cow::Borrowed(value.as_string().expect("string argument")),
+        2 => Cow::Owned(cmd_list_print_cstring(
+            &*rc::as_ptr(value.as_commands().expect("command argument")),
+            0,
+        )),
         _ => fatalx(|out| out.write_all(b"unexpected argument type")),
     }
 }
@@ -152,12 +139,12 @@ fn args_push_positional_owned(args: &mut args, value: args_value) {
 }
 
 /// Append a positional command list and transfer its reference into `args`.
-pub unsafe fn args_push_positional_commands(args: *mut args, cmdlist: *mut cmd_list) {
-    args_push_positional_owned(&mut *args, args_value::commands(cmdlist));
+pub fn args_push_positional_commands(args: &mut args, cmdlist: Rc<UnsafeCell<cmd_list>>) {
+    args_push_positional_owned(args, args_value::commands(cmdlist));
 }
 
 unsafe fn args_parse_flag_argument(
-    values: &[args_value],
+    values: &[ArgumentValue<'_>],
     args: &mut args,
     i: &mut usize,
     suffix: &[u8],
@@ -173,7 +160,7 @@ unsafe fn args_parse_flag_argument(
         }
         let skip_optional = optional_argument
             && argument.is_none_or(|value| {
-                let bytes = CStr::from_ptr(value.string_ptr()).to_bytes();
+                let bytes = value.as_string().expect("string argument").to_bytes();
                 bytes.first() == Some(&b'-')
                     && bytes.get(1).is_some_and(|next| {
                         *next == b'-'
@@ -206,7 +193,7 @@ unsafe fn args_parse_flag_argument(
 /// Return true when flags end, leaving the first positional value unconsumed.
 unsafe fn args_parse_flags(
     parse: &args_parse,
-    values: &[args_value],
+    values: &[ArgumentValue<'_>],
     args: &mut args,
     i: &mut usize,
 ) -> Result<bool, ArgsParseError> {
@@ -214,7 +201,7 @@ unsafe fn args_parse_flags(
     if value.type_0() != ARGS_STRING {
         return Ok(true);
     }
-    let string = CStr::from_ptr(value.string_ptr()).to_bytes();
+    let string = value.as_string().expect("string argument").to_bytes();
     log_debug(format_args!("args_parse_flags: next {}", log_bytes(string)));
     if string.first() != Some(&b'-') || string.len() == 1 {
         return Ok(true);
@@ -262,7 +249,7 @@ unsafe fn args_parse_flags(
 
 pub unsafe fn args_parse(
     parse: &args_parse,
-    values: &[args_value],
+    values: &[ArgumentValue<'_>],
 ) -> Result<Box<args>, ArgsParseError> {
     let mut args = args_create();
     // tmux accepts an empty input before applying positional bounds.
@@ -286,7 +273,7 @@ pub unsafe fn args_parse(
             "args_parse: {} = {} (type {})",
             index,
             log_bytes(printed.to_bytes()),
-            log_cstr(args_type_to_string(value.type_0()))
+            log_bytes(args_type_to_string(value.type_0()).to_bytes())
         ));
         let kind = if let Some(callback) = parse.cb {
             let index = args.count;
@@ -335,7 +322,7 @@ pub unsafe fn args_parse(
 unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
     match from.type_0() as ::core::ffi::c_uint {
         1 => {
-            let source = CStr::from_ptr(from.string_ptr());
+            let source = from.as_string().expect("string argument");
             if argv.is_empty() {
                 return args_value::string(source.to_owned());
             }
@@ -349,7 +336,10 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             }
             args_value::string(expanded)
         }
-        2 => args_value::commands(cmd_list_copy(&*from.cmdlist(), argv) as *mut cmd_list),
+        2 => args_value::commands(rc::take(cmd_list_copy(
+            &*rc::as_ptr(from.as_commands().expect("command argument")),
+            argv,
+        ))),
         0 | _ => args_value::empty(),
     }
 }
@@ -382,14 +372,13 @@ pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
     for value in args.values.iter() {
         match value.type_0() as ::core::ffi::c_uint {
             1 => {
-                assert!(
-                    !value.string_ptr().is_null(),
-                    "string argument value must own a C string"
-                );
-                argv.push(CStr::from_ptr(value.string_ptr()).to_owned());
+                argv.push(value.as_string().expect("string argument").to_owned());
             }
             2 => {
-                let printed = cmd_list_print_cstring(&*value.cmdlist(), 0 as ::core::ffi::c_int);
+                let printed = cmd_list_print_cstring(
+                    &*rc::as_ptr(value.as_commands().expect("command argument")),
+                    0 as ::core::ffi::c_int,
+                );
                 argv.push(printed);
             }
             _ => {}
@@ -403,13 +392,16 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     }
     match value.type_0() as ::core::ffi::c_uint {
         2 => {
-            let expanded = cmd_list_print_cstring(&*value.cmdlist(), 0);
+            let expanded = cmd_list_print_cstring(
+                &*rc::as_ptr(value.as_commands().expect("command argument")),
+                0,
+            );
             buf.extend_from_slice(b"{ ");
             buf.extend_from_slice(expanded.as_bytes());
             buf.extend_from_slice(b" }");
         }
         1 => {
-            let expanded = args_escape_cstring(CStr::from_ptr(value.string_ptr()));
+            let expanded = args_escape_cstring(value.as_string().expect("string argument"));
             buf.extend_from_slice(expanded.as_bytes());
         }
         0 | _ => {}
@@ -565,13 +557,13 @@ pub unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c
 }
 
 /// Transfer a command-list reference into a flag value.
-pub unsafe fn args_set_owned_commands(
-    args: *mut args,
+pub fn args_set_owned_commands(
+    args: &mut args,
     flag: u_char,
-    cmdlist: *mut cmd_list,
+    cmdlist: Rc<UnsafeCell<cmd_list>>,
     flags: ::core::ffi::c_int,
 ) {
-    args_set_value(&mut *args, flag, Some(args_value::commands(cmdlist)), flags);
+    args_set_value(args, flag, Some(args_value::commands(cmdlist)), flags);
 }
 pub unsafe fn args_get(args: *mut args, flag: u_char) -> *const ::core::ffi::c_char {
     args_last_value(&*args, flag).map_or(std::ptr::null(), args_value::string_ptr)
@@ -625,7 +617,7 @@ mod ownership_tests {
                 let actual: Vec<_> = parsed
                     .values
                     .iter()
-                    .map(|value| CStr::from_ptr(value.string_ptr()).to_bytes())
+                    .map(|value| value.as_string().expect("string argument").to_bytes())
                     .collect();
                 assert_eq!(actual, positional, "{input:?}");
             }
@@ -655,7 +647,7 @@ mod ownership_tests {
             let observer = rc::downgrade(commands);
             let values = vec![
                 args_value::string(c"test".to_owned()),
-                args_value::commands(commands),
+                args_value::commands(rc::take(commands)),
                 args_value::string(c"extra".to_owned()),
             ];
             let mut spec = args_parse {
@@ -691,7 +683,7 @@ mod ownership_tests {
             let commands = crate::src::cmd::cmd_list_new();
             let observer = crate::src::shared::rc::downgrade(commands);
             let mut source = Box::new(args::empty());
-            args_push_positional_commands(&mut *source, commands);
+            args_push_positional_commands(&mut source, rc::take(commands));
             let mut command = cmd::empty();
             command.args = Some(source);
             let mut item = cmdq_item::empty();
@@ -860,9 +852,14 @@ mod ownership_tests {
             let commands = crate::src::cmd::cmd_list_new();
             let mut owner = Box::new(args::empty());
             crate::src::shared::rc::retain(commands);
-            args_set_value(&mut owner, b'c', Some(args_value::commands(commands)), 0);
+            args_set_value(
+                &mut owner,
+                b'c',
+                Some(args_value::commands(rc::take(commands))),
+                0,
+            );
             crate::src::shared::rc::retain(commands);
-            args_push_positional_owned(&mut owner, args_value::commands(commands));
+            args_push_positional_owned(&mut owner, args_value::commands(rc::take(commands)));
             assert_eq!(crate::src::shared::rc::strong_count(commands), 3);
             drop(owner);
             assert_eq!(crate::src::shared::rc::strong_count(commands), 1);
@@ -914,16 +911,6 @@ mod ownership_tests {
 pub unsafe fn args_count(mut args: *mut args) -> u_int {
     return (*args).count;
 }
-pub unsafe fn args_values(mut args: *mut args) -> *mut args_value {
-    return ((*args).values).as_mut_ptr();
-}
-pub unsafe fn args_value(mut args: *mut args) -> *mut args_value {
-    let mut idx: u_int = 1 as u_int;
-    if idx >= (*args).count {
-        return ::core::ptr::null_mut::<args_value>();
-    }
-    return (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
-}
 pub unsafe fn args_string(mut args: *mut args, mut idx: u_int) -> *const ::core::ffi::c_char {
     if idx >= (*args).count {
         return ::core::ptr::null::<::core::ffi::c_char>();
@@ -936,7 +923,10 @@ pub unsafe fn args_string(mut args: *mut args, mut idx: u_int) -> *const ::core:
             if let Some(cached) = &(*value).cached {
                 return cached.as_ptr();
             }
-            let printed = cmd_list_print_cstring(&*(*value).cmdlist(), 0);
+            let printed = cmd_list_print_cstring(
+                &*rc::as_ptr((*value).as_commands().expect("command argument")),
+                0,
+            );
             let pointer = printed.as_ptr();
             (*value).cached = Some(printed);
             pointer
@@ -986,11 +976,7 @@ pub unsafe fn args_make_commands_prepare(
         if (*value).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            state.cmdlist = Some(
-                crate::src::shared::rc::downgrade((*value).cmdlist())
-                    .upgrade()
-                    .expect("live argument command list"),
-            );
+            state.cmdlist = (*value).as_commands().cloned();
             return state;
         }
         cmd = (*value).string_ptr();
@@ -1257,7 +1243,12 @@ pub unsafe fn args_percentage_result(
     {
         return Err(ArgumentValueError::Missing);
     }
-    parse_percentage(CStr::from_ptr(value.string_ptr()), minval, maxval, curval)
+    parse_percentage(
+        value.as_string().expect("string argument"),
+        minval,
+        maxval,
+        curval,
+    )
 }
 
 /// Converts the last stored string after format expansion as an integer or percentage.
@@ -1284,7 +1275,7 @@ pub unsafe fn args_percentage_and_expand_result(
         return Err(ArgumentValueError::Missing);
     }
     parse_percentage_and_expand(
-        CStr::from_ptr(value.string_ptr()),
+        value.as_string().expect("string argument"),
         minval,
         maxval,
         curval,

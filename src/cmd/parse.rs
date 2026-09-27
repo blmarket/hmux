@@ -11,7 +11,6 @@ use crate::src::format::{
 };
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args_value;
 use crate::src::shared::arguments::*;
 use crate::src::shared::client::client;
 use crate::src::shared::command::*;
@@ -343,21 +342,19 @@ unsafe fn cmd_parse_build_command(
     if cmd_parse_expand_alias(cmd, pi, pr) {
         return;
     }
-    let mut values = Vec::<args_value>::new();
+    let mut values = Vec::<ArgumentValue>::new();
     for arg in &mut cmd.arguments.items {
         let value = match arg.as_mut() {
-            cmd_parse_argument::String(text) => args_value::borrowed_string(text.as_ptr()),
+            cmd_parse_argument::String(text) => ArgumentValue::borrowed_string(text),
             cmd_parse_argument::Commands(commands) => {
                 cmd_parse_build_commands(commands, pi, pr);
                 if pr.status != CMD_PARSE_SUCCESS {
                     return;
                 }
-                args_value::commands(pr.cmdlist)
+                ArgumentValue::commands(rc::take(pr.cmdlist))
             }
             cmd_parse_argument::ParsedCommands(commands) => {
-                let commands = rc::as_ptr(commands);
-                rc::retain(commands);
-                args_value::commands(commands)
+                ArgumentValue::borrowed_commands(commands)
             }
         };
         values.push(value);
@@ -554,20 +551,15 @@ pub unsafe fn cmd_parse_from_buffer(
 /// Parse argv while borrowing its strings for the duration of the parser call.
 pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
     let pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
-    let mut values: Vec<args_value> = argv
+    let values: Vec<ArgumentValue> = argv
         .iter()
-        .map(|string| args_value::borrowed_string(string.as_ptr()))
+        .map(|string| ArgumentValue::borrowed_string(string))
         .collect();
-    cmd_parse_from_arguments(
-        values.as_mut_ptr(),
-        u_int::try_from(values.len()).expect("argv length exceeds u_int"),
-        pi,
-    )
+    cmd_parse_from_arguments(&values, pi)
 }
 
 pub unsafe fn cmd_parse_from_arguments(
-    mut values: *mut args_value,
-    mut count: u_int,
+    values: &[ArgumentValue<'_>],
     mut pi: *mut cmd_parse_input,
 ) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
@@ -593,16 +585,15 @@ pub unsafe fn cmd_parse_from_arguments(
     let pi = &mut *pi;
     let mut cmds = cmd_parse_new_commands();
     let mut cmd = cmd_parse_new_command(pi.line);
-    let values = if count == 0 {
-        &[]
-    } else {
-        std::slice::from_raw_parts(values, count as usize)
-    };
     for value in values {
         let mut end = false;
         match value.type_0() {
             ARGS_STRING => {
-                let mut bytes = CStr::from_ptr(value.string_ptr()).to_bytes().to_vec();
+                let mut bytes = value
+                    .as_string()
+                    .expect("string argument")
+                    .to_bytes()
+                    .to_vec();
                 if bytes.last() == Some(&b';') {
                     bytes.pop();
                     if bytes.last() == Some(&b'\\') {
@@ -620,13 +611,11 @@ pub unsafe fn cmd_parse_from_arguments(
                 }
             }
             ARGS_COMMANDS => {
-                let commands = value.cmdlist();
-                rc::retain(commands);
                 cmd.arguments
                     .items
-                    .push_back(Box::new(cmd_parse_argument::ParsedCommands(rc::take(
-                        commands,
-                    ))));
+                    .push_back(Box::new(cmd_parse_argument::ParsedCommands(
+                        value.as_commands().expect("command argument").clone(),
+                    )));
             }
             _ => fatalx(|out| out.write_all(b"unknown argument type")),
         }

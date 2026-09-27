@@ -1,5 +1,4 @@
-use crate::src::arguments::args_value;
-use crate::src::arguments::{args_count, args_get, args_has, args_string, args_values};
+use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::src::cmd::queue::cmdq_error;
@@ -52,7 +51,6 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut note: *const ::core::ffi::c_char = args_get(args, 'N' as i32 as u_char);
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut count: u_int = args_count(args);
     key = key_string_parse_cstr(std::ffi::CStr::from_ptr(args_string(args, 0 as u_int)))
         .unwrap_or(KEYC_UNKNOWN);
@@ -83,14 +81,14 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         );
         return CMD_RETURN_NORMAL;
     }
-    value = args_value(args);
-    if count == 2 as u_int
-        && (*value).type_0() as ::core::ffi::c_uint
-            == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        key_bindings_add(tablename, key, note, repeat, (*value).cmdlist());
-        crate::src::shared::rc::retain((*value).cmdlist());
-        return CMD_RETURN_NORMAL;
+    if count == 2 {
+        if let Some(commands) = (&(*args).values)[1].as_commands() {
+            let commands = crate::src::shared::rc::as_ptr(commands);
+            // The binding's legacy API consumes one retained reference.
+            crate::src::shared::rc::retain(commands);
+            key_bindings_add(tablename, key, note, repeat, commands);
+            return CMD_RETURN_NORMAL;
+        }
     }
     if count == 2 as u_int {
         pr = cmd_parse_from_string(
@@ -99,8 +97,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         );
     } else {
         pr = cmd_parse_from_arguments(
-            args_values(args).offset(1 as ::core::ffi::c_int as isize),
-            count.wrapping_sub(1 as u_int),
+            &(&(*args).values)[1..],
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
     }

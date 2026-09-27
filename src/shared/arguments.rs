@@ -5,7 +5,7 @@ use super::client::client;
 use super::command::{cmd_list, cmd_parse_input};
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::rc::Rc;
 pub type args_type = ::core::ffi::c_uint;
 pub const ARGS_COMMANDS: args_type = 2;
@@ -28,6 +28,33 @@ pub enum ArgsParseError {
 mod tests {
     use super::*;
     use ::core::mem::{align_of, size_of};
+
+    #[test]
+    fn borrowed_payloads_copy_to_owners_without_retaining_input_storage() {
+        let text = CString::new(b"borrowed\xff".as_slice()).unwrap();
+        let commands = Rc::new(UnsafeCell::new(cmd_list {
+            group: 0,
+            list: Vec::new(),
+        }));
+        let observer = Rc::downgrade(&commands);
+        let inputs = [
+            ArgumentValue::borrowed_string(&text),
+            ArgumentValue::borrowed_commands(&commands),
+        ];
+        assert_eq!(inputs[0].as_string().unwrap().as_ptr(), text.as_ptr());
+        assert_eq!(Rc::strong_count(&commands), 1);
+        let stored: Vec<args_value> = inputs.iter().map(ArgumentValue::to_owned).collect();
+        assert_ne!(stored[0].as_string().unwrap().as_ptr(), text.as_ptr());
+        assert!(Rc::ptr_eq(stored[1].as_commands().unwrap(), &commands));
+        assert_eq!(Rc::strong_count(&commands), 2);
+        drop(inputs);
+        drop(text);
+        drop(commands);
+        assert_eq!(stored[0].as_string().unwrap().to_bytes(), b"borrowed\xff");
+        assert_eq!(observer.strong_count(), 1);
+        drop(stored);
+        assert!(observer.upgrade().is_none());
+    }
 
     #[test]
     fn argument_domains_match_translated_c_baseline() {
@@ -59,32 +86,24 @@ impl args {
     }
 }
 
-pub struct ArgsCommand(pub *mut cmd_list);
-
-impl Drop for ArgsCommand {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            unsafe { crate::src::cmd::cmd_list_free(self.0) };
-        }
-    }
-}
-
-pub enum ArgsPayload {
+pub enum ArgsPayload<'a> {
     None,
     String(CString),
-    Command(ArgsCommand),
-    BorrowedString(*const ::core::ffi::c_char),
-    BorrowedCommand(*mut cmd_list),
+    Command(Rc<UnsafeCell<cmd_list>>),
+    BorrowedString(&'a CStr),
+    BorrowedCommand(&'a Rc<UnsafeCell<cmd_list>>),
 }
 
-/// Stored values own their payload; parser inputs may use borrowed variants.
-pub struct args_value {
-    pub payload: ArgsPayload,
+/// Parser inputs can borrow payloads; stored arguments contain owned copies.
+pub struct ArgumentValue<'a> {
+    pub payload: ArgsPayload<'a>,
     pub cached: Option<CString>,
 }
 
-impl args_value {
-    pub fn new(payload: ArgsPayload) -> Self {
+pub type args_value = ArgumentValue<'static>;
+
+impl<'a> ArgumentValue<'a> {
+    pub fn new(payload: ArgsPayload<'a>) -> Self {
         Self {
             payload,
             cached: None,
@@ -99,18 +118,15 @@ impl args_value {
         Self::new(ArgsPayload::String(value))
     }
 
-    /// Takes over one existing command-list reference.
-    pub unsafe fn commands(value: *mut cmd_list) -> Self {
-        Self::new(ArgsPayload::Command(ArgsCommand(value)))
+    pub fn commands(value: Rc<UnsafeCell<cmd_list>>) -> Self {
+        Self::new(ArgsPayload::Command(value))
     }
 
-    /// The pointer must remain valid until this temporary parser value is dropped.
-    pub unsafe fn borrowed_string(value: *const ::core::ffi::c_char) -> Self {
+    pub fn borrowed_string(value: &'a CStr) -> Self {
         Self::new(ArgsPayload::BorrowedString(value))
     }
 
-    /// The command list must remain valid until this temporary parser value is dropped.
-    pub unsafe fn borrowed_commands(value: *mut cmd_list) -> Self {
+    pub fn borrowed_commands(value: &'a Rc<UnsafeCell<cmd_list>>) -> Self {
         Self::new(ArgsPayload::BorrowedCommand(value))
     }
 
@@ -122,19 +138,35 @@ impl args_value {
         }
     }
 
-    pub fn string_ptr(&self) -> *const ::core::ffi::c_char {
+    pub fn as_string(&self) -> Option<&CStr> {
         match &self.payload {
-            ArgsPayload::String(value) => value.as_ptr(),
-            ArgsPayload::BorrowedString(value) => *value,
-            _ => ::core::ptr::null(),
+            ArgsPayload::String(value) => Some(value),
+            ArgsPayload::BorrowedString(value) => Some(value),
+            _ => None,
         }
     }
 
-    pub fn cmdlist(&self) -> *mut cmd_list {
+    pub fn as_commands(&self) -> Option<&Rc<UnsafeCell<cmd_list>>> {
         match &self.payload {
-            ArgsPayload::Command(value) => value.0,
-            ArgsPayload::BorrowedCommand(value) => *value,
-            _ => ::core::ptr::null_mut(),
+            ArgsPayload::Command(value) => Some(value),
+            ArgsPayload::BorrowedCommand(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Borrow the string for legacy readers; typed readers use `as_string`.
+    pub fn string_ptr(&self) -> *const ::core::ffi::c_char {
+        self.as_string().map_or(std::ptr::null(), CStr::as_ptr)
+    }
+
+    /// Copy into stored arguments without carrying any parser-input borrow or cache.
+    pub fn to_owned(&self) -> args_value {
+        if let Some(text) = self.as_string() {
+            args_value::string(text.to_owned())
+        } else if let Some(commands) = self.as_commands() {
+            args_value::commands(Rc::clone(commands))
+        } else {
+            args_value::empty()
         }
     }
 }

@@ -7,7 +7,8 @@ use hmux2::src::cmd::{
     cmd_list_new, cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED,
     CMD_LIST_PRINT_NO_GROUPS,
 };
-use hmux2::src::shared::arguments::args_value;
+use hmux2::src::shared::arguments::{args_value, ArgumentValue};
+use hmux2::src::shared::rc;
 use std::ffi::CString;
 
 #[test]
@@ -43,14 +44,14 @@ fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
         drop(args);
 
         let mut args = args_create();
-        args_set_owned_commands(&mut *args, 0, cmd_list_new(), 0);
+        args_set_owned_commands(&mut args, 0, rc::take(cmd_list_new()), 0);
         assert_eq!(args_print(&args).as_bytes(), b"- {  }");
         drop(args);
     }
 }
 
 unsafe fn display_message_command() -> Box<cmd> {
-    let value = args_value::borrowed_string(c"display-message".as_ptr());
+    let value = ArgumentValue::borrowed_string(c"display-message");
     cmd_parse(std::slice::from_ref(&value), None, 0, 0).expect("command parse reported an error")
 }
 
@@ -107,7 +108,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             assert_eq!(printed.as_bytes(), expected);
         }
         let mut args = args_create();
-        args_push_positional_commands(&mut *args, list);
+        args_push_positional_commands(&mut args, rc::take(list));
 
         let printed = args_print(&args);
         assert_eq!(
@@ -191,7 +192,7 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
             args_value::string(c"if-shell".to_owned()),
             args_value::string(c"-F".to_owned()),
             args_value::string(c"1".to_owned()),
-            args_value::commands(nested),
+            args_value::commands(rc::take(nested)),
         ];
         let command = cmd_parse(&values, None, 0, 0).unwrap();
         let address = command.as_ref() as *const cmd as usize;
