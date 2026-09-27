@@ -54,8 +54,8 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
     let target = &mut ep.target;
     if !target.s.is_null() {
         session_remove_ref(
-            target.s,
-            b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
+            crate::src::shared::rc::take(target.s),
+            c"event_payload_free_target",
         );
     }
     if !target.w.is_null() {
@@ -83,7 +83,7 @@ impl Drop for event_payload_item {
             match value {
                 EventPayloadValue::Client(client) => server_client_unref(crate::src::shared::rc::into_raw(client)),
                 EventPayloadValue::Session(session) => {
-                    session_remove_ref(crate::src::shared::rc::into_raw(session), c"event_payload_free_value".as_ptr())
+                    session_remove_ref(session, c"event_payload_free_value")
                 }
                 EventPayloadValue::Window(window) => {
                     window_remove_ref(crate::src::shared::rc::into_raw(window), c"event_payload_free_value".as_ptr())

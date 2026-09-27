@@ -45,7 +45,9 @@ use crate::src::window::{
     winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
     winlinks_minmax, winlinks_next,
 };
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 pub static mut sessions: sessions = sessions { storage: None };
 pub static mut next_session_id: u_int = 0;
 pub static mut session_groups: session_groups = session_groups { storage: None };
@@ -411,13 +413,14 @@ pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi:
         crate::src::shared::rc::strong_count(s) as ::core::ffi::c_int
     ));
 }
-pub unsafe fn session_remove_ref(s: *mut session, from: *const ::core::ffi::c_char) {
+/// Consume one session owner and defer its release until the event loop runs.
+pub unsafe fn session_remove_ref(s: Rc<UnsafeCell<session>>, from: &CStr) {
     log_debug(format_args!(
         "release session {} ({})",
-        log_cstr(((*s).name.as_ptr()) as *const _),
-        log_cstr((from) as *const _)
+        log_cstr((*s.get()).name.as_ptr()),
+        log_cstr(from.as_ptr())
     ));
-    crate::src::shared::rc::release_later(crate::src::shared::rc::take(s));
+    crate::src::shared::rc::release_later(s);
 }
 unsafe fn session_free(s: *mut session) {
     log_debug(format_args!(
@@ -470,10 +473,7 @@ pub unsafe fn session_destroy(
         winlink_remove(&raw mut (*s).windows, wl);
     }
     session_set_cwd(&mut *s, None);
-    session_remove_ref(
-        s,
-        b"session_destroy\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    session_remove_ref(crate::src::shared::rc::take(s), c"session_destroy");
 }
 unsafe fn session_lock_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut s: *mut session = arg as *mut session;

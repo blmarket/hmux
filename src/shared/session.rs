@@ -141,10 +141,7 @@ impl Drop for SessionOwner {
     fn drop(&mut self) {
         if let Some(owner) = self.owner.take() {
             unsafe {
-                crate::src::session::session_remove_ref(
-                    super::rc::into_raw(owner),
-                    self.release_from.as_ptr(),
-                );
+                crate::src::session::session_remove_ref(owner, self.release_from);
             }
         }
     }
@@ -160,6 +157,32 @@ pub fn session_owner_ptr(owner: &Option<SessionOwner>) -> *mut session {
 mod retained_session_tests {
     use super::*;
     use crate::src::{reactor, shared::rc};
+
+    #[test]
+    fn removing_typed_reference_preserves_other_owners() {
+        use std::cell::UnsafeCell;
+        use std::rc::Rc;
+
+        unsafe {
+            for cancel in [false, true] {
+                let owner = Rc::new(UnsafeCell::new(session::empty()));
+                let observer = Rc::downgrade(&owner);
+                let from = c"typed-owner-test".to_owned();
+                crate::src::session::session_remove_ref(owner.clone(), &from);
+                drop(from);
+                assert_eq!(Rc::strong_count(&owner), 2);
+                if cancel {
+                    reactor::shutdown_runtime();
+                } else {
+                    reactor::event_loop();
+                }
+                assert_eq!(Rc::strong_count(&owner), 1);
+                drop(owner);
+                assert!(observer.upgrade().is_none());
+                reactor::shutdown_runtime();
+            }
+        }
+    }
 
     #[test]
     fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {
