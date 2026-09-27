@@ -39,7 +39,7 @@ use crate::src::format::{
 };
 use crate::src::input::input_cancel_requests;
 use crate::src::key_bindings::{
-    key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
+    key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_get_table_owner, key_bindings_unref_table,
 };
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
@@ -1089,9 +1089,7 @@ pub unsafe fn server_client_set_key_table(
         name = server_client_get_key_table(c);
     }
     drop((*c).keytable.take());
-    let table = key_bindings_get_table(name, 1 as ::core::ffi::c_int) as *mut key_table;
-    crate::src::shared::rc::retain(table);
-    (*c).keytable = Some(crate::src::shared::rc::take(table));
+    (*c).keytable = key_bindings_get_table_owner(name, 1);
     if gettimeofday(&raw mut (*key_table_owner_ptr(&(*c).keytable)).activity_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
@@ -1172,12 +1170,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     (*c).theme = THEME_UNKNOWN;
     status_init(c);
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
-    let table = key_bindings_get_table(
-        b"root\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
-    ) as *mut key_table;
-    crate::src::shared::rc::retain(table);
-    (*c).keytable = Some(crate::src::shared::rc::take(table));
+    (*c).keytable = key_bindings_get_table_owner(c"root".as_ptr(), 1);
     event_set(
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),

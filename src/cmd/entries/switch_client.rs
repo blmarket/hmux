@@ -8,7 +8,7 @@ use crate::src::cmd::queue::{
 use crate::src::environ::environ_update;
 use crate::src::ffi::libc::{getuid, strcmp, strcspn};
 use crate::src::format::bytes::write_cstr;
-use crate::src::key_bindings::{key_bindings_get_table, key_bindings_unref_table};
+use crate::src::key_bindings::{key_bindings_get_table_owner, key_bindings_unref_table};
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::server_client::{server_client_set_key_table, server_client_set_session};
 use crate::src::server_fn::server_redraw_window;
@@ -85,7 +85,6 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
@@ -128,18 +127,15 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     tablename = args_get(args, 'T' as i32 as u_char);
     if !tablename.is_null() {
-        table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
-        if table.is_null() {
+        let Some(table) = key_bindings_get_table_owner(tablename, 0) else {
             cmdq_error(item, |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
             return CMD_RETURN_ERROR;
-        }
-        crate::src::shared::rc::retain(table);
-        drop((*tc).keytable.take());
-        (*tc).keytable = Some(crate::src::shared::rc::take(table));
+        };
+        (*tc).keytable = Some(table);
         return CMD_RETURN_NORMAL;
     }
     sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));

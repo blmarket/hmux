@@ -35,35 +35,32 @@ pub(crate) fn key_bindings_set_note(bd: &mut key_binding, note: Option<&CStr>) {
     bd.note = note.map(CStr::to_owned);
 }
 
-pub unsafe fn key_bindings_get_table(
-    mut name: *const ::core::ffi::c_char,
-    mut create: ::core::ffi::c_int,
-) -> *mut key_table {
-    let mut table_find: key_table = key_table {
-        name: Default::default(),
-        activity_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        key_bindings: key_bindings::default(),
-        default_key_bindings: key_bindings::default(),
-        entry: key_table_entry { owner: None },
-    };
-    let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    table_find.name = ::std::ffi::CStr::from_ptr(name).to_owned();
-    table = key_tables_find(&*std::ptr::addr_of!(key_tables), &table_find);
-    if !table.is_null() || create == 0 {
-        return table;
+/// Borrow a table while it remains in the index. Owners use get_table_owner.
+pub unsafe fn key_bindings_get_table(name: *const ::core::ffi::c_char, create: i32) -> *mut key_table {
+    key_bindings_get_table_owner(name, create)
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+}
+
+pub unsafe fn key_bindings_get_table_owner(
+    name: *const ::core::ffi::c_char,
+    create: i32,
+) -> Option<crate::src::shared::key::KeyTableOwner> {
+    let name = CStr::from_ptr(name);
+    if let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() {
+        let map = index.try_borrow_mut().expect("key table index already borrowed");
+        if let Some(table) = map.get(name.to_bytes()) {
+            return Some(table.clone());
+        }
     }
-    table = crate::src::shared::rc::new({
-        let mut value = key_table::empty();
-        value.name = CStr::from_ptr(name).to_owned();
-        value
-    });
-    (*table).key_bindings.storage = None;
-    (*table).default_key_bindings.storage = None;
-    key_tables_insert(&raw mut key_tables, table);
-    return table;
+    if create == 0 {
+        return None;
+    }
+    let mut value = key_table::empty();
+    value.name = name.to_owned();
+    let table = std::rc::Rc::new(std::cell::UnsafeCell::new(value));
+    key_tables_insert(&raw mut key_tables, table.clone());
+    Some(table)
 }
 pub unsafe fn key_bindings_first_table() -> *mut key_table {
     return key_tables_minmax(&*std::ptr::addr_of!(key_tables));
@@ -156,8 +153,7 @@ pub unsafe fn key_bindings_remove(name: *const ::core::ffi::c_char, key: key_cod
     ));
     drop(bd);
     if (*table).key_bindings.storage.is_none() && (*table).default_key_bindings.storage.is_none() {
-        key_tables_remove(&raw mut key_tables, table);
-        key_bindings_unref_table(table);
+        drop(key_tables_remove(&raw mut key_tables, table));
     }
 }
 
@@ -185,7 +181,7 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     table = key_bindings_get_table(name, 0 as ::core::ffi::c_int);
     if !table.is_null() {
-        key_tables_remove(&raw mut key_tables, table);
+        let detached = key_tables_remove(&raw mut key_tables, table);
         c = clients.first();
         while !c.is_null() {
             if key_table_owner_ptr(&(*c).keytable) == table {
@@ -193,7 +189,7 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
             }
             c = clients.next(c);
         }
-        key_bindings_unref_table(table);
+        drop(detached);
     }
 }
 
@@ -934,7 +930,8 @@ pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_ta
     let key = elm.name.as_bytes();
     map.get(key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
 }
-pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
+pub unsafe fn key_tables_insert(head: *mut key_tables, table: crate::src::shared::key::KeyTableOwner) -> *mut key_table {
+    let elm = crate::src::shared::rc::as_ptr(&table);
     let key = (*elm).name.as_bytes();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
@@ -944,36 +941,35 @@ pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *
     match map.entry(key.to_vec()) {
         std::collections::btree_map::Entry::Occupied(entry) => return crate::src::shared::rc::as_ptr(entry.get()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(crate::src::shared::rc::take(elm));
+            entry.insert(table);
             (*elm).entry.owner = Some(observer);
         }
     }
     std::ptr::null_mut()
 }
-pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
+pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> Option<crate::src::shared::key::KeyTableOwner> {
     if elm.is_null() {
-        return std::ptr::null_mut();
+        return None;
     }
     let key = (*elm).name.as_bytes();
     let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
+        return None;
     };
-    let empty = {
+    let (detached, empty) = {
         let mut map = owner
             .try_borrow_mut()
             .expect("key table index already borrowed");
         if map.get(key).map(crate::src::shared::rc::as_ptr) != Some(elm) {
-            return std::ptr::null_mut();
+            return None;
         }
         let detached = map.remove(key).expect("matching key table");
-        let _ = crate::src::shared::rc::into_raw(detached);
-        map.is_empty()
+        (detached, map.is_empty())
     };
     (*elm).entry.owner = None;
     if empty {
         (*head).storage = None;
     }
-    elm
+    Some(detached)
 }
 pub unsafe fn key_tables_minmax(head: &key_tables) -> *mut key_table {
     let Some(owner) = head.storage.as_ref() else {

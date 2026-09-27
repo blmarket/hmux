@@ -484,10 +484,9 @@ unsafe fn window_customize_check_item(
 unsafe fn window_customize_get_key_table(
     item: &window_customize_itemdata,
 ) -> Option<Rc<std::cell::UnsafeCell<key_table>>> {
-    let table = key_bindings_get_table(item.table.as_ref()?.as_ptr(), 0);
-    let table_ref = table.as_ref()?;
-    key_bindings_get(table_ref, item.key)?;
-    crate::src::shared::rc::downgrade(table).upgrade()
+    let table = crate::src::key_bindings::key_bindings_get_table_owner(item.table.as_ref()?.as_ptr(), 0)?;
+    key_bindings_get(&*crate::src::shared::rc::as_ptr(&table), item.key)?;
+    Some(table)
 }
 unsafe fn window_customize_scope_text(
     scope: window_customize_scope,
