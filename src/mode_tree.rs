@@ -2,7 +2,6 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
-    cmdq_set_cancel_callback,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{
@@ -71,7 +70,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
-use std::cell::RefCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -1348,27 +1347,23 @@ pub unsafe fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
         (*mtd).screen.mode &= !MODE_CURSOR;
     }
 }
-unsafe fn mode_tree_prompt_accept(
-    mut item: *mut cmdq_item,
-    mut mtd: *mut mode_tree_data,
-) -> cmd_retval {
-    let mut c: *mut client = cmdq_get_client(item);
-    let mut key: key_code = 'y' as i32 as key_code;
-    if (*mtd).prompt.is_some() && !c.is_null() {
-        mode_tree_key(
-            mtd,
-            c,
-            &raw mut key,
-            ::core::ptr::null_mut::<mouse_event>(),
-            ::core::ptr::null_mut::<u_int>(),
-            ::core::ptr::null_mut::<u_int>(),
-        );
-    }
-    mode_tree_remove_ref(mtd);
-    return CMD_RETURN_NORMAL;
-}
-unsafe fn mode_tree_cancel_prompt_accept(mtd: *mut mode_tree_data) {
-    mode_tree_remove_ref(mtd);
+fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
+    Some(Box::new(move |item| unsafe {
+        let mtd = crate::src::shared::rc::as_ptr(&tree);
+        let c = cmdq_get_client(item.as_ptr());
+        let mut key = b'y' as key_code;
+        if (*mtd).prompt.is_some() && !c.is_null() {
+            mode_tree_key(
+                mtd,
+                c,
+                &mut key,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+        }
+        CMD_RETURN_NORMAL
+    }))
 }
 fn mode_tree_prompt_input_callback(
     data: &ModeTreePromptRef,
@@ -1471,15 +1466,10 @@ pub unsafe fn mode_tree_set_prompt(
     (*(*mtd).wp).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
         crate::src::shared::rc::retain(mtd);
+        let tree = crate::src::shared::rc::take(mtd);
         let item = cmdq_get_callback_owned(
-            b"mode_tree_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(Box::new(move |item| unsafe {
-                mode_tree_prompt_accept(item.as_ptr(), mtd)
-            })),
-        );
-        cmdq_set_cancel_callback(
-            &mut *item,
-            Box::new(move || unsafe { mode_tree_cancel_prompt_accept(mtd) }),
+            c"mode_tree_prompt_accept".as_ptr(),
+            mode_tree_prompt_accept(tree),
         );
         cmdq_append(c, item);
     }
@@ -2720,6 +2710,38 @@ mod mode_prompt_data_tests {
                 drop(pr);
                 drop(data);
                 assert!(weak_data.upgrade().is_none());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod queued_prompt_accept_tests {
+    use super::*;
+    use crate::src::cmd::queue::cmdq_free_detached;
+    use crate::src::shared::rc;
+    use std::ptr::NonNull;
+
+    #[test]
+    fn queued_acceptance_releases_its_tree_when_fired_or_cancelled() {
+        for fire in [false, true] {
+            unsafe {
+                let tree = rc::take(mode_tree_alloc_data());
+                let observed = Rc::downgrade(&tree);
+                let item = cmdq_get_callback_owned(
+                    c"test-mode-accept".as_ptr(),
+                    mode_tree_prompt_accept(tree),
+                );
+                assert!(observed.upgrade().is_some());
+                if fire {
+                    (*item).flags |= CMDQ_FIRED;
+                    let callback = (*item).cb.take().unwrap();
+                    assert_eq!(callback(NonNull::new(item).unwrap()), CMD_RETURN_NORMAL);
+                    // The item may remain queued, but its fired capture is gone.
+                    assert!(observed.upgrade().is_none());
+                }
+                cmdq_free_detached(item);
+                assert!(observed.upgrade().is_none());
             }
         }
     }
