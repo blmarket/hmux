@@ -1928,7 +1928,7 @@ pub unsafe fn mode_tree_key(
                 }
             }
         } else {
-            result = prompt_key(prompt, *key, &raw mut redraw);
+            result = prompt_key(prompt, *key, &mut redraw);
         }
         if (*mtd).prompt_data == mtp && !mtp.is_null() {
             (*mtp).c = ::core::ptr::null_mut::<client>();

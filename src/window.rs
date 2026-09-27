@@ -3344,7 +3344,7 @@ pub unsafe fn window_pane_prompt_key(
             }
         }
     } else {
-        result = prompt_key(prompt, key, &raw mut redraw);
+        result = prompt_key(prompt, key, &mut redraw);
     }
     wp = window_pane_find_by_id(wp_id);
     if wp.is_null() {

@@ -766,7 +766,7 @@ unsafe fn window_switch_key(
             _ => {}
         }
         if !(*data).prompt.is_null() {
-            result = prompt_key((*data).prompt, key, &raw mut redraw);
+            result = prompt_key((*data).prompt, key, &mut redraw);
             if redraw != 0 {
                 window_switch_draw_screen(wme);
                 (*wp).flags |= PANE_REDRAW;

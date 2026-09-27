@@ -855,7 +855,7 @@ pub unsafe fn status_prompt_key(
         let (ax, aw) = status_message_area(&*c);
         result = prompt_mouse(&mut *(*c).prompt, (*m).x, ax, aw, Some(&mut redraw));
     } else {
-        result = prompt_key((*c).prompt, key, &raw mut redraw);
+        result = prompt_key((*c).prompt, key, &mut redraw);
     }
     if redraw != 0 && !(*c).prompt.is_null() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
