@@ -3806,7 +3806,7 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
     let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
     palette.fill(-1);
     for (i, colour) in palette.iter_mut().enumerate() {
-        let ov = options_array_get_index(o, i as u_int);
+        let ov = crate::src::options::options_array_get_index_mut(&mut *(o), i as u_int).map_or(std::ptr::null_mut(), |value| value);
         if !ov.is_null() {
             *colour = (*ov).number() as ::core::ffi::c_int;
         }

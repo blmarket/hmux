@@ -410,7 +410,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                         already = (o != NULL as *mut options_entry) as ::core::ffi::c_int;
                     } else if o.is_null() {
                         already = 0 as ::core::ffi::c_int;
-                    } else if !options_array_get(o, array_key).is_null() {
+                    } else if !crate::src::options::options_array_get_mut(&mut *(o), std::ffi::CStr::from_ptr(array_key)).map_or(std::ptr::null_mut(), |value| value).is_null() {
                         already = 1 as ::core::ffi::c_int;
                     } else {
                         already = 0 as ::core::ffi::c_int;

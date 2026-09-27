@@ -780,7 +780,7 @@ unsafe fn window_customize_set_option_value(
         if array_key.is_null() {
             idx = 0 as u_int;
             while idx < INT_MAX as u_int {
-                if options_array_get_index(o, idx).is_null() {
+                if crate::src::options::options_array_get_index_mut(&mut *(o), idx).map_or(std::ptr::null_mut(), |value| value).is_null() {
                     break;
                 }
                 idx = idx.wrapping_add(1);
@@ -944,8 +944,8 @@ unsafe fn window_customize_option_is_changed(
         oo = options_create(::core::ptr::null_mut::<options>());
         defaults = options_default(oo, oe);
         if !array_key.is_null() {
-            ov = options_array_get(o, array_key);
-            default_ov = options_array_get(defaults, array_key);
+            ov = crate::src::options::options_array_get_mut(&mut *(o), std::ffi::CStr::from_ptr(array_key)).map_or(std::ptr::null_mut(), |value| value);
+            default_ov = crate::src::options::options_array_get_mut(&mut *(defaults), std::ffi::CStr::from_ptr(array_key)).map_or(std::ptr::null_mut(), |value| value);
             if ov.is_null() || default_ov.is_null() {
                 changed = (ov != default_ov) as ::core::ffi::c_int;
                 options_free(oo);
@@ -3107,7 +3107,7 @@ unsafe fn window_customize_set_option_callback(
         if array_key.is_null() {
             idx = 0 as u_int;
             while idx < INT_MAX as u_int {
-                if options_array_get_index(o, idx).is_null() {
+                if crate::src::options::options_array_get_index_mut(&mut *(o), idx).map_or(std::ptr::null_mut(), |value| value).is_null() {
                     break;
                 }
                 idx = idx.wrapping_add(1);
@@ -3949,7 +3949,7 @@ unsafe fn window_customize_set_array_key_callback(
     if o.is_null() {
         return PROMPT_CLOSE;
     }
-    if !options_array_get(o, s).is_null() {
+    if !crate::src::options::options_array_get_mut(&mut *(o), std::ffi::CStr::from_ptr(s)).map_or(std::ptr::null_mut(), |value| value).is_null() {
         return PROMPT_CLOSE;
     }
     let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);

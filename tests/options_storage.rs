@@ -186,23 +186,23 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         );
         assert_eq!(options_array_next(first), two);
         assert_eq!(
-            options_array_get(array, c"02".as_ptr()),
+            hmux2::src::options::options_array_get_mut(&mut *(array), std::ffi::CStr::from_ptr(c"02".as_ptr())).map_or(std::ptr::null_mut(), |value| value),
             (hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)
         );
         assert_eq!(
-            options_array_get_index(array, 2),
+            hmux2::src::options::options_array_get_index_mut(&mut *(array), 2).map_or(std::ptr::null_mut(), |value| value),
             (hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)
         );
         for (index, key) in [(0, c"0"), (u32::MAX, c"4294967295")] {
-            let value = options_array_get_index(array, index);
+            let value = hmux2::src::options::options_array_get_index_mut(&mut *(array), index).map_or(std::ptr::null_mut(), |value| value);
             assert!(!value.is_null());
-            assert_eq!(value, options_array_get(array, key.as_ptr()));
+            assert_eq!(value, hmux2::src::options::options_array_get_mut(&mut *(array), std::ffi::CStr::from_ptr(key.as_ptr())).map_or(std::ptr::null_mut(), |value| value));
         }
-        assert!(options_array_get_index(array, 3).is_null());
+        assert!(hmux2::src::options::options_array_get_index_mut(&mut *(array), 3).map_or(std::ptr::null_mut(), |value| value).is_null());
         let non_utf8 = c"\xff";
-        let non_utf8_value = options_array_get(array, non_utf8.as_ptr());
+        let non_utf8_value = hmux2::src::options::options_array_get_mut(&mut *(array), std::ffi::CStr::from_ptr(non_utf8.as_ptr())).map_or(std::ptr::null_mut(), |value| value);
         assert!(!non_utf8_value.is_null());
-        assert!(options_array_get(array, c"".as_ptr()).is_null());
+        assert!(hmux2::src::options::options_array_get_mut(&mut *(array), std::ffi::CStr::from_ptr(c"".as_ptr())).map_or(std::ptr::null_mut(), |value| value).is_null());
         assert_eq!(
             CStr::from_ptr((*(hmux2::src::options::options_array_item_value_mut(&mut *(two)) as *mut hmux2::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())),
             c"updated"
@@ -220,7 +220,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 options_array_set(array, invalid.as_ptr(), c"bad".as_ptr(), 0, null_mut()),
                 -1
             );
-            assert!(options_array_get(array, invalid.as_ptr()).is_null());
+            assert!(hmux2::src::options::options_array_get_mut(&mut *(array), std::ffi::CStr::from_ptr(invalid.as_ptr())).map_or(std::ptr::null_mut(), |value| value).is_null());
         }
         let expected: &[&[u8]] = &[
             b"0",
@@ -291,11 +291,11 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         input.fill(b'x');
         for (index, expected) in [b"ONE".as_slice(), b"\xff", b"TWO"].iter().enumerate() {
             let key = CString::new(index.to_string()).unwrap();
-            let value = options_array_get(strings, key.as_ptr());
+            let value = hmux2::src::options::options_array_get_mut(&mut *(strings), std::ffi::CStr::from_ptr(key.as_ptr())).map_or(std::ptr::null_mut(), |value| value);
             assert!(!value.is_null());
             assert_eq!(CStr::from_ptr((*value).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(), *expected);
         }
-        assert!(options_array_get(strings, c"3".as_ptr()).is_null());
+        assert!(hmux2::src::options::options_array_get_mut(&mut *(strings), std::ffi::CStr::from_ptr(c"3".as_ptr())).map_or(std::ptr::null_mut(), |value| value).is_null());
 
         let colour_definition = (*table)
             .iter()
@@ -307,8 +307,8 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             options_array_assign(colours, c"red,,invalid-colour".as_ptr(), &mut cause),
             -1
         );
-        assert!(!options_array_get(colours, c"0".as_ptr()).is_null());
-        assert!(options_array_get(colours, c"1".as_ptr()).is_null());
+        assert!(!hmux2::src::options::options_array_get_mut(&mut *(colours), std::ffi::CStr::from_ptr(c"0".as_ptr())).map_or(std::ptr::null_mut(), |value| value).is_null());
+        assert!(hmux2::src::options::options_array_get_mut(&mut *(colours), std::ffi::CStr::from_ptr(c"1".as_ptr())).map_or(std::ptr::null_mut(), |value| value).is_null());
         assert_eq!(
             CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
             c"bad colour: invalid-colour"

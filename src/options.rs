@@ -517,27 +517,24 @@ pub unsafe fn options_array_clear(mut o: *mut options_entry) {
         a = a1;
     }
 }
-pub unsafe fn options_array_get(
-    mut o: *mut options_entry,
-    mut key: *const ::core::ffi::c_char,
-) -> *mut options_value {
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    if !(!(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() && (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
-        return ::core::ptr::null_mut::<options_value>();
-    }
-    let Some(new_key) = options_array_correct_key(CStr::from_ptr(key)) else {
-        return ::core::ptr::null_mut::<options_value>();
-    };
-    a = options_array_item(o, new_key.as_ptr());
-    if a.is_null() {
-        return ::core::ptr::null_mut::<options_value>();
-    }
-    return &raw mut (*a).value;
+pub fn options_array_get<'a>(o: &'a options_entry, key: &CStr) -> Option<&'a options_value> {
+    let key = options_array_correct_key(key)?;
+    let options_value::Array(array) = &o.value else { return None; };
+    array.entries.get(&options_array_index(&key)).map(|item| &item.value)
+}
+pub fn options_array_get_mut<'a>(o: &'a mut options_entry, key: &CStr) -> Option<&'a mut options_value> {
+    let key = options_array_correct_key(key)?;
+    let options_value::Array(array) = &mut o.value else { return None; };
+    array.entries.get_mut(&options_array_index(&key)).map(|item| &mut item.value)
 }
 /// Look up an array value by its decimal numeric index.
-pub unsafe fn options_array_get_index(o: *mut options_entry, index: u_int) -> *mut options_value {
+pub fn options_array_get_index(o: &options_entry, index: u_int) -> Option<&options_value> {
     let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
-    options_array_get(o, key.as_ptr())
+    options_array_get(o, &key)
+}
+pub fn options_array_get_index_mut(o: &mut options_entry, index: u_int) -> Option<&mut options_value> {
+    let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
+    options_array_get_mut(o, &key)
 }
 pub unsafe fn options_array_set(
     mut o: *mut options_entry,
@@ -665,7 +662,7 @@ pub unsafe fn options_array_assign(
         }
         i = 0 as u_int;
         while i < UINT_MAX {
-            if options_array_get_index(o, i).is_null() {
+            if crate::src::options::options_array_get_index_mut(&mut *(o), i).map_or(std::ptr::null_mut(), |value| value).is_null() {
                 break;
             }
             i = i.wrapping_add(1);
@@ -694,7 +691,7 @@ pub unsafe fn options_array_assign(
         }
         i = 0 as u_int;
         while i < UINT_MAX {
-            if options_array_get_index(o, i).is_null() {
+            if crate::src::options::options_array_get_index_mut(&mut *(o), i).map_or(std::ptr::null_mut(), |value| value).is_null() {
                 break;
             }
             i = i.wrapping_add(1);

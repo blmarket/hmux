@@ -1353,7 +1353,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     if !o.is_null() {
         i = 0 as u_int;
         while i <= KEYC_NUSER as u_int {
-            ov = options_array_get_index(o, i);
+            ov = crate::src::options::options_array_get_index_mut(&mut *(o), i).map_or(std::ptr::null_mut(), |value| value);
             if !ov.is_null() {
                 tty_keys_add(
                     tty,

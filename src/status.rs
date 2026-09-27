@@ -370,7 +370,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                 i as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            ov = options_array_get_index(o, i);
+            ov = crate::src::options::options_array_get_index_mut(&mut *(o), i).map_or(std::ptr::null_mut(), |value| value);
             if ov.is_null() {
                 n = 0 as u_int;
                 while n < width {
