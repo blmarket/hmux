@@ -24,7 +24,7 @@ use crate::src::options::{
 };
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::src::reactor::{
-    bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length,
+    bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_get_length,
     evbuffer_new, event_add, event_del, event_set,
 };
 use crate::src::screen::{screen_clear_tabs, screen_has_tab, screen_set_tab};
@@ -153,7 +153,7 @@ impl input_ctx {
             requests: VecDeque::new(),
             request_count: 0,
             request_timer: Default::default(),
-            since_ground: ::core::ptr::null_mut(),
+            since_ground: evbuffer_new(),
             ground_timer: Default::default(),
         }
     }
@@ -2178,10 +2178,6 @@ pub unsafe fn input_init(
     (*ictx).event = bev;
     (*ictx).palette = palette;
     (*ictx).c = c;
-    (*ictx).since_ground = evbuffer_new();
-    if (*ictx).since_ground.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
     event_set(
         &raw mut (*ictx).ground_timer,
         -(1 as ::core::ffi::c_int),
@@ -2209,7 +2205,6 @@ pub unsafe fn input_free(mut ictx: *mut input_ctx) {
         input_free_request(ir);
     }
     event_del(&raw mut (*ictx).request_timer);
-    evbuffer_free((*ictx).since_ground);
     event_del(&raw mut (*ictx).ground_timer);
     screen_write_stop_sync((*ictx).wp);
     drop(Box::from_raw(ictx));
@@ -2232,7 +2227,7 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
     (*ictx).flags = 0 as ::core::ffi::c_int;
 }
 pub unsafe fn input_pending(mut ictx: *mut input_ctx) -> *mut evbuffer {
-    return (*ictx).since_ground;
+    return &raw mut *(*ictx).since_ground;
 }
 unsafe fn input_set_state(mut ictx: *mut input_ctx, mut itr: *const input_transition) {
     if (*(*ictx).state).exit.is_some() {
@@ -2286,7 +2281,7 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
         }
         if (*ictx).state != &raw const input_state_ground {
             evbuffer_add(
-                (*ictx).since_ground,
+                &raw mut *(*ictx).since_ground,
                 &raw mut (*ictx).ch as *const ::core::ffi::c_void,
                 1 as size_t,
             );
@@ -2492,7 +2487,7 @@ unsafe fn input_clear(mut ictx: *mut input_ctx) {
 unsafe fn input_ground(mut ictx: *mut input_ctx) {
     event_del(&raw mut (*ictx).ground_timer);
     evbuffer_drain(
-        (*ictx).since_ground,
+        &raw mut *(*ictx).since_ground,
         evbuffer_get_length(&*((*ictx).since_ground)),
     );
     (*ictx).shrink_buffer();

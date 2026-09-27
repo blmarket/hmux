@@ -5,13 +5,8 @@ pub use hmux_buffer::SegmentedBuf as evbuffer;
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf as ByteBuffer};
 use std::ffi::{c_char, c_int, c_void, CStr};
 
-pub unsafe fn evbuffer_new() -> *mut ByteBuffer {
-    Box::into_raw(Box::new(ByteBuffer::default()))
-}
-pub unsafe fn evbuffer_free(b: *mut ByteBuffer) {
-    if !b.is_null() {
-        drop(Box::from_raw(b));
-    }
+pub fn evbuffer_new() -> Box<ByteBuffer> {
+    Box::new(ByteBuffer::default())
 }
 pub fn evbuffer_get_length(b: &ByteBuffer) -> size_t {
     b.remaining() as size_t

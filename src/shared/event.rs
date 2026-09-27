@@ -1,8 +1,8 @@
 //! Application callback handles for the Rust reactor.
 //!
 //! Scheduling and registration ownership live in the reactor's Rust collections.
-//! Embedded handles own no resources and remain valid when zero initialized by
-//! translated callers; their layout is no longer tied to libevent.
+//! Event handles can be zero initialized by translated callers. Streams own
+//! their buffers; neither layout is tied to libevent.
 use super::abi::*;
 pub use crate::src::reactor::{bufferevent_ops, evbuffer, event_base};
 
@@ -38,8 +38,9 @@ pub struct bufferevent {
     pub be_ops: *const bufferevent_ops,
     pub ev_read: event,
     pub ev_write: event,
-    pub input: *mut evbuffer,
-    pub output: *mut evbuffer,
+    // Keep buffer addresses stable for reactor registrations and borrowed pointers.
+    pub input: Box<evbuffer>,
+    pub output: Box<evbuffer>,
     pub wm_read: event_watermark,
     pub wm_write: event_watermark,
     pub readcb: bufferevent_data_cb,

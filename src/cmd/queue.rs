@@ -26,7 +26,7 @@ use crate::src::format::{format_add, format_add_cstr, format_create, format_free
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
-use crate::src::reactor::{evbuffer_add_formatted, evbuffer_free, evbuffer_new};
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
 use crate::src::server_client::{server_client_print, server_client_unref};
 use crate::src::shared::abi::*;
@@ -981,14 +981,9 @@ pub unsafe fn cmdq_print(
     mut item: *mut cmdq_item,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    evb = evbuffer_new();
-    if evb.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
-    evbuffer_add_formatted(evb, write);
-    cmdq_print_data(item, evb);
-    evbuffer_free(evb);
+    let mut evb = evbuffer_new();
+    evbuffer_add_formatted(&mut *evb, write);
+    cmdq_print_data(item, &mut *evb);
 }
 pub unsafe fn cmdq_error(
     mut item: *mut cmdq_item,

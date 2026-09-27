@@ -9,8 +9,7 @@ use crate::src::format::{
     format_create, format_defaults, format_each, format_expand_time_cstring, format_free,
 };
 use crate::src::json::{json_destroy_node, json_parse, json_to_string};
-use crate::src::log::fatalx;
-use crate::src::reactor::{evbuffer_add_formatted, evbuffer_free, evbuffer_new};
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server_client::server_client_print;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -82,7 +81,6 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let mut Cflag: ::core::ffi::c_int = args_has(args, 'C' as i32 as u_char);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut count: u_int = args_count(args);
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut jn: *mut json_node = ::core::ptr::null_mut::<json_node>();
     if args_has(args, 'I' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         if wp.is_null() {
@@ -185,16 +183,12 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item, |out| write_cstr(out, msg.as_ptr()));
     } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
-        evb = evbuffer_new();
-        if evb.is_null() {
-            fatalx(|out| out.write_all(b"out of memory"));
-        }
-        evbuffer_add_formatted(evb, |out| {
+        let mut evb = evbuffer_new();
+        evbuffer_add_formatted(&mut *evb, |out| {
             out.write_all(b"%message ")?;
             write_cstr(out, msg.as_ptr())
         });
-        server_client_print(tc, 0 as ::core::ffi::c_int, evb);
-        evbuffer_free(evb);
+        server_client_print(tc, 0 as ::core::ffi::c_int, &mut *evb);
     } else if !tc.is_null() {
         status_message_set(tc, delay, 0 as ::core::ffi::c_int, Nflag, Cflag, |out| {
             write_cstr(out, msg.as_ptr())

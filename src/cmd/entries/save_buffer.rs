@@ -5,9 +5,8 @@ use crate::src::ffi::libc::strerror;
 use crate::src::file::file_write_with_cmdq_wait;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::log::fatalx;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
-use crate::src::reactor::{evbuffer_add, evbuffer_free, evbuffer_new};
+use crate::src::reactor::{evbuffer_add, evbuffer_new};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -95,7 +94,6 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 0;
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     if bufname.is_null() {
         pb = paste_get_top(None);
         if pb.is_null() {
@@ -116,13 +114,9 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let show_buffer = cmd_get_entry(self_0) == &raw const cmd_show_buffer_entry;
     if show_buffer {
         if !(*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            evb = evbuffer_new();
-            if evb.is_null() {
-                fatalx(|out| out.write_all(b"out of memory"));
-            }
-            evbuffer_add(evb, bufdata as *const ::core::ffi::c_void, bufsize);
-            cmdq_print_data(item, evb);
-            evbuffer_free(evb);
+            let mut evb = evbuffer_new();
+            evbuffer_add(&mut *evb, bufdata as *const ::core::ffi::c_void, bufsize);
+            cmdq_print_data(item, &mut *evb);
             return CMD_RETURN_NORMAL;
         }
     }

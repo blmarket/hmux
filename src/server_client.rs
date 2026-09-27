@@ -3442,7 +3442,7 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);
 }
 unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
-    let mut evb: *mut evbuffer = (*(*wp).event).input;
+    let mut evb: *mut evbuffer = &raw mut *(*(*wp).event).input;
     let mut minimum: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut wpo: *mut window_pane_offset = ::core::ptr::null_mut::<window_pane_offset>();
@@ -4038,7 +4038,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         (*c).flags &= !CLIENT_STATUSFORCE as uint64_t;
         return;
     }
-    n = evbuffer_get_length(&*((*tty).out));
+    n = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     if n != 0 as size_t || (*tty).flags & TTY_BLOCK != 0 {
         if n != 0 as size_t {
             log_debug(format_args!(
@@ -4147,7 +4147,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         & !(CLIENT_ALLREDRAWFLAGS as ::core::ffi::c_ulonglong
             | CLIENT_REDRAWSCROLLBARS
             | CLIENT_STATUSFORCE as ::core::ffi::c_ulonglong)) as uint64_t;
-    (*c).redraw = evbuffer_get_length(&*((*tty).out));
+    (*c).redraw = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     log_debug(format_args!(
         "{}: redraw added {} bytes",
         log_cstr(

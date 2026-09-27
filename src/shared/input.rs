@@ -50,7 +50,7 @@ pub struct input_ctx {
     pub(crate) requests: VecDeque<Box<input_request>>,
     pub request_count: u_int,
     pub request_timer: event,
-    pub since_ground: *mut evbuffer,
+    pub since_ground: Box<evbuffer>,
     pub ground_timer: event,
 }
 

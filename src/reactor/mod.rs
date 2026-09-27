@@ -1,7 +1,7 @@
 //! Application compatibility over hmux-rt and hmux-buffer.
 //!
-//! Embedded C-layout handles own no Rust resources. Registrations own cancellable
-//! local tasks; callbacks run without registry borrows. Descriptor leases are
+//! Streams own their buffers. Registrations own cancellable local tasks;
+//! callbacks run without registry borrows. Descriptor leases are
 //! duplicated once per live endpoint and close after an executing poll finishes.
 #![allow(clippy::missing_safety_doc)]
 mod buffer;

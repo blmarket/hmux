@@ -2913,7 +2913,7 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
 }
 unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    let mut evb: *mut evbuffer = (*(*wp).event).input;
+    let mut evb: *mut evbuffer = &raw mut *(*(*wp).event).input;
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut new_data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -4031,7 +4031,7 @@ pub unsafe fn window_pane_get_new_data(
 ) -> *mut ::core::ffi::c_void {
     let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
     *size = evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used);
-    return evbuffer_pullup((*(*wp).event).input, -(1 as ::core::ffi::c_int) as ssize_t)
+    return evbuffer_pullup(&raw mut *(*(*wp).event).input, -(1 as ::core::ffi::c_int) as ssize_t)
         .offset(used as isize) as *mut ::core::ffi::c_void;
 }
 pub unsafe fn window_pane_update_used_data(

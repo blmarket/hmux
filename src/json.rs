@@ -2,8 +2,7 @@ use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, strlen, strncmp, st
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::fatalx;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_formatted, evbuffer_free, evbuffer_get_length, evbuffer_new,
-    evbuffer_pullup,
+    evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{int64_t, ssize_t};
@@ -1216,23 +1215,18 @@ unsafe fn json_string_append(mut buffer: *mut evbuffer, mut node: *mut json_node
     };
 }
 pub unsafe fn json_to_string(node: *mut json_node) -> Option<CString> {
-    let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     if node.is_null() {
         return None;
     }
-    buffer = evbuffer_new();
-    if buffer.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
-    json_string_append(buffer, node);
-    let len = evbuffer_get_length(&*(buffer));
+    let mut buffer = evbuffer_new();
+    json_string_append(&mut *buffer, node);
+    let len = evbuffer_get_length(&buffer);
     let bytes = if len == 0 {
         Vec::new()
     } else {
-        let ptr = evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t);
+        let ptr = evbuffer_pullup(&mut *buffer, -(1 as ::core::ffi::c_int) as ssize_t);
         ::core::slice::from_raw_parts(ptr.cast::<u8>(), len).to_vec()
     };
-    evbuffer_free(buffer);
     Some(CString::new(bytes).expect("serialized JSON contains no NUL"))
 }
 

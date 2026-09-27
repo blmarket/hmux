@@ -8,8 +8,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_add;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_formatted, evbuffer_free, evbuffer_get_length, evbuffer_new,
-    evbuffer_pullup,
+    evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
 use crate::src::server_client::server_client_unref;
 use crate::src::session::{session_add_ref, session_alive, session_remove_ref};
@@ -550,21 +549,16 @@ unsafe fn event_payload_add_item(mut epi: *mut event_payload_item, mut evb: *mut
 /// Printed payload bytes with one trailing NUL for synchronous C consumers.
 /// The bytes before that terminator may themselves contain NULs.
 pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item) -> Vec<u8> {
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
-    evb = evbuffer_new();
-    if evb.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
-    event_payload_add_item(epi, evb);
-    size = evbuffer_get_length(&*(evb));
+    let mut evb = evbuffer_new();
+    event_payload_add_item(epi, &mut *evb);
+    size = evbuffer_get_length(&evb);
     let mut value = Vec::with_capacity(size + 1);
     if size != 0 as size_t {
-        let bytes = evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const u8;
+        let bytes = evbuffer_pullup(&mut *evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const u8;
         value.extend_from_slice(std::slice::from_raw_parts(bytes, size));
     }
     value.push(0);
-    evbuffer_free(evb);
     value
 }
 
@@ -636,19 +630,15 @@ pub unsafe fn event_payload_log(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let prefix = format_message_with(write);
-    evb = evbuffer_new();
-    if evb.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
+    let mut evb = evbuffer_new();
     if !ep.is_null() {
         epi = event_payload_tree_minmax(&raw mut (*ep).items);
         while !epi.is_null() {
-            if evbuffer_get_length(&*(evb)) != 0 as size_t {
-                evbuffer_add_formatted(evb, |out| out.write_all(b", "));
+            if evbuffer_get_length(&evb) != 0 as size_t {
+                evbuffer_add_formatted(&mut *evb, |out| out.write_all(b", "));
             }
-            evbuffer_add_formatted(evb, |out| {
+            evbuffer_add_formatted(&mut *evb, |out| {
                 write_cstr(
                     out,
                     ((*epi).name)
@@ -657,7 +647,7 @@ pub unsafe fn event_payload_log(
                 )?;
                 out.write_all(b"=")
             });
-            event_payload_add_item(epi, evb);
+            event_payload_add_item(epi, &mut *evb);
             epi = event_payload_tree_next(epi);
         }
     }
@@ -665,12 +655,11 @@ pub unsafe fn event_payload_log(
         "{}{}",
         log_cstr((prefix.as_ptr()) as *const _),
         log_cstr_n(
-            (evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
+            (evbuffer_pullup(&mut *evb, -(1 as ::core::ffi::c_int) as ssize_t)
                 as *mut ::core::ffi::c_char) as *const _,
-            evbuffer_get_length(&*(evb)) as ::core::ffi::c_int
+            evbuffer_get_length(&evb) as ::core::ffi::c_int
         )
     ));
-    evbuffer_free(evb);
 }
 pub unsafe fn event_payload_get_client(mut ep: *mut event_payload) -> *mut client {
     let mut name: *const ::core::ffi::c_char =

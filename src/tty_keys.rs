@@ -1659,9 +1659,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         sgr_type: 0,
         sgr_b: 0,
     };
-    buf = evbuffer_pullup((*tty).in_0, -(1 as ::core::ffi::c_int) as ssize_t)
+    buf = evbuffer_pullup((*tty).in_0.as_deref_mut().expect("open TTY buffer"), -(1 as ::core::ffi::c_int) as ssize_t)
         as *const ::core::ffi::c_char;
-    len = evbuffer_get_length(&*((*tty).in_0));
+    len = evbuffer_get_length((*tty).in_0.as_deref().expect("open TTY buffer"));
     if len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
@@ -1869,7 +1869,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                         log_hex((key) as u64)
                                                                     ));
                                                                     evbuffer_drain(
-                                                                        (*tty).in_0,
+                                                                        (*tty).in_0.as_deref_mut().expect("open TTY buffer"),
                                                                         size,
                                                                     );
                                                                     return 1 as ::core::ffi::c_int;
@@ -2120,7 +2120,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                     let event = key_event::new(key, m, Some(bytes));
                     server_client_handle_key(c, event);
                 }
-                evbuffer_drain((*tty).in_0, size);
+                evbuffer_drain((*tty).in_0.as_deref_mut().expect("open TTY buffer"), size);
                 return 1 as ::core::ffi::c_int;
             }
             _ => {

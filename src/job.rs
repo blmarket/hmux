@@ -53,7 +53,7 @@ pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
 
 unsafe fn job_completion(job: *mut job) -> JobCompletion {
-    let input = (*(*job).event).input;
+    let input = &raw mut *(*(*job).event).input;
     let len = evbuffer_get_length(&*input);
     let output = if len == 0 {
         Vec::new()

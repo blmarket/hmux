@@ -12,7 +12,7 @@ use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_read,
+    evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read,
     evbuffer_write, event_add, event_del, event_initialized, event_pending, event_set,
 };
 use crate::src::screen::screen_mode_to_string;
@@ -144,7 +144,9 @@ pub unsafe fn tty_init(mut tty: *mut tty, mut c: *mut client) -> ::core::ffi::c_
     if isatty((*c).fd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    // Drop the owned key tree before the translated field reset below.
+    // Drop owned buffers and the key tree before the translated field reset below.
+    (*tty).in_0 = None;
+    (*tty).out = None;
     tty_keys_free(tty);
     // `r` owns a Vec now, so preserve its valid empty value while resetting
     // the translated C fields around it.
@@ -202,7 +204,7 @@ pub unsafe fn tty_resize(mut tty: *mut tty) {
             ypixel = (ws.ws_ypixel as u_int).wrapping_div(sy);
         }
         if (xpixel == 0 as u_int || ypixel == 0 as u_int)
-            && !(*tty).out.is_null()
+            && (*tty).out.is_some()
             && (*tty).flags & TTY_WINSIZEQUERY == 0
             && (*(*tty).term).flags & TERM_VT100LIKE != 0
         {
@@ -253,9 +255,13 @@ unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut name: *const ::core::ffi::c_char = ((*c).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut size: size_t = evbuffer_get_length(&*((*tty).in_0));
+    let mut size: size_t = evbuffer_get_length((*tty).in_0.as_deref().expect("open TTY buffer"));
     let mut nread: ::core::ffi::c_int = 0;
-    nread = evbuffer_read((*tty).in_0, (*c).fd, -(1 as ::core::ffi::c_int));
+    nread = evbuffer_read(
+        (*tty).in_0.as_deref_mut().expect("open TTY buffer"),
+        (*c).fd,
+        -(1 as ::core::ffi::c_int),
+    );
     if nread == 0 as ::core::ffi::c_int || nread == -(1 as ::core::ffi::c_int) {
         if nread == 0 as ::core::ffi::c_int {
             log_debug(format_args!(
@@ -313,7 +319,7 @@ unsafe fn tty_timer_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
     let mut c: *mut client = (*tty).client;
-    let mut size: size_t = evbuffer_get_length(&*((*tty).out));
+    let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
@@ -343,7 +349,7 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
         ),
         (size) as usize
     ));
-    evbuffer_drain((*tty).out, size);
+    evbuffer_drain((*tty).out.as_deref_mut().expect("open TTY buffer"), size);
     (*c).discarded = (*c).discarded.wrapping_add(size);
     (*tty).discarded = 0 as size_t;
     event_add(&raw mut (*tty).timer, &raw mut tv);
@@ -352,9 +358,9 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
 unsafe fn tty_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;
     let mut c: *mut client = (*tty).client;
-    let mut size: size_t = evbuffer_get_length(&*((*tty).out));
+    let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut nwrite: ::core::ffi::c_int = 0;
-    nwrite = evbuffer_write((*tty).out, (*c).fd);
+    nwrite = evbuffer_write((*tty).out.as_deref_mut().expect("open TTY buffer"), (*c).fd);
     if nwrite == -(1 as ::core::ffi::c_int) {
         return;
     }
@@ -388,7 +394,7 @@ unsafe fn tty_write_callback(mut data: *mut ::core::ffi::c_void) {
     } else if tty_block_maybe(tty) != 0 {
         return;
     }
-    if evbuffer_get_length(&*((*tty).out)) != 0 as size_t {
+    if evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer")) != 0 as size_t {
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
@@ -422,20 +428,14 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         (EV_PERSIST | EV_READ) as ::core::ffi::c_short,
         move |_, _| unsafe { tty_read_callback(tty as *mut ::core::ffi::c_void) },
     );
-    (*tty).in_0 = evbuffer_new();
-    if (*tty).in_0.is_null() {
-        fatal(|out| out.write_all(b"out of memory"));
-    }
+    (*tty).in_0 = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).event_out,
         (*c).fd,
         EV_WRITE as ::core::ffi::c_short,
         move |_, _| unsafe { tty_write_callback(tty as *mut ::core::ffi::c_void) },
     );
-    (*tty).out = evbuffer_new();
-    if (*tty).out.is_null() {
-        fatal(|out| out.write_all(b"out of memory"));
-    }
+    (*tty).out = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).clipboard_timer,
         -(1 as ::core::ffi::c_int),
@@ -799,9 +799,9 @@ pub unsafe fn tty_close(mut tty: *mut tty) {
     }
     tty_stop_tty(tty);
     if (*tty).flags & TTY_OPENED != 0 {
-        evbuffer_free((*tty).in_0);
+        (*tty).in_0 = None;
         event_del(&raw mut (*tty).event_in);
-        evbuffer_free((*tty).out);
+        (*tty).out = None;
         event_del(&raw mut (*tty).event_out);
         tty_term_free((*tty).term);
         (*tty).term = ::core::ptr::null_mut();
@@ -920,7 +920,11 @@ unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut le
         (*tty).discarded = (*tty).discarded.wrapping_add(len);
         return;
     }
-    evbuffer_add((*tty).out, buf as *const ::core::ffi::c_void, len);
+    evbuffer_add(
+        (*tty).out.as_deref_mut().expect("open TTY buffer"),
+        buf as *const ::core::ffi::c_void,
+        len,
+    );
     log_debug(format_args!(
         "{}: {}",
         log_cstr(

@@ -722,7 +722,7 @@ unsafe fn popup_key(c: *mut client, pd: *mut popup_data, event: *mut key_event) 
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn popup_job_update_cb(job: &mut job, mut pd: *mut popup_data) {
-    let mut evb: *mut evbuffer = (*job_get_event(job as *mut job)).input;
+    let mut evb: *mut evbuffer = &raw mut *(*job_get_event(job as *mut job)).input;
     let mut c: *mut client = (*pd).c;
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void =

@@ -12,7 +12,7 @@ use crate::src::monitor::{monitor_add, monitor_create_client, monitor_destroy, m
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_read, evbuffer_readln,
 };
 use crate::src::server_client::server_client_set_exit_message;
@@ -969,7 +969,7 @@ unsafe fn control_error_callback(mut data: *mut ::core::ffi::c_void) {
 unsafe fn control_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
-    let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
+    let mut buffer: *mut evbuffer = &raw mut *(*(*cs).read_event).input;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
         let Some(line) = evbuffer_readln(buffer) else {
@@ -1030,14 +1030,10 @@ pub unsafe fn control_wait_exit() {
         events: 0,
         revents: 0,
     };
-    let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut n: ::core::ffi::c_int = 0;
-    evb = evbuffer_new();
-    if evb.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
+    let mut evb = evbuffer_new();
     loop {
-        if let Some(line) = evbuffer_readln(evb) {
+        if let Some(line) = evbuffer_readln(&mut *evb) {
             if line[0] == 0 {
                 break;
             }
@@ -1054,7 +1050,7 @@ pub unsafe fn control_wait_exit() {
                     break;
                 }
             } else {
-                n = evbuffer_read(evb, fd, -(1 as ::core::ffi::c_int));
+                n = evbuffer_read(&mut *evb, fd, -(1 as ::core::ffi::c_int));
                 if n == 0 as ::core::ffi::c_int {
                     break;
                 }
@@ -1067,7 +1063,6 @@ pub unsafe fn control_wait_exit() {
             }
         }
     }
-    evbuffer_free(evb);
 }
 unsafe fn control_flush_all_blocks(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
@@ -1116,21 +1111,18 @@ unsafe fn control_append_data(
     mut c: *mut client,
     mut cp: *mut control_pane,
     mut age: uint64_t,
-    mut message: *mut evbuffer,
+    message: Option<Box<evbuffer>>,
     mut wp: *mut window_pane,
     mut size: size_t,
-) -> *mut evbuffer {
+) -> Box<evbuffer> {
     let mut new_data: *mut u_char = ::core::ptr::null_mut::<u_char>();
     let mut new_size: size_t = 0;
     let mut start: size_t = 0;
     let mut i: u_int = 0;
-    if message.is_null() {
-        message = evbuffer_new();
-        if message.is_null() {
-            fatalx(|out| out.write_all(b"out of memory"));
-        }
+    let mut message = message.unwrap_or_else(|| {
+        let mut message = evbuffer_new();
         if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_PAUSEAFTER != 0 {
-            evbuffer_add_formatted(message, |out| {
+            evbuffer_add_formatted(&mut *message, |out| {
                 write!(
                     out,
                     "%extended-output %{} {} : ",
@@ -1139,11 +1131,12 @@ unsafe fn control_append_data(
                 )
             });
         } else {
-            evbuffer_add_formatted(message, |out| {
+            evbuffer_add_formatted(&mut *message, |out| {
                 write!(out, "%output %{} ", ((*wp).id) as u32)
             });
         }
-    }
+        message
+    });
     new_data =
         window_pane_get_new_data(wp, &raw mut (*cp).offset, &raw mut new_size) as *mut u_char;
     if new_size < size {
@@ -1161,7 +1154,7 @@ unsafe fn control_append_data(
         if (*new_data.offset(i as isize) as ::core::ffi::c_int) < ' ' as i32
             || *new_data.offset(i as isize) as ::core::ffi::c_int == '\\' as i32
         {
-            evbuffer_add_formatted(message, |out| {
+            evbuffer_add_formatted(&mut *message, |out| {
                 write!(
                     out,
                     "\\{:03o}",
@@ -1179,7 +1172,7 @@ unsafe fn control_append_data(
                 i = i.wrapping_add(1);
             }
             evbuffer_add(
-                message,
+                &mut *message,
                 new_data.offset(start as isize) as *const ::core::ffi::c_void,
                 (i as size_t).wrapping_sub(start).wrapping_add(1 as size_t),
             );
@@ -1189,7 +1182,7 @@ unsafe fn control_append_data(
     window_pane_update_used_data(wp, &raw mut (*cp).offset, size);
     return message;
 }
-unsafe fn control_write_data(mut c: *mut client, mut message: *mut evbuffer) {
+unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
     let mut cs: *mut control_state = (*c).control_state;
     log_debug(format_args!(
         "{}: {}: {}",
@@ -1201,17 +1194,16 @@ unsafe fn control_write_data(mut c: *mut client, mut message: *mut evbuffer) {
                 as *const _
         ),
         log_cstr_n(
-            (evbuffer_pullup(message, -(1 as ::core::ffi::c_int) as ssize_t)) as *const _,
-            evbuffer_get_length(&*(message)) as ::core::ffi::c_int
+            (evbuffer_pullup(&mut *message, -(1 as ::core::ffi::c_int) as ssize_t)) as *const _,
+            evbuffer_get_length(&message) as ::core::ffi::c_int
         )
     ));
     evbuffer_add(
-        message,
+        &mut *message,
         b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
         1 as size_t,
     );
-    bufferevent_write_buffer((*cs).write_event, message);
-    evbuffer_free(message);
+    bufferevent_write_buffer((*cs).write_event, &mut *message);
 }
 unsafe fn control_write_pending(
     mut c: *mut client,
@@ -1220,7 +1212,7 @@ unsafe fn control_write_pending(
 ) -> ::core::ffi::c_int {
     let mut cs: *mut control_state = (*c).control_state;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut message: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
+    let mut message: Option<Box<evbuffer>> = None;
     let mut used: size_t = 0 as size_t;
     let mut size: size_t = 0;
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
@@ -1236,10 +1228,7 @@ unsafe fn control_write_pending(
     }
     while used != limit && !(*cp).blocks.is_empty() {
         if control_check_age(c, wp, cp) != 0 {
-            if !message.is_null() {
-                evbuffer_free(message);
-            }
-            message = ::core::ptr::null_mut::<evbuffer>();
+            message = None;
             break;
         } else {
             cb = control_first_pane_block(cp);
@@ -1268,23 +1257,24 @@ unsafe fn control_write_pending(
                 size = limit.wrapping_sub(used);
             }
             used = used.wrapping_add(size);
-            message = control_append_data(c, cp, age, message, wp, size);
+            message = Some(control_append_data(c, cp, age, message, wp, size));
             (*cb).size = (*cb).size.wrapping_sub(size);
             if (*cb).size == 0 as size_t {
                 control_remove_pane_block(cp, cb);
                 control_free_block(cs, cb);
                 cb = control_first_block(cs);
                 if !cb.is_null() && (*cb).size == 0 as size_t {
-                    if !wp.is_null() && !message.is_null() {
-                        control_write_data(c, message);
-                        message = ::core::ptr::null_mut::<evbuffer>();
+                    if !wp.is_null() {
+                        if let Some(message) = message.take() {
+                            control_write_data(c, message);
+                        }
                     }
                     control_flush_all_blocks(c);
                 }
             }
         }
     }
-    if !message.is_null() {
+    if let Some(message) = message {
         control_write_data(c, message);
     }
     return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
@@ -1292,7 +1282,7 @@ unsafe fn control_write_pending(
 unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
-    let mut evb: *mut evbuffer = (*(*cs).write_event).output;
+    let mut evb: *mut evbuffer = &raw mut *(*(*cs).write_event).output;
     let mut space: size_t = 0;
     let mut limit: size_t = 0;
     control_flush_all_blocks(c);

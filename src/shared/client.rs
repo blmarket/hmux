@@ -278,7 +278,7 @@ pub struct client_file {
     pub tree: *mut client_files,
     pub stream: ::core::ffi::c_int,
     pub path: Option<std::ffi::CString>,
-    pub buffer: *mut evbuffer,
+    pub buffer: Box<evbuffer>,
     pub event: *mut bufferevent,
     pub fd: ::core::ffi::c_int,
     pub error: ::core::ffi::c_int,

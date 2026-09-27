@@ -17,7 +17,7 @@ use crate::src::format::{
 };
 use crate::src::job::job_run;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_readln, event_active, event_add, event_del, event_set,
 };
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
@@ -374,10 +374,10 @@ unsafe fn cmd_run_shell_timer(mut arg: *mut ::core::ffi::c_void) {
     cmd_run_shell_free(cdata);
 }
 unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_run_shell_data) {
-    let event = evbuffer_new();
+    let mut event = evbuffer_new();
     if !completion.output.is_empty() {
         evbuffer_add(
-            event,
+            &mut *event,
             completion.output.as_ptr().cast(),
             completion.output.len(),
         );
@@ -392,14 +392,14 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     loop {
-        let Some(line) = evbuffer_readln(event) else {
+        let Some(line) = evbuffer_readln(&mut *event) else {
             break;
         };
         cmd_run_shell_print(cdata, line.as_ptr().cast());
     }
-    size = evbuffer_get_length(&*event);
+    size = evbuffer_get_length(&event);
     if size != 0 as size_t {
-        let input = evbuffer_pullup(event, -(1 as ::core::ffi::c_int) as ssize_t);
+        let input = evbuffer_pullup(&mut *event, -(1 as ::core::ffi::c_int) as ssize_t);
         let mut partial_line = ::core::slice::from_raw_parts(input as *const u8, size).to_vec();
         partial_line.push(0);
         cmd_run_shell_print(cdata, partial_line.as_ptr().cast());
@@ -424,7 +424,6 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
             retcode = 0;
         }
     }
-    evbuffer_free(event);
     if let Some(msg) = msg.as_ref() {
         cmd_run_shell_print(cdata, msg.as_ptr());
     }

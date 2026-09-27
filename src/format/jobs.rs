@@ -39,7 +39,7 @@ static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
 pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
-    let mut evb: *mut evbuffer = (*job_get_event(job as *mut job)).input;
+    let mut evb: *mut evbuffer = &raw mut *(*job_get_event(job as *mut job)).input;
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {
@@ -74,16 +74,16 @@ pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
     }
 }
 pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut format_job) {
-    let evb = evbuffer_new();
+    let mut evb = evbuffer_new();
     if !completion.output.is_empty() {
         evbuffer_add(
-            evb,
+            &mut *evb,
             completion.output.as_ptr().cast(),
             completion.output.len(),
         );
     }
     (*fj).job = ::core::ptr::null_mut::<job>();
-    let line = evbuffer_readline(evb);
+    let line = evbuffer_readline(&mut *evb);
     let output = if let Some(line) = line {
         let visible = line
             .iter()
@@ -91,12 +91,12 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
             .unwrap_or(line.len());
         CString::new(&line[..visible]).expect("visible job output contains no NUL")
     } else {
-        let len = evbuffer_get_length(&*(evb));
+        let len = evbuffer_get_length(&evb);
         let bytes = if len == 0 {
             &[][..]
         } else {
             std::slice::from_raw_parts(
-                evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t),
+                evbuffer_pullup(&mut *evb, -(1 as ::core::ffi::c_int) as ssize_t),
                 len,
             )
         };
@@ -105,7 +105,6 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
         let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);
         CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
     };
-    evbuffer_free(evb);
     log_debug(format_args!(
         "{}: {} {}: {}",
         "format_job_complete",

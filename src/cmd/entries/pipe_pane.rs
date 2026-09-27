@@ -241,7 +241,7 @@ unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     if (*wp).pipe_event.is_null() {
         return;
     }
-    evb = (*(*wp).pipe_event).input;
+    evb = &raw mut *(*(*wp).pipe_event).input;
     available = evbuffer_get_length(&*(evb));
     log_debug(format_args!(
         "%{} pipe read {}",
