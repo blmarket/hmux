@@ -28,8 +28,7 @@ pub struct redraw_line {
 
 #[derive(Default)]
 pub struct redraw_spans {
-    /// Spans stay individually boxed so pointers handed to drawing helpers stay
-    /// valid even if appending another span grows this vector.
+    /// Preserve stable heap allocation while drawing helpers borrow spans.
     pub entries: Vec<Box<redraw_span>>,
 }
 
@@ -38,10 +37,8 @@ impl redraw_spans {
         self.entries.push(Box::new(span));
     }
 
-    pub fn iter_mut_ptr(&mut self) -> impl Iterator<Item = *mut redraw_span> + '_ {
-        self.entries
-            .iter_mut()
-            .map(|span| span.as_mut() as *mut redraw_span)
+    pub fn iter(&self) -> impl Iterator<Item = &redraw_span> {
+        self.entries.iter().map(Box::as_ref)
     }
 }
 
@@ -216,10 +213,7 @@ mod tests {
         assert_eq!(unsafe { (*first).x }, 10);
         assert_eq!(spans.entries.first().unwrap().x, 10);
         assert_eq!(spans.entries.last().unwrap().x, 127);
-        let xs = spans
-            .iter_mut_ptr()
-            .map(|span| unsafe { (*span).x })
-            .collect::<Vec<_>>();
+        let xs = spans.iter().map(|span| span.x).collect::<Vec<_>>();
         assert_eq!(xs.len(), 118);
         assert_eq!(xs.first(), Some(&10));
         assert_eq!(xs.last(), Some(&127));

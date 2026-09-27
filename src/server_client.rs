@@ -55,7 +55,7 @@ use crate::src::reactor::{
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
 use crate::src::screen::screen_mode_display;
 use crate::src::screen_redraw::{
-    redraw_free_scene, redraw_pane, redraw_pane_scrollbar, redraw_screen,
+    redraw_pane, redraw_pane_scrollbar, redraw_screen,
 };
 use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::src::server_fn::{
@@ -1490,7 +1490,7 @@ unsafe fn server_client_free(c: *mut client) {
         "free client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
-    redraw_free_scene((*c).redraw_scene);
+    drop((*c).redraw_scene.take());
     if !(*c).queue.is_null() {
         cmdq_free((*c).queue);
     }

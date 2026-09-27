@@ -246,7 +246,7 @@ pub unsafe fn window_make_pane_status(
     mut wp: *mut window_pane,
     mut c: *mut client,
     mut width: u_int,
-    mut spans: *mut redraw_spans,
+    spans: &redraw_spans,
     mut span_index: usize,
 ) -> ::core::ffi::c_int {
     let mut gc: grid_cell = grid_cell {
@@ -304,7 +304,7 @@ pub unsafe fn window_make_pane_status(
     pane_lines = window_pane_get_pane_lines(wp);
     i = 0 as u_int;
     while i < width {
-        cell_type = redraw_get_status_border_cell_type(spans, &raw mut span_index, i);
+        cell_type = redraw_get_status_border_cell_type(spans, &mut span_index, i);
         window_get_border_cell(wp, pane_lines, cell_type, &mut gc);
         screen_write_cell(&mut ctx, &gc);
         i = i.wrapping_add(1);

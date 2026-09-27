@@ -147,7 +147,7 @@ pub struct client {
     pub written: size_t,
     pub discarded: size_t,
     pub redraw: size_t,
-    pub redraw_scene: *mut redraw_scene,
+    pub redraw_scene: Option<Box<redraw_scene>>,
     pub repeat_timer: event,
     pub click_timer: event,
     pub click_loc: ::core::ffi::c_int,

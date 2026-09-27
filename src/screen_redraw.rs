@@ -79,8 +79,8 @@ pub const REDRAW_SPAN_PANE: redraw_span_type = 0;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct redraw_draw_ctx {
-    pub scene: *mut redraw_scene,
+pub struct redraw_draw_ctx<'scene> {
+    pub scene: &'scene redraw_scene,
     pub active: *mut window_pane,
     pub marked: *mut window_pane,
     pub status_lines: u_int,
@@ -453,19 +453,19 @@ unsafe fn redraw_mark_pane_scrollbar(
     }
 }
 unsafe fn redraw_data_has_pane(
-    mut data: *mut redraw_span_data,
+    data: &redraw_span_data,
     mut wp: *mut window_pane,
 ) -> ::core::ffi::c_int {
-    if (*data).border().top_wp == wp {
+    if data.border().top_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
-    if (*data).border().bottom_wp == wp {
+    if data.border().bottom_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
-    if (*data).border().left_wp == wp {
+    if data.border().left_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
-    if (*data).border().right_wp == wp {
+    if data.border().right_wp == wp {
         return 1 as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
@@ -503,7 +503,7 @@ unsafe fn redraw_mark_border_cell(
         }
     } else if (*bc).data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-        || redraw_data_has_pane(&raw mut (*bc).data, wp) == 0
+        || redraw_data_has_pane(&(*bc).data, wp) == 0
     {
         reset = 1 as ::core::ffi::c_int;
     }
@@ -981,7 +981,7 @@ unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<re
     redraw_mark_two_pane_colours(bctx);
     redraw_mark_menu(bctx);
 }
-unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
+unsafe fn redraw_make_scene(mut c: *mut client) -> Option<Box<redraw_scene>> {
     let mut s: *mut session = (*c).session;
     let mut w: *mut window = (*(*s).curw).window;
     let mut bctx: redraw_build_ctx = redraw_build_ctx {
@@ -994,16 +994,14 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         ind: 0,
         cells: ::core::ptr::null_mut::<redraw_build_cell>(),
     };
-    let mut scene: *mut redraw_scene = ::core::ptr::null_mut::<redraw_scene>();
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut last: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
-    let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
     let mut type_0: redraw_span_type = REDRAW_SPAN_PANE;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut x0: u_int = 0;
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
-        return ::core::ptr::null_mut::<redraw_scene>();
+        return None;
     }
     redraw_set_context(c, &raw mut bctx);
     let mut cells = RedrawCellScratch::take();
@@ -1023,8 +1021,7 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         (*w).redraw_scene_generation as ::core::ffi::c_ulonglong
     ));
     redraw_build_cells(&raw mut bctx, &mut cells.0);
-    // The client borrows this address until redraw_free_scene releases it.
-    scene = Box::into_raw(Box::new(redraw_scene {
+    let mut scene = Box::new(redraw_scene {
         c,
         w,
         lines: Box::default(),
@@ -1033,7 +1030,7 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         sy: bctx.sy,
         ox: bctx.ox,
         oy: bctx.oy,
-    }));
+    });
     if bctx.sy == 0 {
         fatalx(|out| out.write_all(b"xcalloc: zero size"));
     }
@@ -1043,10 +1040,10 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         .take(bctx.sy as usize)
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    (*scene).lines = lines;
+    scene.lines = lines;
     y = 0 as u_int;
     while y < bctx.sy {
-        line = &raw mut (&mut (*scene).lines)[y as usize];
+        let line = &mut scene.lines[y as usize];
         x = 0 as u_int;
         while x < bctx.sx {
             x0 = x;
@@ -1063,7 +1060,7 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
             bc = redraw_get_build_cell(&raw mut bctx, x0, y);
             type_0 = (*bc).data.kind();
             // The scene owns each stable span until its row collection is dropped.
-            (*line).spans[type_0 as usize].push(redraw_span {
+            line.spans[type_0 as usize].push(redraw_span {
                 x: x0,
                 width: x.wrapping_sub(x0),
                 data: (*bc).data.clone(),
@@ -1081,15 +1078,9 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         ),
         ((*w).id) as u32
     ));
-    return scene;
+    return Some(scene);
 }
-pub unsafe fn redraw_free_scene(mut scene: *mut redraw_scene) {
-    if scene.is_null() {
-        return;
-    }
-    // Dropping the boxed row slice drops each per-type collection and its spans.
-    drop(Box::from_raw(scene));
-}
+
 pub unsafe fn redraw_invalidate_scene(mut w: *mut window) {
     (*w).redraw_scene_generation = (*w).redraw_scene_generation.wrapping_add(1);
 }
@@ -1101,51 +1092,56 @@ pub unsafe fn redraw_invalidate_all_scenes() {
         w = windows_next(&*w);
     }
 }
-unsafe fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
-    let mut scene: *mut redraw_scene = (*c).redraw_scene;
-    let mut w: *mut window = (*(*(*c).session).curw).window;
-    let mut reason: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+unsafe fn redraw_get_scene(c: *mut client) -> Option<Box<redraw_scene>> {
+    let w = (*(*(*c).session).curw).window;
     let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(&mut *c);
-    if scene.is_null() {
-        reason = b"missing\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if (*scene).w != w {
-        reason = b"window changed\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if (*scene).generation != (*w).redraw_scene_generation {
-        reason = b"generation changed\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if (*scene).ox != ox || (*scene).oy != oy {
-        reason = b"offset changed\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if (*scene).sx != sx || (*scene).sy != sy {
-        reason = b"size changed\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    if !reason.is_null() {
+    let scene = (*c).redraw_scene.take();
+    let reason = match scene.as_deref() {
+        None => Some("missing"),
+        Some(scene) if scene.w != w => Some("window changed"),
+        Some(scene) if scene.generation != (*w).redraw_scene_generation => {
+            Some("generation changed")
+        }
+        Some(scene) if scene.ox != ox || scene.oy != oy => Some("offset changed"),
+        Some(scene) if scene.sx != sx || scene.sy != sy => Some("size changed"),
+        Some(_) => None,
+    };
+    if let Some(reason) = reason {
         log_debug(format_args!(
             "{}: @{} scene invalid: {}",
             log_cstr(
-                (((*c).name)
+                (*c).name
                     .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                    .map_or(std::ptr::null(), |name| name.as_ptr())
             ),
-            ((*w).id) as u32,
-            log_cstr((reason) as *const _)
+            (*w).id,
+            reason
         ));
-        redraw_free_scene(scene);
-        scene = redraw_make_scene(c);
-        (*c).redraw_scene = scene;
+        drop(scene);
+        redraw_make_scene(c)
+    } else {
+        scene
     }
-    return scene;
+}
+
+// An active draw owns its scene. Nested draws may publish a replacement while
+// callbacks run; keep that newer cache instead of overwriting it on return.
+fn redraw_restore_scene(c: &mut client, scene: Box<redraw_scene>) {
+    if c.redraw_scene.is_none() {
+        c.redraw_scene = Some(scene);
+    }
 }
 unsafe fn redraw_draw_pane_span(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
     mut x: u_int,
     mut y: u_int,
     mut n: u_int,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut c: *mut client = (*scene).c;
+    let scene = dctx.scene;
+    let mut c: *mut client = scene.c;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut wp: *mut window_pane = (*span).data.pane().wp;
+    let mut wp: *mut window_pane = span.data.pane().wp;
     let mut s: *mut screen = (*wp).screen;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
@@ -1173,26 +1169,22 @@ unsafe fn redraw_draw_pane_span(
     style_ctx.defaults = defaults;
     style_ctx.palette = &raw mut (*wp).palette;
     style_ctx.hyperlinks = (*s).hyperlinks.clone();
-    px = (*span)
-        .data
-        .pane()
-        .px
-        .wrapping_add(x.wrapping_sub((*span).x));
-    py = (*span).data.pane().py;
+    px = (*span).data.pane().px.wrapping_add(x.wrapping_sub(span.x));
+    py = span.data.pane().py;
     tty_draw_line(tty, &*s, px, py, n, x, y, Some(&style_ctx));
 }
 unsafe fn redraw_get_default_border_style(
-    mut dctx: *mut redraw_draw_ctx,
+    dctx: &mut redraw_draw_ctx<'_>,
     mut gc: *mut grid_cell,
     mut pane_lines: *mut pane_lines,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut c: *mut client = (*scene).c;
+    let scene = dctx.scene;
+    let mut c: *mut client = scene.c;
     let mut s: *mut session = (*c).session;
-    let mut oo: *mut options = (*(*scene).w).options;
+    let mut oo: *mut options = (*scene.w).options;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut dgc: *mut grid_cell = &raw mut (*dctx).default_gc;
-    if !(*dctx).flags & REDRAW_DEFAULT_SET != 0 {
+    let mut dgc: *mut grid_cell = &mut dctx.default_gc;
+    if !dctx.flags & REDRAW_DEFAULT_SET != 0 {
         ft = format_create_defaults(
             ::core::ptr::null_mut::<cmdq_item>(),
             c,
@@ -1212,72 +1204,72 @@ unsafe fn redraw_get_default_border_style(
             ft,
         );
         format_free(ft);
-        (*dctx).pane_lines = options_get_number(
+        dctx.pane_lines = options_get_number(
             oo,
             b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
         ) as pane_lines;
-        (*dctx).flags |= REDRAW_DEFAULT_SET;
+        dctx.flags |= REDRAW_DEFAULT_SET;
     }
     memcpy(
         gc as *mut ::core::ffi::c_void,
         dgc as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    *pane_lines = (*dctx).pane_lines;
+    *pane_lines = dctx.pane_lines;
 }
 unsafe fn redraw_get_pane_for_border_style(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
 ) -> *mut window_pane {
-    let mut active: *mut window_pane = (*dctx).active;
-    if (*span).data.kind() as ::core::ffi::c_uint
+    let mut active: *mut window_pane = dctx.active;
+    if span.data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    if !(*span).data.border().style_wp.is_null() {
-        return (*span).data.border().style_wp;
+    if !span.data.border().style_wp.is_null() {
+        return span.data.border().style_wp;
     }
-    if !active.is_null() && redraw_data_has_pane(&raw mut (*span).data, active) != 0 {
+    if !active.is_null() && redraw_data_has_pane(&span.data, active) != 0 {
         return active;
     }
-    if !(*span).data.border().top_wp.is_null() {
-        return (*span).data.border().top_wp;
+    if !span.data.border().top_wp.is_null() {
+        return span.data.border().top_wp;
     }
-    if !(*span).data.border().bottom_wp.is_null() {
-        return (*span).data.border().bottom_wp;
+    if !span.data.border().bottom_wp.is_null() {
+        return span.data.border().bottom_wp;
     }
-    if !(*span).data.border().left_wp.is_null() {
-        return (*span).data.border().left_wp;
+    if !span.data.border().left_wp.is_null() {
+        return span.data.border().left_wp;
     }
-    if !(*span).data.border().right_wp.is_null() {
-        return (*span).data.border().right_wp;
+    if !span.data.border().right_wp.is_null() {
+        return span.data.border().right_wp;
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
 unsafe fn redraw_draw_border_arrow(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
     mut gc: *mut grid_cell,
 ) {
-    let mut active: *mut window_pane = (*dctx).active;
+    let mut active: *mut window_pane = dctx.active;
     let mut ch: ::core::ffi::c_char = 0;
-    if (*span).data.kind() as ::core::ffi::c_uint
+    if span.data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
         || active.is_null()
     {
         return;
     }
-    if !(*span).data.border().flags & REDRAW_BORDER_IS_ARROW != 0 {
+    if !span.data.border().flags & REDRAW_BORDER_IS_ARROW != 0 {
         return;
     }
-    if (*span).data.border().left_wp == active {
+    if span.data.border().left_wp == active {
         ch = ',' as i32 as ::core::ffi::c_char;
-    } else if (*span).data.border().right_wp == active {
+    } else if span.data.border().right_wp == active {
         ch = '+' as i32 as ::core::ffi::c_char;
-    } else if (*span).data.border().top_wp == active {
+    } else if span.data.border().top_wp == active {
         ch = '-' as i32 as ::core::ffi::c_char;
-    } else if (*span).data.border().bottom_wp == active {
+    } else if span.data.border().bottom_wp == active {
         ch = '.' as i32 as ::core::ffi::c_char;
     } else {
         return;
@@ -1286,16 +1278,16 @@ unsafe fn redraw_draw_border_arrow(
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
 }
 unsafe fn redraw_draw_border_span(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
     mut x: u_int,
     mut y: u_int,
     mut n: u_int,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut c: *mut client = (*scene).c;
+    let scene = dctx.scene;
+    let mut c: *mut client = scene.c;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut w: *mut window = (*scene).w;
+    let mut w: *mut window = scene.w;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1315,26 +1307,26 @@ unsafe fn redraw_draw_border_span(
     let mut i: u_int = 0;
     let mut cell_type: u_int = 0;
     let mut isolates: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*span).data.kind() as ::core::ffi::c_uint
+    if span.data.kind() as ::core::ffi::c_uint
         != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         cell_type = CELL_NONE as u_int;
     } else {
         wp = redraw_get_pane_for_border_style(dctx, span);
-        cell_type = (*span).data.border().cell_type as u_int;
+        cell_type = span.data.border().cell_type as u_int;
     }
     if wp.is_null() {
         redraw_get_default_border_style(dctx, &raw mut gc, &raw mut pane_lines);
-        if (*span).data.kind() as ::core::ffi::c_uint
+        if span.data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             window_get_fill_cell(w, 0 as ::core::ffi::c_int, &raw mut gc);
-        } else if (*span).data.kind() as ::core::ffi::c_uint
+        } else if span.data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             window_get_fill_cell(w, 1 as ::core::ffi::c_int, &raw mut gc);
         } else {
-            if (*span).data.kind() as ::core::ffi::c_uint
+            if span.data.kind() as ::core::ffi::c_uint
                 != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 pane_lines = PANE_LINES_SINGLE;
@@ -1350,15 +1342,15 @@ unsafe fn redraw_draw_border_span(
         window_pane_get_border_style(wp, c, &raw mut gc);
         window_pane_get_border_cell(wp, cell_type as ::core::ffi::c_int, &mut gc);
     }
-    if (*span).data.kind() as ::core::ffi::c_uint
+    if span.data.kind() as ::core::ffi::c_uint
         == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-        && !(*dctx).marked.is_null()
-        && redraw_data_has_pane(&raw mut (*span).data, (*dctx).marked) != 0
+        && !dctx.marked.is_null()
+        && redraw_data_has_pane(&span.data, dctx.marked) != 0
     {
         gc.attr = (gc.attr as ::core::ffi::c_int ^ GRID_ATTR_REVERSE) as u_short;
     }
     redraw_draw_border_arrow(dctx, span, &raw mut gc);
-    if cell_type == CELL_UD as u_int && (*dctx).flags & REDRAW_ISOLATES != 0 {
+    if cell_type == CELL_UD as u_int && dctx.flags & REDRAW_ISOLATES != 0 {
         isolates = 1 as ::core::ffi::c_int;
     }
     tty_cursor(tty, x, y);
@@ -1375,16 +1367,16 @@ unsafe fn redraw_draw_border_span(
     }
 }
 unsafe fn redraw_draw_status_span(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
     mut x: u_int,
     mut y: u_int,
     mut n: u_int,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut c: *mut client = (*scene).c;
+    let scene = dctx.scene;
+    let mut c: *mut client = scene.c;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut wp: *mut window_pane = (*span).data.status().wp;
+    let mut wp: *mut window_pane = span.data.status().wp;
     let mut s: *mut screen = &raw mut (*wp).status_screen;
     let mut px: u_int = 0;
     let mut sx: u_int = (*s).grid().sx;
@@ -1392,7 +1384,7 @@ unsafe fn redraw_draw_status_span(
         .data
         .status()
         .offset
-        .wrapping_add(x.wrapping_sub((*span).x));
+        .wrapping_add(x.wrapping_sub(span.x));
     if px < sx {
         if n > sx.wrapping_sub(px) {
             n = sx.wrapping_sub(px);
@@ -1401,16 +1393,16 @@ unsafe fn redraw_draw_status_span(
     }
 }
 unsafe fn redraw_draw_scrollbar_span(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
     mut x: u_int,
     mut y: u_int,
     mut n: u_int,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut wp: *mut window_pane = (*span).data.scrollbar().wp;
+    let scene = dctx.scene;
+    let mut wp: *mut window_pane = span.data.scrollbar().wp;
     let mut s: *mut screen = (*wp).screen;
-    let mut tty: *mut tty = &raw mut (*(*scene).c).tty;
+    let mut tty: *mut tty = &raw mut (*scene.c).tty;
     let mut sb_style: *mut style = &raw mut (*wp).scrollbar_style;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1459,8 +1451,8 @@ unsafe fn redraw_draw_scrollbar_span(
     let mut total_height: u_int = 0;
     let mut slider_h: u_int = 0;
     let mut slider_y: u_int = 0;
-    let mut sb_h: u_int = (*span).data.scrollbar().height;
-    let mut sb_y: u_int = (*span).data.scrollbar().y;
+    let mut sb_h: u_int = span.data.scrollbar().height;
+    let mut sb_y: u_int = span.data.scrollbar().y;
     let mut i: u_int = 0;
     let mut off: u_int = 0;
     let mut sb_w: u_int = 0;
@@ -1516,12 +1508,12 @@ unsafe fn redraw_draw_scrollbar_span(
     pad_gc = tty_default_colours(wp).0;
     sb_w = (*sb_style).width as u_int;
     sb_pad = (*sb_style).pad as u_int;
-    off = x.wrapping_sub((*span).x);
+    off = x.wrapping_sub(span.x);
     tty_cursor(tty, x, y);
     let mut current_block_40: u64;
     i = 0 as u_int;
     while i < n {
-        if (*span).data.scrollbar().flags & REDRAW_SCROLLBAR_LEFT != 0 {
+        if span.data.scrollbar().flags & REDRAW_SCROLLBAR_LEFT != 0 {
             if off.wrapping_add(i) >= sb_w && off.wrapping_add(i) < sb_w.wrapping_add(sb_pad) {
                 tty_cell(tty, &pad_gc, None);
                 current_block_40 = 3437258052017859086;
@@ -1549,13 +1541,13 @@ unsafe fn redraw_draw_scrollbar_span(
     }
 }
 unsafe fn redraw_draw_menu_span(
-    dctx: *mut redraw_draw_ctx,
-    span: *mut redraw_span,
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
     x: u_int,
     y: u_int,
     n: u_int,
 ) {
-    let data = (*span).data.menu();
+    let data = span.data.menu();
     let Some(owner) = data.md.upgrade() else {
         return;
     };
@@ -1563,20 +1555,16 @@ unsafe fn redraw_draw_menu_span(
     if md.closed {
         return;
     }
-    let scene = (*dctx).scene;
-    let tty = &raw mut (*(*scene).c).tty;
-    let px = data.px.wrapping_add(x.wrapping_sub((*span).x));
+    let scene = dctx.scene;
+    let tty = &raw mut (*scene.c).tty;
+    let px = data.px.wrapping_add(x.wrapping_sub(span.x));
     tty_draw_line(tty, menu_screen(&md), px, data.py, n, x, y, None);
 }
-unsafe fn redraw_draw_span(
-    mut dctx: *mut redraw_draw_ctx,
-    mut span: *mut redraw_span,
-    mut y: u_int,
-) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut data: *mut redraw_span_data = &raw mut (*span).data;
-    let mut type_0: redraw_span_type = (*data).kind();
-    let mut c: *mut client = (*scene).c;
+unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u_int) {
+    let scene = dctx.scene;
+    let data = &span.data;
+    let mut type_0: redraw_span_type = data.kind();
+    let mut c: *mut client = scene.c;
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
@@ -1585,18 +1573,18 @@ unsafe fn redraw_draw_span(
     let mut n: u_int = 0;
     if type_0 as ::core::ffi::c_uint
         == REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint
-        && !(*(*data).status().wp).flags & PANE_NEWSTATUS != 0
+        && !(*data.status().wp).flags & PANE_NEWSTATUS != 0
     {
         return;
     }
-    r = tty_check_overlay_range(tty, (*span).x, y, (*span).width);
+    r = tty_check_overlay_range(tty, span.x, y, span.width);
     i = 0 as u_int;
     while i < (*r).used {
         rr = &raw mut (&mut (*r).storage)[i as usize];
         if !((*rr).nx == 0 as u_int) {
             x = (*rr).px;
             n = (*rr).nx;
-            match (*span).data.kind() as ::core::ffi::c_uint {
+            match span.data.kind() as ::core::ffi::c_uint {
                 0 => {
                     redraw_draw_pane_span(dctx, span, x, y, n);
                 }
@@ -1619,499 +1607,84 @@ unsafe fn redraw_draw_span(
     }
 }
 unsafe fn redraw_draw_pane_lines(
-    mut dctx: *mut redraw_draw_ctx,
-    mut wp: *mut window_pane,
-    mut flags: ::core::ffi::c_int,
+    dctx: &mut redraw_draw_ctx<'_>,
+    wp: *mut window_pane,
+    flags: ::core::ffi::c_int,
 ) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
-    let mut spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
-    let mut cy: u_int = 0;
-    let mut y: ::core::ffi::c_int = 0;
-    let mut top: ::core::ffi::c_int = 0;
-    let mut bottom: ::core::ffi::c_int = 0;
-    top = (*wp).yoff - (*scene).oy as ::core::ffi::c_int;
-    if top < 0 as ::core::ffi::c_int {
-        top = 0 as ::core::ffi::c_int;
-    }
-    bottom = (*wp).yoff + (*wp).sy as ::core::ffi::c_int - (*scene).oy as ::core::ffi::c_int;
-    if bottom < 0 as ::core::ffi::c_int {
-        bottom = 0 as ::core::ffi::c_int;
-    }
-    if bottom > (*scene).sy as ::core::ffi::c_int {
-        bottom = (*scene).sy as ::core::ffi::c_int;
-    }
-    y = top;
-    while y < bottom {
-        line = &raw mut (&mut (*scene).lines)[y as usize];
-        if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
-            cy = (*dctx).status_lines.wrapping_add(y as u_int);
+    let scene = dctx.scene;
+    let top = ((*wp).yoff - scene.oy as i32).max(0);
+    let bottom = ((*wp).yoff + (*wp).sy as i32 - scene.oy as i32)
+        .max(0)
+        .min(scene.sy as i32);
+    for y in top..bottom {
+        let line = &scene.lines[y as usize];
+        let cy = if dctx.flags & REDRAW_STATUS_TOP != 0 {
+            dctx.status_lines.wrapping_add(y as u_int)
         } else {
-            cy = y as u_int;
-        }
+            y as u_int
+        };
         if flags & REDRAW_PANE != 0 {
-            spans = &raw mut (*line).spans[REDRAW_SPAN_PANE as usize];
-            for span in (*spans).iter_mut_ptr() {
-                if (*span).data.pane().wp == wp {
+            for span in line.spans[REDRAW_SPAN_PANE as usize].iter() {
+                if span.data.pane().wp == wp {
                     redraw_draw_span(dctx, span, cy);
                 }
             }
         }
         if flags & REDRAW_PANE_SCROLLBAR != 0 {
-            spans = &raw mut (*line).spans[REDRAW_SPAN_SCROLLBAR as usize];
-            for span in (*spans).iter_mut_ptr() {
-                if (*span).data.scrollbar().wp == wp {
+            for span in line.spans[REDRAW_SPAN_SCROLLBAR as usize].iter() {
+                if span.data.scrollbar().wp == wp {
                     redraw_draw_span(dctx, span, cy);
                 }
             }
         }
-        y += 1;
     }
 }
-unsafe fn redraw_draw_lines(mut dctx: *mut redraw_draw_ctx, mut flags: ::core::ffi::c_int) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
-    let mut spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
-    let mut y: u_int = 0;
-    let mut cy: u_int = 0;
-    let mut type_0: u_int = 0;
-    y = 0 as u_int;
-    while y < (*scene).sy {
-        line = &raw mut (&mut (*scene).lines)[y as usize];
-        if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
-            cy = (*dctx).status_lines.wrapping_add(y);
+unsafe fn redraw_draw_lines(dctx: &mut redraw_draw_ctx<'_>, flags: ::core::ffi::c_int) {
+    let scene = dctx.scene;
+    let masks = [
+        REDRAW_PANE,
+        REDRAW_OUTSIDE,
+        REDRAW_EMPTY,
+        REDRAW_PANE_STATUS,
+        REDRAW_PANE_BORDER,
+        REDRAW_PANE_SCROLLBAR,
+        REDRAW_MENU,
+    ];
+    for (y, line) in scene.lines.iter().enumerate() {
+        let cy = if dctx.flags & REDRAW_STATUS_TOP != 0 {
+            dctx.status_lines.wrapping_add(y as u_int)
         } else {
-            cy = y;
-        }
-        let mut current_block_9: u64;
-        type_0 = 0 as u_int;
-        while type_0 < REDRAW_SPAN_TYPES as u_int {
-            if !(flags == REDRAW_ALL) {
-                match type_0 {
-                    0 => {
-                        current_block_9 = 12159231939852168738;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    1 => {
-                        current_block_9 = 16319640041109108851;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    2 => {
-                        current_block_9 = 11740996042087507061;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    4 => {
-                        current_block_9 = 10899678633117585587;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    3 => {
-                        current_block_9 = 7695618138115701323;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    5 => {
-                        current_block_9 = 6251484932569512093;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    6 => {
-                        current_block_9 = 10170200351409165677;
-                        match current_block_9 {
-                            10170200351409165677 => {
-                                if !flags & REDRAW_MENU != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            16319640041109108851 => {
-                                if !flags & REDRAW_OUTSIDE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            11740996042087507061 => {
-                                if !flags & REDRAW_EMPTY != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            10899678633117585587 => {
-                                if !flags & REDRAW_PANE_BORDER != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            7695618138115701323 => {
-                                if !flags & REDRAW_PANE_STATUS != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            6251484932569512093 => {
-                                if !flags & REDRAW_PANE_SCROLLBAR != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                            _ => {
-                                if !flags & REDRAW_PANE != 0 {
-                                    current_block_9 = 7351195479953500246;
-                                } else {
-                                    current_block_9 = 11194104282611034094;
-                                }
-                            }
-                        }
-                    }
-                    _ => {
-                        current_block_9 = 7351195479953500246;
-                    }
-                }
-            } else {
-                current_block_9 = 11194104282611034094;
+            y as u_int
+        };
+        for (spans, mask) in line.spans.iter().zip(masks) {
+            if flags != REDRAW_ALL && flags & mask == 0 {
+                continue;
             }
-            match current_block_9 {
-                11194104282611034094 => {
-                    spans = &raw mut (*line).spans[type_0 as usize];
-                    for span in (*spans).iter_mut_ptr() {
-                        redraw_draw_span(dctx, span, cy);
-                    }
-                }
-                _ => {}
+            for span in spans.iter() {
+                redraw_draw_span(dctx, span, cy);
             }
-            type_0 = type_0.wrapping_add(1);
         }
-        y = y.wrapping_add(1);
     }
 }
-unsafe fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
-    let mut y: u_int = 0;
-    let mut cy: u_int = 0;
-    y = 0 as u_int;
-    while y < (*scene).sy {
-        line = &raw mut (&mut (*scene).lines)[y as usize];
-        if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
-            cy = (*dctx).status_lines.wrapping_add(y);
+unsafe fn redraw_draw_menu_lines(dctx: &mut redraw_draw_ctx<'_>) {
+    let scene = dctx.scene;
+    for (y, line) in scene.lines.iter().enumerate() {
+        let cy = if dctx.flags & REDRAW_STATUS_TOP != 0 {
+            dctx.status_lines.wrapping_add(y as u_int)
         } else {
-            cy = y;
-        }
-        for span in (*line).spans[REDRAW_SPAN_MENU as ::core::ffi::c_int as usize].iter_mut_ptr() {
+            y as u_int
+        };
+        for span in line.spans[REDRAW_SPAN_MENU as usize].iter() {
             redraw_draw_span(dctx, span, cy);
         }
-        y = y.wrapping_add(1);
     }
 }
 unsafe fn redraw_pane_status_line(
-    mut dctx: *mut redraw_draw_ctx,
+    dctx: &mut redraw_draw_ctx<'_>,
     mut wp: *mut window_pane,
     mut line: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
+    let scene = dctx.scene;
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut wy: ::core::ffi::c_int = 0;
     pane_status = window_pane_get_pane_status(wp);
@@ -2123,77 +1696,62 @@ unsafe fn redraw_pane_status_line(
     } else {
         wy = ((*wp).yoff as u_int).wrapping_add((*wp).sy) as ::core::ffi::c_int;
     }
-    if wy < 0 as ::core::ffi::c_int || wy < (*scene).oy as ::core::ffi::c_int {
+    if wy < 0 as ::core::ffi::c_int || wy < scene.oy as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if wy as u_int >= (*scene).oy.wrapping_add((*scene).sy) {
+    if wy as u_int >= scene.oy.wrapping_add(scene.sy) {
         return 0 as ::core::ffi::c_int;
     }
-    *line = (wy as u_int).wrapping_sub((*scene).oy);
+    *line = (wy as u_int).wrapping_sub(scene.oy);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn redraw_pane_status_width(
-    mut dctx: *mut redraw_draw_ctx,
-    mut wp: *mut window_pane,
-    mut spans_out: *mut *mut redraw_spans,
-    mut first_index: *mut usize,
-) -> u_int {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut y: u_int = 0;
-    let mut width: u_int = 0 as u_int;
-    let mut end: u_int = 0;
-    if redraw_pane_status_line(dctx, wp, &raw mut y) == 0 {
-        return 0 as u_int;
+unsafe fn redraw_pane_status_width<'scene>(
+    dctx: &mut redraw_draw_ctx<'scene>,
+    wp: *mut window_pane,
+) -> Option<(u_int, &'scene redraw_spans, usize)> {
+    let mut y = 0;
+    if redraw_pane_status_line(dctx, wp, &mut y) == 0 {
+        return None;
     }
-    let spans = &mut (&mut (*scene).lines)[y as usize].spans
-        [REDRAW_SPAN_STATUS as ::core::ffi::c_int as usize];
-    *spans_out = spans;
-    *first_index = spans.entries.len();
-    for (index, span) in spans.entries.iter().enumerate() {
+    let spans = &dctx.scene.lines[y as usize].spans[REDRAW_SPAN_STATUS as usize];
+    let mut width = 0;
+    let mut first_index = spans.entries.len();
+    for (index, span) in spans.iter().enumerate() {
         if span.data.status().wp == wp {
-            if *first_index == spans.entries.len() {
-                *first_index = index;
+            if first_index == spans.entries.len() {
+                first_index = index;
             }
-            end = span.data.status().offset.wrapping_add(span.width);
-            if end > width {
-                width = end;
-            }
+            width = width.max(span.data.status().offset.wrapping_add(span.width));
         }
     }
-    return width;
+    Some((width, spans, first_index))
 }
-unsafe fn redraw_set_draw_context(mut dctx: *mut redraw_draw_ctx, mut scene: *mut redraw_scene) {
-    let mut c: *mut client = (*scene).c;
-    let mut s: *mut session = (*c).session;
-    let mut oo: *mut options = (*s).options;
-    let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut lines: u_int = 0;
-    memset(
-        dctx as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<redraw_draw_ctx>() as size_t,
-    );
-    (*dctx).scene = scene;
+unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> redraw_draw_ctx<'_> {
+    let c = scene.c;
+    let s = (*c).session;
+    let mut dctx = redraw_draw_ctx {
+        scene,
+        active: (*(*(*s).curw).window).active,
+        marked: std::ptr::null_mut(),
+        status_lines: status_line_size(&*c),
+        pane_lines: PANE_LINES_SINGLE,
+        default_gc: grid_cell::default(),
+        flags: 0,
+    };
     if server_is_marked(s, (*s).curw, marked_pane.wp) != 0 {
-        (*dctx).marked = marked_pane.wp;
+        dctx.marked = marked_pane.wp;
     }
-    (*dctx).active = (*(*(*s).curw).window).active;
-    lines = status_line_size(&*c);
-    if options_get_number(
-        oo,
-        b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_longlong
-    {
-        (*dctx).flags |= REDRAW_STATUS_TOP;
+    if options_get_number((*s).options, c"status-position".as_ptr()) == 0 {
+        dctx.flags |= REDRAW_STATUS_TOP;
     }
-    (*dctx).status_lines = lines;
-    if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has((*tty).term, TTYC_BIDI) != 0 {
-        (*dctx).flags |= REDRAW_ISOLATES;
+    if (*c).flags & CLIENT_UTF8 as uint64_t != 0 && tty_term_has((*c).tty.term, TTYC_BIDI) != 0 {
+        dctx.flags |= REDRAW_ISOLATES;
     }
+    dctx
 }
-unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut window_pane) {
-    let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut c: *mut client = (*scene).c;
+unsafe fn redraw_draw_pane_prompt(dctx: &mut redraw_draw_ctx<'_>, mut wp: *mut window_pane) {
+    let scene = dctx.scene;
+    let mut c: *mut client = scene.c;
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut screen: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -2205,10 +1763,10 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
         scrolled: 0,
         bg: 0,
     };
-    let mut ox: ::core::ffi::c_int = (*scene).ox as ::core::ffi::c_int;
-    let mut oy: ::core::ffi::c_int = (*scene).oy as ::core::ffi::c_int;
-    let mut sx: ::core::ffi::c_int = (*scene).sx as ::core::ffi::c_int;
-    let mut sy: ::core::ffi::c_int = (*scene).sy as ::core::ffi::c_int;
+    let mut ox: ::core::ffi::c_int = scene.ox as ::core::ffi::c_int;
+    let mut oy: ::core::ffi::c_int = scene.oy as ::core::ffi::c_int;
+    let mut sx: ::core::ffi::c_int = scene.sx as ::core::ffi::c_int;
+    let mut sy: ::core::ffi::c_int = scene.sy as ::core::ffi::c_int;
     let mut line: ::core::ffi::c_int = 0;
     let mut cy: ::core::ffi::c_int = 0;
     let mut px: ::core::ffi::c_int = 0;
@@ -2218,7 +1776,7 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
     if (*wp).prompt.is_none() || (*wp).sx == 0 as u_int || (*wp).sy == 0 as u_int {
         return;
     }
-    if !(*dctx).flags & REDRAW_STATUS_TOP != 0 {
+    if !dctx.flags & REDRAW_STATUS_TOP != 0 {
         wy = (*wp).yoff + (*wp).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
     } else {
         wy = (*wp).yoff;
@@ -2227,8 +1785,8 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
         return;
     }
     line = wy - oy;
-    if (*dctx).flags & REDRAW_STATUS_TOP != 0 {
-        cy = (*dctx).status_lines.wrapping_add(line as u_int) as ::core::ffi::c_int;
+    if dctx.flags & REDRAW_STATUS_TOP != 0 {
+        cy = dctx.status_lines.wrapping_add(line as u_int) as ::core::ffi::c_int;
     } else {
         cy = line;
     }
@@ -2272,44 +1830,9 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
     screen_free(&mut screen);
 }
 unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: ::core::ffi::c_int) {
-    let mut dctx: redraw_draw_ctx = redraw_draw_ctx {
-        scene: ::core::ptr::null_mut::<redraw_scene>(),
-        active: ::core::ptr::null_mut::<window_pane>(),
-        marked: ::core::ptr::null_mut::<window_pane>(),
-        status_lines: 0,
-        pane_lines: PANE_LINES_SINGLE,
-        default_gc: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        flags: 0,
-    };
-    let mut s: *mut session = (*c).session;
-    let mut w: *mut window = (*(*s).curw).window;
-    let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
-    let mut scene: *mut redraw_scene = ::core::ptr::null_mut::<redraw_scene>();
-    let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut width: u_int = 0;
-    let mut i: u_int = 0;
-    let mut y: u_int = 0;
-    let mut lines: u_int = 0;
-    let mut j: u_int = 0;
-    let mut status_spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
-    let mut first_status_span: usize = 0;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
-    let mut redraw: ::core::ffi::c_int = 0;
+    let s = (*c).session;
+    let w = (*(*s).curw).window;
+    let mut redraw = 0;
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
         return;
     }
@@ -2341,16 +1864,37 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
             log_cstr((redraw_flags_to_string(flags)) as *const _)
         ));
     }
-    scene = redraw_get_scene(c);
-    if scene.is_null() {
+    let Some(scene) = redraw_get_scene(c) else {
         return;
-    }
-    redraw_set_draw_context(&raw mut dctx, scene);
+    };
+    redraw_draw_scene(c, wp, flags, &scene);
+    redraw_restore_scene(&mut *c, scene);
+}
+
+unsafe fn redraw_draw_scene(
+    c: *mut client,
+    wp: *mut window_pane,
+    mut flags: ::core::ffi::c_int,
+    scene: &redraw_scene,
+) {
+    let mut s: *mut session = (*c).session;
+    let mut w: *mut window = (*(*s).curw).window;
+    let mut tty: *mut tty = &raw mut (*c).tty;
+    let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
+    let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let mut i: u_int = 0;
+    let mut y: u_int = 0;
+    let mut lines: u_int = 0;
+    let mut j: u_int = 0;
+    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
+    let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
+    let mut redraw: ::core::ffi::c_int = 0;
+    let mut dctx = redraw_set_draw_context(scene);
     if let Some(menu) = (*w).menu.clone() {
         menu_update(&mut menu.borrow_mut());
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
-        loop_0 = window_pane_first((*scene).w);
+        loop_0 = window_pane_first(scene.w);
         while !loop_0.is_null() {
             (*loop_0).border_gc_set = 0 as ::core::ffi::c_int;
             (*loop_0).active_border_gc_set = 0 as ::core::ffi::c_int;
@@ -2359,21 +1903,20 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
     }
     if flags & REDRAW_PANE_STATUS != 0 {
         redraw = 0 as ::core::ffi::c_int;
-        loop_0 = window_pane_first((*scene).w);
+        loop_0 = window_pane_first(scene.w);
         while !loop_0.is_null() {
             if flags == REDRAW_ALL {
                 (*loop_0).flags |= PANE_NEWSTATUS;
             } else {
                 (*loop_0).flags &= !PANE_NEWSTATUS;
             }
-            width = redraw_pane_status_width(
-                &raw mut dctx,
-                loop_0,
-                &raw mut status_spans,
-                &raw mut first_status_span,
-            );
-            if !(width == 0 as u_int) {
-                if window_make_pane_status(loop_0, c, width, status_spans, first_status_span) != 0 {
+            if let Some((width, status_spans, first_status_span)) =
+                redraw_pane_status_width(&mut dctx, loop_0)
+            {
+                if width != 0
+                    && window_make_pane_status(loop_0, c, width, status_spans, first_status_span)
+                        != 0
+                {
                     (*loop_0).flags |= PANE_NEWSTATUS;
                     redraw = 1 as ::core::ffi::c_int;
                 }
@@ -2394,7 +1937,7 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
             }
             screen_write_clear_dirty(wp);
         } else {
-            loop_0 = window_pane_first((*scene).w);
+            loop_0 = window_pane_first(scene.w);
             while !loop_0.is_null() {
                 if !(window_pane_is_visible(loop_0) == 0) {
                     if (*loop_0).base.mode & MODE_SYNC != 0 {
@@ -2409,25 +1952,25 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
     tty_sync_start(tty);
     tty_update_mode(tty, (*tty).mode & !CURSOR_MODES, None);
     if !wp.is_null() {
-        redraw_draw_pane_lines(&raw mut dctx, wp, flags);
+        redraw_draw_pane_lines(&mut dctx, wp, flags);
     } else {
-        redraw_draw_lines(&raw mut dctx, flags);
+        redraw_draw_lines(&mut dctx, flags);
     }
     if flags & REDRAW_PANE != 0 {
         if !wp.is_null() {
-            redraw_draw_pane_prompt(&raw mut dctx, wp);
+            redraw_draw_pane_prompt(&mut dctx, wp);
         } else {
-            loop_0 = window_pane_first((*scene).w);
+            loop_0 = window_pane_first(scene.w);
             while !loop_0.is_null() {
                 if window_pane_is_visible(loop_0) != 0 {
-                    redraw_draw_pane_prompt(&raw mut dctx, loop_0);
+                    redraw_draw_pane_prompt(&mut dctx, loop_0);
                 }
                 loop_0 = window_pane_next(loop_0);
             }
         }
     }
     if (*w).menu.is_some() && flags & REDRAW_MENU != 0 {
-        redraw_draw_menu_lines(&raw mut dctx);
+        redraw_draw_menu_lines(&mut dctx);
     }
     if flags & REDRAW_STATUS != 0 {
         lines = dctx.status_lines;
@@ -2484,21 +2027,18 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((*(*scene).w).id) as u32
+        ((*scene.w).id) as u32
     ));
 }
-pub unsafe fn redraw_get_status_border_cell_type(
-    mut spans: *const redraw_spans,
-    mut span_index: *mut usize,
+pub fn redraw_get_status_border_cell_type(
+    spans: &redraw_spans,
+    span_index: &mut usize,
     mut x: u_int,
 ) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut start: u_int = 0;
     let mut end: u_int = 0;
-    if spans.is_null() || span_index.is_null() {
-        return 2 as ::core::ffi::c_int;
-    }
-    let entries = &(*spans).entries;
+    let entries = &spans.entries;
     let mut index = *span_index;
     if index >= entries.len()
         || entries[index].data.kind() as ::core::ffi::c_uint
@@ -2582,6 +2122,91 @@ mod menu_observer_tests {
     use crate::src::shared::redraw::RedrawMenuSpan;
     use std::rc::Rc;
 
+    fn owned_scene(menu: &crate::src::shared::menu::MenuRef, generation: u64) -> Box<redraw_scene> {
+        let mut line = redraw_line::default();
+        line.spans[REDRAW_SPAN_MENU as usize].push(redraw_span {
+            x: 0,
+            width: 1,
+            data: redraw_span_data::Menu(RedrawMenuSpan {
+                md: Rc::downgrade(menu),
+                px: 0,
+                py: 0,
+            }),
+        });
+        Box::new(redraw_scene {
+            c: std::ptr::null_mut(),
+            w: std::ptr::null_mut(),
+            lines: vec![line].into_boxed_slice(),
+            generation,
+            sx: 1,
+            sy: 1,
+            ox: 0,
+            oy: 0,
+        })
+    }
+
+    #[test]
+    fn active_scene_borrows_survive_nested_cache_replacement() {
+        let menu = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+            title: c"Scene".to_owned(),
+            items: Vec::new(),
+            count: 0,
+            width: 1,
+        }))));
+        let mut client = client::empty();
+        client.redraw_scene = Some(owned_scene(&menu, 1));
+        let active = client.redraw_scene.take().unwrap();
+        let original_address = active.as_ref() as *const redraw_scene as usize;
+        let span = active.lines[0].spans[REDRAW_SPAN_MENU as usize]
+            .iter()
+            .next()
+            .unwrap();
+        client.redraw_scene = Some(owned_scene(&menu, 2));
+        assert_eq!(Rc::weak_count(&menu), 2);
+        assert_eq!(active.generation, 1);
+        assert!(span.data.menu().md.upgrade().is_some());
+        redraw_restore_scene(&mut client, active);
+        assert_eq!(Rc::weak_count(&menu), 1);
+        assert_eq!(client.redraw_scene.as_ref().unwrap().generation, 2);
+        assert_ne!(
+            client.redraw_scene.as_deref().unwrap() as *const redraw_scene as usize,
+            original_address
+        );
+        // Client teardown owns all remaining rows, spans and their observers.
+        drop(client);
+        assert_eq!(Rc::weak_count(&menu), 0);
+    }
+
+    #[test]
+    fn returning_an_active_scene_reuses_its_box_and_spans() {
+        let menu = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
+            title: c"Scene".to_owned(),
+            items: Vec::new(),
+            count: 0,
+            width: 1,
+        }))));
+        let mut client = client::empty();
+        let scene = owned_scene(&menu, 7);
+        let scene_address = scene.as_ref() as *const redraw_scene as usize;
+        let span_address = scene.lines[0].spans[REDRAW_SPAN_MENU as usize].entries[0].as_ref()
+            as *const redraw_span as usize;
+        redraw_restore_scene(&mut client, scene);
+        let active = client.redraw_scene.take().unwrap();
+        assert_eq!(
+            active.as_ref() as *const redraw_scene as usize,
+            scene_address
+        );
+        assert_eq!(
+            active.lines[0].spans[REDRAW_SPAN_MENU as usize].entries[0].as_ref() as *const redraw_span
+                as usize,
+            span_address
+        );
+        redraw_restore_scene(&mut client, active);
+        assert_eq!(Rc::weak_count(&menu), 1);
+        drop(client.redraw_scene.take());
+        assert_eq!(Rc::weak_count(&menu), 0);
+    }
+
     #[test]
     fn cached_spans_observe_menu_lifetimes_and_scratch_releases_observers() {
         let owner = Rc::new(RefCell::new(menu_data::new(Box::new(menu {
@@ -2614,15 +2239,34 @@ mod menu_observer_tests {
         }
         assert_eq!(Rc::weak_count(&owner), weak_count);
         REDRAW_CELLS.with(|cache| assert!(cache.borrow().is_empty()));
+        let scene = redraw_scene {
+            c: std::ptr::null_mut(),
+            w: std::ptr::null_mut(),
+            lines: Box::default(),
+            generation: 0,
+            sx: 0,
+            sy: 0,
+            ox: 0,
+            oy: 0,
+        };
+        let mut dctx = redraw_draw_ctx {
+            scene: &scene,
+            active: std::ptr::null_mut(),
+            marked: std::ptr::null_mut(),
+            status_lines: 0,
+            pane_lines: PANE_LINES_SINGLE,
+            default_gc: grid_cell::default(),
+            flags: 0,
+        };
         owner.borrow_mut().closed = true;
         // Closed and expired spans return before accessing the drawing context.
         unsafe {
-            redraw_draw_menu_span(std::ptr::null_mut(), &mut span, 0, 0, 2);
+            redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
         }
         drop(owner);
         assert!(span.data.menu().md.upgrade().is_none());
         unsafe {
-            redraw_draw_menu_span(std::ptr::null_mut(), &mut span, 0, 0, 2);
+            redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
         }
         assert!(redraw_compare_data(&cell, &next));
         cell.data = redraw_span_data::Empty;
