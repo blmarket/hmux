@@ -266,12 +266,12 @@ unsafe fn cmd_join_pane_place(
     ) == 0 as ::core::ffi::c_int
     {
         window_pane_z_remove(w, wp);
-        owp = window_pane_z_first(w);
+        owp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !owp.is_null() {
             if window_pane_is_floating(owp) == 0 {
                 break;
             }
-            owp = window_pane_z_next(owp);
+            owp = window_pane_z_next(owp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if !owp.is_null() {
             window_pane_z_insert_before(w, owp, wp);
@@ -283,7 +283,7 @@ unsafe fn cmd_join_pane_place(
         b"forward\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = window_pane_z_previous(wp);
+        owp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !owp.is_null() {
             window_pane_z_remove(w, wp);
             window_pane_z_insert_before(w, owp, wp);
@@ -293,7 +293,7 @@ unsafe fn cmd_join_pane_place(
         b"backward\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = window_pane_z_next(wp);
+        owp = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !owp.is_null() && window_pane_is_floating(owp) != 0 {
             window_pane_z_remove(w, wp);
             window_pane_z_insert_after(w, owp, wp);
@@ -303,17 +303,17 @@ unsafe fn cmd_join_pane_place(
         b"forward-loop\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = window_pane_z_previous(wp);
+        owp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pane_z_remove(w, wp);
         if !owp.is_null() {
             window_pane_z_insert_before(w, owp, wp);
         } else {
-            owp = window_pane_z_first(w);
+            owp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !owp.is_null() {
                 if window_pane_is_floating(owp) == 0 {
                     break;
                 }
-                owp = window_pane_z_next(owp);
+                owp = window_pane_z_next(owp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             if !owp.is_null() {
                 window_pane_z_insert_before(w, owp, wp);
@@ -326,7 +326,7 @@ unsafe fn cmd_join_pane_place(
         b"backward-loop\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = window_pane_z_next(wp);
+        owp = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !owp.is_null() && window_pane_is_floating(owp) != 0 {
             window_pane_z_remove(w, wp);
             window_pane_z_insert_after(w, owp, wp);
@@ -565,7 +565,7 @@ unsafe fn cmd_join_pane_zindex(
     }
     window_pane_z_remove(w, wp);
     n = 0 as u_int;
-    owp = window_pane_z_first(w);
+    owp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !owp.is_null() {
         if window_pane_is_floating(owp) == 0 {
             break;
@@ -574,7 +574,7 @@ unsafe fn cmd_join_pane_zindex(
             break;
         }
         n = n.wrapping_add(1);
-        owp = window_pane_z_next(owp);
+        owp = window_pane_z_next(owp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if !owp.is_null() {
         window_pane_z_insert_before(w, owp, wp);

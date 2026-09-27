@@ -283,12 +283,12 @@ pub unsafe fn spawn_window(
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         w = (*(*sc).wl).window_ptr();
         if !(*sc).flags & SPAWN_KILL != 0 {
-            wp = window_pane_first(w);
+            wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !wp.is_null() {
                 if (*wp).fd != -(1 as ::core::ffi::c_int) {
                     break;
                 }
-                wp = window_pane_next(wp);
+                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             if !wp.is_null() {
                 set_spawn_cause(
@@ -304,7 +304,7 @@ pub unsafe fn spawn_window(
                 return ::core::ptr::null_mut::<winlink>();
             }
         }
-        (*sc).wp0 = window_pane_first(w);
+        (*sc).wp0 = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pane_list_remove(w, (*sc).wp0);
         window_pane_z_remove(w, (*sc).wp0);
         layout_free(w);

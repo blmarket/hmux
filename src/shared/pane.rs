@@ -285,40 +285,40 @@ fn checked_window_pane_ptr(
 }
 
 impl window_panes {
-    pub unsafe fn first(&self) -> *mut window_pane {
+    pub unsafe fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.storage
             .as_deref()
             .and_then(|panes| panes.first())
-            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+            .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub unsafe fn next(&self, pane: *mut window_pane) -> *mut window_pane {
+    pub unsafe fn next(&self, pane: *mut window_pane) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         let Some(storage) = self.storage.as_deref() else {
-            return std::ptr::null_mut();
+            return None;
         };
         let Some(position) = storage
             .iter()
             .position(|weak| checked_window_pane_ptr(weak) == pane)
         else {
-            return std::ptr::null_mut();
+            return None;
         };
         storage
             .get(position + 1)
-            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+            .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub unsafe fn last(&self) -> *mut window_pane {
+    pub unsafe fn last(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.storage
             .as_deref()
             .and_then(|panes| panes.last())
-            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+            .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub unsafe fn previous(&self, pane: *mut window_pane) -> *mut window_pane {
+    pub unsafe fn previous(&self, pane: *mut window_pane) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.position(pane)
             .and_then(|position| position.checked_sub(1))
             .and_then(|position| self.storage.as_deref()?.get(position))
-            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+            .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
     pub unsafe fn position(&self, pane: *mut window_pane) -> Option<usize> {
@@ -442,26 +442,26 @@ impl window_pane_history {
         self.storage.as_deref().is_none_or(VecDeque::is_empty)
     }
 
-    pub unsafe fn first(&self) -> *mut window_pane {
+    pub unsafe fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.storage
             .as_deref()
             .and_then(|panes| panes.front())
-            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+            .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub unsafe fn next(&self, pane: *mut window_pane) -> *mut window_pane {
+    pub unsafe fn next(&self, pane: *mut window_pane) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         let Some(storage) = self.storage.as_deref() else {
-            return std::ptr::null_mut();
+            return None;
         };
         let Some(position) = storage
             .iter()
             .position(|weak| checked_window_pane_ptr(weak) == pane)
         else {
-            return std::ptr::null_mut();
+            return None;
         };
         storage
             .get(position + 1)
-            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+            .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
     pub unsafe fn remove_ptr(&mut self, pane: *mut window_pane) -> bool {

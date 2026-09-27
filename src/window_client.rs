@@ -561,8 +561,8 @@ unsafe fn window_client_draw(
     w = (*(*session).curw).window_ptr();
     wp = (*w).active;
     if (*data).hide_preview_this_pane != 0 && wp == mode_pane {
-        if !window_pane_stack_first(w).is_null() {
-            wp = window_pane_stack_first(w);
+        if !window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+            wp = window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         } else {
             wp = ::core::ptr::null_mut::<window_pane>();
         }

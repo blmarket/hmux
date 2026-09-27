@@ -303,7 +303,7 @@ unsafe fn redraw_check_two_pane_colours(
 ) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut count: u_int = 0 as u_int;
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !(window_pane_is_floating(wp) != 0 || (*wp).layout_cell.is_null()) {
             count = count.wrapping_add(1);
@@ -312,7 +312,7 @@ unsafe fn redraw_check_two_pane_colours(
             }
             *type_0 = (*(*(*wp).layout_cell).parent).type_0;
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return (count == 2 as u_int) as ::core::ffi::c_int;
 }
@@ -923,10 +923,10 @@ unsafe fn redraw_build_cells<'a>(mut bctx: *mut redraw_build_ctx<'a>, cells: &'a
         }
         y = y.wrapping_add(1);
     }
-    wp = window_pane_z_last(w);
+    wp = window_pane_z_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         redraw_mark_pane(bctx, wp);
-        wp = window_pane_z_previous(wp);
+        wp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     redraw_mark_two_pane_colours(bctx);
     redraw_mark_menu(bctx);
@@ -1845,16 +1845,16 @@ unsafe fn redraw_draw_scene(
         menu_update(&mut menu.try_borrow_mut().expect("live unborrowed menu"));
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
-        loop_0 = window_pane_first(scene.w);
+        loop_0 = window_pane_first(scene.w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             (*loop_0).border_gc_set = 0 as ::core::ffi::c_int;
             (*loop_0).active_border_gc_set = 0 as ::core::ffi::c_int;
-            loop_0 = window_pane_next(loop_0);
+            loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if flags & REDRAW_PANE_STATUS != 0 {
         redraw = 0 as ::core::ffi::c_int;
-        loop_0 = window_pane_first(scene.w);
+        loop_0 = window_pane_first(scene.w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if flags == REDRAW_ALL {
                 (*loop_0).flags |= PANE_NEWSTATUS;
@@ -1872,7 +1872,7 @@ unsafe fn redraw_draw_scene(
                     redraw = 1 as ::core::ffi::c_int;
                 }
             }
-            loop_0 = window_pane_next(loop_0);
+            loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if redraw == 0 && !(flags == REDRAW_ALL) {
             flags &= !REDRAW_PANE_STATUS;
@@ -1888,7 +1888,7 @@ unsafe fn redraw_draw_scene(
             }
             screen_write_clear_dirty(wp);
         } else {
-            loop_0 = window_pane_first(scene.w);
+            loop_0 = window_pane_first(scene.w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !loop_0.is_null() {
                 if !(window_pane_is_visible(loop_0) == 0) {
                     if (*loop_0).base.mode & MODE_SYNC != 0 {
@@ -1896,7 +1896,7 @@ unsafe fn redraw_draw_scene(
                     }
                     screen_write_clear_dirty(loop_0);
                 }
-                loop_0 = window_pane_next(loop_0);
+                loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
     }
@@ -1911,12 +1911,12 @@ unsafe fn redraw_draw_scene(
         if !wp.is_null() {
             redraw_draw_pane_prompt(&mut dctx, wp);
         } else {
-            loop_0 = window_pane_first(scene.w);
+            loop_0 = window_pane_first(scene.w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !loop_0.is_null() {
                 if window_pane_is_visible(loop_0) != 0 {
                     redraw_draw_pane_prompt(&mut dctx, loop_0);
                 }
-                loop_0 = window_pane_next(loop_0);
+                loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
     }

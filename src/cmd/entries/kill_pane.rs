@@ -74,9 +74,9 @@ unsafe fn cmd_kill_pane_all(
     let mut loopwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut tmpwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     server_unzoom_window((*wl).window_ptr());
-    loopwp = window_pane_first((*wl).window_ptr());
+    loopwp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loopwp.is_null() && {
-        tmpwp = window_pane_next(loopwp);
+        tmpwp = window_pane_next(loopwp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         1 as ::core::ffi::c_int != 0
     } {
         if !(loopwp == wp) {

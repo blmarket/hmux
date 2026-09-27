@@ -534,14 +534,14 @@ pub unsafe fn layout_parse(
                     }
                     let mut floating = Vec::new();
                     if pctx.version == 1 as int64_t {
-                        wp = window_pane_first(w);
+                        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                         while !wp.is_null() {
                             if !(window_pane_is_floating(wp) == 0) {
                                 lcchild = (*wp).layout_cell as *mut layout_cell;
                                 floating.push(layout_cells_remove((*lcchild).parent, lcchild).expect("floating cell is owned"));
                                 (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
                             }
-                            wp = window_pane_next(wp);
+                            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                         }
                     }
                     drop((*w).layout_root.take());
@@ -578,10 +578,10 @@ pub unsafe fn layout_parse(
 unsafe fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     for cctx in &(*pctx).cctxs {
         layout_make_leaf(cctx.lc, wp);
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *mut layout_cell) {
@@ -592,13 +592,13 @@ unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *m
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
             while !(*wp).is_null() && !(**wp).layout_cell.is_null() {
-                *wp = window_pane_next(*wp);
+                *wp = window_pane_next(*wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             if (*wp).is_null() {
                 return;
             }
             layout_make_leaf(lc, *wp);
-            *wp = window_pane_next(*wp);
+            *wp = window_pane_next(*wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             return;
         }
         0 | 1 => {
@@ -613,7 +613,7 @@ unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *m
     };
 }
 unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
-    let mut wp: *mut window_pane = window_pane_first(w);
+    let mut wp: *mut window_pane = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     layout_assign_fallback_tiled(&raw mut wp, lcroot);
     if window_count_panes(w, 1 as ::core::ffi::c_int) > 1 as u_int
@@ -622,13 +622,13 @@ unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cel
     {
         lcroot = layout_replace_with_node(w, lcroot, LAYOUT_TOPBOTTOM);
     }
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if window_pane_is_floating(wp) != 0 {
             lc = (*wp).layout_cell as *mut layout_cell;
             layout_cells_push_back(lcroot, layout_take_leaf(floating, lc));
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx, floating: &mut Vec<Box<layout_cell>>) {
@@ -972,9 +972,9 @@ unsafe fn layout_construct(
 unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpnext: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = window_pane_z_first(w);
+    wp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
-        wpnext = window_pane_z_next(wp);
+        wpnext = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if window_pane_is_floating(wp) != 0 {
             window_pane_z_remove(w, wp);
         }
@@ -995,8 +995,8 @@ unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse
             break;
         }
     }
-    while !window_pane_stack_first(w).is_null() {
-        wp = window_pane_stack_first(w);
+    while !window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+        wp = window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }
     (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));

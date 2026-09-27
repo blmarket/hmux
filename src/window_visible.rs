@@ -54,7 +54,7 @@ pub unsafe fn window_visible_ranges(
         nx: width,
     });
     let mut found_self = false;
-    let mut wp = window_pane_z_last(w);
+    let mut wp = window_pane_z_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if wp == base_wp {
             found_self = true;
@@ -140,6 +140,6 @@ pub unsafe fn window_visible_ranges(
                 }
             }
         }
-        wp = window_pane_z_previous(wp);
+        wp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }

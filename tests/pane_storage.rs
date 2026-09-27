@@ -41,26 +41,26 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
         for owner in &owners {
             order.push_back(Rc::downgrade(owner));
         }
-        assert_eq!(order.first(), panes[0]);
-        assert_eq!(order.next(panes[0]), panes[1]);
-        assert_eq!(order.previous(panes[3]), panes[2]);
+        assert_eq!(order.first().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[0]);
+        assert_eq!(order.next(panes[0]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[1]);
+        assert_eq!(order.previous(panes[3]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[2]);
 
         order.insert_before(panes[2], Rc::downgrade(&owners[3]));
-        assert_eq!(order.first(), panes[0]);
-        assert_eq!(order.next(panes[0]), panes[1]);
+        assert_eq!(order.first().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[0]);
+        assert_eq!(order.next(panes[0]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[1]);
         order.swap_ptrs(panes[1], panes[3]);
-        assert_eq!(order.next(panes[0]), panes[3]);
+        assert_eq!(order.next(panes[0]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[3]);
         assert!(order.remove_ptr(panes[3]));
-        assert_eq!(order.next(panes[0]), panes[1]);
+        assert_eq!(order.next(panes[0]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[1]);
 
         let mut history = window_pane_history::default();
         history.push_front(Rc::downgrade(&owners[1]));
         history.push_front(Rc::downgrade(&owners[2]));
         history.push_front(Rc::downgrade(&owners[1]));
-        assert_eq!(history.first(), panes[1]);
-        assert_eq!(history.next(panes[1]), panes[2]);
+        assert_eq!(history.first().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[1]);
+        assert_eq!(history.next(panes[1]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), panes[2]);
         assert!(history.remove_ptr(panes[2]));
-        assert_eq!(history.next(panes[1]), std::ptr::null_mut());
+        assert_eq!(history.next(panes[1]).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), std::ptr::null_mut());
     }
 
     let weak = Rc::downgrade(&owners[0]);
@@ -85,5 +85,21 @@ fn global_lookup_preserves_pane_identity() {
         );
         assert!(window_pane_find_by_id(123).is_null());
         assert!((*head).storage.is_none());
+    }
+}
+
+#[test]
+fn ordering_lookup_retains_a_detached_pane() {
+    let owner = pane_owner();
+    let weak = Rc::downgrade(&owner);
+    let mut order = window_panes::default();
+    order.push_back(weak.clone());
+    unsafe {
+        let retained = order.first().unwrap();
+        assert!(order.remove_ptr(retained.get()));
+        drop(owner);
+        assert!(weak.upgrade().is_some());
+        drop(retained);
+        assert!(weak.upgrade().is_none());
     }
 }

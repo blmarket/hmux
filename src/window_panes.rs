@@ -552,7 +552,7 @@ unsafe fn window_panes_mark_pane_status_borders(
     if status != PANE_STATUS_TOP && status != PANE_STATUS_BOTTOM {
         return;
     }
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !(window_panes_pane_visible(wp) == 0) {
             lc = (*wp).saved_layout_cell;
@@ -575,7 +575,7 @@ unsafe fn window_panes_mark_pane_status_borders(
                 window_panes_mark_hline(map, dsx, dsy, x, x2, y);
             }
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn window_panes_get_floating_borders(
@@ -1582,16 +1582,16 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     window_panes_free_areas(data);
     screen_write_start(&mut ctx, &raw mut (*data).screen);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !(window_panes_pane_floating(wp) != 0) {
             window_panes_draw_pane(data, &raw mut ctx, wp, root, osx, osy, sx, sy);
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     window_panes_get_border_cell(data, &raw mut border_gc);
     window_panes_draw_borders(&raw mut ctx, w, root, &raw mut border_gc, osx, osy, sx, sy);
-    wp = window_pane_z_last(w);
+    wp = window_pane_z_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !(window_panes_pane_floating(wp) == 0) {
             window_panes_clear_floating_area(&raw mut ctx, wp, osx, osy, sx, sy);
@@ -1606,7 +1606,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
                 sy,
             );
         }
-        wp = window_pane_z_previous(wp);
+        wp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     screen_write_stop(&mut ctx);
     (*mode_pane).flags |= PANE_REDRAW;

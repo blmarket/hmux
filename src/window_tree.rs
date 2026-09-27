@@ -1070,7 +1070,7 @@ unsafe fn window_tree_draw_window(
         visible = total;
     }
     current = 0 as u_int;
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
             if wp == (*w).active {
@@ -1078,7 +1078,7 @@ unsafe fn window_tree_draw_window(
             }
             current = current.wrapping_add(1);
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if current < visible {
         start = 0 as u_int;
@@ -1170,7 +1170,7 @@ unsafe fn window_tree_draw_window(
     (*data).each = each;
     loop_0 = 0 as u_int;
     i = loop_0;
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
             if loop_0 == end {
@@ -1250,7 +1250,7 @@ unsafe fn window_tree_draw_window(
                 i = i.wrapping_add(1);
             }
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn window_tree_draw_info(
@@ -2132,13 +2132,13 @@ unsafe fn window_tree_mouse(
         }
         mode_tree_expand_current((*data).data_ptr());
         loop_0 = 0 as u_int;
-        wp = window_pane_first((*wl).window_ptr());
+        wp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if loop_0 == (*data).start.wrapping_add(x) {
                 break;
             }
             loop_0 = loop_0.wrapping_add(1);
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if !wp.is_null() {
             mode_tree_set_current((*data).data_ptr(), wp as uint64_t);

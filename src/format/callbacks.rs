@@ -1966,7 +1966,7 @@ unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_last(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        if (*ft).wp == window_pane_stack_first((*(*ft).wp).window) {
+        if (*ft).wp == window_pane_stack_first((*(*ft).wp).window).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

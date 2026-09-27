@@ -1690,7 +1690,7 @@ unsafe fn server_client_update_scrollbar_hover(
     if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
         return;
     }
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !(window_pane_is_visible(wp) == 0) {
             if server_client_in_scrollbar_area(wp, px, py) != 0 {
@@ -1701,7 +1701,7 @@ unsafe fn server_client_update_scrollbar_hover(
                 window_pane_scrollbar_start_timer(wp);
             }
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn server_client_check_mouse_in_pane(
@@ -1824,7 +1824,7 @@ unsafe fn server_client_check_mouse_in_pane(
             return KEYC_MOUSE_LOCATION_PANE;
         }
     } else {
-        fwp = window_pane_first(w);
+        fwp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !fwp.is_null() {
             if !(window_pane_is_visible(fwp) == 0) {
                 if !(window_pane_is_floating(fwp) != 0
@@ -1877,7 +1877,7 @@ unsafe fn server_client_check_mouse_in_pane(
                     }
                 }
             }
-            fwp = window_pane_next(fwp);
+            fwp = window_pane_next(fwp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if !fwp.is_null() {
             return KEYC_MOUSE_LOCATION_BORDER;
@@ -3267,12 +3267,12 @@ unsafe fn server_client_handle_key0(
         }
         wp = (*(*(*s).curw).window_ptr()).active;
         if wp.is_null() || window_pane_has_prompt(wp) == 0 {
-            wp = window_pane_first((*(*s).curw).window_ptr());
+            wp = window_pane_first((*(*s).curw).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !wp.is_null() {
                 if window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
                     break;
                 }
-                wp = window_pane_next(wp);
+                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if !wp.is_null() && window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
@@ -3353,7 +3353,7 @@ pub unsafe fn server_client_loop() {
     }
     w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).flags & PANE_STYLECHANGED != 0 {
                 wme = (*wp).modes.active;
@@ -3363,7 +3363,7 @@ pub unsafe fn server_client_loop() {
                         .expect("non-null function pointer")(wme);
                 }
             }
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         w = windows_next(&*w);
     }
@@ -3379,24 +3379,24 @@ pub unsafe fn server_client_loop() {
     }
     w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).fd != -(1 as ::core::ffi::c_int) {
                 server_client_check_pane_resize(wp);
                 server_client_check_pane_buffer(wp);
             }
             (*wp).flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         check_window_name(w);
         w = windows_next(&*w);
     }
     w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             window_pane_send_theme_update(wp);
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         w = windows_next(&*w);
     }
@@ -3923,12 +3923,12 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     if options_get_number(oo, b"mouse\0" as *const u8 as *const ::core::ffi::c_char) != 0 {
         if (*c).overlay_draw.is_none() && (*w).menu.is_none() {
             mode &= !ALL_MOUSE_MODES;
-            loop_0 = window_pane_first(w);
+            loop_0 = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !loop_0.is_null() {
                 if (*(*loop_0).screen).mode & MODE_MOUSE_ALL != 0 {
                     mode |= MODE_MOUSE_ALL;
                 }
-                loop_0 = window_pane_next(loop_0);
+                loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if options_get_number(
@@ -4108,13 +4108,13 @@ unsafe fn server_client_check_modes(mut c: *mut client) {
     if !(*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
         return;
     }
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && (*(*wme).mode).update.is_some() {
             (*(*wme).mode).update.expect("non-null function pointer")(wme);
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {
@@ -4124,12 +4124,12 @@ unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_in
     if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if (*wp).flags & (PANE_REDRAW | PANE_REDRAWSCROLLBAR) != 0 {
             return 1 as ::core::ffi::c_int;
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -4250,7 +4250,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
             log_debug(format_args!("redraw timer started"));
             event_add(&raw mut ev, &raw mut tv);
         }
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).flags & PANE_REDRAW != 0 {
                 (*c).flags |= CLIENT_REDRAWWINDOW as uint64_t;
@@ -4260,7 +4260,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
                     (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_REDRAWSCROLLBARS)
                         as uint64_t;
                 }
-                wp = window_pane_next(wp);
+                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         return;
@@ -4277,7 +4277,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
     tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
     if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).flags & PANE_REDRAW != 0 {
                 log_debug(format_args!(
@@ -4296,7 +4296,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
                 ));
                 redraw_pane_scrollbar(c, wp);
             }
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {

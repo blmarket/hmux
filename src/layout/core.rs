@@ -428,7 +428,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
     let mut sy: u_int = 0;
     let mut old_sx: u_int = 0;
     let mut old_sy: u_int = 0;
-    wp = window_pane_first(w);
+    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if !(lc.is_null() || wp == skip) {
@@ -484,7 +484,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
                 changed = 1 as ::core::ffi::c_int;
             }
         }
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if changed != 0 {
         redraw_invalidate_scene(w);
@@ -751,7 +751,7 @@ unsafe fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_int, mut sy:
     let mut avail: u_int = 0;
     let mut csx: u_int = 0;
     let mut csy: u_int = 0;
-    wp = window_pane_z_first(w);
+    wp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if !(lc.is_null() || !(*lc).flags & LAYOUT_CELL_FLOATING != 0) {
@@ -816,7 +816,7 @@ unsafe fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_int, mut sy:
                 }
             }
         }
-        wp = window_pane_z_next(wp);
+        wp = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn layout_resize(mut w: *mut window, mut sx: u_int, mut sy: u_int) {

@@ -438,7 +438,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                         if args_has(args, 'U' as i32 as u_char) != 0
                             && scope == OPTIONS_TABLE_WINDOW
                         {
-                            loop_0 = window_pane_first((*target).w);
+                            loop_0 = window_pane_first((*target).w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                             loop {
                                 if loop_0.is_null() {
                                     current_block = 10095721787123848864;
@@ -456,7 +456,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                                         break;
                                     }
                                 }
-                                loop_0 = window_pane_next(loop_0);
+                                loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                             }
                         } else {
                             current_block = 10095721787123848864;

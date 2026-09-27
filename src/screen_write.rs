@@ -242,7 +242,7 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
         return 1 as ::core::ffi::c_int;
     }
     loop {
-        wp = window_pane_z_previous(wp);
+        wp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             break;
         }

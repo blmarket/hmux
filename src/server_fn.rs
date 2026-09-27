@@ -559,7 +559,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
     server_client_remove_pane(wp);
     layout_close_pane(wp);
     window_remove_pane(w, wp);
-    if window_pane_first(w).is_null() {
+    if window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
         server_kill_window(w, 1 as ::core::ffi::c_int);
     } else {
         window_pop_zoom(w);

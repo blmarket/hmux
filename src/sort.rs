@@ -491,10 +491,10 @@ pub unsafe fn sort_get_panes_window(
     sort_crit: *mut sort_criteria,
 ) -> Vec<*mut window_pane> {
     let mut panes = Vec::new();
-    let mut wp = window_pane_first(w);
+    let mut wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         panes.push(wp);
-        wp = window_pane_next(wp);
+        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     sort_by_criteria(&mut panes, &*sort_crit, |a, b, criteria| unsafe {
         sort_pane_cmp(*a, *b, criteria)

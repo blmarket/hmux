@@ -1051,10 +1051,10 @@ pub unsafe fn session_theme_changed(mut s: *mut session) {
     if !s.is_null() {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
-            wp = window_pane_first((*wl).window_ptr());
+            wp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !wp.is_null() {
                 (*wp).flags |= PANE_THEMECHANGED;
-                wp = window_pane_next(wp);
+                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             wl = winlinks_next(&*wl);
         }
@@ -1072,7 +1072,7 @@ pub unsafe fn session_update_history(mut s: *mut session) {
     ) as u_int;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = window_pane_first((*wl).window_ptr());
+        wp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             gd = (*wp).base.grid_mut();
             osize = (*gd).hsize;
@@ -1087,7 +1087,7 @@ pub unsafe fn session_update_history(mut s: *mut session) {
                     ((*gd).hsize) as u32
                 ));
             }
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         wl = winlinks_next(&*wl);
     }

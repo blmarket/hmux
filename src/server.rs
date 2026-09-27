@@ -647,7 +647,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
         w1 = windows_next(&*w);
         1 as ::core::ffi::c_int != 0
     } {
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).pid == pid {
                 (*wp).status = status;
@@ -661,7 +661,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 }
                 break;
             } else {
-                wp = window_pane_next(wp);
+                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         w = w1;
@@ -678,14 +678,14 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     }
     w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
-        wp = window_pane_first(w);
+        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).pid == pid {
                 if killpg(pid as __pid_t, SIGCONT) != 0 as ::core::ffi::c_int {
                     kill(pid as __pid_t, SIGCONT);
                 }
             }
-            wp = window_pane_next(wp);
+            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         w = windows_next(&*w);
     }
