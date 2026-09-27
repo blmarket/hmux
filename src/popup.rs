@@ -284,14 +284,14 @@ unsafe fn popup_set_client(pd: *mut popup_data, ttyctx: &mut tty_ctx, c: *mut cl
     }
     1
 }
-unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
-    (*ttyctx).style_ctx.defaults = (*pd).defaults;
-    (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;
-    (*ttyctx).style_ctx.palette = &raw mut (*pd).palette;
-    (*ttyctx).redraw_cb = Some(Box::new(move |_| unsafe {
+unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: &mut tty_ctx) {
+    ttyctx.style_ctx.defaults = (*pd).defaults;
+    ttyctx.flags &= !TTY_CTX_WINDOW_BIGGER;
+    ttyctx.style_ctx.palette = &raw mut (*pd).palette;
+    ttyctx.redraw_cb = Some(Box::new(move |_| unsafe {
         (*(*pd).c).flags |= CLIENT_REDRAWOVERLAY as uint64_t;
     }));
-    (*ttyctx).set_client_cb = Some(Box::new(move |ttyctx, c| unsafe {
+    ttyctx.set_client_cb = Some(Box::new(move |ttyctx, c| unsafe {
         popup_set_client(pd, ttyctx, c as *mut client)
     }));
 }
