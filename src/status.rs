@@ -723,10 +723,14 @@ pub unsafe fn status_prompt_set(
     status_message_clear(c);
     status_prompt_clear(c);
     status_push_screen(c);
-    prompt_set_options(&raw mut pd, (*c).session);
-    pd.fs = fs;
-    pd.prompt = msg;
-    pd.input = input;
+    prompt_set_options(&mut pd, ((*c).session).as_ref());
+    pd.fs = fs.as_ref();
+    pd.prompt = CStr::from_ptr(msg);
+    pd.input = if input.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(input))
+    };
     pd.type_0 = prompt_type;
     pd.flags = flags;
     if let Some(mut inputcb) = inputcb.take() {
@@ -735,7 +739,7 @@ pub unsafe fn status_prompt_set(
         }));
     }
     pd.freecb = freecb.take();
-    (*c).prompt = prompt_create(&raw mut pd);
+    (*c).prompt = Box::into_raw(prompt_create(pd));
     if !flags & PROMPT_INCREMENTAL != 0 && !flags & PROMPT_NOFREEZE != 0 {
         (*c).tty.flags |= TTY_FREEZE;
     }

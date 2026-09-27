@@ -504,23 +504,28 @@ unsafe fn window_switch_init(
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    prompt_set_options(&raw mut pd, (*fs).s);
-    pd.fs = fs;
-    pd.prompt = b"(search) \0" as *const u8 as *const ::core::ffi::c_char;
-    pd.input = b"\0" as *const u8 as *const ::core::ffi::c_char;
+    prompt_set_options(&mut pd, ((*fs).s).as_ref());
+    pd.fs = fs.as_ref();
+    pd.prompt = c"(search) ";
+    pd.input = Some(c"");
     pd.type_0 = PROMPT_TYPE_SEARCH;
     pd.flags = PROMPT_INCREMENTAL | PROMPT_NOFORMAT | PROMPT_ISMODE | PROMPT_EDITARROWS;
     pd.inputcb = Some(Box::new(move |s, key| unsafe {
         window_switch_prompt_callback(data, s, key)
     }));
-    (*data).prompt = prompt_create(&raw mut pd);
+    (*data).prompt = Box::into_raw(prompt_create(pd));
     prompt_update(
         (*data).prompt,
         b"(search) \0" as *const u8 as *const ::core::ffi::c_char,
         (*data).filter.as_ptr(),
     );
     s = &raw mut (*data).screen;
-    screen_init(&mut *s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
+    screen_init(
+        &mut *s,
+        (*wp).base.grid().sx,
+        (*wp).base.grid().sy,
+        0 as u_int,
+    );
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {

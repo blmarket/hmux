@@ -1426,9 +1426,13 @@ pub unsafe fn mode_tree_set_prompt(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong) as ::core::ffi::c_int;
-    prompt_set_options(&raw mut pd, s);
-    pd.prompt = prompt;
-    pd.input = input;
+    prompt_set_options(&mut pd, s.as_ref());
+    pd.prompt = CStr::from_ptr(prompt);
+    pd.input = if input.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(input))
+    };
     pd.type_0 = type_0;
     pd.flags = flags | PROMPT_ISMODE;
     pd.inputcb = Some(Box::new(move |s, key| unsafe {
@@ -1437,7 +1441,7 @@ pub unsafe fn mode_tree_set_prompt(
     pd.freecb = Some(Box::new(move || unsafe {
         mode_tree_prompt_free_callback(mtp)
     }));
-    (*mtd).prompt = prompt_create(&raw mut pd);
+    (*mtd).prompt = Box::into_raw(prompt_create(pd));
     (*mtd).prompt_data = mtp;
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;

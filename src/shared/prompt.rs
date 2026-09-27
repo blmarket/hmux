@@ -95,26 +95,28 @@ pub struct prompt {
     pub completion: prompt_completion,
 }
 
+/// Temporary inputs: labels and target state are borrowed during creation;
+/// copied option strings and callbacks move into the heap-allocated prompt.
 #[derive(Default)]
-pub struct prompt_create_data {
-    pub fs: *mut cmd_find_state,
-    pub prompt: *const ::core::ffi::c_char,
-    pub input: *const ::core::ffi::c_char,
+pub struct prompt_create_data<'a> {
+    pub fs: Option<&'a cmd_find_state>,
+    pub prompt: &'a CStr,
+    pub input: Option<&'a CStr>,
     pub type_0: prompt_type,
     pub flags: ::core::ffi::c_int,
     pub style: grid_cell,
     pub command_style: grid_cell,
-    pub style_str: *const ::core::ffi::c_char,
-    pub command_style_str: *const ::core::ffi::c_char,
+    pub style_str: CString,
+    pub command_style_str: CString,
     pub cstyle: screen_cursor_style,
     pub command_cstyle: screen_cursor_style,
     pub ccolour: ::core::ffi::c_int,
     pub command_ccolour: ::core::ffi::c_int,
     pub cmode: ::core::ffi::c_int,
     pub command_cmode: ::core::ffi::c_int,
-    pub message_format: *const ::core::ffi::c_char,
+    pub message_format: CString,
     pub keys: ::core::ffi::c_int,
-    pub word_separators: *const ::core::ffi::c_char,
+    pub word_separators: CString,
     pub inputcb: prompt_input_cb,
     pub freecb: prompt_free_cb,
 }

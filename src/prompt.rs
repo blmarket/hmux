@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_table;
-use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
+use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strcmp, strlcat, strlen};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -23,7 +23,7 @@ use crate::src::screen_write::{
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
-use crate::src::shared::command::{cmd_entry, cmdq_item};
+use crate::src::shared::command::{cmd_entry, cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::MODEKEY_VI;
@@ -181,8 +181,8 @@ unsafe fn prompt_flags_to_string(mut flags: ::core::ffi::c_int) -> *const ::core
     }
     return &raw mut tmp as *mut ::core::ffi::c_char;
 }
-pub unsafe fn prompt_set_options(mut pd: *mut prompt_create_data, mut s: *mut session) {
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
+pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&session>) {
+    let oo = s.map_or(global_s_options, |s| s.options);
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -198,140 +198,130 @@ pub unsafe fn prompt_set_options(mut pd: *mut prompt_create_data, mut s: *mut se
         link: 0,
     };
     let mut n: u_int = 0;
-    if !s.is_null() {
-        oo = (*s).options;
-    } else {
-        oo = global_s_options;
-    }
     style_apply(
-        &raw mut (*pd).style,
+        &raw mut pd.style,
         oo,
         b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );
     style_apply(
-        &raw mut (*pd).command_style,
+        &raw mut pd.command_style,
         oo,
         b"message-command-style\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );
-    (*pd).style_str = options_get_string(
+    pd.style_str = CStr::from_ptr(options_get_string(
         oo,
         b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    (*pd).command_style_str = options_get_string(
+    ))
+    .to_owned();
+    pd.command_style_str = CStr::from_ptr(options_get_string(
         oo,
         b"message-command-style\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    ))
+    .to_owned();
     n = options_get_number(
         oo,
         b"prompt-cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    screen_set_cursor_style(n, &mut (*pd).cstyle, &mut (*pd).cmode);
+    screen_set_cursor_style(n, &mut pd.cstyle, &mut pd.cmode);
     n = options_get_number(
         oo,
         b"prompt-command-cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    screen_set_cursor_style(
-        n,
-        &mut (*pd).command_cstyle,
-        &mut (*pd).command_cmode,
-    );
+    screen_set_cursor_style(n, &mut pd.command_cstyle, &mut pd.command_cmode);
     style_apply(
         &raw mut gc,
         oo,
         b"prompt-cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );
-    (*pd).ccolour = gc.fg;
+    pd.ccolour = gc.fg;
     style_apply(
         &raw mut gc,
         oo,
         b"prompt-command-cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null_mut::<format_tree>(),
     );
-    (*pd).command_ccolour = gc.fg;
-    (*pd).message_format = options_get_string(
+    pd.command_ccolour = gc.fg;
+    pd.message_format = CStr::from_ptr(options_get_string(
         oo,
         b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    (*pd).keys = options_get_number(
+    ))
+    .to_owned();
+    pd.keys = options_get_number(
         oo,
         b"status-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    (*pd).word_separators = options_get_string(
+    pd.word_separators = CStr::from_ptr(options_get_string(
         oo,
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    ))
+    .to_owned();
 }
-pub unsafe fn prompt_create(mut pd: *mut prompt_create_data) -> *mut prompt {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut input: *const ::core::ffi::c_char = (*pd).input;
-    let mut allocation = Box::new(prompt::default());
-    let pr = &mut *allocation as *mut prompt;
-    if !(*pd).fs.is_null() {
-        ft = format_create_from_state(
-            ::core::ptr::null_mut::<cmdq_item>(),
-            ::core::ptr::null_mut::<client>(),
-            (*pd).fs,
-        );
-        cmd_find_copy_state(&raw mut (*pr).state, (*pd).fs);
+pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> Box<prompt> {
+    let mut pr = Box::new(prompt::default());
+    let ft = if let Some(fs) = pd.fs {
+        // Copy the selected target, matching cmd_find_copy_state rather than
+        // inheriting the source's search flags or current-state pointer.
+        pr.state = cmd_find_state {
+            s: fs.s,
+            wl: fs.wl,
+            w: fs.w,
+            wp: fs.wp,
+            idx: fs.idx,
+            ..Default::default()
+        };
+        format_create_defaults(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            fs.s,
+            fs.wl,
+            fs.wp,
+        )
     } else {
-        ft = format_create_defaults(
-            ::core::ptr::null_mut::<cmdq_item>(),
-            ::core::ptr::null_mut::<client>(),
-            ::core::ptr::null_mut::<session>(),
-            ::core::ptr::null_mut::<winlink>(),
-            ::core::ptr::null_mut::<window_pane>(),
-        );
-        cmd_find_clear_state(&raw mut (*pr).state, 0 as ::core::ffi::c_int);
-    }
-    if input.is_null() {
-        input = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    (*pr).string = CStr::from_ptr((*pd).prompt).to_owned();
-    let expanded = if (*pd).flags & PROMPT_NOFORMAT != 0 {
+        cmd_find_clear_state(&mut pr.state, 0);
+        format_create_defaults(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    let input = pd.input.unwrap_or(c"");
+    pr.string = pd.prompt.to_owned();
+    let expanded = if pd.flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
-        Some(format_expand_time_cstring(ft, input))
+        Some(format_expand_time_cstring(ft, input.as_ptr()))
     };
-    if (*pd).flags & PROMPT_INCREMENTAL != 0 {
-        let last = expanded.unwrap_or_else(|| CStr::from_ptr(input).to_owned());
-        (*pr).last = Some(last);
-        (*pr).buffer = utf8_fromcstr_vec(CStr::from_bytes_with_nul_unchecked(b"\0"));
+    if pd.flags & PROMPT_INCREMENTAL != 0 {
+        pr.last = Some(expanded.unwrap_or_else(|| input.to_owned()));
+        pr.buffer = utf8_fromcstr_vec(c"");
     } else {
-        (*pr).last = None;
-        let tmp = expanded.as_ref().map_or(input, |value| value.as_ptr());
-        (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(tmp));
+        pr.buffer = utf8_fromcstr_vec(expanded.as_deref().unwrap_or(input));
     }
-    (*pr).index = utf8_strlen(&(*pr).buffer);
-    (*pr).inputcb = ::core::mem::take(&mut (*pd).inputcb);
-    (*pr).freecb = ::core::mem::take(&mut (*pd).freecb);
-    (*pr).flags = (*pd).flags;
-    (*pr).type_0 = (*pd).type_0;
-    memcpy(
-        &raw mut (*pr).style as *mut ::core::ffi::c_void,
-        &raw const (*pd).style as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    memcpy(
-        &raw mut (*pr).command_style as *mut ::core::ffi::c_void,
-        &raw const (*pd).command_style as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    (*pr).style_str = CStr::from_ptr((*pd).style_str).to_owned();
-    (*pr).command_style_str = CStr::from_ptr((*pd).command_style_str).to_owned();
-    (*pr).cstyle = (*pd).cstyle;
-    (*pr).command_cstyle = (*pd).command_cstyle;
-    (*pr).ccolour = (*pd).ccolour;
-    (*pr).command_ccolour = (*pd).command_ccolour;
-    (*pr).cmode = (*pd).cmode;
-    (*pr).command_cmode = (*pd).command_cmode;
-    (*pr).message_format = CStr::from_ptr((*pd).message_format).to_owned();
-    (*pr).keys = (*pd).keys;
-    (*pr).word_separators = CStr::from_ptr((*pd).word_separators).to_owned();
+    pr.index = utf8_strlen(&pr.buffer);
+    pr.inputcb = pd.inputcb;
+    pr.freecb = pd.freecb;
+    pr.flags = pd.flags;
+    pr.type_0 = pd.type_0;
+    pr.style = pd.style;
+    pr.command_style = pd.command_style;
+    pr.style_str = pd.style_str;
+    pr.command_style_str = pd.command_style_str;
+    pr.cstyle = pd.cstyle;
+    pr.command_cstyle = pd.command_cstyle;
+    pr.ccolour = pd.ccolour;
+    pr.command_ccolour = pd.command_ccolour;
+    pr.cmode = pd.cmode;
+    pr.command_cmode = pd.command_cmode;
+    pr.message_format = pd.message_format;
+    pr.keys = pd.keys;
+    pr.word_separators = pd.word_separators;
     format_free(ft);
-    return Box::into_raw(allocation);
+    pr
 }
 pub unsafe fn prompt_free(mut pr: *mut prompt) {
     if pr.is_null() {

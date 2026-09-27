@@ -3235,10 +3235,14 @@ pub unsafe fn window_pane_set_prompt(
         freecb,
         type_0,
     }));
-    prompt_set_options(&raw mut pd, s);
-    pd.fs = fs;
-    pd.prompt = msg;
-    pd.input = input;
+    prompt_set_options(&mut pd, s.as_ref());
+    pd.fs = fs.as_ref();
+    pd.prompt = CStr::from_ptr(msg);
+    pd.input = if input.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(input))
+    };
     pd.type_0 = type_0;
     pd.flags = flags;
     pd.inputcb = Some(Box::new(move |s, key| unsafe {
@@ -3247,7 +3251,7 @@ pub unsafe fn window_pane_set_prompt(
     pd.freecb = Some(Box::new(move || unsafe {
         window_pane_prompt_free_callback(wpp)
     }));
-    (*wp).prompt = prompt_create(&raw mut pd);
+    (*wp).prompt = Box::into_raw(prompt_create(pd));
     (*wp).prompt_data = wpp;
     (*wp).flags |= PANE_REDRAW;
     prompt_incremental_start((*wp).prompt);
