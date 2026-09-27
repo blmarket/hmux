@@ -3440,7 +3440,6 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
 unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
     let mut minimum: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut wpo: *mut window_pane_offset = ::core::ptr::null_mut::<window_pane_offset>();
     let mut off: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut flag: ::core::ffi::c_int = 0;
     let mut attached_clients: u_int = 0 as u_int;
@@ -3456,12 +3455,13 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             if !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                 off = 0 as ::core::ffi::c_int;
             } else {
-                wpo = control_pane_offset(c, wp, &raw mut flag);
-                if wpo.is_null() {
+                let wpo =
+                    control_pane_offset(&mut *(*c).control_state, (*c).flags, (*wp).id, &mut flag);
+                if wpo.is_none() {
                     if flag == 0 {
                         off = 0 as ::core::ffi::c_int;
                     }
-                } else {
+                } else if let Some(wpo) = wpo {
                     if flag == 0 {
                         off = 0 as ::core::ffi::c_int;
                     }
@@ -3518,9 +3518,15 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             c = clients.first();
             while !c.is_null() {
                 if !((*c).session.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-                    wpo = control_pane_offset(c, wp, &raw mut flag);
-                    if !wpo.is_null() && flag == 0 {
-                        (*wpo).used = (*wpo).used.wrapping_sub((*wp).base_offset);
+                    if let Some(wpo) = control_pane_offset(
+                        &mut *(*c).control_state,
+                        (*c).flags,
+                        (*wp).id,
+                        &mut flag,
+                    ) {
+                        if flag == 0 {
+                            wpo.used = wpo.used.wrapping_sub((*wp).base_offset);
+                        }
                     }
                 }
                 c = clients.next(c);

@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
     cmdq_new_state,
 };
-use crate::src::ffi::libc::{__errno_location, close, memcpy, memset, poll, strcmp, strlen};
+use crate::src::ffi::libc::{__errno_location, close, memset, poll, strcmp, strlen};
 use crate::src::ffi::libc::{nfds_t, pollfd};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
@@ -28,7 +28,7 @@ use crate::src::shared::command::CMDQ_STATE_CONTROL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::control::{
-    control_block, control_pane, control_pane_entry, control_panes, control_state, control_window,
+    control_block, control_pane, control_panes, control_state, control_window,
     control_windows,
 };
 use crate::src::shared::errno::{EAGAIN, EINTR};
@@ -42,7 +42,6 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::session::session;
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{get_timer, setblocking};
 use crate::src::window::{
@@ -99,24 +98,11 @@ impl control_state {
             })
     }
 
-    fn remove_block(&mut self, block: *mut control_block) {
-        let index = self
-            .all_blocks
-            .iter()
-            .position(|owner| std::ptr::eq(&**owner, block))
-            .expect("control block must be owned by its state");
-        drop(
-            self.all_blocks
-                .remove(index)
-                .expect("located control block"),
-        );
-    }
-
-    fn pending_snapshot(&self) -> Vec<*mut control_pane> {
+    fn pending_snapshot(&self) -> Vec<u_int> {
         self.pending_panes.iter().copied().collect()
     }
 
-    fn remove_pending(&mut self, pane: *mut control_pane) -> bool {
+    fn remove_pending(&mut self, pane: u_int) -> bool {
         let Some(index) = self.pending_panes.iter().position(|queued| *queued == pane) else {
             return false;
         };
@@ -141,7 +127,7 @@ pub fn control_state_new() -> *mut control_state {
 /// # Safety
 /// `cs` must be a live pointer returned by `control_state_new`, and it must not
 /// be used after this call. Callers must first release its events and monitor
-/// set and empty its raw-pointer pane and window indexes.
+/// set. Pane, window, and block collections own their allocations.
 pub unsafe fn control_state_free(cs: *mut control_state) {
     if !cs.is_null() {
         drop(Box::from_raw(control_state_owner(cs)));
@@ -152,21 +138,17 @@ unsafe fn control_first_block(cs: *mut control_state) -> *mut control_block {
     (*control_state_owner(cs)).block(0)
 }
 
-unsafe fn control_first_pane_block(cp: *mut control_pane) -> *mut control_block {
-    (*cp)
-        .blocks
-        .front()
-        .copied()
-        .unwrap_or(std::ptr::null_mut())
+fn control_first_pane_block(cp: &control_pane) -> *mut control_block {
+    cp.blocks.front().copied().unwrap_or(std::ptr::null_mut())
 }
 
-unsafe fn control_remove_pane_block(cp: *mut control_pane, block: *mut control_block) {
-    let index = (*cp)
+fn control_remove_pane_block(cp: &mut control_pane, block: *mut control_block) {
+    let index = cp
         .blocks
         .iter()
         .position(|candidate| *candidate == block)
         .expect("control pane block must be queued on its pane");
-    (*cp).blocks.remove(index).expect("located pane block");
+    cp.blocks.remove(index).expect("located pane block");
 }
 
 unsafe fn control_add_block(
@@ -243,22 +225,20 @@ mod control_queue_tests {
                 flags: 0,
                 pending_flag: 0,
                 blocks: VecDeque::from([first, middle, last]),
-                entry: control_pane_entry { owner: None },
             };
-            let pane_ptr = &raw mut pane;
 
-            assert_eq!(control_first_pane_block(pane_ptr), first);
-            control_remove_pane_block(pane_ptr, middle);
+            assert_eq!(control_first_pane_block(&pane), first);
+            control_remove_pane_block(&mut pane, middle);
             control_free_block(cs, middle);
-            assert_eq!(control_first_pane_block(pane_ptr), first);
+            assert_eq!(control_first_pane_block(&pane), first);
             assert_eq!((*last).size, 34);
             assert_eq!((*control_state_owner(cs)).block(0), first);
             assert_eq!((*control_state_owner(cs)).block(1), last);
-            control_remove_pane_block(pane_ptr, first);
+            control_remove_pane_block(&mut pane, first);
             control_free_block(cs, first);
-            assert_eq!(control_first_pane_block(pane_ptr), last);
+            assert_eq!(control_first_pane_block(&pane), last);
             assert_eq!(control_first_block(cs), last);
-            control_remove_pane_block(pane_ptr, last);
+            control_remove_pane_block(&mut pane, last);
             control_free_block(cs, last);
             assert!(control_first_block(cs).is_null());
         }
@@ -267,69 +247,82 @@ mod control_queue_tests {
     #[test]
     fn pending_snapshot_defers_reentrant_appends_to_the_next_pass() {
         let mut owner = control_state::new();
-        let mut panes: Vec<Box<control_pane>> = (0..3)
-            .map(|pane| {
-                Box::new(control_pane {
-                    pane,
-                    offset: window_pane_offset { used: 0 },
-                    queued: window_pane_offset { used: 0 },
-                    flags: 0,
-                    pending_flag: 1,
-                    blocks: VecDeque::new(),
-                    entry: control_pane_entry { owner: None },
-                })
-            })
-            .collect();
-        let pointers: Vec<_> = panes.iter_mut().map(|pane| &raw mut **pane).collect();
-        owner.pending_panes.extend(pointers[..2].iter().copied());
-
+        owner.pending_panes.extend([4, 9]);
         let pass = owner.pending_snapshot();
-        owner.pending_panes.push_back(pointers[2]);
-        assert_eq!(pass, pointers[..2]);
-        assert!(owner.remove_pending(pointers[0]));
-        assert!(!owner.remove_pending(pointers[0]));
-        assert_eq!(owner.pending_snapshot(), pointers[1..]);
+        owner.pending_panes.push_back(12);
+        assert_eq!(pass, [4, 9]);
+        assert!(owner.remove_pending(4));
+        assert!(!owner.remove_pending(4));
+        assert_eq!(owner.pending_snapshot(), [9, 12]);
     }
 
     #[test]
     fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {
+        let mut index = control_panes { storage: None };
+        let mut wp = window_pane::empty();
+        wp.id = 4;
+        wp.offset.used = 123;
+        let first = control_add_pane(&mut index, &wp);
+        assert_eq!((first.offset.used, first.queued.used), (123, 123));
+        first.flags = CONTROL_PANE_OFF;
+        let address = first as *mut control_pane as usize;
+        for id in 5..100 {
+            wp.id = id;
+            control_add_pane(&mut index, &wp);
+        }
+        wp.id = 4;
+        wp.offset.used = 456;
+        let first = control_add_pane(&mut index, &wp);
+        assert_eq!(first as *mut control_pane as usize, address);
+        assert_eq!(
+            (first.offset.used, first.queued.used, first.flags),
+            (123, 123, CONTROL_PANE_OFF)
+        );
+        let moved = index;
+        assert_eq!(moved.get(9).unwrap().pane, 9);
+        assert!(moved.get(100).is_none());
+        drop(moved);
+    }
+
+    #[test]
+    fn resetting_panes_drops_output_and_pending_ids_but_keeps_replies() {
         unsafe {
-            fn pane(id: u_int) -> *mut control_pane {
-                Box::into_raw(Box::new(control_pane {
-                    pane: id,
-                    offset: window_pane_offset { used: 0 },
-                    queued: window_pane_offset { used: 0 },
-                    flags: 0,
-                    pending_flag: 0,
-                    blocks: VecDeque::new(),
-                    entry: control_pane_entry { owner: None },
-                }))
+            let mut owner = control_state::new();
+            let cs = &raw mut owner;
+            let mut client = client::empty();
+            client.control_state = cs;
+            let mut wp = window_pane::empty();
+            let reply = control_add_block(
+                cs,
+                control_block::new(Some(CString::new("reply").unwrap()), 0),
+            );
+            owner.queued_reply_bytes = 6;
+            for id in [4, 9] {
+                wp.id = id;
+                wp.offset.used = 123;
+                let block = control_add_block(cs, control_block::new(None, 10));
+                let pane = control_add_pane(&mut owner.panes, &wp);
+                pane.blocks.push_back(block);
+                pane.pending_flag = 1;
+                owner.pending_panes.push_back(id);
+                owner.pending_count += 1;
             }
-
-            let mut index = control_panes { storage: None };
-            let mut other = control_panes { storage: None };
-            let first = pane(4);
-            let second = pane(9);
-            assert!(control_panes_insert(&raw mut index, first).is_null());
-            assert!(control_panes_insert(&raw mut index, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
-            let duplicate = pane(4);
-            assert_eq!(control_panes_insert(&raw mut index, duplicate), first);
-            assert!(control_panes_remove(&raw mut other, first).is_none());
-            assert!((*first).entry.owner.is_some());
-            assert_eq!(control_panes_find(&index, &*first), first);
-            assert_eq!(control_panes_next(&*first), second);
-
-            let removed = control_panes_remove(&raw mut index, first).unwrap();
-            assert!(removed.entry.owner.is_none());
-            drop(removed);
-            assert_eq!(control_panes_minmax(&index), second);
-            drop(control_panes_remove(&raw mut index, second));
-            assert!(index.storage.is_none());
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
+            assert_eq!(owner.pending_snapshot(), [4, 9]);
+            control_reset_offsets(&raw mut client);
+            assert!(owner.panes.storage.is_none());
+            assert!(owner.pending_panes.is_empty());
+            assert_eq!(owner.pending_count, 0);
+            assert_eq!(owner.all_blocks.len(), 1);
+            assert_eq!(owner.block(0), reply);
+            assert_eq!(owner.queued_reply_bytes, 6);
+            control_reset_offsets(&raw mut client);
+            wp.id = 4;
+            wp.offset.used = 456;
+            let pane = control_add_pane(&mut owner.panes, &wp);
+            assert_eq!(pane.offset.used, 456);
+            assert_eq!(pane.pending_flag, 0);
+            assert!(pane.blocks.is_empty());
+            assert!(owner.pending_snapshot().is_empty());
         }
     }
 
@@ -380,53 +373,32 @@ unsafe fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_bl
             (*cs).queued_reply_bytes = 0 as size_t;
         }
     }
-    (*control_state_owner(cs)).remove_block(cb);
+    let blocks = &mut (*cs).all_blocks;
+    let index = blocks
+        .iter()
+        .position(|owner| std::ptr::eq(&**owner, cb))
+        .expect("control block must be owned by its state");
+    drop(blocks.remove(index).expect("located control block"));
 }
-unsafe fn control_get_pane(mut c: *mut client, mut wp: *mut window_pane) -> *mut control_pane {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: control_pane = control_pane {
-        pane: (*wp).id,
-        offset: window_pane_offset { used: 0 },
-        queued: window_pane_offset { used: 0 },
-        flags: 0,
-        pending_flag: 0,
-        blocks: VecDeque::new(),
-        entry: control_pane_entry { owner: None },
-    };
-    return control_panes_find(&(*cs).panes, &cp);
-}
-unsafe fn control_add_pane(mut c: *mut client, mut wp: *mut window_pane) -> *mut control_pane {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_get_pane(c, wp);
-    if !cp.is_null() {
-        return cp;
-    }
-    cp = Box::into_raw(Box::new(control_pane {
-        pane: 0,
-        offset: window_pane_offset { used: 0 },
-        queued: window_pane_offset { used: 0 },
-        flags: 0,
-        pending_flag: 0,
-        blocks: VecDeque::new(),
-        entry: control_pane_entry { owner: None },
-    }));
-    (*cp).pane = (*wp).id;
-    let existing = control_panes_insert(&raw mut (*cs).panes, cp);
-    if !existing.is_null() {
-        return existing;
-    }
-    memcpy(
-        &raw mut (*cp).offset as *mut ::core::ffi::c_void,
-        &raw mut (*wp).offset as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<window_pane_offset>() as size_t,
-    );
-    memcpy(
-        &raw mut (*cp).queued as *mut ::core::ffi::c_void,
-        &raw mut (*wp).offset as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<window_pane_offset>() as size_t,
-    );
-    return cp;
+
+fn control_add_pane<'a>(panes: &'a mut control_panes, wp: &window_pane) -> &'a mut control_pane {
+    let map = panes.storage.get_or_insert_with(Box::default);
+    map.entry(wp.id)
+        .or_insert_with(|| {
+            Box::new(control_pane {
+                pane: wp.id,
+                offset: window_pane_offset {
+                    used: wp.offset.used,
+                },
+                queued: window_pane_offset {
+                    used: wp.offset.used,
+                },
+                flags: 0,
+                pending_flag: 0,
+                blocks: VecDeque::new(),
+            })
+        })
+        .as_mut()
 }
 pub unsafe fn control_set_window_size(c: *mut client, window: u_int, sx: u_int, sy: u_int) {
     if let Some(cs) = (*c).control_state.as_mut() {
@@ -458,9 +430,9 @@ pub unsafe fn control_clear_window_size(c: *mut client, window: u_int) {
     }
 }
 
-unsafe fn control_discard_pane(mut c: *mut client, mut cp: *mut control_pane) {
+unsafe fn control_discard_pane(mut c: *mut client, cp: &mut control_pane) {
     let mut cs: *mut control_state = (*c).control_state;
-    while let Some(cb) = (*cp).blocks.pop_front() {
+    while let Some(cb) = cp.blocks.pop_front() {
         control_free_block(cs, cb);
     }
 }
@@ -483,126 +455,85 @@ unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut windo
     }
     return wp;
 }
-pub unsafe fn control_reset_offsets(mut c: *mut client) {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_panes_minmax(&(*cs).panes);
-    while !cp.is_null() && {
-        cp1 = control_panes_next(&*cp);
-        1 as ::core::ffi::c_int != 0
-    } {
-        control_discard_pane(c, cp);
-        drop(control_panes_remove(&raw mut (*cs).panes, cp));
-        cp = cp1;
+pub unsafe fn control_reset_offsets(c: *mut client) {
+    let cs = (*c).control_state;
+    if let Some(panes) = (*cs).panes.storage.take() {
+        for (_, mut pane) in *panes {
+            control_discard_pane(c, &mut pane);
+        }
     }
-    (*control_state_owner(cs)).pending_panes.clear();
-    (*cs).pending_count = 0 as u_int;
+    (*cs).pending_panes.clear();
+    (*cs).pending_count = 0;
 }
-pub unsafe fn control_pane_offset(
-    mut c: *mut client,
-    mut wp: *mut window_pane,
-    mut off: *mut ::core::ffi::c_int,
-) -> *mut window_pane_offset {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    if (*c).flags & CLIENT_CONTROL_NOOUTPUT as uint64_t != 0 {
-        *off = 0 as ::core::ffi::c_int;
-        return ::core::ptr::null_mut::<window_pane_offset>();
+pub unsafe fn control_pane_offset<'a>(
+    cs: &'a mut control_state,
+    client_flags: uint64_t,
+    pane: u_int,
+    off: &mut ::core::ffi::c_int,
+) -> Option<&'a mut window_pane_offset> {
+    *off = 0;
+    if client_flags & CLIENT_CONTROL_NOOUTPUT as uint64_t != 0 {
+        return None;
     }
-    cp = control_get_pane(c, wp);
-    if cp.is_null() || (*cp).flags & CONTROL_PANE_PAUSED != 0 {
-        *off = 0 as ::core::ffi::c_int;
-        return ::core::ptr::null_mut::<window_pane_offset>();
+    let cp = cs.panes.get_mut(pane)?;
+    if cp.flags & CONTROL_PANE_PAUSED != 0 {
+        return None;
     }
-    if (*cp).flags & CONTROL_PANE_OFF != 0 {
-        *off = 1 as ::core::ffi::c_int;
-        return ::core::ptr::null_mut::<window_pane_offset>();
+    if cp.flags & CONTROL_PANE_OFF != 0 {
+        *off = 1;
+        return None;
     }
-    *off = (evbuffer_get_length(&*((*(*cs).write_event).output)) >= CONTROL_BUFFER_LOW as size_t)
+    *off = (evbuffer_get_length(&*(*cs.write_event).output) >= CONTROL_BUFFER_LOW as size_t)
         as ::core::ffi::c_int;
-    return &raw mut (*cp).offset;
+    Some(&mut cp.offset)
 }
-pub unsafe fn control_set_pane_on(mut c: *mut client, mut wp: *mut window_pane) {
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_get_pane(c, wp);
-    if !cp.is_null() && (*cp).flags & CONTROL_PANE_OFF != 0 {
-        (*cp).flags &= !CONTROL_PANE_OFF;
-        memcpy(
-            &raw mut (*cp).offset as *mut ::core::ffi::c_void,
-            &raw mut (*wp).offset as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<window_pane_offset>() as size_t,
-        );
-        memcpy(
-            &raw mut (*cp).queued as *mut ::core::ffi::c_void,
-            &raw mut (*wp).offset as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<window_pane_offset>() as size_t,
-        );
+pub unsafe fn control_set_pane_on(c: *mut client, wp: *mut window_pane) {
+    let Some(cp) = (*(*c).control_state).panes.get_mut((*wp).id) else {
+        return;
+    };
+    if cp.flags & CONTROL_PANE_OFF != 0 {
+        cp.flags &= !CONTROL_PANE_OFF;
+        cp.offset.used = (*wp).offset.used;
+        cp.queued.used = (*wp).offset.used;
     }
 }
-pub unsafe fn control_set_pane_off(mut c: *mut client, mut wp: *mut window_pane) {
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_add_pane(c, wp);
+pub unsafe fn control_set_pane_off(c: *mut client, wp: *mut window_pane) {
+    let cp = control_add_pane(&mut (*(*c).control_state).panes, &*wp);
     control_discard_pane(c, cp);
-    memcpy(
-        &raw mut (*cp).offset as *mut ::core::ffi::c_void,
-        &raw mut (*wp).offset as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<window_pane_offset>() as size_t,
-    );
-    memcpy(
-        &raw mut (*cp).queued as *mut ::core::ffi::c_void,
-        &raw mut (*wp).offset as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<window_pane_offset>() as size_t,
-    );
-    (*cp).flags |= CONTROL_PANE_OFF;
+    cp.offset.used = (*wp).offset.used;
+    cp.queued.used = (*wp).offset.used;
+    cp.flags |= CONTROL_PANE_OFF;
 }
-pub unsafe fn control_continue_pane(mut c: *mut client, mut wp: *mut window_pane) {
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_get_pane(c, wp);
-    if !cp.is_null() && (*cp).flags & CONTROL_PANE_PAUSED != 0 {
-        (*cp).flags &= !CONTROL_PANE_PAUSED;
-        memcpy(
-            &raw mut (*cp).offset as *mut ::core::ffi::c_void,
-            &raw mut (*wp).offset as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<window_pane_offset>() as size_t,
-        );
-        memcpy(
-            &raw mut (*cp).queued as *mut ::core::ffi::c_void,
-            &raw mut (*wp).offset as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<window_pane_offset>() as size_t,
-        );
-        control_notify_write(c, |out| write!(out, "%continue %{}", ((*wp).id) as u32));
+pub unsafe fn control_continue_pane(c: *mut client, wp: *mut window_pane) {
+    let Some(cp) = (*(*c).control_state).panes.get_mut((*wp).id) else {
+        return;
+    };
+    if cp.flags & CONTROL_PANE_PAUSED != 0 {
+        cp.flags &= !CONTROL_PANE_PAUSED;
+        cp.offset.used = (*wp).offset.used;
+        cp.queued.used = (*wp).offset.used;
+        control_notify_write(c, |out| write!(out, "%continue %{}", (*wp).id));
     }
 }
-pub unsafe fn control_pause_pane(mut c: *mut client, mut wp: *mut window_pane) {
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_add_pane(c, wp);
-    if !(*cp).flags & CONTROL_PANE_PAUSED != 0 {
-        (*cp).flags |= CONTROL_PANE_PAUSED;
+pub unsafe fn control_pause_pane(c: *mut client, wp: *mut window_pane) {
+    let cp = control_add_pane(&mut (*(*c).control_state).panes, &*wp);
+    if cp.flags & CONTROL_PANE_PAUSED == 0 {
+        cp.flags |= CONTROL_PANE_PAUSED;
         control_discard_pane(c, cp);
-        control_notify_write(c, |out| write!(out, "%pause %{}", ((*wp).id) as u32));
+        control_notify_write(c, |out| write!(out, "%pause %{}", (*wp).id));
     }
 }
-pub unsafe fn control_reset_pane(mut c: *mut client, mut wp: *mut window_pane) {
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    if (*c).control_state.is_null() {
+pub unsafe fn control_reset_pane(c: *mut client, wp: *mut window_pane) {
+    let cs = (*c).control_state;
+    if cs.is_null() {
         return;
     }
-    cp = control_get_pane(c, wp);
-    if cp.is_null() {
+    let Some(cp) = (*cs).panes.get_mut((*wp).id) else {
         return;
-    }
+    };
     control_discard_pane(c, cp);
-    memcpy(
-        &raw mut (*cp).offset as *mut ::core::ffi::c_void,
-        &raw mut (*wp).offset as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<window_pane_offset>() as size_t,
-    );
-    memcpy(
-        &raw mut (*cp).queued as *mut ::core::ffi::c_void,
-        &raw mut (*wp).offset as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<window_pane_offset>() as size_t,
-    );
+    cp.offset.used = (*wp).offset.used;
+    cp.queued.used = (*wp).offset.used;
 }
 unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> ::core::ffi::c_int {
     let mut cs: *mut control_state = (*c).control_state;
@@ -772,12 +703,13 @@ pub unsafe fn control_notify_write(
 unsafe fn control_check_age(
     mut c: *mut client,
     mut wp: *mut window_pane,
-    mut cp: *mut control_pane,
+    pane: u_int,
 ) -> ::core::ffi::c_int {
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut t: uint64_t = 0;
     let mut age: uint64_t = 0;
-    cb = control_first_pane_block(cp);
+    let cs = (*c).control_state;
+    cb = control_first_pane_block((*cs).panes.get(pane).expect("indexed control pane"));
     if cb.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -802,7 +734,8 @@ unsafe fn control_check_age(
         if age < (*c).pause_age as uint64_t {
             return 0 as ::core::ffi::c_int;
         }
-        (*cp).flags |= CONTROL_PANE_PAUSED;
+        let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+        cp.flags |= CONTROL_PANE_PAUSED;
         control_discard_pane(c, cp);
         control_notify_write(c, |out| write!(out, "%pause %{}", ((*wp).id) as u32));
     } else {
@@ -817,7 +750,7 @@ unsafe fn control_check_age(
 }
 pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
+    let pane = (*wp).id;
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut new_size: size_t = 0;
     if winlink_find_by_window(
@@ -829,24 +762,25 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
         return;
     }
     if (*c).flags & (CONTROL_IGNORE_FLAGS | CLIENT_EXIT) as uint64_t != 0 {
-        cp = control_get_pane(c, wp);
-        if cp.is_null() {
+        if (*cs).panes.get(pane).is_none() {
             return;
         }
     } else {
-        cp = control_add_pane(c, wp);
-        if !((*cp).flags & (CONTROL_PANE_OFF | CONTROL_PANE_PAUSED) != 0) {
-            if control_check_age(c, wp, cp) != 0 {
+        let cp = control_add_pane(&mut (*cs).panes, &*wp);
+        if !(cp.flags & (CONTROL_PANE_OFF | CONTROL_PANE_PAUSED) != 0) {
+            if control_check_age(c, wp, pane) != 0 {
                 return;
             }
-            window_pane_get_new_data(wp, &raw mut (*cp).queued, &raw mut new_size);
+            let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+            window_pane_get_new_data(wp, &raw mut cp.queued, &raw mut new_size);
             if new_size == 0 as size_t {
                 return;
             }
-            window_pane_update_used_data(wp, &raw mut (*cp).queued, new_size);
+            window_pane_update_used_data(wp, &raw mut cp.queued, new_size);
             cb = control_add_block(cs, control_block::new(None, new_size));
             (*cb).t = get_timer();
-            (*cp).blocks.push_back(cb);
+            let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+            cp.blocks.push_back(cb);
             log_debug(format_args!(
                 "{}: {}: new output block of {} for %{}",
                 "control_write_output",
@@ -859,7 +793,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                 ((*cb).size) as usize,
                 ((*wp).id) as u32
             ));
-            if (*cp).pending_flag == 0 {
+            if cp.pending_flag == 0 {
                 log_debug(format_args!(
                     "{}: {}: %{} now pending",
                     "control_write_output",
@@ -871,8 +805,8 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                     ),
                     ((*wp).id) as u32
                 ));
-                (*control_state_owner(cs)).pending_panes.push_back(cp);
-                (*cp).pending_flag = 1 as ::core::ffi::c_int;
+                (*cs).pending_panes.push_back(pane);
+                cp.pending_flag = 1 as ::core::ffi::c_int;
                 (*cs).pending_count = (*cs).pending_count.wrapping_add(1);
             }
             bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
@@ -890,8 +824,9 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
         ),
         ((*wp).id) as u32
     ));
-    window_pane_update_used_data(wp, &raw mut (*cp).offset, SIZE_MAX as size_t);
-    window_pane_update_used_data(wp, &raw mut (*cp).queued, SIZE_MAX as size_t);
+    let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+    window_pane_update_used_data(wp, &raw mut cp.offset, SIZE_MAX as size_t);
+    window_pane_update_used_data(wp, &raw mut cp.queued, SIZE_MAX as size_t);
 }
 unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
@@ -1063,7 +998,7 @@ unsafe fn control_flush_all_blocks(mut c: *mut client) {
 }
 unsafe fn control_append_data(
     mut c: *mut client,
-    mut cp: *mut control_pane,
+    cp: &mut control_pane,
     mut age: uint64_t,
     message: Option<Box<evbuffer>>,
     mut wp: *mut window_pane,
@@ -1091,8 +1026,7 @@ unsafe fn control_append_data(
         }
         message
     });
-    new_data =
-        window_pane_get_new_data(wp, &raw mut (*cp).offset, &raw mut new_size) as *mut u_char;
+    new_data = window_pane_get_new_data(wp, &raw mut cp.offset, &raw mut new_size) as *mut u_char;
     if new_size < size {
         fatalx(|out| {
             write!(
@@ -1133,7 +1067,7 @@ unsafe fn control_append_data(
         }
         i = i.wrapping_add(1);
     }
-    window_pane_update_used_data(wp, &raw mut (*cp).offset, size);
+    window_pane_update_used_data(wp, &raw mut cp.offset, size);
     return message;
 }
 unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
@@ -1162,7 +1096,7 @@ unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
 }
 unsafe fn control_write_pending(
     mut c: *mut client,
-    mut cp: *mut control_pane,
+    pane: u_int,
     mut limit: size_t,
 ) -> ::core::ffi::c_int {
     let mut cs: *mut control_state = (*c).control_state;
@@ -1173,20 +1107,26 @@ unsafe fn control_write_pending(
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut age: uint64_t = 0;
     let mut t: uint64_t = get_timer();
-    wp = control_window_pane(c, (*cp).pane);
+    wp = control_window_pane(c, pane);
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
-        while let Some(cb) = (*cp).blocks.pop_front() {
-            control_free_block(cs, cb);
-        }
+        let cp = (*cs).panes.get_mut(pane).expect("indexed control pane");
+        control_discard_pane(c, cp);
         control_flush_all_blocks(c);
         return 0 as ::core::ffi::c_int;
     }
-    while used != limit && !(*cp).blocks.is_empty() {
-        if control_check_age(c, wp, cp) != 0 {
+    while used != limit
+        && !(*cs)
+            .panes
+            .get(pane)
+            .expect("indexed control pane")
+            .blocks
+            .is_empty()
+    {
+        if control_check_age(c, wp, pane) != 0 {
             message = None;
             break;
         } else {
-            cb = control_first_pane_block(cp);
+            cb = control_first_pane_block((*cs).panes.get(pane).expect("indexed control pane"));
             if (*cb).t < t {
                 age = t.wrapping_sub((*cb).t);
             } else {
@@ -1203,7 +1143,7 @@ unsafe fn control_write_pending(
                 ),
                 ((*cb).size) as usize,
                 age as ::core::ffi::c_ulonglong,
-                ((*cp).pane) as u32,
+                (pane) as u32,
                 (used) as usize,
                 (limit) as usize
             ));
@@ -1212,10 +1152,20 @@ unsafe fn control_write_pending(
                 size = limit.wrapping_sub(used);
             }
             used = used.wrapping_add(size);
-            message = Some(control_append_data(c, cp, age, message, wp, size));
+            message = Some(control_append_data(
+                c,
+                (*cs).panes.get_mut(pane).expect("indexed control pane"),
+                age,
+                message,
+                wp,
+                size,
+            ));
             (*cb).size = (*cb).size.wrapping_sub(size);
             if (*cb).size == 0 as size_t {
-                control_remove_pane_block(cp, cb);
+                control_remove_pane_block(
+                    (*cs).panes.get_mut(pane).expect("indexed control pane"),
+                    cb,
+                );
                 control_free_block(cs, cb);
                 cb = control_first_block(cs);
                 if !cb.is_null() && (*cb).size == 0 as size_t {
@@ -1232,7 +1182,12 @@ unsafe fn control_write_pending(
     if let Some(message) = message {
         control_write_data(c, message);
     }
-    return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
+    return !(*cs)
+        .panes
+        .get(pane)
+        .expect("indexed control pane")
+        .blocks
+        .is_empty() as ::core::ffi::c_int;
 }
 unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
@@ -1265,22 +1220,26 @@ unsafe fn control_write_callback(mut data: *mut ::core::ffi::c_void) {
             limit = CONTROL_WRITE_MINIMUM as size_t;
         }
         let pending = (*control_state_owner(cs)).pending_snapshot();
-        for cp in pending {
+        for pane in pending {
             if evbuffer_get_length(&(*(*cs).write_event).output) >= CONTROL_BUFFER_HIGH as size_t {
                 break;
             }
             if !(*control_state_owner(cs))
                 .pending_panes
                 .iter()
-                .any(|pane| *pane == cp)
+                .any(|queued| *queued == pane)
             {
                 continue;
             }
-            if !(control_write_pending(c, cp, limit) != 0) {
+            if !(control_write_pending(c, pane, limit) != 0) {
                 let owner = &mut *control_state_owner(cs);
-                if owner.remove_pending(cp) {
-                    (*cp).pending_flag = 0 as ::core::ffi::c_int;
-                    (*cs).pending_count = (*cs).pending_count.wrapping_sub(1);
+                if owner.remove_pending(pane) {
+                    owner
+                        .panes
+                        .get_mut(pane)
+                        .expect("indexed control pane")
+                        .pending_flag = 0;
+                    owner.pending_count = owner.pending_count.wrapping_sub(1);
                 }
             }
         }
@@ -1399,13 +1358,12 @@ pub unsafe fn control_ready(mut c: *mut client) {
         EV_READ as ::core::ffi::c_short,
     );
 }
-pub unsafe fn control_discard(mut c: *mut client) {
-    let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_panes_minmax(&(*cs).panes);
-    while !cp.is_null() {
-        control_discard_pane(c, cp);
-        cp = control_panes_next(&*cp);
+pub unsafe fn control_discard(c: *mut client) {
+    let cs = (*c).control_state;
+    if let Some(panes) = (*cs).panes.storage.as_mut() {
+        for cp in panes.values_mut() {
+            control_discard_pane(c, cp);
+        }
     }
     bufferevent_disable((*cs).read_event, EV_READ as ::core::ffi::c_short);
 }
@@ -1459,105 +1417,14 @@ pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ff
     monitor_remove((*cs).subs, name);
 }
 
-fn control_panes_key(elm: &control_pane) -> u32 {
-    elm.pane
-}
-pub unsafe fn control_panes_find(head: &control_panes, elm: &control_pane) -> *mut control_pane {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("control pane index already borrowed");
-    let key = control_panes_key(elm);
-    map.get(&key).map_or(std::ptr::null_mut(), |node| {
-        &**node as *const control_pane as *mut control_pane
-    })
-}
-pub unsafe fn control_panes_insert(
-    head: *mut control_panes,
-    elm: *mut control_pane,
-) -> *mut control_pane {
-    let key = control_panes_key(&*elm);
-    let incoming = Box::from_raw(elm);
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let (existing, rejected) = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("control pane index already borrowed");
-        match map.entry(key) {
-            std::collections::btree_map::Entry::Occupied(entry) => (
-                &**entry.get() as *const control_pane as *mut control_pane,
-                Some(incoming),
-            ),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(incoming);
-                (*elm).entry.owner = Some(observer);
-                (std::ptr::null_mut(), None)
-            }
-        }
-    };
-    drop(rejected);
-    existing
-}
-pub unsafe fn control_panes_remove(
-    head: *mut control_panes,
-    elm: *mut control_pane,
-) -> Option<Box<control_pane>> {
-    if elm.is_null() {
-        return None;
+impl control_panes {
+    fn get(&self, pane: u_int) -> Option<&control_pane> {
+        self.storage.as_ref()?.get(&pane).map(Box::as_ref)
     }
-    let key = control_panes_key(&*elm);
-    let Some(owner) = (*head).storage.as_ref() else {
-        return None;
-    };
-    let (removed, empty) = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("control pane index already borrowed");
-        if map
-            .get(&key)
-            .map(|node| &**node as *const control_pane as *mut control_pane)
-            != Some(elm)
-        {
-            return None;
-        }
-        (*elm).entry.owner = None;
-        (map.remove(&key), map.is_empty())
-    };
-    if empty {
-        (*head).storage = None;
+
+    fn get_mut(&mut self, pane: u_int) -> Option<&mut control_pane> {
+        self.storage.as_mut()?.get_mut(&pane).map(Box::as_mut)
     }
-    removed
-}
-pub unsafe fn control_panes_minmax(head: &control_panes) -> *mut control_pane {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("control pane index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| {
-        &**node as *const control_pane as *mut control_pane
-    })
-}
-pub unsafe fn control_panes_next(elm: &control_pane) -> *mut control_pane {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("control pane index already borrowed"),
-    };
-    let key = control_panes_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| {
-            &**node as *const control_pane as *mut control_pane
-        })
 }
 
 impl control_windows {

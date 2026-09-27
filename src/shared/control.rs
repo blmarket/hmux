@@ -18,7 +18,7 @@ pub struct control_state {
     pub guard_depth: ::core::ffi::c_int,
     pub(crate) deferred: VecDeque<std::ffi::CString>,
     pub(crate) all_blocks: VecDeque<Box<control_block>>,
-    pub(crate) pending_panes: VecDeque<*mut control_pane>,
+    pub(crate) pending_panes: VecDeque<u_int>,
 }
 
 impl control_state {
@@ -48,7 +48,7 @@ pub struct control_block {
 
 #[repr(C)]
 /// Owned by the pane-ID index until `control_reset_offsets` removes it.
-/// The pending queue borrows its stable address.
+/// The pending queue stores pane IDs and resolves them through the index.
 pub struct control_pane {
     pub pane: u_int,
     pub offset: window_pane_offset,
@@ -57,13 +57,6 @@ pub struct control_pane {
     pub pending_flag: ::core::ffi::c_int,
     /// Ordered non-owning handles into the state-owned block collection.
     pub blocks: VecDeque<*mut control_block>,
-    pub entry: control_pane_entry,
-}
-
-#[repr(C)]
-pub struct control_pane_entry {
-    /// Weak traversal handle into the pane ID index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, Box<control_pane>>>>,
 }
 
 #[repr(C)]
@@ -82,5 +75,5 @@ pub struct control_window {
 #[repr(C)]
 pub struct control_panes {
     /// The index owns each stable pane box.
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, Box<control_pane>>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<u32, Box<control_pane>>>>,
 }
