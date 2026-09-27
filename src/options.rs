@@ -443,8 +443,8 @@ unsafe fn options_remove(mut o: *mut options_entry) {
     let key = (*o).name.as_bytes().to_vec();
     drop((*oo).tree.remove(key.as_slice()));
 }
-pub unsafe fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
-    return (*o).name.as_ptr();
+pub fn options_name(o: &options_entry) -> &CStr {
+    &o.name
 }
 pub unsafe fn options_owner(mut o: *mut options_entry) -> *mut options {
     return (*o).owner;

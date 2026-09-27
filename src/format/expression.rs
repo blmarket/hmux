@@ -1041,7 +1041,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     });
     o = options_first(options_owner_ptr(&mut (*(*wl).window_ptr()).options));
     while !o.is_null() {
-        oname = options_name(o);
+        oname = options_name(&*(o)).as_ptr();
         if *oname as ::core::ffi::c_int == '@' as i32 {
             let prefixed = CString::new([prefix, b"_", CStr::from_ptr(oname).to_bytes()].concat())
                 .expect("C string key");
@@ -1322,7 +1322,7 @@ pub(super) unsafe fn format_loop_add_option(
         },
     };
     let mut oe: *const options_table_entry = options_table_entry(o);
-    let mut name: *const ::core::ffi::c_char = options_name(o);
+    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut is_array: ::core::ffi::c_int = options_is_array(o);
     format_log1(
         es,
@@ -1460,7 +1460,7 @@ pub(super) unsafe fn format_loop_add_array_item(
         },
     };
     let mut oe: *const options_table_entry = options_table_entry(o);
-    let mut name: *const ::core::ffi::c_char = options_name(o);
+    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     array_key = options_array_item_key(a);
     format_log1(

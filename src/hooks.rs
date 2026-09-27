@@ -577,7 +577,7 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<C
     if hm.is_null() {
         return None;
     }
-    let mut bytes = CStr::from_ptr(options_name(o)).to_bytes().to_vec();
+    let mut bytes = CStr::from_ptr(options_name(&*(o)).as_ptr()).to_bytes().to_vec();
     let target = match (*hm).type_0 {
         0 => b"::".as_slice(),
         1 => b":%".as_slice(),
@@ -614,14 +614,14 @@ pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
     if hm.is_null() {
         return 0 as u_int;
     }
-    return monitor_get_fire_count((*hm).set.as_mut().expect("hook monitor").as_ptr(), options_name(o));
+    return monitor_get_fire_count((*hm).set.as_mut().expect("hook monitor").as_ptr(), options_name(&*(o)).as_ptr());
 }
 pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
     let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
     if hm.is_null() {
         return 0 as time_t;
     }
-    return monitor_get_fire_time((*hm).set.as_mut().expect("hook monitor").as_ptr(), options_name(o));
+    return monitor_get_fire_time((*hm).set.as_mut().expect("hook monitor").as_ptr(), options_name(&*(o)).as_ptr());
 }
 
 #[cfg(test)]

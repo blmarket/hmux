@@ -264,7 +264,7 @@ unsafe fn cmd_show_options_print(
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut name: *const ::core::ffi::c_char = options_name(o);
+    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let value: CString;
     let mut tv: timeval = timeval {
@@ -434,7 +434,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     format_add(
         ft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, options_name(o)),
+        |out| write_cstr(out, options_name(&*(o)).as_ptr()),
     );
     format_add(
         ft,
@@ -536,7 +536,7 @@ unsafe fn cmd_show_options_all(
     o = options_first(oo);
     while !o.is_null() {
         if options_table_entry(o).is_null() {
-            name = options_name(o);
+            name = options_name(&*(o)).as_ptr();
             is_user_hook = 0 as ::core::ffi::c_int;
             if *name as ::core::ffi::c_int == '@' as i32 {
                 if hooks_is_event(name) != 0 || !options_get_monitor_data(o).is_null() {

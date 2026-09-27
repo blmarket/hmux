@@ -936,7 +936,7 @@ unsafe fn window_customize_option_is_changed(
     if oe.is_null() || !options_get_monitor_data(o).is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    if *options_name(o) as ::core::ffi::c_int == '@' as i32 && hooks_is_event(options_name(o)) != 0
+    if *options_name(&*(o)).as_ptr() as ::core::ffi::c_int == '@' as i32 && hooks_is_event(options_name(&*(o)).as_ptr()) != 0
     {
         return 1 as ::core::ffi::c_int;
     }
@@ -1002,7 +1002,7 @@ unsafe fn window_customize_build_array(
         if (*data).hide_default != 0 && window_customize_option_is_changed(o, array_key) == 0 {
             ai = options_array_next(ai);
         } else {
-            let mut name = CStr::from_ptr(options_name(o)).to_bytes().to_vec();
+            let mut name = CStr::from_ptr(options_name(&*(o)).as_ptr()).to_bytes().to_vec();
             name.push(b'[');
             name.extend_from_slice(CStr::from_ptr(array_key).to_bytes());
             name.push(b']');
@@ -1029,7 +1029,7 @@ unsafe fn window_customize_build_array(
                     },
                     scope,
                     oo,
-                    name: Some(CStr::from_ptr(options_name(o)).to_owned()),
+                    name: Some(CStr::from_ptr(options_name(&*(o)).as_ptr()).to_owned()),
                     array_key: if array_key.is_null() {
                         None
                     } else {
@@ -1067,7 +1067,7 @@ unsafe fn window_customize_build_option(
 ) -> u_int {
     let mut oe: *const options_table_entry = options_table_entry(o);
     let mut oo: *mut options = options_owner(o);
-    let mut name: *const ::core::ffi::c_char = options_name(o);
+    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
     let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut array: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1230,7 +1230,7 @@ unsafe fn window_customize_build_option(
 unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
     let mut o = options_first(oo);
     while !o.is_null() {
-        let name = CStr::from_ptr(options_name(o));
+        let name = CStr::from_ptr(options_name(&*(o)).as_ptr());
         if name.to_bytes().first() == Some(&b'@') && !list.iter().any(|entry| entry == name) {
             // Later row builders can call format callbacks before the list is exhausted.
             list.push(name.to_owned());
@@ -1301,7 +1301,7 @@ unsafe fn window_customize_build_options(
     drop(list);
     loop_0 = options_first(oo0);
     while !loop_0.is_null() {
-        name = options_name(loop_0);
+        name = options_name(&*(loop_0)).as_ptr();
         if *name as ::core::ffi::c_int == '@' as i32 {
             loop_0 = options_next(loop_0);
         } else {
