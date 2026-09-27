@@ -41,7 +41,6 @@ use crate::src::shared::window::{
 };
 
 unsafe fn resize_fire_window_resized(mut w: *mut window, mut old_sx: u_int, mut old_sy: u_int) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -51,31 +50,31 @@ unsafe fn resize_fire_window_resized(mut w: *mut window, mut old_sx: u_int, mut 
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"width\0" as *const u8 as *const ::core::ffi::c_char,
         (*w).sx,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"height\0" as *const u8 as *const ::core::ffi::c_char,
         (*w).sy,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
         old_sx,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
         old_sy,
     );

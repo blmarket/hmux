@@ -167,7 +167,6 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
     ));
 }
 unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut window_pane) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -181,25 +180,29 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
         .cwd
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr());
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_winlink_pane(&raw mut fs, (*sc).wl, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_session(
-        ep,
+        &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         (*sc).s,
     );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
     event_payload_set_int(
-        ep,
+        &mut *ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
         (*(*sc).wl).idx,
     );
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     let cmd = if !(*wp).argv.is_empty() {
         cmd_stringify_argv_cstring(&(*wp).argv)
     } else {
@@ -207,13 +210,13 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     };
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, cmd.as_ptr()),
         );
     } else if (*wp).shell.is_some() {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
             |out| {
                 write_cstr(
@@ -228,33 +231,33 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     }
     if !cwd.is_null() {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"pane_current_path\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, cwd),
         );
     }
     if (*sc).flags & SPAWN_EMPTY != 0 {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"created_empty\0" as *const u8 as *const ::core::ffi::c_char,
             1 as ::core::ffi::c_int,
         );
     } else {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"created_empty\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
         );
     }
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"created_respawn\0" as *const u8 as *const ::core::ffi::c_char,
             1 as ::core::ffi::c_int,
         );
     } else {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"created_respawn\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
         );

@@ -260,7 +260,7 @@ unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     return cmd_wait_for_wait(item, name, wc);
 }
-unsafe fn cmd_wait_for_event_print(mut wei: *mut wait_event_item, mut ep: *mut event_payload) {
+unsafe fn cmd_wait_for_event_print(mut wei: *mut wait_event_item, ep: &event_payload) {
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     for epi in event_payload_items(&*ep) {
         key = event_payload_item_name(epi).as_ptr();
@@ -279,7 +279,7 @@ unsafe fn cmd_wait_for_event_cb(
     payload: &mut event_payload,
     wei: *mut wait_event_item,
 ) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if (*wei).verbose != 0 {

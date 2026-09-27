@@ -118,7 +118,6 @@ unsafe fn cmd_select_pane_marked_pane(
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -145,7 +144,7 @@ unsafe fn cmd_select_pane_marked_pane(
         server_set_marked(s, wl, wp);
     }
     mwp = marked_pane.wp;
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     if !mwp.is_null() {
         cmd_find_from_pane(&raw mut fs, mwp, 0 as ::core::ffi::c_int);
     } else if !lwp.is_null() {
@@ -153,51 +152,55 @@ unsafe fn cmd_select_pane_marked_pane(
     } else {
         cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
     }
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     if !mwp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
             mwp,
         );
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"new_pane\0" as *const u8 as *const ::core::ffi::c_char,
             mwp,
         );
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             (*mwp).window as *mut window,
         );
     } else if !lwp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
             lwp,
         );
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             (*lwp).window as *mut window,
         );
     } else {
-        event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+        event_payload_set_pane(
+            &mut *ep,
+            b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+            wp,
+        );
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             (*wp).window as *mut window,
         );
     }
     if !lwp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"old_pane\0" as *const u8 as *const ::core::ffi::c_char,
             lwp,
         );
     }
     event_payload_set_int(
-        ep,
+        &mut *ep,
         b"marked\0" as *const u8 as *const ::core::ffi::c_char,
         (mwp != NULL as *mut window_pane) as ::core::ffi::c_int,
     );
@@ -226,7 +229,6 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut entry: *const cmd_entry = cmd_get_entry(self_0);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -359,17 +361,21 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'T' as i32 as u_char) != 0 {
         let title = format_single_from_target_cstring(item, args_get(args, 'T' as i32 as u_char));
         if screen_set_title(&mut (*wp).base, &title, 0 as ::core::ffi::c_int) != 0 {
-            ep = event_payload_create();
+            let mut ep = event_payload_create();
             cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-            event_payload_set_target(ep, &raw mut fs);
-            event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+            event_payload_set_target(&mut *ep, &fs);
+            event_payload_set_pane(
+                &mut *ep,
+                b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+                wp,
+            );
             event_payload_set_window(
-                ep,
+                &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
                 (*wp).window as *mut window,
             );
             event_payload_set_string(
-                ep,
+                &mut *ep,
                 b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
                 |out| write_cstr(out, title.as_ptr()),
             );

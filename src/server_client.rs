@@ -1214,7 +1214,6 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
     }
 }
 unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -1224,52 +1223,52 @@ unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut s
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_client(ep, c);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_client(&mut *ep, c);
     if !fs.s.is_null() {
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             fs.s,
         );
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"new_session\0" as *const u8 as *const ::core::ffi::c_char,
             fs.s,
         );
     }
     if !old.is_null() {
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"old_session\0" as *const u8 as *const ::core::ffi::c_char,
             old,
         );
     }
     if !fs.w.is_null() {
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             fs.w,
         );
     }
     if !fs.wl.is_null() {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*fs.wl).idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             fs.idx,
         );
     }
     if !fs.wp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
             fs.wp,
         );
@@ -1280,7 +1279,6 @@ unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut s
     );
 }
 unsafe fn server_client_fire_resized(mut c: *mut client, mut old_sx: u_int, mut old_sy: u_int) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -1290,61 +1288,61 @@ unsafe fn server_client_fire_resized(mut c: *mut client, mut old_sx: u_int, mut 
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_client(ep, c);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_client(&mut *ep, c);
     if !fs.s.is_null() {
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             fs.s,
         );
     }
     if !fs.w.is_null() {
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             fs.w,
         );
     }
     if !fs.wl.is_null() {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*fs.wl).idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             fs.idx,
         );
     }
     if !fs.wp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
             fs.wp,
         );
     }
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"width\0" as *const u8 as *const ::core::ffi::c_char,
         (*c).tty.sx,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"height\0" as *const u8 as *const ::core::ffi::c_char,
         (*c).tty.sy,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
         old_sx,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
         old_sy,
     );

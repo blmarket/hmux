@@ -68,7 +68,6 @@ use crate::src::shared::window::WINLINK_ALERTFLAGS;
 use crate::src::shared::window::{window, winlink};
 
 unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *mut window_pane) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -87,18 +86,22 @@ unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *m
     {
         signame = sig2name(status & 0x7f as ::core::ffi::c_int);
     }
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"exit_status\0" as *const u8 as *const ::core::ffi::c_char,
             (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int,
         );
@@ -108,13 +111,13 @@ unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *m
         > 0 as ::core::ffi::c_int
     {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"exit_signal\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, signame),
         );
     }
     event_payload_set_int(
-        ep,
+        &mut *ep,
         b"exit_success\0" as *const u8 as *const ::core::ffi::c_char,
         (status == 0 as ::core::ffi::c_int) as ::core::ffi::c_int,
     );

@@ -2070,7 +2070,6 @@ unsafe fn input_fire_pane_title_changed(
     mut wp: *mut window_pane,
     mut title: *const ::core::ffi::c_char,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2080,17 +2079,21 @@ unsafe fn input_fire_pane_title_changed(
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, title),
     );
@@ -5276,7 +5279,6 @@ mod osc_133_exit_status_tests {
     }
 }
 unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::core::ffi::c_char) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -5289,46 +5291,50 @@ unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::
     let mut tstart: time_t = (*wp).cmd_start_time;
     let mut end: time_t = 0;
     let mut tend: time_t = (*wp).cmd_end_time;
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     if !fs.s.is_null() {
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             fs.s,
         );
     }
     if !fs.wl.is_null() {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*fs.wl).idx,
         );
     }
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     if (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"command_status\0" as *const u8 as *const ::core::ffi::c_char,
             (*wp).cmd_status,
         );
     }
     if tstart != 0 as time_t {
         event_payload_set_time(
-            ep,
+            &mut *ep,
             b"command_start_time\0" as *const u8 as *const ::core::ffi::c_char,
             tstart,
         );
     }
     if tend != 0 as time_t {
         event_payload_set_time(
-            ep,
+            &mut *ep,
             b"command_end_time\0" as *const u8 as *const ::core::ffi::c_char,
             tend,
         );
@@ -5344,7 +5350,7 @@ unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::
         }
         end -= tstart;
         event_payload_set_uint(
-            ep,
+            &mut *ep,
             b"command_duration\0" as *const u8 as *const ::core::ffi::c_char,
             end as u_int,
         );

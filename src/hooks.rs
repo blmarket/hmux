@@ -271,7 +271,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
 unsafe fn hooks_insert_event(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
+    ep: &event_payload,
     mut oo: *mut options,
     mut expand: ::core::ffi::c_int,
 ) {
@@ -319,7 +319,7 @@ unsafe fn hooks_insert_event(
     );
     hd.name = name;
     cmd_find_clear_state(&raw mut hd.fs, 0 as ::core::ffi::c_int);
-    event_payload_get_target(ep, &raw mut hd.fs);
+    event_payload_get_target(ep, &mut hd.fs);
     hd.formats = ft;
     hd.oo = oo;
     hd.client = c;
@@ -329,7 +329,7 @@ unsafe fn hooks_insert_event(
 }
 unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     let name = name.as_ptr();
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if !event_payload_get_pointer(
         ep,
@@ -460,7 +460,7 @@ pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core
 }
 unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *mut hooks_monitor) {
     let name = name.as_ptr();
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     if event_payload_get_pointer(
         ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
@@ -470,7 +470,6 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
     }
 }
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let wl = change.wl;
     let wp = change.wp;
     let mut fs: cmd_find_state = cmd_find_state {
@@ -482,9 +481,9 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     event_payload_set_pointer(
-        ep,
+        &mut *ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
         crate::src::shared::events::EventPayloadPointer::Raw(hm.cast()),
     );
@@ -500,39 +499,39 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     } else {
         cmd_find_copy_state(&raw mut fs, &raw mut (*hm).fs);
     }
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     if !change.value.is_null() {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"value\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, change.value),
         );
     } else {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"value\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
     if !change.last.is_null() {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"last\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, change.last),
         );
     } else {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"last\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
     if !change.c.is_null() {
-        event_payload_set_client(ep, change.c);
+        event_payload_set_client(&mut *ep, change.c);
     }
     if !change.s.is_null() {
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             change.s,
         );
@@ -540,27 +539,31 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     if !wl.is_null() {
         if change.s.is_null() {
             event_payload_set_session(
-                ep,
+                &mut *ep,
                 b"session\0" as *const u8 as *const ::core::ffi::c_char,
                 (*wl).session,
             );
         }
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             (*wl).window,
         );
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*wl).idx,
         );
     }
     if !wp.is_null() {
-        event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+        event_payload_set_pane(
+            &mut *ep,
+            b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+            wp,
+        );
         if wl.is_null() {
             event_payload_set_window(
-                ep,
+                &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
                 (*wp).window as *mut window,
             );

@@ -208,10 +208,10 @@ unsafe fn paste_fire_event(
     name: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let ep = event_payload_create();
+    let mut ep = event_payload_create();
     // Finish reading the buffer before dispatch: listeners may look up,
     // replace, or rename buffers synchronously.
-    event_payload_set_string(ep, c"paste_buffer".as_ptr(), write);
+    event_payload_set_string(&mut *ep, c"paste_buffer".as_ptr(), write);
     events_fire(name.as_ptr(), ep);
 }
 
@@ -672,13 +672,10 @@ mod tests {
                 sinks.push(events_add_sink(
                     event,
                     Rc::new(move |event, payload| {
-                        let name = CStr::from_ptr(event_payload_get_string(payload));
+                        let name = event_payload_get_string(payload).expect("paste buffer name");
                         let buffer = paste_get_name(name);
-                        seen.borrow_mut().push((
-                            event.to_owned(),
-                            name.to_owned(),
-                            buffer.is_some(),
-                        ));
+                        seen.borrow_mut()
+                            .push((event.to_owned(), name.to_owned(), buffer.is_some()));
                         if let Some(buffer) = buffer {
                             // No owner or index borrow may span dispatch.
                             buffer.borrow_mut().created = 17;

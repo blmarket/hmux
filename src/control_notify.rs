@@ -28,7 +28,7 @@ pub struct C2RustUnnamed_35 {
 }
 
 unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     wp = event_payload_get_pane(ep);
@@ -67,7 +67,7 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
     }
 }
 unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -109,7 +109,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     }
 }
 unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = event_payload_get_window(ep);
     if w.is_null() || (*w).active.is_null() {
@@ -135,7 +135,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
     }
 }
 unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut cs: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = event_payload_get_window(ep);
@@ -163,7 +163,7 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
     }
 }
 unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut cs: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = event_payload_get_window(ep);
@@ -191,7 +191,7 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
     }
 }
 unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut cs: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = event_payload_get_window(ep);
@@ -223,7 +223,7 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
     }
 }
 unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut cc: *mut client = event_payload_get_client(ep);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -262,7 +262,7 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
     }
 }
 unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut cc: *mut client = event_payload_get_client(ep);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if cc.is_null() {
@@ -289,7 +289,7 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
     }
 }
 unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut s: *mut session = event_payload_get_session(ep);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if s.is_null() {
@@ -339,7 +339,7 @@ unsafe fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) 
     }
 }
 unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
+    let ep = &*payload;
     let mut s: *mut session = event_payload_get_session(ep);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if s.is_null() || (*s).curw.is_null() {
@@ -365,12 +365,11 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
     }
 }
 unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
-    let mut pbname: *const ::core::ffi::c_char = event_payload_get_string(ep);
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    if pbname.is_null() {
+    let ep = &*payload;
+    let Some(pbname) = event_payload_get_string(ep) else {
         return;
-    }
+    };
+    let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
         if !c.is_null()
@@ -380,19 +379,18 @@ unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payl
         {
             control_notify_write(c, |out| {
                 out.write_all(b"%paste-buffer-changed ")?;
-                write_cstr(out, pbname)
+                write_cstr(out, pbname.as_ptr())
             });
         }
         c = clients.next(c);
     }
 }
 unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payload) {
-    let ep = payload as *mut event_payload;
-    let mut pbname: *const ::core::ffi::c_char = event_payload_get_string(ep);
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    if pbname.is_null() {
+    let ep = &*payload;
+    let Some(pbname) = event_payload_get_string(ep) else {
         return;
-    }
+    };
+    let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
     while !c.is_null() {
         if !c.is_null()
@@ -402,7 +400,7 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
         {
             control_notify_write(c, |out| {
                 out.write_all(b"%paste-buffer-deleted ")?;
-                write_cstr(out, pbname)
+                write_cstr(out, pbname.as_ptr())
             });
         }
         c = clients.next(c);

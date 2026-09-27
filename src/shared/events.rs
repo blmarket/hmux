@@ -9,9 +9,8 @@ use super::session::session;
 use super::window::window;
 use std::collections::BTreeMap;
 
-#[repr(C)]
-/// Box-owned by its creator until `event_payload_free`. `events_fire` lends
-/// this stable address to callbacks, then frees items and target references.
+/// Box-owned until `events_fire` consumes it. Sinks borrow the payload during
+/// dispatch; Drop releases items in key order before the target references.
 pub struct event_payload {
     pub items: event_payload_tree,
     pub target: cmd_find_state,

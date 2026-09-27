@@ -453,7 +453,6 @@ pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::ffi::c_char) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -463,21 +462,21 @@ unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::f
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, old_name),
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, (*w).name.as_ptr().cast_mut()),
     );
@@ -491,7 +490,6 @@ unsafe fn window_fire_pane_changed(
     mut wp: *mut window_pane,
     mut lastwp: *mut window_pane,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -501,23 +499,27 @@ unsafe fn window_fire_pane_changed(
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
     event_payload_set_pane(
-        ep,
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
+    event_payload_set_pane(
+        &mut *ep,
         b"new_pane\0" as *const u8 as *const ::core::ffi::c_char,
         wp,
     );
     if !lastwp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"old_pane\0" as *const u8 as *const ::core::ffi::c_char,
             lastwp,
         );
@@ -534,7 +536,6 @@ pub unsafe fn window_fire_pane_moved(
     mut new_w: *mut window,
     mut new_idx: ::core::ffi::c_int,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -544,40 +545,44 @@ pub unsafe fn window_fire_pane_moved(
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         new_w,
     );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
         old_w,
     );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
         new_w,
     );
     if old_idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"old_window_index\0" as *const u8 as *const ::core::ffi::c_char,
             old_idx,
         );
     }
     if new_idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             new_idx,
         );
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"new_window_index\0" as *const u8 as *const ::core::ffi::c_char,
             new_idx,
         );
@@ -594,7 +599,6 @@ unsafe fn window_fire_pane_mode_changed(
     mut current: *const ::core::ffi::c_char,
     mut entered: ::core::ffi::c_int,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -604,31 +608,35 @@ unsafe fn window_fire_pane_mode_changed(
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
     if !current.is_null() {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"current_mode\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, current),
         );
     }
     if !previous.is_null() {
         event_payload_set_string(
-            ep,
+            &mut *ep,
             b"previous_mode\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, previous),
         );
     }
     event_payload_set_int(
-        ep,
+        &mut *ep,
         b"mode_entered\0" as *const u8 as *const ::core::ffi::c_char,
         entered,
     );
@@ -639,7 +647,6 @@ unsafe fn window_fire_pane_prompt(
     mut wp: *mut window_pane,
     mut type_0: prompt_type,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -650,17 +657,21 @@ unsafe fn window_fire_pane_prompt(
         idx: 0,
     };
     let type_string = prompt_type_string(type_0);
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(type_string.to_bytes()),
     );
@@ -3003,7 +3014,6 @@ pub unsafe fn window_pane_clear_resizes(
 }
 pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy: u_int) {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -3040,32 +3050,36 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
     if !wme.is_null() && (*(*wme).mode).resize.is_some() {
         (*(*wme).mode).resize.expect("non-null function pointer")(wme, sx, sy);
     }
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
-    event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_pane(
+        &mut *ep,
+        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+        wp,
+    );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).window as *mut window,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"width\0" as *const u8 as *const ::core::ffi::c_char,
         sx,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"height\0" as *const u8 as *const ::core::ffi::c_char,
         sy,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
         old_sx,
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
         old_sy,
     );

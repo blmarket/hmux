@@ -397,7 +397,6 @@ pub unsafe fn cmdq_insert_hook(
 ) {
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args_0: *mut args = cmd_get_args(cmd);
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -405,25 +404,25 @@ pub unsafe fn cmdq_insert_hook(
         return;
     }
     let name = format_message_with(write);
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     if !current.is_null() {
-        event_payload_set_target(ep, current);
+        event_payload_set_target(&mut *ep, &*current);
     }
     event_payload_set_pointer(
-        ep,
+        &mut *ep,
         b"_cmdq_item\0" as *const u8 as *const ::core::ffi::c_char,
         crate::src::shared::events::EventPayloadPointer::Raw(item as *mut ::core::ffi::c_void),
     );
     let arguments = args_print_cstring(&*args_0);
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"arguments\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, arguments.as_ptr()),
     );
     i = 0 as u_int;
     while i < args_count(args_0) {
         xformat(&mut tmp, format_args!("argument_{}", i as u32));
-        event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+        event_payload_set_string(&mut *ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
             write_cstr(out, args_string(args_0, i))
         });
         i = i.wrapping_add(1);
@@ -435,11 +434,11 @@ pub unsafe fn cmdq_insert_hook(
             out.write_all(&[flag as u8])
         });
         if value.is_null() {
-            event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+            event_payload_set_string(&mut *ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
                 out.write_all(b"1")
             });
         } else {
-            event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+            event_payload_set_string(&mut *ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
                 write_cstr(out, value)
             });
         }
@@ -450,7 +449,7 @@ pub unsafe fn cmdq_insert_hook(
                 out.write_all(&[flag as u8])?;
                 write!(out, "_{}", i)
             });
-            event_payload_set_string(ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
+            event_payload_set_string(&mut *ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
                 write_cstr(out, av.string_ptr())
             });
             i = i.wrapping_add(1);

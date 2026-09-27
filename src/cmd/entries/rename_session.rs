@@ -53,7 +53,6 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut s: *mut session = (*target).s;
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -71,8 +70,8 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         });
         return CMD_RETURN_ERROR;
     }
-    let newname = clean_name_cstring(tmp.as_c_str(), 0)
-        .expect("check_name validated the session name");
+    let newname =
+        clean_name_cstring(tmp.as_c_str(), 0).expect("check_name validated the session name");
     if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
     }
@@ -83,21 +82,21 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         });
         return CMD_RETURN_ERROR;
     }
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_session(
-        ep,
+        &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         s,
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, ((*s).name).as_ptr().cast_mut()),
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(newname.as_bytes()),
     );

@@ -742,7 +742,6 @@ unsafe fn session_fire_window_changed(
     mut wl: *mut winlink,
     mut old: *mut winlink,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -752,42 +751,42 @@ unsafe fn session_fire_window_changed(
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
-    event_payload_set_target(ep, &raw mut fs);
+    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_session(
-        ep,
+        &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         s,
     );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wl).window,
     );
     event_payload_set_window(
-        ep,
+        &mut *ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
         (*wl).window,
     );
     event_payload_set_int(
-        ep,
+        &mut *ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
         (*wl).idx,
     );
     event_payload_set_int(
-        ep,
+        &mut *ep,
         b"new_window_index\0" as *const u8 as *const ::core::ffi::c_char,
         (*wl).idx,
     );
     if !old.is_null() {
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
             (*old).window,
         );
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"old_window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*old).idx,
         );
@@ -860,7 +859,6 @@ unsafe fn session_group_fire(
     mut sg: *mut session_group,
     mut s: *mut session,
 ) {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
@@ -870,23 +868,23 @@ unsafe fn session_group_fire(
         wp: ::core::ptr::null::<window_pane>() as *mut window_pane,
         idx: 0,
     };
-    ep = event_payload_create();
+    let mut ep = event_payload_create();
     if session_alive(s) != 0 {
         cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
-        event_payload_set_target(ep, &raw mut fs);
+        event_payload_set_target(&mut *ep, &fs);
     }
     event_payload_set_session(
-        ep,
+        &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         s,
     );
     event_payload_set_string(
-        ep,
+        &mut *ep,
         b"group\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, ((*sg).name).as_ptr().cast_mut()),
     );
     event_payload_set_uint(
-        ep,
+        &mut *ep,
         b"group_size\0" as *const u8 as *const ::core::ffi::c_char,
         session_group_count(sg),
     );

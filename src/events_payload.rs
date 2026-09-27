@@ -50,23 +50,23 @@ pub fn event_payload_items(ep: &event_payload) -> impl Iterator<Item = &event_pa
     ep.items.entries.entries.values().map(Box::as_ref)
 }
 
-unsafe fn event_payload_free_target(mut ep: *mut event_payload) {
-    let mut target: *mut cmd_find_state = &raw mut (*ep).target;
-    if !(*target).s.is_null() {
+unsafe fn event_payload_free_target(ep: &mut event_payload) {
+    let target = &mut ep.target;
+    if !target.s.is_null() {
         session_remove_ref(
-            (*target).s,
+            target.s,
             b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !(*target).w.is_null() {
+    if !target.w.is_null() {
         window_remove_ref(
-            (*target).w,
+            target.w,
             b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !(*target).wp.is_null() {
+    if !target.wp.is_null() {
         window_pane_remove_ref(
-            (*target).wp,
+            target.wp,
             b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
@@ -98,7 +98,7 @@ impl Drop for event_payload_item {
 }
 
 unsafe fn event_payload_set_item(
-    ep: *mut event_payload,
+    ep: &mut event_payload,
     name: *const ::core::ffi::c_char,
     value: EventPayloadValue,
 ) {
@@ -107,94 +107,98 @@ unsafe fn event_payload_set_item(
     let name = CStr::from_ptr(name).to_owned();
     let key = name.to_bytes().to_vec();
     let new = Box::new(event_payload_item { name, value });
-    let old = (*ep).items.entries.entries.remove(&key);
+    let old = ep.items.entries.entries.remove(&key);
     drop(old);
-    (*ep).items.entries.entries.insert(key, new);
+    ep.items.entries.entries.insert(key, new);
 }
 
-pub unsafe fn event_payload_create() -> *mut event_payload {
-    let ep = Box::into_raw(Box::new(event_payload {
+pub fn event_payload_create() -> Box<event_payload> {
+    Box::new(event_payload {
         items: event_payload_tree::default(),
-        target: cmd_find_state::default(),
-    }));
-    cmd_find_clear_state(&raw mut (*ep).target, 0 as ::core::ffi::c_int);
-    return ep;
+        target: cmd_find_state {
+            idx: -1,
+            ..Default::default()
+        },
+    })
 }
-pub unsafe fn event_payload_free(ep: *mut event_payload) {
-    if !ep.is_null() {
-        while let Some((_, item)) = (*ep).items.entries.entries.pop_first() {
+
+impl Drop for event_payload {
+    fn drop(&mut self) {
+        // Match tmux: remove each item in key order before releasing its models,
+        // then release the target after all item-triggered dispatch has finished.
+        while let Some((_, item)) = self.items.entries.entries.pop_first() {
             drop(item);
         }
-        event_payload_free_target(ep);
-        drop(Box::from_raw(ep));
+        unsafe { event_payload_free_target(self) };
     }
 }
-pub unsafe fn event_payload_set_target(mut ep: *mut event_payload, mut fs: *mut cmd_find_state) {
-    let mut target: *mut cmd_find_state = &raw mut (*ep).target;
+
+pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_state) {
     event_payload_free_target(ep);
-    if !(*fs).s.is_null() {
+    let target = &mut ep.target;
+    if !fs.s.is_null() {
         session_add_ref(
-            (*fs).s,
+            fs.s,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        (*target).s = (*fs).s;
+        target.s = fs.s;
     }
-    if !(*fs).wl.is_null() {
-        (*target).idx = (*(*fs).wl).idx;
-        if (*target).s.is_null() {
+    if !fs.wl.is_null() {
+        target.idx = (*fs.wl).idx;
+        if target.s.is_null() {
             session_add_ref(
-                (*(*fs).wl).session,
+                (*fs.wl).session,
                 b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
             );
-            (*target).s = (*(*fs).wl).session;
+            target.s = (*fs.wl).session;
         }
     } else {
-        (*target).idx = -(1 as ::core::ffi::c_int);
+        target.idx = -(1 as ::core::ffi::c_int);
     }
-    if !(*fs).w.is_null() {
+    if !fs.w.is_null() {
         window_add_ref(
-            (*fs).w,
+            fs.w,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        (*target).w = (*fs).w;
-    } else if !(*fs).wl.is_null() {
+        target.w = fs.w;
+    } else if !fs.wl.is_null() {
         window_add_ref(
-            (*(*fs).wl).window,
+            (*fs.wl).window,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        (*target).w = (*(*fs).wl).window;
+        target.w = (*fs.wl).window;
     }
-    if !(*fs).wp.is_null() {
+    if !fs.wp.is_null() {
         window_pane_add_ref(
-            (*fs).wp,
+            fs.wp,
             b"event_payload_set_target\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        (*target).wp = (*fs).wp;
+        target.wp = fs.wp;
     }
 }
 pub unsafe fn event_payload_get_target(
-    mut ep: *mut event_payload,
-    mut fs: *mut cmd_find_state,
+    ep: &event_payload,
+    fs: &mut cmd_find_state,
 ) -> ::core::ffi::c_int {
-    let mut t: *mut cmd_find_state = &raw mut (*ep).target;
+    let t = &ep.target;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut flags: ::core::ffi::c_int = (*fs).flags;
-    if (*t).idx != -(1 as ::core::ffi::c_int)
-        && !(*t).s.is_null()
-        && !(*t).w.is_null()
-        && session_alive((*t).s) != 0
+    let mut flags: ::core::ffi::c_int = fs.flags;
+    if t.idx != -(1 as ::core::ffi::c_int)
+        && !t.s.is_null()
+        && !t.w.is_null()
+        && session_alive(t.s) != 0
     {
-        wl = winlink_find_by_index(&raw mut (*(*t).s).windows, (*t).idx);
-        if !wl.is_null() && (*wl).window != (*t).w {
+        wl = winlink_find_by_index(&raw mut (*t.s).windows, t.idx);
+        if !wl.is_null() && (*wl).window != t.w {
             wl = ::core::ptr::null_mut::<winlink>();
         }
     }
     cmd_find_clear_state(fs, flags);
-    (*fs).s = (*t).s;
-    (*fs).w = (*t).w;
-    (*fs).wp = (*t).wp;
-    (*fs).wl = wl;
-    (*fs).idx = if !wl.is_null() {
+    fs.s = t.s;
+    fs.w = t.w;
+    fs.wp = t.wp;
+    fs.wl = wl;
+    fs.idx = if !wl.is_null() {
         (*wl).idx
     } else {
         -(1 as ::core::ffi::c_int)
@@ -202,14 +206,14 @@ pub unsafe fn event_payload_get_target(
     if cmd_find_valid_state(&*fs) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if !wl.is_null() && !(*t).wp.is_null() && window_has_pane((*wl).window, (*t).wp) != 0 {
-        cmd_find_from_winlink_pane(fs, wl, (*t).wp, flags);
+    if !wl.is_null() && !t.wp.is_null() && window_has_pane((*wl).window, t.wp) != 0 {
+        cmd_find_from_winlink_pane(fs, wl, t.wp, flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }
-    if !(*t).wp.is_null()
-        && cmd_find_from_pane(fs, (*t).wp, flags) == 0 as ::core::ffi::c_int
+    if !t.wp.is_null()
+        && cmd_find_from_pane(fs, t.wp, flags) == 0 as ::core::ffi::c_int
         && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
@@ -220,16 +224,16 @@ pub unsafe fn event_payload_get_target(
             return 1 as ::core::ffi::c_int;
         }
     }
-    if !(*t).s.is_null()
-        && !(*t).w.is_null()
-        && session_alive((*t).s) != 0
-        && cmd_find_from_session_window(fs, (*t).s, (*t).w, flags) == 0 as ::core::ffi::c_int
+    if !t.s.is_null()
+        && !t.w.is_null()
+        && session_alive(t.s) != 0
+        && cmd_find_from_session_window(fs, t.s, t.w, flags) == 0 as ::core::ffi::c_int
         && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !(*t).s.is_null() && session_alive((*t).s) != 0 {
-        cmd_find_from_session(fs, (*t).s, flags);
+    if !t.s.is_null() && session_alive(t.s) != 0 {
+        cmd_find_from_session(fs, t.s, flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -241,42 +245,42 @@ pub unsafe fn event_payload_get_target(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn event_payload_set_string(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let string = format_message_with(write);
-    event_payload_set_item(ep, name, EventPayloadValue::String(string));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::String(string));
 }
 pub unsafe fn event_payload_set_time(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: time_t,
 ) {
-    event_payload_set_item(ep, name, EventPayloadValue::Time(value));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Time(value));
 }
 pub unsafe fn event_payload_set_int(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: ::core::ffi::c_int,
 ) {
-    event_payload_set_item(ep, name, EventPayloadValue::Int(value));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Int(value));
 }
 pub unsafe fn event_payload_set_uint(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut value: u_int,
 ) {
-    event_payload_set_item(ep, name, EventPayloadValue::Uint(value));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Uint(value));
 }
-pub unsafe fn event_payload_set_client(mut ep: *mut event_payload, mut c: *mut client) {
+pub unsafe fn event_payload_set_client(ep: &mut event_payload, mut c: *mut client) {
     let mut name: *const ::core::ffi::c_char =
         b"client\0" as *const u8 as *const ::core::ffi::c_char;
     crate::src::shared::rc::retain(c);
-    event_payload_set_item(ep, name, EventPayloadValue::Client(c));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Client(c));
 }
 pub unsafe fn event_payload_set_session(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut s: *mut session,
 ) {
@@ -284,10 +288,10 @@ pub unsafe fn event_payload_set_session(
         s,
         b"event_payload_set_session\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(ep, name, EventPayloadValue::Session(s));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Session(s));
 }
 pub unsafe fn event_payload_set_window(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut w: *mut window,
 ) {
@@ -295,10 +299,10 @@ pub unsafe fn event_payload_set_window(
         w,
         b"event_payload_set_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(ep, name, EventPayloadValue::Window(w));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Window(w));
 }
 pub unsafe fn event_payload_set_pane(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     mut wp: *mut window_pane,
 ) {
@@ -306,19 +310,19 @@ pub unsafe fn event_payload_set_pane(
         wp,
         b"event_payload_set_pane\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    event_payload_set_item(ep, name, EventPayloadValue::Pane(wp));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(wp));
 }
 pub unsafe fn event_payload_set_pointer(
-    mut ep: *mut event_payload,
+    ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
     pointer: EventPayloadPointer,
 ) {
-    event_payload_set_item(ep, name, EventPayloadValue::Pointer(pointer));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pointer(pointer));
 }
-pub unsafe fn event_payload_get_string(ep: *mut event_payload) -> *const ::core::ffi::c_char {
-    match event_payload_find(&*ep, c"paste_buffer").map(|item| &item.value) {
-        Some(EventPayloadValue::String(value)) => value.as_ptr(),
-        _ => std::ptr::null(),
+pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
+    match event_payload_find(ep, c"paste_buffer").map(|item| &item.value) {
+        Some(EventPayloadValue::String(value)) => Some(value),
+        _ => None,
     }
 }
 unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
@@ -394,11 +398,11 @@ pub(crate) unsafe fn event_payload_item_print_owned(epi: &event_payload_item) ->
     value
 }
 
-pub(crate) unsafe fn event_payload_print_owned(ep: *mut event_payload) -> Option<Vec<u8>> {
-    event_payload_find(&*ep, c"pane").map(|item| event_payload_item_print_owned(item))
+pub(crate) unsafe fn event_payload_print_owned(ep: &event_payload) -> Option<Vec<u8>> {
+    event_payload_find(ep, c"pane").map(|item| event_payload_item_print_owned(item))
 }
 pub unsafe fn event_payload_add_formats(
-    mut ep: *mut event_payload,
+    ep: &event_payload,
     mut ft: *mut format_tree,
     mut prefix: *const ::core::ffi::c_char,
 ) {
@@ -444,23 +448,22 @@ pub fn event_payload_item_name(epi: &event_payload_item) -> &CStr {
 }
 
 pub unsafe fn event_payload_log(
-    mut ep: *mut event_payload,
+    ep: &event_payload,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let prefix = format_message_with(write);
     let mut evb = evbuffer_new();
-    if !ep.is_null() {
-        for epi in event_payload_items(&*ep) {
-            if evbuffer_get_length(&evb) != 0 as size_t {
-                evbuffer_add_formatted(&mut *evb, |out| out.write_all(b", "));
-            }
-            evbuffer_add_formatted(&mut *evb, |out| {
-                write_cstr(out, epi.name.as_ptr())?;
-                out.write_all(b"=")
-            });
-            event_payload_add_item(epi, &mut *evb);
+    for epi in event_payload_items(ep) {
+        if evbuffer_get_length(&evb) != 0 as size_t {
+            evbuffer_add_formatted(&mut *evb, |out| out.write_all(b", "));
         }
+        evbuffer_add_formatted(&mut *evb, |out| {
+            write_cstr(out, epi.name.as_ptr())?;
+            out.write_all(b"=")
+        });
+        event_payload_add_item(epi, &mut *evb);
     }
+
     log_debug(format_args!(
         "{}{}",
         log_cstr((prefix.as_ptr()) as *const _),
@@ -471,38 +474,38 @@ pub unsafe fn event_payload_log(
         )
     ));
 }
-pub unsafe fn event_payload_get_client(ep: *mut event_payload) -> *mut client {
-    match event_payload_find(&*ep, c"client").map(|item| &item.value) {
+pub unsafe fn event_payload_get_client(ep: &event_payload) -> *mut client {
+    match event_payload_find(ep, c"client").map(|item| &item.value) {
         Some(EventPayloadValue::Client(value)) => *value,
         _ => std::ptr::null_mut(),
     }
 }
-pub unsafe fn event_payload_get_session(ep: *mut event_payload) -> *mut session {
-    match event_payload_find(&*ep, c"session").map(|item| &item.value) {
+pub unsafe fn event_payload_get_session(ep: &event_payload) -> *mut session {
+    match event_payload_find(ep, c"session").map(|item| &item.value) {
         Some(EventPayloadValue::Session(value)) => *value,
         _ => std::ptr::null_mut(),
     }
 }
-pub unsafe fn event_payload_get_window(ep: *mut event_payload) -> *mut window {
-    match event_payload_find(&*ep, c"window").map(|item| &item.value) {
+pub unsafe fn event_payload_get_window(ep: &event_payload) -> *mut window {
+    match event_payload_find(ep, c"window").map(|item| &item.value) {
         Some(EventPayloadValue::Window(value)) => *value,
         _ => std::ptr::null_mut(),
     }
 }
-pub unsafe fn event_payload_get_pane(ep: *mut event_payload) -> *mut window_pane {
-    match event_payload_find(&*ep, c"pane").map(|item| &item.value) {
+pub unsafe fn event_payload_get_pane(ep: &event_payload) -> *mut window_pane {
+    match event_payload_find(ep, c"pane").map(|item| &item.value) {
         Some(EventPayloadValue::Pane(value)) => *value,
         _ => std::ptr::null_mut(),
     }
 }
 pub unsafe fn event_payload_get_pointer(
-    ep: *mut event_payload,
+    ep: &event_payload,
     name: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_void {
     if name.is_null() {
         return std::ptr::null_mut();
     }
-    match event_payload_find(&*ep, CStr::from_ptr(name)).map(|item| &item.value) {
+    match event_payload_find(ep, CStr::from_ptr(name)).map(|item| &item.value) {
         Some(EventPayloadValue::Pointer(value)) => value.ptr(),
         _ => std::ptr::null_mut(),
     }
@@ -517,12 +520,13 @@ mod tests {
     #[test]
     fn replacement_accepts_the_previous_items_borrowed_name() {
         unsafe {
-            let ep = event_payload_create();
+            let mut ep = event_payload_create();
             let name = CString::new(vec![b'k', 0xff]).unwrap();
-            event_payload_set_string(ep, name.as_ptr(), |out| write_cstr(out, c"old".as_ptr()));
-            let old_name =
-                event_payload_item_name(event_payload_items(&*ep).next().unwrap()).as_ptr();
-            event_payload_set_int(ep, old_name, 42);
+            event_payload_set_string(&mut *ep, name.as_ptr(), |out| {
+                write_cstr(out, c"old".as_ptr())
+            });
+            let old_name = event_payload_item_name(event_payload_items(&*ep).next().unwrap()).as_ptr();
+            event_payload_set_int(&mut *ep, old_name, 42);
 
             let replacement = event_payload_items(&*ep).next().unwrap();
             assert_eq!(
@@ -531,7 +535,7 @@ mod tests {
             );
             assert_eq!((*replacement).value.number(), 42);
             assert_eq!(event_payload_items(&*ep).count(), 1);
-            event_payload_free(ep);
+            drop(ep);
         }
     }
 
@@ -615,6 +619,100 @@ mod tests {
             assert!(event_payload_find(&moved, c"alpha").is_none());
             drop(moved);
             assert_eq!(item.name.as_bytes(), b"alpha");
+        }
+    }
+
+    #[test]
+    fn payload_drop_releases_items_in_key_order_before_the_target() {
+        use crate::src::events::{events_add_sink, events_remove_sink};
+        use crate::src::shared::events::events_callback;
+        use crate::src::shared::rc;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        unsafe {
+            let first = rc::new(window::default());
+            (*first).id = 11;
+            let second = rc::new(window::default());
+            (*second).id = 22;
+            let target = rc::new(window::default());
+            (*target).id = 33;
+            let first_observer = rc::downgrade(first);
+            let second_observer = rc::downgrade(second);
+            let target_observer = rc::downgrade(target);
+            let target_during_cleanup = target_observer.clone();
+            let closed = Rc::new(RefCell::new(Vec::new()));
+            let observed = closed.clone();
+            let sink = events_add_sink(
+                c"window-closed",
+                events_callback(move |_, payload| {
+                    let id = (*event_payload_get_window(payload)).id;
+                    // Reentrant item cleanup still has the payload's target.
+                    if id != 33 {
+                        assert!(target_during_cleanup.upgrade().is_some());
+                    }
+                    observed.borrow_mut().push(id);
+                }),
+            );
+
+            let mut payload = event_payload_create();
+            let fs = cmd_find_state {
+                w: target,
+                ..Default::default()
+            };
+            event_payload_set_target(&mut payload, &fs);
+            event_payload_set_window(&mut payload, c"beta".as_ptr(), first);
+            event_payload_set_window(&mut payload, c"alpha".as_ptr(), second);
+            window_remove_ref(first, c"test initial owner".as_ptr());
+            window_remove_ref(second, c"test initial owner".as_ptr());
+            window_remove_ref(target, c"test initial owner".as_ptr());
+            drop(payload);
+
+            assert_eq!(*closed.borrow(), [22, 11, 33]);
+            assert!(first_observer.upgrade().is_none());
+            assert!(second_observer.upgrade().is_none());
+            assert!(target_observer.upgrade().is_none());
+            events_remove_sink(sink);
+        }
+    }
+
+    #[test]
+    fn dispatch_keeps_payload_models_alive_until_every_sink_finishes() {
+        use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
+        use crate::src::shared::events::events_callback;
+        use crate::src::shared::rc;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        unsafe {
+            let window = rc::new(window::default());
+            (*window).id = 44;
+            let observer = rc::downgrade(window);
+            let observed = Rc::new(RefCell::new(Vec::new()));
+            let mut sinks = Vec::new();
+            for _ in 0..2 {
+                let observer = observer.clone();
+                let observed = observed.clone();
+                sinks.push(events_add_sink(
+                    c"payload-owner-test",
+                    events_callback(move |_, payload| {
+                        assert!(observer.upgrade().is_some());
+                        observed
+                            .borrow_mut()
+                            .push((*event_payload_get_window(payload)).id);
+                    }),
+                ));
+            }
+            let mut payload = event_payload_create();
+            event_payload_set_window(&mut payload, c"window".as_ptr(), window);
+            window_remove_ref(window, c"test initial owner".as_ptr());
+            events_fire(c"payload-owner-test".as_ptr(), payload);
+
+            assert_eq!(*observed.borrow(), [44, 44]);
+            assert!(observer.upgrade().is_none());
+            for sink in sinks {
+                events_remove_sink(sink);
+            }
         }
     }
 }

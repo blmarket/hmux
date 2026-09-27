@@ -149,7 +149,6 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut wp: *mut window_pane = (*target).wp;
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -447,25 +446,25 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                         &title,
                                         0 as ::core::ffi::c_int,
                                     );
-                                    ep = event_payload_create();
+                                    let mut ep = event_payload_create();
                                     cmd_find_from_pane(
                                         &raw mut fs,
                                         new_wp,
                                         0 as ::core::ffi::c_int,
                                     );
-                                    event_payload_set_target(ep, &raw mut fs);
+                                    event_payload_set_target(&mut *ep, &fs);
                                     event_payload_set_pane(
-                                        ep,
+                                        &mut *ep,
                                         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
                                         new_wp,
                                     );
                                     event_payload_set_window(
-                                        ep,
+                                        &mut *ep,
                                         b"window\0" as *const u8 as *const ::core::ffi::c_char,
                                         (*new_wp).window as *mut window,
                                     );
                                     event_payload_set_string(
-                                        ep,
+                                        &mut *ep,
                                         b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
                                         |out| write_cstr(out, title.as_ptr()),
                                     );

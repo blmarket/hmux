@@ -126,7 +126,6 @@ fn cmd_set_option_args_parse(
 unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if args_count(args) == 0 as u_int {
         cmdq_error(item, |out| out.write_all(b"missing argument"));
@@ -141,42 +140,42 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         cmdq_error(item, |out| out.write_all(b"event name must start with @"));
         return CMD_RETURN_ERROR;
     }
-    ep = event_payload_create();
-    event_payload_set_target(ep, target);
+    let mut ep = event_payload_create();
+    event_payload_set_target(&mut *ep, &*target);
     c = cmdq_get_client(item);
     if !c.is_null() {
-        event_payload_set_client(ep, c);
+        event_payload_set_client(&mut *ep, c);
     }
     if !(*target).s.is_null() {
         event_payload_set_session(
-            ep,
+            &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             (*target).s,
         );
     }
     if !(*target).w.is_null() {
         event_payload_set_window(
-            ep,
+            &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
             (*target).w,
         );
     }
     if !(*target).wl.is_null() {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*(*target).wl).idx,
         );
     } else if (*target).idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            ep,
+            &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (*target).idx,
         );
     }
     if !(*target).wp.is_null() {
         event_payload_set_pane(
-            ep,
+            &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
             (*target).wp,
         );
