@@ -507,26 +507,20 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
     }
     CString::new(dst).expect("sanitized bytes contain no interior NUL")
 }
-pub unsafe fn utf8_strlen(mut s: *const utf8_data) -> size_t {
-    let mut i: size_t = 0;
-    i = 0 as size_t;
-    while (*s.offset(i as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        i = i.wrapping_add(1);
-    }
-    return i;
+pub fn utf8_strlen(cells: &[utf8_data]) -> size_t {
+    cells
+        .iter()
+        .position(|cell| cell.size == 0)
+        .unwrap_or(cells.len())
 }
-pub unsafe fn utf8_strwidth(mut s: *const utf8_data, mut n: ssize_t) -> u_int {
-    let mut i: ssize_t = 0;
-    let mut width: u_int = 0 as u_int;
-    i = 0 as ssize_t;
-    while (*s.offset(i as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        if n != -(1 as ::core::ffi::c_int) as ssize_t && n == i {
-            break;
-        }
-        width = width.wrapping_add((*s.offset(i as isize)).width as u_int);
-        i += 1;
-    }
-    return width;
+
+pub fn utf8_strwidth(cells: &[utf8_data], n: ssize_t) -> u_int {
+    let limit = usize::try_from(n).unwrap_or(usize::MAX);
+    cells
+        .iter()
+        .take_while(|cell| cell.size != 0)
+        .take(limit)
+        .fold(0, |width, cell| width.wrapping_add(cell.width as u_int))
 }
 // Decode into Rust-owned cells while retaining the size-zero terminator used
 // by the existing UTF-8 routines that borrow this array as a C-style view.
@@ -571,16 +565,15 @@ pub(crate) fn utf8_fromcstr_vec(src: &CStr) -> Vec<utf8_data> {
 
 /// Copy the C-visible part of a sentinel-terminated cell stream into Rust-owned storage.
 /// C consumers stop at the first NUL, even when it occurs inside a cell.
-pub(crate) unsafe fn utf8_tocstr_cstring(mut src: *const utf8_data) -> CString {
+pub(crate) fn utf8_tocstr_cstring(cells: &[utf8_data]) -> CString {
     let mut bytes = Vec::new();
-    while (*src).size != 0 {
-        let data = &(&(*src).data)[..(*src).size as usize];
+    for cell in cells.iter().take_while(|cell| cell.size != 0) {
+        let data = &cell.data[..cell.size as usize];
         if let Some(end) = data.iter().position(|&byte| byte == 0) {
             bytes.extend_from_slice(&data[..end]);
             break;
         }
         bytes.extend_from_slice(data);
-        src = src.add(1);
     }
     CString::new(bytes).expect("the first NUL ends the copied string")
 }
@@ -687,6 +680,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cell_slices_stop_at_the_sentinel_or_the_slice_boundary() {
+        let mut cells = utf8_fromcstr_vec(c"é漢");
+        cells.push(utf8_fromcstr_vec(c"Z")[0]);
+        assert_eq!(utf8_strlen(&cells), 2);
+        assert_eq!(utf8_strwidth(&cells, -1), 3);
+        assert_eq!(utf8_strwidth(&cells, -2), 3);
+        assert_eq!(utf8_strwidth(&cells, 0), 0);
+        assert_eq!(utf8_strwidth(&cells, 1), 1);
+        assert_eq!(utf8_strwidth(&cells, 9), 3);
+        assert_eq!(utf8_tocstr_cstring(&cells).as_c_str(), c"é漢");
+        assert_eq!(utf8_strlen(&cells[..2]), 2);
+        assert_eq!(utf8_strwidth(&cells[..2], -1), 3);
+        assert_eq!(utf8_tocstr_cstring(&cells[..2]).as_c_str(), c"é漢");
+        assert_eq!(utf8_strlen(&[]), 0);
+        assert_eq!(utf8_strwidth(&[], -1), 0);
+        assert_eq!(utf8_tocstr_cstring(&[]).as_c_str(), c"");
+    }
+
+    #[test]
     fn sanitize_owns_printable_ascii_and_preserves_legacy_widths() {
         {
             for (input, expected) in [
@@ -747,7 +759,7 @@ mod tests {
                     }
                     expected.extend_from_slice(bytes);
                 }
-                assert_eq!(utf8_tocstr_cstring(cells.as_ptr()).as_bytes(), expected);
+                assert_eq!(utf8_tocstr_cstring(&cells).as_bytes(), expected);
             }
         }
     }

@@ -62,8 +62,8 @@ unsafe fn prompt_buffer_cells(pr: *mut prompt) -> *mut utf8_data {
     (*pr).buffer.as_mut_ptr()
 }
 
-unsafe fn prompt_trim_buffer(pr: &mut prompt) {
-    let len = utf8_strlen(pr.buffer.as_mut_ptr()) + 1;
+fn prompt_trim_buffer(pr: &mut prompt) {
+    let len = utf8_strlen(&pr.buffer) + 1;
     pr.buffer.truncate(len);
 }
 
@@ -304,7 +304,7 @@ pub unsafe fn prompt_create(mut pd: *mut prompt_create_data) -> *mut prompt {
         let tmp = expanded.as_ref().map_or(input, |value| value.as_ptr());
         (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(tmp));
     }
-    (*pr).index = utf8_strlen((*pr).buffer.as_ptr());
+    (*pr).index = utf8_strlen(&(*pr).buffer);
     (*pr).inputcb = ::core::mem::take(&mut (*pd).inputcb);
     (*pr).freecb = ::core::mem::take(&mut (*pd).freecb);
     (*pr).flags = (*pd).flags;
@@ -387,7 +387,7 @@ unsafe fn prompt_fire_callback(
 }
 pub unsafe fn prompt_incremental_start(mut pr: *mut prompt) {
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+        let input = utf8_tocstr_cstring(&(*pr).buffer);
         let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
         bytes.push(b'=');
         bytes.extend_from_slice(input.as_bytes());
@@ -434,7 +434,7 @@ pub unsafe fn prompt_update(
     // Decode first because input may point into the current buffer.
     let replacement = utf8_fromcstr_vec(CStr::from_ptr(tmp));
     (*pr).buffer = replacement;
-    (*pr).index = utf8_strlen((*pr).buffer.as_ptr());
+    (*pr).index = utf8_strlen(&(*pr).buffer);
     memset(
         &raw mut (*pr).hindex as *mut u_int as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -546,7 +546,7 @@ unsafe fn prompt_draw_complete(
     if display.is_null() {
         return;
     }
-    if (*pr).index != utf8_strlen(prompt_buffer_cells(pr)) {
+    if (*pr).index != utf8_strlen(&(*pr).buffer) {
         return;
     }
     if cx < ax || cx.wrapping_sub(ax) >= aw {
@@ -593,7 +593,7 @@ unsafe fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
             ::core::ptr::null_mut::<window_pane>(),
         );
     }
-    let tmp = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+    let tmp = utf8_tocstr_cstring(&(*pr).buffer);
     format_add(
         ft,
         b"prompt_input\0" as *const u8 as *const ::core::ffi::c_char,
@@ -691,9 +691,9 @@ unsafe fn prompt_layout(
     if (*pl).label_width > aw {
         (*pl).label_width = aw;
     }
-    pcursor = utf8_strwidth(prompt_buffer_cells(pr), (*pr).index as ssize_t);
+    pcursor = utf8_strwidth(&(*pr).buffer, (*pr).index as ssize_t);
     pwidth = utf8_strwidth(
-        prompt_buffer_cells(pr),
+        &(*pr).buffer,
         -(1 as ::core::ffi::c_int) as ssize_t,
     );
     if (*pr).flags & PROMPT_QUOTENEXT != 0 {
@@ -726,7 +726,7 @@ unsafe fn prompt_layout(
         .as_ref()
         .map_or(::core::ptr::null(), |s| s.as_ptr());
     if !display.is_null()
-        && (*pr).index == utf8_strlen(prompt_buffer_cells(pr))
+        && (*pr).index == utf8_strlen(&(*pr).buffer)
         && (*pl).cursor_x < aw
     {
         avail = aw.wrapping_sub((*pl).cursor_x);
@@ -786,7 +786,7 @@ unsafe fn prompt_mouse_complete(
     if display.is_null() || (*pr).completion.names.is_empty() {
         return PROMPT_KEY_NOT_HANDLED;
     }
-    if (*pr).index != utf8_strlen(prompt_buffer_cells(pr)) {
+    if (*pr).index != utf8_strlen(&(*pr).buffer) {
         return PROMPT_KEY_NOT_HANDLED;
     }
     if cx < ax || cx.wrapping_sub(ax) >= aw || x < cx {
@@ -915,7 +915,7 @@ pub unsafe fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_draw_data) {
     if sy.fill != 8 as ::core::ffi::c_int {
         screen_write_clearcharacter(ctx, aw, sy.fill as u_int);
     }
-    pcursor = utf8_strwidth(prompt_buffer_cells(pr), (*pr).index as ssize_t);
+    pcursor = utf8_strwidth(&(*pr).buffer, (*pr).index as ssize_t);
     if pl.content_width != 0 as u_int {
         screen_write_cursormove(
             ctx,
@@ -1052,7 +1052,7 @@ pub unsafe fn prompt_mouse(
         return PROMPT_KEY_HANDLED;
     }
     pwidth = utf8_strwidth(
-        prompt_buffer_cells(pr),
+        &(*pr).buffer,
         -(1 as ::core::ffi::c_int) as ssize_t,
     );
     if (*pr).flags & PROMPT_QUOTENEXT != 0 {
@@ -1298,7 +1298,7 @@ unsafe fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut more: utf8_state = UTF8_MORE;
     if let Some(copied) = (*pr).copied.as_ref() {
         ud = copied.as_ptr() as *mut utf8_data;
-        n = utf8_strlen(copied.as_ptr());
+        n = utf8_strlen(copied);
     } else {
         pb = paste_get_top(None);
         if pb.is_null() {
@@ -1377,7 +1377,7 @@ unsafe fn prompt_replace_complete(
     if idx != 0 as size_t {
         idx = idx.wrapping_sub(1);
     }
-    size = utf8_strlen(prompt_buffer_cells(pr));
+    size = utf8_strlen(&(*pr).buffer);
     first = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
     while first > prompt_buffer_cells(pr) && prompt_space(first) == 0 {
         first = first.offset(-1);
@@ -1588,7 +1588,7 @@ unsafe fn prompt_done_with_history(
     pr: *mut prompt,
     redraw: *mut ::core::ffi::c_int,
 ) -> prompt_key_result {
-    let s = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+    let s = utf8_tocstr_cstring(&(*pr).buffer);
     if !s.as_bytes().is_empty() {
         prompt_add_history(s.as_ptr(), (*pr).type_0 as u_int);
     }
@@ -1607,7 +1607,7 @@ unsafe fn prompt_check_move(mut pr: *mut prompt, mut key: key_code) -> prompt_ke
         }
         _ => return PROMPT_KEY_NOT_HANDLED,
     }
-    let s = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+    let s = utf8_tocstr_cstring(&(*pr).buffer);
     if prompt_fire_callback(
         pr,
         s.as_ptr(),
@@ -1652,14 +1652,14 @@ pub unsafe fn prompt_key(
         }
         return PROMPT_KEY_CLOSE;
     }
-    size = utf8_strlen(prompt_buffer_cells(pr));
+    size = utf8_strlen(&(*pr).buffer);
     key &= !KEYC_MASK_FLAGS;
     key = prompt_keypad_key(key);
     if (*pr).flags & PROMPT_NUMERIC != 0 {
         if key >= '0' as i32 as key_code && key <= '9' as i32 as key_code {
             current_block = 1115217863795707468;
         } else {
-            let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+            let input = utf8_tocstr_cstring(&(*pr).buffer);
             if prompt_fire_callback(
                 pr,
                 input.as_ptr(),
@@ -1753,7 +1753,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -1766,7 +1766,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -1939,7 +1939,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -1958,7 +1958,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -2084,7 +2084,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2097,7 +2097,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2270,7 +2270,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -2289,7 +2289,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -2415,7 +2415,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2428,7 +2428,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2601,7 +2601,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -2620,7 +2620,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -2746,7 +2746,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2759,7 +2759,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2932,7 +2932,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -2951,7 +2951,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -3077,7 +3077,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3090,7 +3090,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3263,7 +3263,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -3282,7 +3282,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -3408,7 +3408,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3421,7 +3421,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3594,7 +3594,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -3613,7 +3613,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -3739,7 +3739,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3752,7 +3752,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3925,7 +3925,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -3944,7 +3944,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -4070,7 +4070,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4083,7 +4083,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4256,7 +4256,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -4275,7 +4275,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -4401,7 +4401,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4414,7 +4414,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4587,7 +4587,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -4606,7 +4606,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -4732,7 +4732,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4745,7 +4745,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4918,7 +4918,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -4937,7 +4937,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -5063,7 +5063,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5076,7 +5076,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5249,7 +5249,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -5268,7 +5268,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -5394,7 +5394,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5407,7 +5407,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5580,7 +5580,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -5599,7 +5599,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -5725,7 +5725,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5738,7 +5738,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5911,7 +5911,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -5930,7 +5930,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -6056,7 +6056,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6069,7 +6069,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6242,7 +6242,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -6261,7 +6261,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -6387,7 +6387,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6400,7 +6400,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6573,7 +6573,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -6592,7 +6592,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -6718,7 +6718,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6731,7 +6731,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6904,7 +6904,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -6923,7 +6923,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -7049,7 +7049,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7062,7 +7062,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7235,7 +7235,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -7254,7 +7254,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -7380,7 +7380,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7393,7 +7393,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7566,7 +7566,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -7585,7 +7585,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -7711,7 +7711,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7724,7 +7724,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7897,7 +7897,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -7916,7 +7916,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -8042,7 +8042,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8055,7 +8055,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8228,7 +8228,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -8247,7 +8247,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -8373,7 +8373,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8386,7 +8386,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8559,7 +8559,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -8578,7 +8578,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -8704,7 +8704,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8717,7 +8717,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8890,7 +8890,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -8909,7 +8909,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -9035,7 +9035,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9048,7 +9048,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9221,7 +9221,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -9240,7 +9240,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -9366,7 +9366,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9379,7 +9379,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9552,7 +9552,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -9571,7 +9571,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -9697,7 +9697,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9710,7 +9710,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9883,7 +9883,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -9902,7 +9902,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -10028,7 +10028,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -10041,7 +10041,7 @@ pub unsafe fn prompt_key(
                                     current_block = 4485073238441121731;
                                 } else {
                                     (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(histstr));
-                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                    (*pr).index = utf8_strlen(&(*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -10214,7 +10214,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -10233,7 +10233,7 @@ pub unsafe fn prompt_key(
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*pr).buffer = utf8_fromcstr_vec(prompt_last(&*pr));
-                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
+                                        (*pr).index = utf8_strlen(&(*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -10357,11 +10357,11 @@ pub unsafe fn prompt_key(
             (*pr).buffer.insert((*pr).index, tmp);
             (*pr).index = (*pr).index.wrapping_add(1);
             if (*pr).flags & PROMPT_SINGLE != 0 {
-                if utf8_strlen(prompt_buffer_cells(pr)) != 1 as size_t {
+                if utf8_strlen(&(*pr).buffer) != 1 as size_t {
                     (*pr).closed = 1 as ::core::ffi::c_int;
                     result = PROMPT_KEY_CLOSE;
                 } else {
-                    let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+                    let input = utf8_tocstr_cstring(&(*pr).buffer);
                     result = prompt_done(pr, input.as_ptr(), redraw);
                 }
             }
@@ -10374,7 +10374,7 @@ pub unsafe fn prompt_key(
     prompt_trim_buffer(&mut *pr);
     *redraw = 1 as ::core::ffi::c_int;
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
+        let input = utf8_tocstr_cstring(&(*pr).buffer);
         let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
         bytes.push(prefix as u8);
         bytes.extend_from_slice(input.as_bytes());
@@ -10559,11 +10559,11 @@ mod prompt_buffer_tests {
         unsafe {
             assert_eq!(prompt_replace_complete(&mut *pr, replacement.as_ptr()), 1);
             assert_eq!(
-                utf8_tocstr_cstring(pr.buffer.as_ptr()).as_bytes(),
+                utf8_tocstr_cstring(&pr.buffer).as_bytes(),
                 b"cmd \xff tail"
             );
             assert_eq!(pr.index, 5);
-            assert_eq!(pr.buffer.len(), utf8_strlen(pr.buffer.as_ptr()) + 1);
+            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
         }
     }
 
@@ -10577,7 +10577,7 @@ mod prompt_buffer_tests {
                     prompt_key(&mut *pr, KEYC_CTRL | b't' as key_code, &mut redraw),
                     PROMPT_KEY_HANDLED
                 );
-                assert_eq!(utf8_tocstr_cstring(pr.buffer.as_ptr()).as_c_str(), expected);
+                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
             }
             assert_eq!(pr.index, next);
             assert_eq!(pr.buffer.len(), 4);
@@ -10597,11 +10597,11 @@ mod prompt_buffer_tests {
             assert_eq!(prompt_paste(&mut *pr), 1);
             prompt_trim_buffer(&mut pr);
             assert_eq!(
-                utf8_tocstr_cstring(pr.buffer.as_ptr()).as_bytes(),
+                utf8_tocstr_cstring(&pr.buffer).as_bytes(),
                 b"a\xce\xbb\xc3\xa9Z"
             );
             assert_eq!(pr.index, 2);
-            assert_eq!(pr.buffer.len(), utf8_strlen(pr.buffer.as_ptr()) + 1);
+            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
         }
     }
 }

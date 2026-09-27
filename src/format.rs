@@ -605,7 +605,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
             size: 0,
             width: 0,
         });
-        s = Some(utf8_tocstr_cstring(ud.as_ptr()));
+        s = Some(utf8_tocstr_cstring(&ud));
     }
     return s;
 }
@@ -651,7 +651,7 @@ pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -
             size: 0,
             width: 0,
         });
-        s = Some(utf8_tocstr_cstring(ud.as_ptr()));
+        s = Some(utf8_tocstr_cstring(&ud));
         drop(ud);
     }
     return s;

@@ -619,44 +619,40 @@ pub unsafe fn screen_write_text(
         let tmp = format_message_with(write);
         utf8_fromcstr_vec(tmp.as_c_str())
     };
-    let text = cells.as_ptr();
     left = cx.wrapping_add(width).wrapping_sub((*s).cx);
     loop {
         at = 0 as u_int;
         end = idx;
-        while (*text.offset(end as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            if (*text.offset(end as isize)).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-                && (*text.offset(end as isize)).data[0 as ::core::ffi::c_int as usize]
-                    as ::core::ffi::c_int
+        while cells[end as usize].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+            if cells[end as usize].size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+                && cells[end as usize].data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
                     == '\n' as i32
             {
                 break;
             }
-            if at.wrapping_add((*text.offset(end as isize)).width as u_int) > left {
+            if at.wrapping_add(cells[end as usize].width as u_int) > left {
                 break;
             }
-            at = at.wrapping_add((*text.offset(end as isize)).width as u_int);
+            at = at.wrapping_add(cells[end as usize].width as u_int);
             end = end.wrapping_add(1);
         }
-        if (*text.offset(end as isize)).size as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+        if cells[end as usize].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
             next = end;
-        } else if (*text.offset(end as isize)).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-            && (*text.offset(end as isize)).data[0 as ::core::ffi::c_int as usize]
-                as ::core::ffi::c_int
+        } else if cells[end as usize].size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+            && cells[end as usize].data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
                 == '\n' as i32
         {
             next = end.wrapping_add(1 as u_int);
-        } else if (*text.offset(end as isize)).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-            && (*text.offset(end as isize)).data[0 as ::core::ffi::c_int as usize]
-                as ::core::ffi::c_int
+        } else if cells[end as usize].size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+            && cells[end as usize].data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
                 == ' ' as i32
         {
             next = end.wrapping_add(1 as u_int);
         } else {
             i = end;
             while i > idx {
-                if (*text.offset(i as isize)).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-                    && (*text.offset(i as isize)).data[0 as ::core::ffi::c_int as usize]
+                if cells[i as usize].size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+                    && cells[i as usize].data[0 as ::core::ffi::c_int as usize]
                         as ::core::ffi::c_int
                         == ' ' as i32
                 {
@@ -673,13 +669,13 @@ pub unsafe fn screen_write_text(
         }
         i = idx;
         while i < end {
-            gc.data = utf8_copy(&*(text.offset(i as isize) as *mut utf8_data));
+            gc.data = utf8_copy(&cells[i as usize]);
             screen_write_cell(ctx, &raw mut gc);
             i = i.wrapping_add(1);
         }
         idx = next;
         if (*s).cy == cy.wrapping_add(lines).wrapping_sub(1 as u_int)
-            || (*text.offset(idx as isize)).size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
+            || cells[idx as usize].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
         {
             break;
         }
@@ -693,7 +689,7 @@ pub unsafe fn screen_write_text(
     }
     if (*s).cy == cy.wrapping_add(lines).wrapping_sub(1 as u_int)
         && (more == 0 || (*s).cx == cx.wrapping_add(width))
-        || (*text.offset(idx as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
+        || cells[idx as usize].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -707,6 +703,7 @@ pub unsafe fn screen_write_text(
     }
     return 1 as ::core::ffi::c_int;
 }
+
 pub unsafe fn screen_write_puts(
     mut ctx: *mut screen_write_ctx,
     mut gcp: *const grid_cell,
