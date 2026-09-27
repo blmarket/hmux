@@ -2160,9 +2160,9 @@ pub unsafe fn window_destroy_panes(mut w: *mut window) {
 pub unsafe fn window_printable_flags(
     mut wl: *mut winlink,
     mut escape: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
+) -> std::ffi::CString {
     let mut s: *mut session = (*wl).session;
-    static mut flags: [::core::ffi::c_char; 32] = [0; 32];
+    let mut flags: [::core::ffi::c_char; 32] = [0; 32];
     let mut pos: u_int = 0 as u_int;
     if (*wl).flags & WINLINK_ACTIVITY != 0 {
         let fresh3 = pos;
@@ -2210,7 +2210,7 @@ pub unsafe fn window_printable_flags(
         flags[fresh11 as usize] = 'Z' as i32 as ::core::ffi::c_char;
     }
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
-    return &raw mut flags as *mut ::core::ffi::c_char;
+    std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
 }
 pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> *const ::core::ffi::c_char {
     let mut w: *mut window = (*wp).window as *mut window;

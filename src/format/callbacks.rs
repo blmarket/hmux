@@ -2583,7 +2583,7 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         return Some(
-            CStr::from_ptr(window_printable_flags((*ft).wl, 1 as ::core::ffi::c_int)).to_owned(),
+            window_printable_flags((*ft).wl, 1 as ::core::ffi::c_int),
         );
     }
     return None;
@@ -2760,7 +2760,7 @@ unsafe fn format_cb_window_panes(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         return Some(
-            CStr::from_ptr(window_printable_flags((*ft).wl, 0 as ::core::ffi::c_int)).to_owned(),
+            window_printable_flags((*ft).wl, 0 as ::core::ffi::c_int),
         );
     }
     return None;
