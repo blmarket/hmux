@@ -637,7 +637,7 @@ unsafe fn window_copy_init(
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);
     (*data).showmark = 0 as ::core::ffi::c_int;
-    screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+    screen_write_start(&mut ctx, &raw mut (*data).screen);
     i = 0 as u_int;
     while i < (*data).screen.grid().sy {
         window_copy_write_line(wme, &raw mut ctx, i);
@@ -649,7 +649,7 @@ unsafe fn window_copy_init(
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     (*data).recentre_state = RECENTRE_MIDDLE;
     (*data).recentre_line = 0 as u_int;
     return &raw mut (*data).screen;
@@ -739,7 +739,7 @@ pub unsafe fn window_copy_add(
     let mut old_hsize: u_int = 0;
     let mut old_cy: u_int = 0;
     old_hsize = (*(*data).backing).grid().hsize;
-    screen_write_start(&raw mut backing_ctx, backing);
+    screen_write_start(&mut backing_ctx, backing);
     if (*data).backing_written != 0 {
         screen_write_carriagereturn(&raw mut backing_ctx);
         screen_write_linefeed(&raw mut backing_ctx, 0 as ::core::ffi::c_int, 8 as u_int);
@@ -764,11 +764,11 @@ pub unsafe fn window_copy_add(
         );
         screen_write_nputs(&raw mut backing_ctx, 0 as ssize_t, &raw mut gc, write);
     }
-    screen_write_stop(&raw mut backing_ctx);
+    screen_write_stop(&mut backing_ctx);
     (*data).oy = (*data)
         .oy
         .wrapping_add((*(*data).backing).grid().hsize.wrapping_sub(old_hsize));
-    screen_write_start_pane(&raw mut ctx, wp, &raw mut (*data).screen);
+    screen_write_start_pane(&mut ctx, wp, &raw mut (*data).screen);
     if (*(*data).backing).grid().hsize != 0 {
         window_copy_redraw_lines(wme, 0 as u_int, 1 as u_int);
     }
@@ -777,7 +777,7 @@ pub unsafe fn window_copy_add(
         old_cy,
         (*backing).cy.wrapping_sub(old_cy).wrapping_add(1 as u_int),
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
 }
 pub unsafe fn window_copy_scroll(
     mut wp: *mut window_pane,
@@ -1353,9 +1353,9 @@ unsafe fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
     let mut search: ::core::ffi::c_int = (!(*data).searchmark.is_empty()) as ::core::ffi::c_int;
     window_copy_clear_selection(wme);
     window_copy_clear_marks(wme);
-    screen_write_start(&raw mut ctx, s);
+    screen_write_start(&mut ctx, s);
     window_copy_write_lines(wme, &raw mut ctx, 0 as u_int, (*s).grid().sy);
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     if search != 0 && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
@@ -6134,14 +6134,14 @@ unsafe fn window_copy_search(
         return 0 as ::core::ffi::c_int;
     }
     screen_init(&mut ss, ssx, 1 as u_int, 0 as u_int);
-    screen_write_start(&raw mut ctx, &raw mut ss);
+    screen_write_start(&mut ctx, &raw mut ss);
     screen_write_nputs(
         &raw mut ctx,
         -(1 as ::core::ffi::c_int) as ssize_t,
         &raw const grid_default_cell,
         |out| write_cstr(out, str),
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     wrapflag = options_get_number(
         (*(*wp).window).options,
         b"wrap-search\0" as *const u8 as *const ::core::ffi::c_char,
@@ -6411,14 +6411,14 @@ unsafe fn window_copy_search_marks(
         // Preserve the previous libc %s rendering for an absent search string.
         width = screen_write_strlen((*data).searchstr.as_deref().unwrap_or(c"(null)")) as u_int;
         screen_init(&mut ss, width, 1 as u_int, 0 as u_int);
-        screen_write_start(&raw mut ctx, &raw mut ss);
+        screen_write_start(&mut ctx, &raw mut ss);
         screen_write_nputs(
             &raw mut ctx,
             -(1 as ::core::ffi::c_int) as ssize_t,
             &raw const grid_default_cell,
             |out| write_cstr(out, window_copy_searchstr(&*data)),
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         ssp = &raw mut ss;
     } else {
         width = (*ssp).grid().sx;
@@ -7379,7 +7379,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
     };
     let mut i: u_int = 0;
     if window_copy_line_number_width(wme) != 0 as u_int {
-        screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+        screen_write_start(&mut ctx, &raw mut (*data).screen);
         i = py;
         while i < py.wrapping_add(ny) {
             window_copy_write_line(wme, &raw mut ctx, i);
@@ -7391,14 +7391,14 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
         return;
     }
     if window_pane_scrollbar_overlay_visible(wp) != 0 {
-        screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+        screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
     }
     i = py;
     while i < py.wrapping_add(ny) {
@@ -7411,7 +7411,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     window_pane_scrollbar_redraw(wp);
 }
 unsafe fn window_copy_redraw_screen(mut wme: *mut window_mode_entry) {
@@ -7571,14 +7571,14 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
             window_copy_redraw_screen(wme);
             return;
         }
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_cursormove(
             &raw mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         return;
     }
     if old_cy != (*data).cy && window_copy_cursor_line_active(wme) != 0 {
@@ -7592,14 +7592,14 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
     if (*data).cx == (*s).grid().sx {
         window_copy_redraw_lines(wme, (*data).cy, 1 as u_int);
     } else {
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_cursormove(
             &raw mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
     };
 }
 unsafe fn window_copy_start_selection(mut wme: *mut window_mode_entry) {
@@ -8015,14 +8015,14 @@ unsafe fn window_copy_copy_buffer(
             redraw = PANE_REDRAW;
             (*wp).flags &= !PANE_REDRAW;
         }
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &raw mut ctx,
             b"\0" as *const u8 as *const ::core::ffi::c_char,
             buf.as_ptr() as *mut u_char,
             buf.len() as u_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         (*wp).flags |= redraw;
         events_fire_pane(
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
@@ -8126,14 +8126,14 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
         b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0 as ::core::ffi::c_longlong
     {
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &raw mut ctx,
             b"\0" as *const u8 as *const ::core::ffi::c_char,
             buf.as_mut_ptr(),
             buf.len() as u_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         events_fire_pane(
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
             wp,
@@ -9043,7 +9043,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
             window_copy_redraw_screen(wme);
             return;
         }
-        screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+        screen_write_start(&mut ctx, &raw mut (*data).screen);
         screen_write_cursormove(
             &raw mut ctx,
             0 as ::core::ffi::c_int,
@@ -9072,14 +9072,14 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
         return;
     }
     if window_pane_scrollbar_overlay_visible(wp) != 0 {
-        screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+        screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
     }
     screen_write_cursormove(
         &raw mut ctx,
@@ -9109,7 +9109,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     window_pane_scrollbar_redraw(wp);
 }
 unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int) {
@@ -9156,7 +9156,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
             window_copy_redraw_screen(wme);
             return;
         }
-        screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+        screen_write_start(&mut ctx, &raw mut (*data).screen);
         screen_write_cursormove(
             &raw mut ctx,
             0 as ::core::ffi::c_int,
@@ -9176,14 +9176,14 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
         return;
     }
     if window_pane_scrollbar_overlay_visible(wp) != 0 {
-        screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+        screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
     }
     screen_write_cursormove(
         &raw mut ctx,
@@ -9204,7 +9204,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     window_pane_scrollbar_redraw(wp);
 }
 unsafe fn window_copy_rectangle_set(

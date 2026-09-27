@@ -336,7 +336,7 @@ pub unsafe fn menu_update(mut md: *mut menu_data) {
         bg: 0,
     };
     menu_reapply_styles(md);
-    screen_write_start(&raw mut ctx, s);
+    screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
     if (*md).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_box(
@@ -357,7 +357,7 @@ pub unsafe fn menu_update(mut md: *mut menu_data) {
         &raw mut (*md).border_style_gc,
         &raw mut (*md).selected_style_gc,
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
 }
 unsafe fn menu_free_data(mut md: *mut menu_data) {
     if !md.is_null() {

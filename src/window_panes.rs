@@ -181,9 +181,9 @@ unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     (*data).preview = Some(Box::new(screen::empty()));
     let dst = (*data).preview.as_deref_mut().unwrap() as *mut screen;
     screen_init(&mut *dst, sx, sy, 0 as u_int);
-    screen_write_start(&raw mut ctx, dst);
+    screen_write_start(&mut ctx, dst);
     screen_write_fast_copy(&mut ctx, &*src, 0 as u_int, (*src).grid().hsize, sx, sy);
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     (*dst).mode = (*src).mode;
     (*dst).cx = (*src).cx;
     (*dst).cy = (*src).cy;
@@ -1475,7 +1475,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     sx = (*data).screen.grid().sx;
     sy = (*data).screen.grid().sy;
     window_panes_free_areas(data);
-    screen_write_start(&raw mut ctx, &raw mut (*data).screen);
+    screen_write_start(&mut ctx, &raw mut (*data).screen);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
     wp = window_pane_first(w);
     while !wp.is_null() {
@@ -1503,7 +1503,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         }
         wp = window_pane_z_previous(wp);
     }
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     (*(*data).wp).flags |= PANE_REDRAW;
 }
 unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {

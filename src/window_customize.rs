@@ -683,7 +683,7 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    screen_write_start(&raw mut ctx, s);
+    screen_write_start(&mut ctx, s);
     screen_write_cursormove(
         &raw mut ctx,
         x as ::core::ffi::c_int,
@@ -717,7 +717,7 @@ unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata
         &raw mut gc,
         |out| write_cstr(out, &raw mut text as *mut ::core::ffi::c_char),
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
 }
 unsafe fn window_customize_set_option_value(
     mut item: *mut window_customize_itemdata,

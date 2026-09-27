@@ -318,7 +318,7 @@ unsafe fn format_draw_left(
         }
     }
     if width_list == 0 as u_int {
-        screen_write_start(&raw mut ctx, left);
+        screen_write_start(&mut ctx, left);
         screen_write_fast_copy(
             &mut ctx,
             &*after,
@@ -327,7 +327,7 @@ unsafe fn format_draw_left(
             width_after,
             1 as u_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         format_draw_none(
             octx, available, ocx, ocy, left, centre, right, abs_centre, frs,
         );
@@ -474,7 +474,7 @@ unsafe fn format_draw_centre(
         }
     }
     if width_list == 0 as u_int {
-        screen_write_start(&raw mut ctx, centre);
+        screen_write_start(&mut ctx, centre);
         screen_write_fast_copy(
             &mut ctx,
             &*after,
@@ -483,7 +483,7 @@ unsafe fn format_draw_centre(
             width_after,
             1 as u_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         format_draw_none(
             octx, available, ocx, ocy, left, centre, right, abs_centre, frs,
         );
@@ -623,7 +623,7 @@ unsafe fn format_draw_right(
         }
     }
     if width_list == 0 as u_int {
-        screen_write_start(&raw mut ctx, right);
+        screen_write_start(&mut ctx, right);
         screen_write_fast_copy(
             &mut ctx,
             &*after,
@@ -632,7 +632,7 @@ unsafe fn format_draw_right(
             width_after,
             1 as u_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         format_draw_none(
             octx, available, ocx, ocy, left, centre, right, abs_centre, frs,
         );
@@ -1074,7 +1074,7 @@ pub unsafe fn format_draw(
             0 as u_int,
         );
         screen_write_start(
-            (&raw mut ctx as *mut screen_write_ctx).offset(i as isize) as *mut screen_write_ctx,
+            &mut ctx[i as usize],
             (&raw mut s as *mut screen).offset(i as isize) as *mut screen,
         );
         screen_write_clearendofline(
@@ -1184,8 +1184,7 @@ pub unsafe fn format_draw(
                 frs.clear();
                 i = 0 as u_int;
                 while i < TOTAL as ::core::ffi::c_int as u_int {
-                    screen_write_stop((&raw mut ctx as *mut screen_write_ctx).offset(i as isize)
-                        as *mut screen_write_ctx);
+                    screen_write_stop(&mut ctx[i as usize]);
                     i = i.wrapping_add(1);
                 }
                 current_block = 4329038292887906754;
@@ -1388,8 +1387,7 @@ pub unsafe fn format_draw(
             fr = None;
             i = 0 as u_int;
             while i < TOTAL as ::core::ffi::c_int as u_int {
-                screen_write_stop((&raw mut ctx as *mut screen_write_ctx).offset(i as isize)
-                    as *mut screen_write_ctx);
+                screen_write_stop(&mut ctx[i as usize]);
                 log_debug(format_args!(
                     "{}: width {} is {}",
                     "format_draw",

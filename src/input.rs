@@ -2215,12 +2215,12 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
     input_reset_cell(ictx);
     if clear != 0 && !wp.is_null() {
         if (*wp).modes.active.is_null() {
-            screen_write_start_pane(sctx, wp, &raw mut (*wp).base);
+            screen_write_start_pane(&mut *sctx, wp, &raw mut (*wp).base);
         } else {
-            screen_write_start(sctx, &raw mut (*wp).base);
+            screen_write_start(&mut *sctx, &raw mut (*wp).base);
         }
         screen_write_reset(sctx);
-        screen_write_stop(sctx);
+        screen_write_stop(&mut *sctx);
     }
     input_clear(ictx);
     (*ictx).state = &raw const input_state_ground as *const input_state;
@@ -2322,9 +2322,9 @@ pub unsafe fn input_parse_buffer(
         (*wp).flags |= PANE_UNSEENCHANGES;
     }
     if (*wp).modes.active.is_null() {
-        screen_write_start_pane(sctx, wp, &raw mut (*wp).base);
+        screen_write_start_pane(&mut *sctx, wp, &raw mut (*wp).base);
     } else {
-        screen_write_start(sctx, &raw mut (*wp).base);
+        screen_write_start(&mut *sctx, &raw mut (*wp).base);
     }
     log_debug(format_args!(
         "{}: %{} {}, {} bytes: {}",
@@ -2335,7 +2335,7 @@ pub unsafe fn input_parse_buffer(
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
     ));
     input_parse(ictx, buf, len);
-    screen_write_stop(sctx);
+    screen_write_stop(&mut *sctx);
 }
 pub unsafe fn input_parse_screen(
     mut ictx: *mut input_ctx,
@@ -2348,9 +2348,9 @@ pub unsafe fn input_parse_screen(
     if len == 0 as size_t {
         return;
     }
-    screen_write_start_callback(sctx, s, cb);
+    screen_write_start_callback(&mut *sctx, s, cb);
     input_parse(ictx, buf, len);
-    screen_write_stop(sctx);
+    screen_write_stop(&mut *sctx);
 }
 unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -5577,14 +5577,14 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         );
         paste_add_owned(None, out.into_boxed_slice());
     } else {
-        screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &raw mut ctx,
             &raw mut clip as *mut ::core::ffi::c_char,
             out.as_mut_ptr(),
             out.len() as u_int,
         );
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         events_fire_pane(
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
             wp,

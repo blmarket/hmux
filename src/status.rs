@@ -348,7 +348,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         force = 1 as ::core::ffi::c_int;
         changed = force;
     }
-    screen_write_start(&raw mut ctx, &raw mut (*sl).screen);
+    screen_write_start(&mut ctx, &raw mut (*sl).screen);
     o = options_get(
         (*s).options,
         b"status-format\0" as *const u8 as *const ::core::ffi::c_char,
@@ -409,7 +409,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
             i = i.wrapping_add(1);
         }
     }
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     format_free(ft);
     log_debug(format_args!(
         "{} exit: force={}, changed={}",
@@ -667,7 +667,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     );
     let expanded = format_expand_time_cstring(ft, msgfmt);
     format_free(ft);
-    screen_write_start(&raw mut ctx, (*sl).active_screen());
+    screen_write_start(&mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
         &mut ctx,
         &(*sl).screen,
@@ -690,7 +690,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&mut old_screen);
         return 0 as ::core::ffi::c_int;
@@ -825,7 +825,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         promptline = lines.wrapping_sub(1 as u_int);
     }
     status_message_area(c, &raw mut ax, &raw mut aw);
-    screen_write_start(&raw mut ctx, (*sl).active_screen());
+    screen_write_start(&mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
         &mut ctx,
         &(*sl).screen,
@@ -840,7 +840,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     pdd.prompt_line = promptline;
     pdd.cursor_x = &raw mut (*sl).prompt_cx;
     prompt_draw((*c).prompt, &raw mut pdd);
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     if grid_compare((*sl).active_screen().grid(), old_screen.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&mut old_screen);
         return 0 as ::core::ffi::c_int;

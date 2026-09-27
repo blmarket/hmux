@@ -407,19 +407,19 @@ pub unsafe fn screen_write_free_list(s: &mut screen) {
     }
 }
 
-unsafe fn screen_write_init(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
-    // Accept fresh C storage; a previously started context must be stopped.
-    std::ptr::write(ctx, Default::default());
-    (*ctx).s = s;
-    if (*(*ctx).s).write_list.is_none() {
-        screen_write_make_list(&mut *(*ctx).s);
+unsafe fn screen_write_init(ctx: &mut screen_write_ctx, mut s: *mut screen) {
+    // Callers provide initialized Rust storage and stop an active context before reuse.
+    *ctx = screen_write_ctx::default();
+    ctx.s = s;
+    if (*ctx.s).write_list.is_none() {
+        screen_write_make_list(&mut *ctx.s);
     }
-    (*ctx).item = Some(screen_write_get_citem());
-    (*ctx).scrolled = 0 as u_int;
-    (*ctx).bg = 8 as u_int;
+    ctx.item = Some(screen_write_get_citem());
+    ctx.scrolled = 0 as u_int;
+    ctx.bg = 8 as u_int;
 }
 pub unsafe fn screen_write_start_pane(
-    mut ctx: *mut screen_write_ctx,
+    ctx: &mut screen_write_ctx,
     mut wp: *mut window_pane,
     mut s: *mut screen,
 ) {
@@ -427,13 +427,13 @@ pub unsafe fn screen_write_start_pane(
         s = (*wp).screen;
     }
     screen_write_init(ctx, s);
-    (*ctx).wp = wp as *mut window_pane;
+    ctx.wp = wp as *mut window_pane;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: size {}x{}, pane %{} (at {},{})",
             "screen_write_start_pane",
-            ((*(*ctx).s).grid().sx) as u32,
-            ((*(*ctx).s).grid().sy) as u32,
+            ((*ctx.s).grid().sx) as u32,
+            ((*ctx.s).grid().sy) as u32,
             ((*wp).id) as u32,
             ((*wp).xoff) as u32,
             ((*wp).yoff) as u32
@@ -441,40 +441,40 @@ pub unsafe fn screen_write_start_pane(
     }
 }
 pub unsafe fn screen_write_start_callback(
-    mut ctx: *mut screen_write_ctx,
+    ctx: &mut screen_write_ctx,
     mut s: *mut screen,
     mut cb: screen_write_init_ctx_cb,
 ) {
     screen_write_init(ctx, s);
-    (*ctx).init_ctx_cb = cb;
+    ctx.init_ctx_cb = cb;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: size {}x{}, with callback",
             "screen_write_start_callback",
-            ((*(*ctx).s).grid().sx) as u32,
-            ((*(*ctx).s).grid().sy) as u32
+            ((*ctx.s).grid().sx) as u32,
+            ((*ctx.s).grid().sy) as u32
         ));
     }
 }
-pub unsafe fn screen_write_start(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
+pub unsafe fn screen_write_start(ctx: &mut screen_write_ctx, mut s: *mut screen) {
     screen_write_init(ctx, s);
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: size {}x{}, no pane",
             "screen_write_start",
-            ((*(*ctx).s).grid().sx) as u32,
-            ((*(*ctx).s).grid().sy) as u32
+            ((*ctx.s).grid().sx) as u32,
+            ((*ctx.s).grid().sy) as u32
         ));
     }
 }
-pub unsafe fn screen_write_stop(mut ctx: *mut screen_write_ctx) {
+pub unsafe fn screen_write_stop(ctx: &mut screen_write_ctx) {
     screen_write_collect_end(ctx);
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
         b"screen_write_stop\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    screen_write_free_citem((*ctx).item.take().expect("active screen write context"));
+    screen_write_free_citem(ctx.item.take().expect("active screen write context"));
 }
 pub unsafe fn screen_write_reset(mut ctx: *mut screen_write_ctx) {
     let mut s: *mut screen = (*ctx).s;
@@ -1634,7 +1634,7 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
     if (*wp).sync_dirty.is_null() {
         return;
     }
-    screen_write_start_pane(&raw mut ctx, wp, s);
+    screen_write_start_pane(&mut ctx, wp, s);
     screen_write_initctx(
         &mut ctx,
         &mut ttyctx,
@@ -1660,7 +1660,7 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
         ((*wp).id) as u32,
         (lines) as u32
     ));
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     screen_write_clear_dirty(wp);
 }
 pub unsafe fn screen_write_clear_dirty(mut wp: *mut window_pane) {
@@ -4770,6 +4770,39 @@ mod write_ctx_tests {
     impl Drop for DropCounter {
         fn drop(&mut self) {
             self.0.set(self.0.get() + 1);
+        }
+    }
+
+    #[test]
+    fn restarting_a_stopped_context_releases_its_previous_callback() {
+        unsafe {
+            let mut s = screen::empty();
+            s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            let mut ctx = screen_write_ctx::default();
+            let drops = Rc::new(Cell::new(0));
+            for pass in 0..3 {
+                let owner = DropCounter(drops.clone());
+                screen_write_start_callback(
+                    &mut ctx,
+                    &mut s,
+                    Some(Box::new(move |_| {
+                        let _ = &owner;
+                    })),
+                );
+                assert_eq!(drops.get(), pass);
+                assert!(ctx.item.is_some());
+                assert_eq!(ctx.bg, 8);
+                screen_write_collect_add(&mut ctx, &grid_default_cell);
+                screen_write_stop(&mut ctx);
+                assert!(ctx.item.is_none());
+                assert_eq!(drops.get(), pass);
+            }
+            // Restarting without a callback must also release the previous owner.
+            screen_write_start(&mut ctx, &mut s);
+            assert_eq!(drops.get(), 3);
+            assert!(ctx.init_ctx_cb.is_none());
+            screen_write_stop(&mut ctx);
+            assert_eq!(s.cx, 3);
         }
     }
 

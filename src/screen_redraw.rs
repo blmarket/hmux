@@ -2390,14 +2390,14 @@ unsafe fn redraw_draw_pane_prompt(mut dctx: *mut redraw_draw_ctx, mut wp: *mut w
         width = sx - px;
     }
     screen_init(&mut screen, (*wp).sx, 1 as u_int, 0 as u_int);
-    screen_write_start(&raw mut ctx, &raw mut screen);
+    screen_write_start(&mut ctx, &raw mut screen);
     pdd.ctx = &raw mut ctx;
     pdd.cursor_x = &raw mut (*wp).prompt_cx;
     pdd.area_x = 0 as u_int;
     pdd.area_width = (*wp).sx;
     pdd.prompt_line = 0 as u_int;
     prompt_draw((*wp).prompt, &raw mut pdd);
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     tty_draw_line(
         tty,
         &raw mut screen,

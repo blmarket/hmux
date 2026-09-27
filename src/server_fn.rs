@@ -501,7 +501,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
                 b"remain-on-exit-format\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if *s as ::core::ffi::c_int != '\0' as i32 {
-                screen_write_start_pane(&raw mut ctx, wp, &raw mut (*wp).base);
+                screen_write_start_pane(&mut ctx, wp, &raw mut (*wp).base);
                 screen_write_scrollregion(&raw mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &raw mut ctx,
@@ -531,7 +531,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
                     ::core::ptr::null_mut::<style_ranges>(),
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_stop(&raw mut ctx);
+                screen_write_stop(&mut ctx);
             }
             (*wp).base.mode &= !MODE_CURSOR;
             (*wp).flags |= PANE_REDRAW;

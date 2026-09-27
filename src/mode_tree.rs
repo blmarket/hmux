@@ -865,7 +865,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     );
     dfg = gc.fg;
     dfg0 = gc0.fg;
-    screen_write_start(&raw mut ctx, s);
+    screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -1307,7 +1307,7 @@ pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             0 as ::core::ffi::c_int,
         );
     }
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
 }
 unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, mut ctx: *mut screen_write_ctx) {
     let mut s: *mut screen = &raw mut (*mtd).screen;

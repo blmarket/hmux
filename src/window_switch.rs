@@ -367,10 +367,10 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
         area_width: 0,
         prompt_line: 0,
     };
-    screen_write_start(&raw mut ctx, s);
+    screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
     if sy <= 1 as u_int {
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         return;
     }
     style_apply(
@@ -460,7 +460,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
             0 as ::core::ffi::c_int,
         );
     }
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
 }
 unsafe fn window_switch_init(
     mut wme: *mut window_mode_entry,

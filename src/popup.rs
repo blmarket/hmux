@@ -369,7 +369,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     if !(*pd).s.hyperlinks.is_null() {
         screen_share_hyperlinks(&mut s, &(*pd).s);
     }
-    screen_write_start(&raw mut ctx, &raw mut s);
+    screen_write_start(&mut ctx, &raw mut s);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_cursormove(
@@ -410,7 +410,7 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
             (*pd).sy.wrapping_sub(2 as u_int),
         );
     }
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
     memcpy(
         &raw mut defaults as *mut ::core::ffi::c_void,
         &raw mut (*pd).defaults as *const ::core::ffi::c_void,

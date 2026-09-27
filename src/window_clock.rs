@@ -766,7 +766,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         (*w).options,
         b"clock-mode-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    screen_write_start(&raw mut ctx, s);
+    screen_write_start(&mut ctx, s);
     t = time(::core::ptr::null_mut::<time_t>());
     tm = localtime(&raw mut t);
     if style == 0 as ::core::ffi::c_int || style == 2 as ::core::ffi::c_int {
@@ -842,7 +842,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
                 write_cstr(out, &raw mut tim as *mut ::core::ffi::c_char)
             });
         }
-        screen_write_stop(&raw mut ctx);
+        screen_write_stop(&mut ctx);
         return;
     }
     x = ((*s).grid().sx.wrapping_div(2 as u_int) as size_t)
@@ -907,5 +907,5 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         }
         ptr = ptr.offset(1);
     }
-    screen_write_stop(&raw mut ctx);
+    screen_write_stop(&mut ctx);
 }
