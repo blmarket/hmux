@@ -26,7 +26,7 @@ pub struct session {
     pub flags: ::core::ffi::c_int,
     pub attached: u_int,
     pub tio: Option<Box<termios>>,
-    pub environ: *mut environ,
+    pub environ: Option<Box<environ>>,
     pub entry: session_entry,
 }
 

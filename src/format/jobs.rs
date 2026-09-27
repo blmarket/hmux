@@ -181,7 +181,7 @@ pub(super) unsafe fn format_job_get(
         (*fj).job = job_run(
             Some(expanded.as_c_str()),
             &Vec::new(),
-            ::core::ptr::null_mut::<environ>(),
+            None,
             ::core::ptr::null_mut::<session>(),
             {
                 let cwd = server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>());

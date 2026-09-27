@@ -1,4 +1,4 @@
-use hmux2::src::environ::{environ_create, environ_free};
+use hmux2::src::environ::{environ_create};
 use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::shared::client::client;
@@ -15,12 +15,12 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             global_options,
             global_s_options,
             global_w_options,
-            global_environ,
+            global_environ.take(),
         );
         global_options = options_create(null_mut());
         global_s_options = options_create(null_mut());
         global_w_options = options_create(null_mut());
-        global_environ = environ_create();
+        global_environ = Some(environ_create());
         let owner = client::new();
         let client = hmux2::src::shared::rc::as_ptr(&owner);
         (*client).tty.sx = 120;
@@ -111,7 +111,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         options_free(global_options);
         options_free(global_s_options);
         options_free(global_w_options);
-        environ_free(global_environ);
+        drop(global_environ.take());
         (
             global_options,
             global_s_options,

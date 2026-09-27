@@ -8046,7 +8046,7 @@ unsafe fn window_copy_pipe_run(
         job = job_run(
             Some(CStr::from_ptr(cmd)),
             &Vec::new(),
-            ::core::ptr::null_mut::<environ>(),
+            None,
             s,
             None,
             None,

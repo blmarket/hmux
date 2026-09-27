@@ -119,7 +119,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
     let mut groupwith: *mut session = ::core::ptr::null_mut::<session>();
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
+    let mut env: Option<Box<environ>> = None;
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut tio: termios = termios {
         c_iflag: 0,
@@ -162,7 +162,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
-        environ: ::core::ptr::null_mut::<environ>(),
+        environ: None,
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
@@ -530,15 +530,18 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 },
                                                             );
                                                         }
-                                                        env = environ_create();
+                                                        env = Some(environ_create());
                                                         if !c.is_null()
                                                             && args_has(args, 'E' as i32 as u_char)
                                                                 == 0
                                                         {
                                                             environ_update(
                                                                 global_s_options,
-                                                                (*c).environ,
-                                                                env,
+                                                                (*c).environ
+                                                                    .as_deref()
+                                                                    .expect("client environment"),
+                                                                env.as_deref_mut()
+                                                                    .expect("new environment"),
                                                             );
                                                         }
                                                         for av in args_flag_values(
@@ -546,7 +549,8 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             'e' as i32 as u_char,
                                                         ) {
                                                             environ_put(
-                                                                env,
+                                                                env.as_deref_mut()
+                                                                    .expect("environment"),
                                                                 av.string_ptr(),
                                                                 0 as ::core::ffi::c_int,
                                                             );
@@ -558,7 +562,8 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             ),
                                                             sname,
                                                             cwd,
-                                                            env,
+                                                            env.take()
+                                                                .expect("new session environment"),
                                                             oo,
                                                             tiop,
                                                         );

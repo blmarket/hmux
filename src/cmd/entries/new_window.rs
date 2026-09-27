@@ -7,7 +7,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
 };
-use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::environ::{environ_create, environ_put};
 use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -84,7 +84,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
-        environ: ::core::ptr::null_mut::<environ>(),
+        environ: None,
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
@@ -204,9 +204,13 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     sc.name = wname;
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
-    sc.environ = environ_create();
+    sc.environ = Some(environ_create());
     for av in args_flag_values(&*args, 'e' as i32 as u_char) {
-        environ_put(sc.environ, av.string_ptr(), 0 as ::core::ffi::c_int);
+        environ_put(
+            sc.environ.as_deref_mut().expect("environment"),
+            av.string_ptr(),
+            0 as ::core::ffi::c_int,
+        );
     }
     sc.idx = idx;
     sc.cwd = args_get(args, 'c' as i32 as u_char);
@@ -234,7 +238,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                     .map_or(::core::ptr::null(), |value| value.as_ptr()),
             )
         });
-        environ_free(sc.environ);
+        drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     } else {
         if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).curw {
@@ -256,7 +260,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         cmdq_insert_hook(s, item, &raw mut fs, |out| {
             out.write_all(b"after-new-window")
         });
-        environ_free(sc.environ);
+        drop(sc.environ.take());
         return CMD_RETURN_NORMAL;
     };
 }

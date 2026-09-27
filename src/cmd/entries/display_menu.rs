@@ -4,7 +4,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{cmd_append_argv, cmd_get_args};
-use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::environ::{environ_create, environ_put};
 use crate::src::ffi::libc::{strcmp, strtol};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -1052,7 +1052,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut w: u_int = 0;
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
+    let mut env: Option<Box<environ>> = None;
     let mut o: *mut options = (*(*(*s).curw).window).options;
     let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if args_has(args, 'C' as i32 as u_char) != 0 {
@@ -1181,9 +1181,13 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                                 argv_owner = args_to_vector(&*args);
                             }
                             if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
-                                env = environ_create();
+                                env = Some(environ_create());
                                 for av in args_flag_values(&*args, 'e' as i32 as u_char) {
-                                    environ_put(env, av.string_ptr(), 0 as ::core::ffi::c_int);
+                                    environ_put(
+                                        env.as_deref_mut().expect("environment"),
+                                        av.string_ptr(),
+                                        0 as ::core::ffi::c_int,
+                                    );
                                 }
                             }
                             current_block = 1345366029464561491;
@@ -1265,7 +1269,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                         py,
                         w,
                         h,
-                        env,
+                        env.as_deref(),
                         shellcmd,
                         &argv_owner,
                         cwd,
@@ -1276,7 +1280,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                         border_style,
                     ) != 0 as ::core::ffi::c_int)
                     {
-                        environ_free(env);
+                        drop(env.take());
                         return CMD_RETURN_WAIT;
                     }
                     current_block = 6589043366517631393;
@@ -1287,11 +1291,11 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     match current_block {
         1988999557336856620 => {
-            environ_free(env);
+            drop(env.take());
             return CMD_RETURN_ERROR;
         }
         _ => {
-            environ_free(env);
+            drop(env.take());
             return CMD_RETURN_NORMAL;
         }
     };

@@ -1,6 +1,5 @@
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::environ::environ_free;
 use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_session,
@@ -299,7 +298,7 @@ pub unsafe fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session
         flags: 0,
         attached: 0,
         tio: None,
-        environ: ::core::ptr::null_mut::<environ>(),
+        environ: None,
         entry: session_entry { owner: None },
     };
     s.name = ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned();
@@ -337,7 +336,7 @@ pub unsafe fn session_create(
     mut prefix: *const ::core::ffi::c_char,
     mut name: *const ::core::ffi::c_char,
     mut cwd: *const ::core::ffi::c_char,
-    mut env: *mut environ,
+    env: Box<environ>,
     mut oo: *mut options,
     mut tio: *mut termios,
 ) -> *mut session {
@@ -355,7 +354,7 @@ pub unsafe fn session_create(
     (*s).lastw.storage = None;
     (*s).lastw.reserved = std::ptr::null_mut();
     (*s).windows.storage = None;
-    (*s).environ = env;
+    (*s).environ = Some(env);
     (*s).options = oo;
     status_update_cache(s);
     if !name.is_null() {
@@ -423,7 +422,7 @@ unsafe fn session_free(s: *mut session) {
         "session {} freed",
         log_cstr(((*s).name.as_ptr()) as *const _)
     ));
-    environ_free((*s).environ);
+    drop((*s).environ.take());
     if !(*s).options.is_null() {
         options_free((*s).options);
     }

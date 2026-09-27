@@ -41,7 +41,7 @@ pub struct spawn_context {
     pub lc: *mut layout_cell,
     pub name: *const ::core::ffi::c_char,
     pub argv: Vec<std::ffi::CString>,
-    pub environ: *mut environ,
+    pub environ: Option<Box<environ>>,
     pub idx: ::core::ffi::c_int,
     pub cwd: *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,

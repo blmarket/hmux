@@ -58,7 +58,7 @@ unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
 unsafe fn cmd_show_environment_print(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
-    mut envent: *mut environ_entry,
+    envent: &environ_entry,
 ) {
     let mut args: *mut args = cmd_get_args(self_0);
     if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
@@ -108,8 +108,8 @@ unsafe fn cmd_show_environment_print(
 unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let env: &environ;
+    let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     tflag = args_get(args, 't' as i32 as u_char);
@@ -123,7 +123,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
         }
     }
     if args_has(args, 'g' as i32 as u_char) != 0 {
-        env = global_environ;
+        env = global_environ.as_deref().expect("environment");
     } else {
         if (*target).s.is_null() {
             tflag = args_get(args, 't' as i32 as u_char);
@@ -137,22 +137,22 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
             }
             return CMD_RETURN_ERROR;
         }
-        env = (*(*target).s).environ;
+        env = (*(*target).s).environ.as_deref().expect("environment");
     }
     if !name.is_null() {
         envent = environ_find(env, name);
-        if envent.is_null() {
+        if envent.is_none() {
             cmdq_error(item, |out| {
                 out.write_all(b"unknown variable: ")?;
                 write_cstr(out, name)
             });
             return CMD_RETURN_ERROR;
         }
-        cmd_show_environment_print(self_0, item, envent);
+        cmd_show_environment_print(self_0, item, envent.unwrap());
         return CMD_RETURN_NORMAL;
     }
     for entry in environ_iter(&*env) {
-        let envent = entry.as_ptr();
+        let envent = entry;
         cmd_show_environment_print(self_0, item, envent);
     }
     return CMD_RETURN_NORMAL;

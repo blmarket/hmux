@@ -135,7 +135,7 @@ pub struct window_customize_itemdata {
     pub table: Option<std::ffi::CString>,
     pub key: key_code,
     pub oo: *mut options,
-    pub environ: *mut environ,
+    environ: Option<CustomizeEnvironment>,
     pub environ_flags: ::core::ffi::c_int,
     pub name: Option<std::ffi::CString>,
     pub array_key: Option<std::ffi::CString>,
@@ -150,10 +150,73 @@ impl window_customize_itemdata {
             table: None,
             key: 0,
             oo: ::core::ptr::null_mut(),
-            environ: ::core::ptr::null_mut(),
+            environ: None,
             environ_flags: 0,
             name: None,
             array_key: None,
+        }
+    }
+}
+
+/// Rows keep target identity without retaining a session for the entire mode.
+#[derive(Clone)]
+enum CustomizeEnvironment {
+    Global,
+    Session(std::rc::Weak<UnsafeCell<session>>),
+}
+
+impl CustomizeEnvironment {
+    unsafe fn session(s: *mut session) -> Self {
+        Self::Session(crate::src::shared::rc::downgrade(s))
+    }
+
+    fn matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Global, Self::Global) => true,
+            (Self::Session(a), Self::Session(b)) => a.ptr_eq(b),
+            _ => false,
+        }
+    }
+
+    fn resolve(&self) -> Option<CustomizeEnvironmentBorrow> {
+        match self {
+            Self::Global => Some(CustomizeEnvironmentBorrow::Global),
+            Self::Session(session) => session.upgrade().map(CustomizeEnvironmentBorrow::Session),
+        }
+    }
+}
+
+/// Retain a session only for the duration of an environment operation. All
+/// environment references are tied to this guard, rather than a saved pointer.
+enum CustomizeEnvironmentBorrow {
+    Global,
+    Session(Rc<UnsafeCell<session>>),
+}
+
+impl CustomizeEnvironmentBorrow {
+    unsafe fn get(&self) -> Option<&environ> {
+        match self {
+            Self::Global => global_environ.as_deref(),
+            Self::Session(owner) => (*crate::src::shared::rc::as_ptr(owner)).environ.as_deref(),
+        }
+    }
+
+    unsafe fn get_mut(&mut self) -> Option<&mut environ> {
+        match self {
+            Self::Global => global_environ.as_deref_mut(),
+            Self::Session(owner) => (*crate::src::shared::rc::as_ptr(owner))
+                .environ
+                .as_deref_mut(),
+        }
+    }
+}
+
+impl Drop for CustomizeEnvironmentBorrow {
+    fn drop(&mut self) {
+        if let Self::Session(owner) = self {
+            // Transfer the guard's retained lifetime to the deferred release:
+            // the field drops its original Rc after this clone is scheduled.
+            crate::src::shared::rc::release_later(Rc::clone(owner));
         }
     }
 }
@@ -375,14 +438,16 @@ unsafe fn window_customize_get_tree(
     return ::core::ptr::null_mut::<options>();
 }
 unsafe fn window_customize_get_environment(
-    mut scope: window_customize_scope,
-    mut fs: *mut cmd_find_state,
-) -> *mut environ {
-    match scope as ::core::ffi::c_uint {
-        8 => return global_environ,
-        9 => return (*(*fs).s).environ,
-        _ => return ::core::ptr::null_mut::<environ>(),
-    };
+    scope: window_customize_scope,
+    fs: &cmd_find_state,
+) -> Option<CustomizeEnvironment> {
+    match scope {
+        WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT => Some(CustomizeEnvironment::Global),
+        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.s.is_null() => {
+            Some(CustomizeEnvironment::session(fs.s))
+        }
+        _ => None,
+    }
 }
 unsafe fn window_customize_check_item(
     mut data: *mut window_customize_modedata,
@@ -409,8 +474,11 @@ unsafe fn window_customize_check_item(
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return (item.environ == window_customize_get_environment(item.scope, fsp))
-            as ::core::ffi::c_int;
+        return (item
+            .environ
+            .as_ref()
+            .zip(window_customize_get_environment(item.scope, &*fsp).as_ref())
+            .is_some_and(|(a, b)| a.matches(b))) as ::core::ffi::c_int;
     }
     return (item.oo == window_customize_get_tree(item.scope, fsp)) as ::core::ffi::c_int;
 }
@@ -811,20 +879,31 @@ unsafe fn window_customize_set_environment_value(
     item: &window_customize_itemdata,
     mut s: *const ::core::ffi::c_char,
 ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let Some(mut environment) = item
+        .environ
+        .as_ref()
+        .and_then(CustomizeEnvironment::resolve)
+    else {
+        return;
+    };
+    let Some(env) = environment.get_mut() else {
+        return;
+    };
+
+    let mut envent: Option<&environ_entry> = None;
     let mut flags: ::core::ffi::c_int = 0;
     flags = item.environ_flags;
     envent = environ_find(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
-    if !envent.is_null() {
-        flags = (*envent).flags;
+    if !envent.is_none() {
+        flags = envent.unwrap().flags;
     }
     environ_set(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -1406,11 +1485,18 @@ unsafe fn window_customize_build_environment(
     mut title: *const ::core::ffi::c_char,
     group: u_int,
     mut scope: window_customize_scope,
-    mut env: *mut environ,
+    target: CustomizeEnvironment,
     mut ft: *mut format_tree,
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
 ) {
+    let Some(environment) = target.resolve() else {
+        return;
+    };
+    let Some(env) = environment.get() else {
+        return;
+    };
+
     let mut global: ::core::ffi::c_int = 0;
     if (*data).hide_default != 0 {
         return;
@@ -1456,7 +1542,7 @@ unsafe fn window_customize_build_environment(
     );
     drop(scope_text);
     for entry in environ_iter(&*env) {
-        let envent = entry.as_ptr();
+        let envent = entry;
         format_add(
             ft,
             b"environment_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1517,7 +1603,7 @@ unsafe fn window_customize_build_environment(
             window_customize_itemdata {
                 type_0: WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT,
                 scope,
-                environ: env,
+                environ: Some(target.clone()),
                 environ_flags: (*envent).flags,
                 name: Some((*envent).name.clone()),
                 ..window_customize_itemdata::new()
@@ -1539,7 +1625,7 @@ unsafe fn window_customize_build_environment(
             (*data).data,
             Some(&top),
             ModeTreeItemData::Customize(Rc::clone(&item_owner)),
-            (2_u64 << 62) | envent as uint64_t,
+            (2_u64 << 62) | std::ptr::from_ref(envent) as uint64_t,
             &name,
             text.as_deref(),
             0 as ::core::ffi::c_int,
@@ -1668,7 +1754,7 @@ unsafe fn window_customize_build(
         b"Global Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_GLOBAL_ENVIRONMENT,
         WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT,
-        global_environ,
+        CustomizeEnvironment::Global,
         ft,
         filter,
         &raw mut fs,
@@ -1678,7 +1764,7 @@ unsafe fn window_customize_build(
         b"Session Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_ENVIRONMENT,
         WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-        (*fs.s).environ,
+        CustomizeEnvironment::session(fs.s),
         ft,
         filter,
         &raw mut fs,
@@ -2592,11 +2678,22 @@ unsafe fn window_customize_draw_environment(
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let Some(mut environment) = item
+        .environ
+        .as_ref()
+        .and_then(CustomizeEnvironment::resolve)
+    else {
+        return;
+    };
+    let Some(env) = environment.get() else {
+        return;
+    };
+
     let mut s: *mut screen = (*ctx).s;
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*s).cy;
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut parent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
+    let mut parent: Option<&environ_entry> = None;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2611,12 +2708,12 @@ unsafe fn window_customize_draw_environment(
         return;
     }
     envent = environ_find(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
-    if envent.is_null() {
+    if envent.is_none() {
         return;
     }
     if item.scope as ::core::ffi::c_uint
@@ -2642,7 +2739,7 @@ unsafe fn window_customize_draw_environment(
     {
         return;
     }
-    if (*envent).flags & ENVIRON_HIDDEN != 0 {
+    if envent.unwrap().flags & ENVIRON_HIDDEN != 0 {
         if screen_write_text(
             &mut *ctx,
             cx,
@@ -2665,7 +2762,7 @@ unsafe fn window_customize_draw_environment(
     if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
-    if (*envent).value.is_none() {
+    if envent.unwrap().value.is_none() {
         if screen_write_text(
             &mut *ctx,
             cx,
@@ -2688,7 +2785,7 @@ unsafe fn window_customize_draw_environment(
         |out| {
             write_cstr(
                 out,
-                ((*envent).value)
+                (envent.unwrap().value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )
@@ -2703,15 +2800,15 @@ unsafe fn window_customize_draw_environment(
         return;
     }
     parent = environ_find(
-        global_environ,
+        global_environ.as_deref().expect("environment"),
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
-    if parent.is_null() {
+    if parent.is_none() {
         return;
     }
-    if (*parent).value.is_none() {
+    if parent.unwrap().value.is_none() {
         if screen_write_text(
             &mut *ctx,
             cx,
@@ -2734,7 +2831,7 @@ unsafe fn window_customize_draw_environment(
         |out| {
             write_cstr(
                 out,
-                ((*parent).value)
+                (parent.unwrap().value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )
@@ -3029,8 +3126,18 @@ unsafe fn window_customize_set_environment_callback(
 ) -> prompt_result {
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
+    let Some(mut environment) = item
+        .environ
+        .as_ref()
+        .and_then(CustomizeEnvironment::resolve)
+    else {
+        return PROMPT_CLOSE;
+    };
+    let Some(env) = environment.get_mut() else {
+        return PROMPT_CLOSE;
+    };
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     let mut flags: ::core::ffi::c_int = 0;
     if s.is_null() || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -3040,16 +3147,16 @@ unsafe fn window_customize_set_environment_callback(
     }
     flags = item.environ_flags;
     envent = environ_find(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
-    if !envent.is_null() {
-        flags = (*envent).flags;
+    if !envent.is_none() {
+        flags = envent.unwrap().flags;
     }
     environ_set(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -3067,8 +3174,19 @@ unsafe fn window_customize_set_environment(
     item: &window_customize_itemdata,
     mut global: ::core::ffi::c_int,
 ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
+    let Some(mut environment) = item
+        .environ
+        .as_ref()
+        .and_then(CustomizeEnvironment::resolve)
+    else {
+        return;
+    };
+    let Some(env) = environment.get() else {
+        return;
+    };
+
+    let mut envent: Option<&environ_entry> = None;
+    let target;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -3084,20 +3202,20 @@ unsafe fn window_customize_set_environment(
         return;
     }
     envent = environ_find(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
-    if envent.is_null() {
+    if envent.is_none() {
         return;
     }
     if global != 0 {
         scope = WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT;
-        env = global_environ;
+        target = CustomizeEnvironment::Global;
     } else {
         scope = item.scope;
-        env = item.environ;
+        target = item.environ.clone().expect("environment target");
     }
     let scope_text = window_customize_scope_text(scope, &fs);
     if !scope_text.as_bytes().is_empty() {
@@ -3126,9 +3244,10 @@ unsafe fn window_customize_set_environment(
 
     new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
     new_item.scope = scope;
-    new_item.environ = env;
-    new_item.environ_flags = (*envent).flags;
+    new_item.environ = Some(target);
+    new_item.environ_flags = envent.unwrap().flags;
     window_customize_set_name(&mut *new_item, item.name.as_deref());
+    let value = envent.unwrap().value.clone().unwrap_or_default();
     let owner = Rc::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
@@ -3141,7 +3260,7 @@ unsafe fn window_customize_set_environment(
         (*data).data,
         c,
         &prompt,
-        Some((*envent).value.as_deref().unwrap_or(c"")),
+        Some(&value),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         inputcb,
@@ -3285,6 +3404,16 @@ unsafe fn window_customize_add_environment_callback(
     let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
+    let Some(mut environment) = item
+        .environ
+        .as_ref()
+        .and_then(CustomizeEnvironment::resolve)
+    else {
+        return PROMPT_CLOSE;
+    };
+    let Some(env) = environment.get_mut() else {
+        return PROMPT_CLOSE;
+    };
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
@@ -3310,7 +3439,7 @@ unsafe fn window_customize_add_environment_callback(
             );
             return PROMPT_CLOSE;
         }
-        environ_clear(item.environ, s.offset(1 as ::core::ffi::c_int as isize));
+        environ_clear(env, s.offset(1 as ::core::ffi::c_int as isize));
     } else {
         value = strchr(s, '=' as i32);
         if value.is_null() || value == s {
@@ -3326,12 +3455,9 @@ unsafe fn window_customize_add_environment_callback(
         }
         let name = CString::new(&CStr::from_ptr(s).to_bytes()[..value.offset_from(s) as usize])
             .expect("environment name contains no NUL");
-        environ_set(
-            item.environ,
-            name.as_ptr(),
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, value.offset(1 as ::core::ffi::c_int as isize)),
-        );
+        environ_set(env, name.as_ptr(), 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, value.offset(1 as ::core::ffi::c_int as isize))
+        });
     }
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
@@ -3342,13 +3468,13 @@ unsafe fn window_customize_add_environment(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
     mut scope: window_customize_scope,
-    mut env: *mut environ,
+    target: CustomizeEnvironment,
 ) {
     let mut new_item = window_customize_new_item();
 
     new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
     new_item.scope = scope;
-    new_item.environ = env;
+    new_item.environ = Some(target);
     let owner = Rc::new(CustomizePromptItem {
         item: new_item,
         mode: crate::src::shared::rc::downgrade(data)
@@ -3454,7 +3580,7 @@ unsafe fn window_customize_start_edit(
     mut c: *mut client,
 ) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     let value: Cow<'_, CStr>;
     let mut edit_type: window_customize_edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     if !(*data).editor.is_null() {
@@ -3510,20 +3636,26 @@ unsafe fn window_customize_start_edit(
         if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
             return;
         }
+        let Some(environment) = item
+            .environ
+            .as_ref()
+            .and_then(CustomizeEnvironment::resolve)
+        else {
+            return;
+        };
+        let Some(env) = environment.get() else {
+            return;
+        };
         envent = environ_find(
-            item.environ,
+            env,
             (item.name)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
-        if envent.is_null() || (*envent).value.is_none() {
+        if envent.is_none() || envent.unwrap().value.is_none() {
             return;
         }
-        value = Cow::Borrowed(CStr::from_ptr(
-            ((*envent).value)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ));
+        value = Cow::Owned(envent.unwrap().value.clone().expect("environment value"));
         edit_type = WINDOW_CUSTOMIZE_EDIT_ENVIRONMENT;
     } else {
         return;
@@ -3861,16 +3993,27 @@ unsafe fn window_customize_unset_environment(
     mut data: *mut window_customize_modedata,
     item: &Rc<window_customize_itemdata>,
 ) {
+    let Some(mut environment) = item
+        .environ
+        .as_ref()
+        .and_then(CustomizeEnvironment::resolve)
+    else {
+        return;
+    };
+    let Some(env) = environment.get_mut() else {
+        return;
+    };
+
     if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
         return;
     }
     if environ_find(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     )
-    .is_null()
+    .is_none()
     {
         return;
     }
@@ -3881,7 +4024,7 @@ unsafe fn window_customize_unset_environment(
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
     environ_unset(
-        item.environ,
+        env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -4564,7 +4707,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT,
-            global_environ,
+            CustomizeEnvironment::Global,
         );
         return 1 as ::core::ffi::c_int;
     }
@@ -4573,7 +4716,7 @@ unsafe fn window_customize_add_current(
             c,
             data,
             WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-            (*fs.s).environ,
+            CustomizeEnvironment::session(fs.s),
         );
         return 1 as ::core::ffi::c_int;
     }
@@ -5050,6 +5193,74 @@ mod item_owner_tests {
         assert!(state.cb.is_none());
         unsafe {
             spawn_cancel_editor(&mut state);
+        }
+    }
+}
+
+#[cfg(test)]
+mod environment_lifetime_tests {
+    use super::*;
+    use crate::src::environ::environ_create;
+    use crate::src::shared::rc;
+
+    #[test]
+    fn detached_environment_rows_expire_after_their_session() {
+        unsafe {
+            let session = rc::new(session::empty());
+            (*session).environ = Some(environ_create());
+            (*session)
+                .environ
+                .as_deref_mut()
+                .unwrap()
+                .set(b"NAME", 0, b"value")
+                .unwrap();
+            let owner = rc::take(session);
+            let target = CustomizeEnvironment::session(session);
+            let mut row = window_customize_new_item();
+            row.environ = Some(target.clone());
+            let detached = window_customize_copy_item(&row);
+            assert!(target.matches(detached.environ.as_ref().unwrap()));
+            let guard = target.resolve().unwrap();
+            drop(owner);
+            assert_eq!(
+                guard.get().unwrap().find(c"NAME").unwrap().value(),
+                Some(c"value")
+            );
+            assert!(target.resolve().is_some());
+            let lifetime = rc::downgrade(session);
+            drop(guard);
+            assert!(lifetime.upgrade().is_some());
+            crate::src::reactor::event_loop();
+            assert!(target.resolve().is_none());
+            crate::src::reactor::shutdown_runtime();
+            assert!(detached.environ.as_ref().unwrap().resolve().is_none());
+        }
+    }
+
+    #[test]
+    fn environment_guards_reborrow_the_current_box_and_detect_removal() {
+        unsafe {
+            let session = rc::new(session::empty());
+            (*session).environ = Some(environ_create());
+            let owner = rc::take(session);
+            let target = CustomizeEnvironment::session(session);
+            let mut guard = target.resolve().unwrap();
+            guard
+                .get_mut()
+                .unwrap()
+                .set(b"NAME", ENVIRON_HIDDEN, b"first")
+                .unwrap();
+            let replacement = environ_create();
+            (*session).environ = Some(replacement);
+            assert!(guard.get().unwrap().find(c"NAME").is_none());
+            drop((*session).environ.take());
+            assert!(guard.get().is_none());
+            let lifetime = rc::downgrade(session);
+            drop(guard);
+            drop(owner);
+            assert!(lifetime.upgrade().is_some());
+            crate::src::reactor::shutdown_runtime();
+            assert!(target.resolve().is_none());
         }
     }
 }

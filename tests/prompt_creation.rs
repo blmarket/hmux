@@ -1,4 +1,4 @@
-use hmux2::src::environ::{environ_create, environ_free};
+use hmux2::src::environ::{environ_create};
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
 use hmux2::src::prompt::{
@@ -26,13 +26,13 @@ fn input_bytes(prompt: &prompt) -> Vec<u8> {
 fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
     unsafe {
         let saved = (
-            global_environ,
+            global_environ.take(),
             global_options,
             global_s_options,
             global_w_options,
         );
         let environment = environ_create();
-        global_environ = environment;
+        global_environ = Some(environment);
         let server = options_create(std::ptr::null_mut());
         let session = options_create(std::ptr::null_mut());
         let window = options_create(std::ptr::null_mut());
@@ -180,7 +180,6 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             global_s_options,
             global_w_options,
         ) = saved;
-        environ_free(environment);
         options_free(server);
         options_free(session);
         options_free(window);

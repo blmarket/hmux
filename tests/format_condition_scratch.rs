@@ -1,5 +1,5 @@
 //! Exercise conditional scratch strings through public format expansion.
-use hmux2::src::environ::{environ_create, environ_free};
+use hmux2::src::environ::{environ_create};
 use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::format::{format_add, format_create, format_expand_cstring, format_free};
 use hmux2::src::options::{options_create, options_free};
@@ -12,7 +12,7 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
         let saved_options = global_options;
         let saved_s_options = global_s_options;
         let saved_w_options = global_w_options;
-        let saved_environ = global_environ;
+        let saved_environ = global_environ.take();
         let options = options_create(std::ptr::null_mut());
         let s_options = options_create(std::ptr::null_mut());
         let w_options = options_create(std::ptr::null_mut());
@@ -20,7 +20,7 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
         global_s_options = s_options;
         global_w_options = w_options;
         let environ = environ_create();
-        global_environ = environ;
+        global_environ = Some(environ);
 
         let tree = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
         format_add(tree, c"yes".as_ptr(), |out| write_cstr(out, c"1".as_ptr()));
@@ -52,6 +52,5 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
         options_free(options);
         options_free(s_options);
         options_free(w_options);
-        environ_free(environ);
     }
 }

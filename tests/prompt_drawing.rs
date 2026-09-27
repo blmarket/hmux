@@ -1,4 +1,4 @@
-use hmux2::src::environ::{environ_create, environ_free};
+use hmux2::src::environ::{environ_create};
 use hmux2::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
@@ -18,7 +18,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
     unsafe {
         assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
         let saved = (
-            global_environ,
+            global_environ.take(),
             global_options,
             global_s_options,
             global_w_options,
@@ -27,7 +27,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
         let server = options_create(std::ptr::null_mut());
         let session = options_create(std::ptr::null_mut());
         let window = options_create(std::ptr::null_mut());
-        global_environ = environment;
+        global_environ = Some(environment);
         global_options = server;
         global_s_options = session;
         global_w_options = window;
@@ -232,7 +232,6 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             global_s_options,
             global_w_options,
         ) = saved;
-        environ_free(environment);
         options_free(server);
         options_free(session);
         options_free(window);

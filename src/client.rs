@@ -6,7 +6,6 @@ use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
-use crate::src::environ::environ_free;
 use crate::src::ffi::libc::{
     __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, close,
     closefrom, connect, dup, environ, execl, fflush, flock, fprintf, getenv, getpid, getppid,
@@ -404,7 +403,7 @@ pub unsafe fn client_main(
     options_free(global_options);
     options_free(global_s_options);
     options_free(global_w_options);
-    environ_free(global_environ);
+    drop(global_environ.take());
     if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         if tcgetattr(STDIN_FILENO, &raw mut saved_tio) != 0 as ::core::ffi::c_int {
             fprintf(

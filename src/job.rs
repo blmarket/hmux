@@ -3,7 +3,7 @@ use crate::src::cmd::queue::cmdq_print;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{
-    environ_copy, environ_for_session, environ_push, environ_set, EnvironOwner,
+    environ_copy, environ_for_session, environ_push, environ_set,
 };
 use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
@@ -75,7 +75,7 @@ static mut all_jobs: joblist = joblist {
 pub unsafe fn job_run(
     cmd: Option<&CStr>,
     argv: &Vec<CString>,
-    mut e: *mut environ,
+    e: Option<&environ>,
     mut s: *mut session,
     cwd: Option<&CStr>,
     mut updatecb: job_update_cb,
@@ -87,7 +87,6 @@ pub unsafe fn job_run(
 ) -> *mut job {
     let mut current_block: u64;
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut pid: pid_t = 0;
     let mut nullfd: ::core::ffi::c_int = 0;
     let mut out: [::core::ffi::c_int; 2] = [0; 2];
@@ -111,15 +110,14 @@ pub unsafe fn job_run(
     // Keep ownership in a Rust local rather than putting a Drop-bearing value
     // in the C-managed job record. The child reaches exec/_exit, while the
     // parent drops the same owner on both success and failure paths.
-    let mut env_owner = Some(EnvironOwner::from_raw(environ_for_session(
+    let mut env_owner = Some(environ_for_session(
         s,
         (cfg_finished == 0) as ::core::ffi::c_int,
-    )));
-    env = env_owner
-        .as_ref()
-        .expect("job environment owner must exist")
-        .as_ptr();
-    if !e.is_null() {
+    ));
+    let env = env_owner
+        .as_deref_mut()
+        .expect("job environment owner must exist");
+    if let Some(e) = e {
         environ_copy(e, env);
     }
     if !flags & JOB_DEFAULTSHELL != 0 {

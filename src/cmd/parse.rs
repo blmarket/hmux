@@ -174,7 +174,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             }
             if self.0.borrow().input.flags & CMD_PARSE_PARSEONLY == 0 && active {
                 environ_put(
-                    global_environ,
+                    global_environ.as_deref_mut().expect("environment"),
                     token.as_c_str().as_ptr(),
                     if hidden { ENVIRON_HIDDEN } else { 0 },
                 );
@@ -784,18 +784,21 @@ mod parser_collection_tests {
     fn lazy_expansion_respects_assignments_scopes_and_parseonly() {
         let _guard = crate::src::cfg::CFG_TEST_LOCK.lock().unwrap();
         unsafe {
-            struct RestoreEnvironment(*mut crate::src::shared::environment::environ);
+            struct RestoreEnvironment(Option<Box<crate::src::shared::environment::environ>>);
             impl Drop for RestoreEnvironment {
                 fn drop(&mut self) {
                     unsafe {
-                        global_environ = self.0;
+                        global_environ = self.0.take();
                     }
                 }
             }
-            let owner = crate::src::environ::EnvironOwner::new();
-            let _restore = RestoreEnvironment(global_environ);
-            global_environ = owner.as_ptr();
-            environ_put(global_environ, c"HOME=/test/home".as_ptr(), 0);
+            let _restore = RestoreEnvironment(global_environ.take());
+            global_environ = Some(crate::src::environ::environ_create());
+            environ_put(
+                global_environ.as_deref_mut().expect("environment"),
+                c"HOME=/test/home".as_ptr(),
+                0,
+            );
             let commands = parse_commands(
                 b"LEX_VALUE=first\ndisplay-message $LEX_VALUE\nLEX_VALUE=second\n%if 0\nLEX_VALUE=ignored\n%endif\ndisplay-message \"${LEX_VALUE}\" '$LEX_VALUE' ~/dir\n%hidden LEX_VALUE=hidden\ndisplay-message $LEX_VALUE\n"
             );
@@ -812,8 +815,11 @@ mod parser_collection_tests {
                     vec![b"display-message".to_vec(), b"hidden".to_vec()],
                 ]
             );
-            let value = crate::src::environ::environ_find(global_environ, c"LEX_VALUE".as_ptr());
-            assert_ne!((*value).flags & ENVIRON_HIDDEN, 0);
+            let value = crate::src::environ::environ_find(
+                global_environ.as_deref().expect("environment"),
+                c"LEX_VALUE".as_ptr(),
+            );
+            assert_ne!(value.unwrap().flags & ENVIRON_HIDDEN, 0);
 
             let source = b"LEX_VALUE=skipped\ndisplay-message $LEX_VALUE\n";
             let mut input = cmd_parse_input {

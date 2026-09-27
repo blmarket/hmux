@@ -188,7 +188,7 @@ pub(super) unsafe fn format_find(
     mut time_format: *const ::core::ffi::c_char,
 ) -> Option<CString> {
     let mut current_block: u64;
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut found: Option<CString> = None;
     let mut s: [::core::ffi::c_char; 512] = [0; 512];
@@ -250,17 +250,17 @@ pub(super) unsafe fn format_find(
                 }
             } else {
                 if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
-                    envent = ::core::ptr::null_mut::<environ_entry>();
+                    envent = None;
                     if !(*ft).s.is_null() {
-                        envent = environ_find((*(*ft).s).environ, key);
+                        envent = environ_find((*(*ft).s).environ.as_deref().expect("environment"), key);
                     }
-                    if envent.is_null() {
-                        envent = environ_find(global_environ, key);
+                    if envent.is_none() {
+                        envent = environ_find(global_environ.as_deref().expect("environment"), key);
                     }
-                    if !envent.is_null() && !(*envent).value.is_none() {
+                    if !envent.is_none() && !envent.unwrap().value.is_none() {
                         found = Some(
                             CStr::from_ptr(
-                                ((*envent).value)
+                                (envent.unwrap().value)
                                     .as_ref()
                                     .map_or(::core::ptr::null_mut(), |value| {
                                         value.as_ptr().cast_mut()
@@ -1680,7 +1680,7 @@ pub(super) unsafe fn format_loop_environ(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
+    let mut env: Option<&environ> = None;
     let mut buffer = Vec::new();
     let mut i: u_int = 0 as u_int;
     if flags.is_null()
@@ -1689,25 +1689,23 @@ pub(super) unsafe fn format_loop_environ(
             == 0 as ::core::ffi::c_int
     {
         if !(*ft).s.is_null() {
-            env = (*(*ft).s).environ;
+            env = (*(*ft).s).environ.as_deref();
         }
     } else if strcmp(flags, b"g\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
-        env = global_environ;
+        env = global_environ.as_deref();
     } else if strcmp(flags, b"c\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
         if !(*ft).client.is_null() {
-            env = (*(*ft).client).environ;
+            env = (*(*ft).client).environ.as_deref();
         }
     }
-    if env.is_null() {
-        return c"".to_owned();
-    }
-    let mut entries = environ_iter(&*env).peekable();
+    let Some(env) = env else { return c"".to_owned(); };
+    let mut entries = environ_iter(env).peekable();
     while let Some(entry) = entries.next() {
-        let envent = entry.as_ptr();
+        let envent = entry;
         format_log1(
             es,
             b"format_loop_environ\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2312,7 +2310,7 @@ pub(super) unsafe fn format_replace(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     (*sc).order = SORT_ORDER;
     (*sc).reversed = 0 as ::core::ffi::c_int;
     // Match strndup's bounded scan, including an early NUL.
@@ -2671,10 +2669,10 @@ pub(super) unsafe fn format_replace(
                 }
             }
             if modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0 {
-                envent = environ_find((*(*ft).c).environ, copy);
-                if !envent.is_null() && !(*envent).value.is_none() {
+                envent = environ_find((*(*ft).c).environ.as_deref().expect("environment"), copy);
+                if !envent.is_none() && !envent.unwrap().value.is_none() {
                     value = CStr::from_ptr(
-                        ((*envent).value)
+                        (envent.unwrap().value)
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     )

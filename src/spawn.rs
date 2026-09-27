@@ -6,8 +6,7 @@ use crate::src::compat::stdio::CFile;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
 use crate::src::environ::{
-    environ_copy, environ_find, environ_for_session, environ_log, environ_push, environ_set,
-    EnvironOwner,
+    environ_create, environ_copy, environ_find, environ_for_session, environ_log, environ_push, environ_set,
 };
 use crate::src::events::{events_fire, events_fire_window, events_fire_winlink};
 use crate::src::events_payload::{
@@ -440,8 +439,7 @@ pub unsafe fn spawn_pane(
     let mut ts: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = (*(*sc).wl).window;
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut child: *mut environ = ::core::ptr::null_mut::<environ>();
-    let mut ee: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut ee: Option<&environ_entry> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -619,19 +617,11 @@ pub unsafe fn spawn_pane(
     if let Some(cwd) = cwd.take() {
         window_pane_set_cwd(&mut *new_wp, Some(cwd));
     }
-    // `child_owner` owns the C tree for the whole synchronous spawn
-    // operation. Its raw pointer is borrowed by the translated C calls below;
-    // it is not stored in `spawn_context` or any other calloc-managed record.
-    let mut child_owner = Some(EnvironOwner::from_raw(environ_for_session(
-        s,
-        0 as ::core::ffi::c_int,
-    )));
-    child = child_owner
-        .as_ref()
-        .expect("spawn environment owner must exist")
-        .as_ptr();
-    if !(*sc).environ.is_null() {
-        environ_copy((*sc).environ, child);
+    // Each fork path owns its environment until it has been installed.
+    let mut child_owner = Some(environ_for_session(s, 0));
+    let child = child_owner.as_deref_mut().expect("spawn environment");
+    if let Some(overrides) = (*sc).environ.as_deref() {
+        environ_copy(overrides, child);
     }
     environ_set(
         child,
@@ -641,10 +631,10 @@ pub unsafe fn spawn_pane(
     );
     if !c.is_null() && (*c).session.is_null() {
         ee = environ_find(
-            (*c).environ,
+            (*c).environ.as_deref().expect("environment"),
             b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        if !ee.is_null() {
+        if !ee.is_none() {
             environ_set(
                 child,
                 b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
@@ -652,7 +642,7 @@ pub unsafe fn spawn_pane(
                 |out| {
                     write_cstr(
                         out,
-                        ((*ee).value)
+                        (ee.unwrap().value)
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     )
@@ -660,12 +650,7 @@ pub unsafe fn spawn_pane(
             );
         }
     }
-    if child_owner
-        .as_ref()
-        .expect("spawn environment owner must exist")
-        .find(c"PATH")
-        .is_none()
-    {
+    if child.find(c"PATH").is_none() {
         environ_set(
             child,
             b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1098,7 +1083,7 @@ pub(crate) unsafe fn spawn_editor(
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
-        environ: ::core::ptr::null_mut::<environ>(),
+        environ: None,
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
@@ -1114,7 +1099,6 @@ pub(crate) unsafe fn spawn_editor(
         xoff: 0,
         yoff: 0,
     };
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut cause: Option<CString> = None;
     let mut path: [::core::ffi::c_char; 19] =
@@ -1172,17 +1156,13 @@ pub(crate) unsafe fn spawn_editor(
         .concat(),
     )
     .expect("editor command components contain no NUL");
-    // `env_owner` remains outside the C `spawn_context` and releases this
-    // temporary tree on every return path after the synchronous spawn call.
-    let env_owner = EnvironOwner::new();
-    env = env_owner.as_ptr();
     sc.s = s;
     sc.wl = wl;
     sc.tc = c;
     sc.wp0 = (*w).active;
     sc.lc = lc;
     sc.argv = vec![cmd];
-    sc.environ = env;
+    sc.environ = Some(environ_create());
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = _PATH_TMP.as_ptr();
     sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;

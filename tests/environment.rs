@@ -1,10 +1,10 @@
 //! Environment-owner compatibility and lifetime checks.
-use hmux2::src::environ::{environ, EnvironOwner, ENVIRON_HIDDEN};
+use hmux2::src::environ::{environ, environ_create, ENVIRON_HIDDEN};
 use hmux2::src::format::bytes::write_cstr;
 
 #[test]
 fn owner_preserves_missing_valueless_flags_order_and_bytes() {
-    let mut env = EnvironOwner::new();
+    let mut env = environ_create();
     env.set(b"b", 0, b"value").unwrap();
     env.set(b"a\xff", ENVIRON_HIDDEN, b"\xfe\xfd").unwrap();
     env.set(b"a", 0, b"ascii").unwrap();
@@ -23,7 +23,6 @@ fn owner_preserves_missing_valueless_flags_order_and_bytes() {
     assert_eq!(hidden.flags(), ENVIRON_HIDDEN);
 
     let names: Vec<Vec<u8>> = env
-        .borrow()
         .entries()
         .map(|entry| entry.name_bytes().to_vec())
         .collect();
@@ -44,128 +43,110 @@ fn owner_preserves_missing_valueless_flags_order_and_bytes() {
 
 #[test]
 fn borrowed_copy_and_entry_views_follow_their_owner() {
-    let mut source = EnvironOwner::new();
+    let mut source = environ_create();
     source.set(b"copied", 7, b"bytes\xff").unwrap();
-    let mut destination = EnvironOwner::new();
-    destination.copy_from(source.borrow());
+    let mut destination = environ_create();
+    destination.copy_from(&source);
 
     let entry = destination.find_bytes(b"copied").unwrap().unwrap();
     assert_eq!(entry.value_bytes(), Some(&b"bytes\xff"[..]));
     assert_eq!(entry.flags(), 7);
-    assert!(!entry.as_ptr().is_null());
+    assert_eq!(entry.name(), c"copied");
 }
 
 #[test]
-fn owner_transfer_reclaims_the_same_c_tree_once() {
-    assert!(std::mem::needs_drop::<EnvironOwner>());
+fn moving_an_owner_keeps_the_box_and_its_entries_alive() {
+    assert!(std::mem::needs_drop::<Box<environ>>());
     assert!(std::mem::needs_drop::<environ>());
-
-    let mut original = EnvironOwner::new();
+    let mut original = environ_create();
     original.set(b"transferred", 0, b"owned").unwrap();
-    let raw = original.transfer();
-    assert!(!raw.is_null());
-
-    // Adoption after transfer restores one and only one Rust Drop owner.
-    let adopted = unsafe { EnvironOwner::from_raw(raw) };
+    let address = std::ptr::from_ref(&*original);
+    let entry = std::ptr::from_ref(original.find(c"transferred").unwrap());
+    let mut slot = Some(original);
+    let adopted = slot.take().unwrap();
+    assert!(slot.is_none());
+    assert_eq!(std::ptr::from_ref(&*adopted), address);
     assert_eq!(
-        adopted
-            .find_bytes(b"transferred")
-            .unwrap()
-            .unwrap()
-            .value_bytes(),
-        Some(&b"owned"[..])
+        std::ptr::from_ref(adopted.find(c"transferred").unwrap()),
+        entry
     );
-    drop(adopted);
-
-    assert!(unsafe { EnvironOwner::from_raw_owned(std::ptr::null_mut()).is_none() });
+    assert_eq!(
+        adopted.find(c"transferred").unwrap().value(),
+        Some(c"owned")
+    );
 }
 
 #[test]
 fn updates_preserve_entry_addresses_and_iteration_supports_removal_by_snapshot() {
-    let mut env = EnvironOwner::new();
+    let mut env = environ_create();
     env.set(b"middle", 7, b"old").unwrap();
-    let middle = env.find_bytes(b"middle").unwrap().unwrap().as_ptr();
+    let middle = std::ptr::from_ref(env.find_bytes(b"middle").unwrap().unwrap());
     // Grow the index in reverse order to exercise map rebalancing.
     for i in (0..128).rev() {
         env.set(format!("key-{i:03}").as_bytes(), 0, b"value")
             .unwrap();
     }
     env.set(b"middle", ENVIRON_HIDDEN, b"new").unwrap();
-    assert_eq!(env.find_bytes(b"middle").unwrap().unwrap().as_ptr(), middle);
+    assert_eq!(
+        std::ptr::from_ref(env.find_bytes(b"middle").unwrap().unwrap()),
+        middle
+    );
     env.clear(b"middle").unwrap();
     let cleared = env.find_bytes(b"middle").unwrap().unwrap();
-    assert_eq!(cleared.as_ptr(), middle);
+    assert_eq!(std::ptr::from_ref(cleared), middle);
     assert_eq!(cleared.value_bytes(), None);
     assert_eq!(cleared.flags(), ENVIRON_HIDDEN);
 
-    let names: Vec<_> = env
-        .borrow()
-        .entries()
-        .map(|entry| entry.name().to_owned())
-        .collect();
+    let names: Vec<_> = env.entries().map(|entry| entry.name().to_owned()).collect();
     assert_eq!(names.len(), 129);
     for name in names {
         env.unset_cstr(&name);
     }
-    assert!(env.borrow().entries().next().is_none());
+    assert!(env.entries().next().is_none());
     env.set(b"reinserted", 0, b"ok").unwrap();
-    assert_eq!(env.borrow().entries().count(), 1);
+    assert_eq!(env.entries().count(), 1);
 }
 
 #[test]
-fn variadic_updates_can_read_the_previous_value_before_replacement() {
+fn formatted_updates_use_an_owned_snapshot_of_the_previous_value() {
     use hmux2::src::environ::environ_set;
-    use std::ffi::CStr;
-
-    let mut env = EnvironOwner::new();
+    let mut env = environ_create();
     env.set(b"VAR", ENVIRON_HIDDEN, b"old\xff").unwrap();
-    let entry = env.find_bytes(b"VAR").unwrap().unwrap().as_ptr();
+    let entry = std::ptr::from_ref(env.find(c"VAR").unwrap());
+    let previous = env.find(c"VAR").unwrap().value.clone().unwrap();
     unsafe {
-        environ_set(
-            env.as_ptr(),
-            ((*entry).name).as_ptr().cast_mut(),
-            0x40,
-            |out| {
-                write_cstr(out, (*entry).value.as_ref().unwrap().as_ptr())?;
-                out.write_all(b"-new")
-            },
-        );
-        assert_eq!(entry, env.find_bytes(b"VAR").unwrap().unwrap().as_ptr());
-        assert_eq!(
-            CStr::from_ptr(
-                ((*entry).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-            )
-            .to_bytes(),
-            b"old\xff-new"
-        );
-        assert_eq!((*entry).flags, 0x40);
+        environ_set(&mut env, c"VAR".as_ptr(), 0x40, |out| {
+            write_cstr(out, previous.as_ptr())?;
+            out.write_all(b"-new")
+        });
     }
+    assert_eq!(std::ptr::from_ref(env.find(c"VAR").unwrap()), entry);
+    assert_eq!(
+        env.find(c"VAR").unwrap().value_bytes(),
+        Some(b"old\xff-new".as_slice())
+    );
+    assert_eq!(env.find(c"VAR").unwrap().flags(), 0x40);
     env.clear(b"VAR").unwrap();
-    let cleared = env.find_bytes(b"VAR").unwrap().unwrap();
-    assert_eq!(cleared.as_ptr(), entry);
-    assert_eq!(cleared.value_bytes(), None);
+    let cleared = env.find(c"VAR").unwrap();
+    assert_eq!(std::ptr::from_ref(cleared), entry);
+    assert_eq!(cleared.value(), None);
     assert_eq!(cleared.flags(), 0x40);
     env.set(b"VAR", 0, b"").unwrap();
-    assert_eq!(
-        env.find_bytes(b"VAR").unwrap().unwrap().value_bytes(),
-        Some(&b""[..])
-    );
+    assert_eq!(env.find(c"VAR").unwrap().value(), Some(c""));
 }
 
 #[test]
 fn put_splits_first_equals_and_preserves_c_string_bytes() {
     use hmux2::src::environ::environ_put;
 
-    let env = EnvironOwner::new();
+    let mut env = environ_create();
     unsafe {
-        environ_put(env.as_ptr(), b"plain=one=two\0".as_ptr().cast(), 7);
-        environ_put(env.as_ptr(), b"\xff=\xfe\0".as_ptr().cast(), 8);
-        environ_put(env.as_ptr(), b"=empty-name\0".as_ptr().cast(), 9);
-        environ_put(env.as_ptr(), b"no-equals\0".as_ptr().cast(), 10);
+        environ_put(&mut env, b"plain=one=two\0".as_ptr().cast(), 7);
+        environ_put(&mut env, b"\xff=\xfe\0".as_ptr().cast(), 8);
+        environ_put(&mut env, b"=empty-name\0".as_ptr().cast(), 9);
+        environ_put(&mut env, b"no-equals\0".as_ptr().cast(), 10);
         environ_put(
-            env.as_ptr(),
+            &mut env,
             b"first=visible\0later=hidden\0".as_ptr().cast(),
             11,
         );
@@ -191,22 +172,23 @@ fn put_splits_first_equals_and_preserves_c_string_bytes() {
 }
 
 #[test]
-fn iteration_allows_nested_reads_and_self_copy() {
+fn iteration_allows_nested_reads_and_copy_from_an_owned_snapshot() {
     use hmux2::src::environ::environ_copy;
-    let mut env = EnvironOwner::new();
+    let mut env = environ_create();
     env.set(b"a", 7, b"one").unwrap();
     env.clear(b"b").unwrap();
-    unsafe { environ_copy(env.as_ptr(), env.as_ptr()) };
-    for entry in env.borrow().entries() {
+    let snapshot = env.clone();
+    environ_copy(&snapshot, &mut env);
+    for entry in env.entries() {
         assert_eq!(env.find(entry.name()).unwrap().value(), entry.value());
-        assert_eq!(env.borrow().entries().count(), 2);
+        assert_eq!(env.entries().count(), 2);
     }
     assert_eq!(env.find_bytes(b"a").unwrap().unwrap().flags(), 7);
     assert_eq!(env.find_bytes(b"b").unwrap().unwrap().value(), None);
 }
 
 #[test]
-fn update_supports_distinct_and_aliased_destinations() {
+fn update_borrows_sources_and_accepts_owned_snapshots() {
     use hmux2::src::environ::environ_update;
     use hmux2::src::options::{options_array_set, options_create, options_empty, options_free};
     use std::{ffi::CStr, ptr::null_mut};
@@ -226,11 +208,11 @@ fn update_supports_distinct_and_aliased_destinations() {
                 0
             );
         }
-        let mut source = EnvironOwner::new();
+        let mut source = environ_create();
         source.set(b"alpha", ENVIRON_HIDDEN, b"value").unwrap();
-        let mut destination = EnvironOwner::new();
+        let mut destination = environ_create();
         destination.set(b"missing", 0, b"old").unwrap();
-        environ_update(options, source.as_ptr(), destination.as_ptr());
+        environ_update(options, &source, &mut destination);
         assert_eq!(
             destination
                 .find_bytes(b"alpha")
@@ -243,7 +225,8 @@ fn update_supports_distinct_and_aliased_destinations() {
             destination.find_bytes(b"missing").unwrap().unwrap().value(),
             None
         );
-        environ_update(options, source.as_ptr(), source.as_ptr());
+        let snapshot = source.clone();
+        environ_update(options, &snapshot, &mut source);
         assert_eq!(source.find_bytes(b"alpha").unwrap().unwrap().flags(), 0);
         assert_eq!(
             source.find_bytes(b"alpha").unwrap().unwrap().value_bytes(),
@@ -255,4 +238,23 @@ fn update_supports_distinct_and_aliased_destinations() {
         );
         options_free(options);
     }
+}
+
+#[test]
+fn copying_cleared_entries_preserves_existing_destination_flags() {
+    let mut source = environ_create();
+    source.set(b"kept", ENVIRON_HIDDEN, b"hidden").unwrap();
+    source.clear(b"kept").unwrap();
+    source.clear(b"new").unwrap();
+    let mut destination = environ_create();
+    destination.set(b"kept", 0x40, b"old").unwrap();
+    let address = std::ptr::from_ref(destination.find(c"kept").unwrap());
+    destination.copy_from(&source);
+    assert_eq!(
+        std::ptr::from_ref(destination.find(c"kept").unwrap()),
+        address
+    );
+    assert_eq!(destination.find(c"kept").unwrap().flags(), 0x40);
+    assert_eq!(destination.find(c"kept").unwrap().value(), None);
+    assert_eq!(destination.find(c"new").unwrap().flags(), 0);
 }

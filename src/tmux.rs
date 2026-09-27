@@ -401,7 +401,7 @@ pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
 pub static mut global_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 pub static mut global_s_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 pub static mut global_w_options: *mut options = ::core::ptr::null::<options>() as *mut options;
-pub static mut global_environ: *mut environ = ::core::ptr::null::<environ>() as *mut environ;
+pub static mut global_environ: Option<Box<environ>> = None;
 pub static mut start_time: timeval = timeval {
     tv_sec: 0,
     tv_usec: 0,
@@ -463,7 +463,7 @@ unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int 
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
-    let mut value: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut value: Option<&environ_entry> = None;
     let path_bytes = path.to_bytes();
     if path_bytes.starts_with(b"~/") {
         let mut expanded = home?.to_bytes().to_vec();
@@ -475,17 +475,20 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
         let name_end = slash.unwrap_or(path_bytes.len());
         let name =
             CString::new(&path_bytes[1..name_end]).expect("variable name comes from a C string");
-        value = environ_find(global_environ, name.as_ptr());
-        if value.is_null() {
+        value = environ_find(
+            global_environ.as_deref().expect("environment"),
+            name.as_ptr(),
+        );
+        if value.is_none() {
             return None;
         }
         // On glibc, the previous `%s` rendered a cleared environment value
         // as `(null)`. Keep that behavior if this entry has no value.
-        let mut expanded = if (*value).value.is_none() {
+        let mut expanded = if value.unwrap().value.is_none() {
             b"(null)".to_vec()
         } else {
             CStr::from_ptr(
-                ((*value).value)
+                (value.unwrap().value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )
@@ -823,16 +826,20 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
         flags = CLIENT_LOGIN as uint64_t;
     }
-    global_environ = environ_create();
+    global_environ = Some(environ_create());
     var = environ;
     while !(*var).is_null() {
-        environ_put(global_environ, *var, 0 as ::core::ffi::c_int);
+        environ_put(
+            global_environ.as_deref_mut().expect("environment"),
+            *var,
+            0 as ::core::ffi::c_int,
+        );
         var = var.offset(1);
     }
     cwd = find_cwd();
     if !cwd.is_null() {
         environ_set(
-            global_environ,
+            global_environ.as_deref_mut().expect("environment"),
             b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
             |out| write_cstr(out, cwd),

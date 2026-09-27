@@ -888,7 +888,7 @@ pub unsafe fn popup_display(
     mut py: u_int,
     mut sx: u_int,
     mut sy: u_int,
-    mut env: *mut environ,
+    env: Option<&environ>,
     mut shellcmd: *const ::core::ffi::c_char,
     argv: &Vec<CString>,
     mut cwd: *const ::core::ffi::c_char,

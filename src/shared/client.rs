@@ -131,7 +131,7 @@ pub struct client {
     pub creation_time: timeval,
     pub activity_time: timeval,
     pub last_activity_time: timeval,
-    pub environ: *mut environ,
+    pub environ: Option<Box<environ>>,
     pub jobs: *mut format_job_tree,
     pub title: Option<std::ffi::CString>,
     pub path: Option<std::ffi::CString>,

@@ -133,7 +133,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),
-        ::core::ptr::null_mut::<environ>(),
+        None,
         s,
         {
             let cwd = server_client_get_cwd(cmdq_get_client(item), s);

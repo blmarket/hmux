@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_flag_values, args_get, args_has, args_to_vector};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
-use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::environ::{environ_create, environ_put};
 use crate::src::format::bytes::write_cstr;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::shared::abi::*;
@@ -58,7 +58,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
-        environ: ::core::ptr::null_mut::<environ>(),
+        environ: None,
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
@@ -74,9 +74,13 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     sc.wp0 = wp;
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
-    sc.environ = environ_create();
+    sc.environ = Some(environ_create());
     for av in args_flag_values(&*args, 'e' as i32 as u_char) {
-        environ_put(sc.environ, av.string_ptr(), 0 as ::core::ffi::c_int);
+        environ_put(
+            sc.environ.as_deref_mut().expect("environment"),
+            av.string_ptr(),
+            0 as ::core::ffi::c_int,
+        );
     }
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = args_get(args, 'c' as i32 as u_char);
@@ -97,12 +101,12 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                     .map_or(::core::ptr::null(), |value| value.as_ptr()),
             )
         });
-        environ_free(sc.environ);
+        drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
     (*wp).flags |= PANE_REDRAW;
     server_redraw_window_borders((*wp).window as *mut window);
     server_status_window((*wp).window as *mut window);
-    environ_free(sc.environ);
+    drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

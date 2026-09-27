@@ -198,7 +198,11 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
     }
     if args_has(args, 'E' as i32 as u_char) == 0 {
-        environ_update((*s).options, (*tc).environ, (*s).environ);
+        environ_update(
+            (*s).options,
+            (*tc).environ.as_deref().expect("client environment"),
+            (*s).environ.as_deref_mut().expect("session environment"),
+        );
     }
     server_client_set_session(tc, s);
     if !cmdq_get_flags(item) & CMDQ_STATE_REPEAT != 0 {

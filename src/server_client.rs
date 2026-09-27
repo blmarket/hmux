@@ -13,7 +13,7 @@ use crate::src::control::{
     control_all_done, control_discard, control_discard_all, control_pane_offset, control_ready,
     control_reset_offsets, control_start, control_stop, control_write,
 };
-use crate::src::environ::{environ_create, environ_find, environ_free, environ_put};
+use crate::src::environ::{environ_create, environ_find, environ_put};
 use crate::src::events::{events_fire, events_fire_client};
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_client, event_payload_set_int, event_payload_set_pane,
@@ -961,14 +961,15 @@ pub unsafe fn server_client_overlay_range(
     (*r).used = 2 as u_int;
 }
 pub unsafe fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_int {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     envent = environ_find(
-        (*c).environ,
+        (*c).environ.as_deref().expect("environment"),
         b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if envent.is_null()
-        || *(*envent)
+    if envent.is_none()
+        || *envent
+            .unwrap()
             .value
             .as_ref()
             .expect("environment value is present")
@@ -1067,7 +1068,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
         &raw mut (*c).creation_time as *const ::core::ffi::c_void,
         ::core::mem::size_of::<timeval>() as size_t,
     );
-    (*c).environ = environ_create();
+    (*c).environ = Some(environ_create());
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
     (*c).queue = Some(cmdq_new());
@@ -1450,7 +1451,7 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
         prompt_free(&prompt);
     }
     format_lost_client(c);
-    environ_free((*c).environ);
+    drop((*c).environ.take());
     proc_remove_peer((*c).peer);
     (*c).peer = ::core::ptr::null_mut::<tmuxpeer>();
     if (*c).out_fd != -(1 as ::core::ffi::c_int) {
@@ -4768,7 +4769,11 @@ unsafe fn server_client_dispatch_identify(
                 return -(1 as ::core::ffi::c_int);
             }
             if !strchr(data, '=' as i32).is_null() {
-                environ_put((*c).environ, data, 0 as ::core::ffi::c_int);
+                environ_put(
+                    (*c).environ.as_deref_mut().expect("environment"),
+                    data,
+                    0 as ::core::ffi::c_int,
+                );
             }
             log_debug(format_args!(
                 "client {} IDENTIFY_ENVIRON {}",

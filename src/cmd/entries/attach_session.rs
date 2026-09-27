@@ -165,7 +165,11 @@ pub unsafe fn cmd_attach_session(
             }
         }
         if Eflag == 0 {
-            environ_update((*s).options, (*c).environ, (*s).environ);
+            environ_update(
+                (*s).options,
+                (*c).environ.as_deref().expect("client environment"),
+                (*s).environ.as_deref_mut().expect("session environment"),
+            );
         }
         server_client_set_session(c, s);
         if !cmdq_get_flags(item) & CMDQ_STATE_REPEAT != 0 {
@@ -194,7 +198,11 @@ pub unsafe fn cmd_attach_session(
             }
         }
         if Eflag == 0 {
-            environ_update((*s).options, (*c).environ, (*s).environ);
+            environ_update(
+                (*s).options,
+                (*c).environ.as_deref().expect("client environment"),
+                (*s).environ.as_deref_mut().expect("session environment"),
+            );
         }
         server_client_set_session(c, s);
         server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());

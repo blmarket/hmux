@@ -1276,7 +1276,7 @@ pub unsafe fn tty_term_create(
     let mut offset: size_t = 0;
     let mut namelen: size_t = 0;
     let mut n: ::core::ffi::c_int = 0;
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     log_debug(format_args!("adding term {}", log_cstr((name) as *const _)));
     // The global list and tty keep this address until tty_term_free.
     let mut owner = Box::new(tty_term {
@@ -1385,10 +1385,10 @@ pub unsafe fn tty_term_create(
     }
     del_curterm(cur_term);
     envent = environ_find(
-        (*c).environ,
+        (*c).environ.as_deref().expect("environment"),
         b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if !envent.is_null() {
+    if !envent.is_none() {
         log_debug(format_args!(
             "{} COLORTERM={}",
             log_cstr(
@@ -1398,20 +1398,20 @@ pub unsafe fn tty_term_create(
                     as *const _
             ),
             log_cstr(
-                (((*envent).value)
+                ((envent.unwrap().value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             )
         ));
         if strcasecmp(
-            ((*envent).value)
+            (envent.unwrap().value)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             b"truecolor\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
             || strcasecmp(
-                ((*envent).value)
+                (envent.unwrap().value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 b"24bit\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1423,7 +1423,7 @@ pub unsafe fn tty_term_create(
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
         } else if !strstr(
-            ((*envent).value)
+            (envent.unwrap().value)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             b"256\0" as *const u8 as *const ::core::ffi::c_char,

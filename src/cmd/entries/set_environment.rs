@@ -42,7 +42,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
+    let env: &mut environ;
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -66,7 +66,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         value = expanded.as_ref().expect("expanded value was set").as_ptr();
     }
     if args_has(args, 'g' as i32 as u_char) != 0 {
-        env = global_environ;
+        env = global_environ.as_deref_mut().expect("environment");
         current_block = 224731115979188411;
     } else if (*target).s.is_null() {
         tflag = args_get(args, 't' as i32 as u_char);
@@ -78,10 +78,9 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         } else {
             cmdq_error(item, |out| out.write_all(b"no current session"));
         }
-        retval = CMD_RETURN_ERROR;
-        current_block = 2189724439242469808;
+        return CMD_RETURN_ERROR;
     } else {
-        env = (*(*target).s).environ;
+        env = (*(*target).s).environ.as_deref_mut().expect("environment");
         current_block = 224731115979188411;
     }
     match current_block {

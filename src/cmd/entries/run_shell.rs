@@ -288,7 +288,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
         let job = job_run(
             cmd,
             &Vec::new(),
-            ::core::ptr::null_mut::<environ>(),
+            None,
             cdata.s,
             Some(cdata.cwd.as_c_str()),
             None,

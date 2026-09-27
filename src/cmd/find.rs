@@ -139,7 +139,7 @@ static mut cmd_find_pane_table: [[*const ::core::ffi::c_char; 2]; 16] = [
 ];
 unsafe fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
+    let mut envent: Option<&environ_entry> = None;
     if c.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
@@ -159,12 +159,12 @@ unsafe fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
     }
     if wp.is_null() {
         envent = environ_find(
-            (*c).environ,
+            (*c).environ.as_deref().expect("environment"),
             b"TMUX_PANE\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        if !envent.is_null() {
+        if !envent.is_none() {
             wp = window_pane_find_by_id_str(
-                ((*envent).value)
+                (envent.unwrap().value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
