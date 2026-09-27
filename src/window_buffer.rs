@@ -54,7 +54,9 @@ use crate::src::spawn::{
 };
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
+use std::cell::Cell;
 use std::ffi::{CStr, CString};
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 #[repr(C)]
@@ -63,7 +65,6 @@ pub struct window_buffer_modedata {
     pub fs: cmd_find_state,
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
-    pub edit: *mut window_buffer_editdata,
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
@@ -76,12 +77,11 @@ pub struct window_buffer_itemdata {
     pub size: size_t,
 }
 
-#[repr(C)]
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
     pub name: Option<::std::ffi::CString>,
     pub pb: PasteBufferWeak,
-    pub editor: *mut spawn_editor_state,
+    pub editor: Cell<Option<NonNull<spawn_editor_state>>>,
 }
 
 pub const WINDOW_BUFFER_DEFAULT_COMMAND: [::core::ffi::c_char; 24] = unsafe {
@@ -470,7 +470,6 @@ unsafe fn window_buffer_init(
         fs: Default::default(),
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
-        edit: ::core::ptr::null_mut(),
         command,
         format,
         key_format,
@@ -526,7 +525,6 @@ unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
     }
     if !(*data).editor.is_null() {
         spawn_cancel_editor((*data).editor);
-        window_buffer_finish_edit((*data).edit as *mut window_buffer_editdata);
     }
     mode_tree_free((*data).data);
     window_buffer_clear_items(&mut (*data).item_list);
@@ -566,9 +564,6 @@ unsafe fn window_buffer_do_paste(
     if paste_get_name(&item.name).is_some() {
         mode_tree_run_command(c, None, &(*data).command, &item.name);
     }
-}
-unsafe fn window_buffer_finish_edit(ed: *mut window_buffer_editdata) {
-    drop(Box::from_raw(ed));
 }
 unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -676,40 +671,35 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     );
     screen_write_stop(&mut ctx);
 }
-unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_buffer_editdata) {
+unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, ed: Rc<window_buffer_editdata>) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wp = window_pane_find_by_id((*ed).wp_id);
+    wp = window_pane_find_by_id(ed.wp_id);
     if !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && (*wme).mode == &raw const window_buffer_mode {
             data = (*wme).data as *mut window_buffer_modedata;
-            if (*data).editor == (*ed).editor {
+            if NonNull::new((*data).editor) == ed.editor.get() {
                 (*data).editor = ::core::ptr::null_mut::<spawn_editor_state>();
-                (*data).edit = ::core::ptr::null_mut::<window_buffer_editdata>();
             }
         }
     }
     let Some(mut buf) = buf else {
-        window_buffer_finish_edit(ed);
         return;
     };
     let mut len = buf.len();
     if len == 0 {
-        window_buffer_finish_edit(ed);
         return;
     }
-    let Some(pb) = (*ed).name.as_deref().and_then(paste_get_name) else {
-        window_buffer_finish_edit(ed);
+    let Some(pb) = ed.name.as_deref().and_then(paste_get_name) else {
         return;
     };
-    if !(*ed)
+    if !ed
         .pb
         .upgrade()
         .is_some_and(|original| Rc::ptr_eq(&original, &pb))
     {
-        window_buffer_finish_edit(ed);
         return;
     }
     let strip_newline = {
@@ -726,7 +716,7 @@ unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_
         buf.truncate(len);
         paste_replace_owned(&pb, buf.into_boxed_slice());
     }
-    wp = window_pane_find_by_id((*ed).wp_id);
+    wp = window_pane_find_by_id(ed.wp_id);
     if !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && (*wme).mode == &raw const window_buffer_mode {
@@ -737,14 +727,12 @@ unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_
         }
         (*wp).flags |= PANE_REDRAW;
     }
-    window_buffer_finish_edit(ed);
 }
 unsafe fn window_buffer_start_edit(
     mut data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
     mut c: *mut client,
 ) {
-    let mut ed: *mut window_buffer_editdata = ::core::ptr::null_mut::<window_buffer_editdata>();
     if !(*data).editor.is_null() {
         return;
     }
@@ -752,25 +740,26 @@ unsafe fn window_buffer_start_edit(
         return;
     };
     let name = paste_buffer_name(&pb.borrow()).to_owned();
-    ed = Box::into_raw(Box::new(window_buffer_editdata {
+    // Startup and the completion callback briefly share this record. After
+    // startup, cancellation releases it by dropping the editor callback.
+    let ed = Rc::new(window_buffer_editdata {
         wp_id: (*(*data).wp).id,
         name: Some(name),
         pb: Rc::downgrade(&pb),
-        editor: ::core::ptr::null_mut(),
-    }));
-    (*ed).editor = spawn_editor(
+        editor: Cell::new(None),
+    });
+    let callback_owner = Rc::clone(&ed);
+    let editor = spawn_editor(
         c,
         |stream| spawn_editor_write(stream, paste_buffer_data(&pb.borrow()).unwrap_or_default()),
         Some(Box::new(move |buf| unsafe {
-            window_buffer_edit_close_cb(buf, ed)
+            window_buffer_edit_close_cb(buf, callback_owner)
         })),
     );
-    if (*ed).editor.is_null() {
-        window_buffer_finish_edit(ed);
-    } else {
-        (*data).editor = (*ed).editor;
-        (*data).edit = ed as *mut window_buffer_editdata;
-    };
+    if let Some(editor) = NonNull::new(editor) {
+        ed.editor.set(Some(editor));
+        (*data).editor = editor.as_ptr();
+    }
 }
 unsafe fn window_buffer_key(
     mut wme: *mut window_mode_entry,
@@ -873,6 +862,70 @@ unsafe fn window_buffer_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_record_releases_on_completion_cancellation_and_replaced_buffer() {
+        unsafe {
+            for finish in ["complete", "cancel", "replace"] {
+                let name = c"editor-callback-owner";
+                assert_eq!(
+                    crate::src::paste::paste_set_owned(
+                        b"before".to_vec().into_boxed_slice(),
+                        Some(name),
+                        None,
+                    ),
+                    0,
+                );
+                let original = paste_get_name(name).unwrap();
+                let edit = Rc::new(window_buffer_editdata {
+                    wp_id: u_int::MAX,
+                    name: Some(name.to_owned()),
+                    pb: Rc::downgrade(&original),
+                    editor: Cell::new(None),
+                });
+                let observer = Rc::downgrade(&edit);
+                drop(original);
+                let callback_owner = Rc::clone(&edit);
+                let mut editor = spawn_editor_state {
+                    path: c"unused".to_owned(),
+                    pid: 0,
+                    cb: Some(Box::new(move |bytes| {
+                        window_buffer_edit_close_cb(bytes, callback_owner)
+                    })),
+                };
+                edit.editor.set(NonNull::new(&mut editor));
+                if finish == "replace" {
+                    assert_eq!(
+                        crate::src::paste::paste_set_owned(
+                            b"replacement".to_vec().into_boxed_slice(),
+                            Some(name),
+                            None,
+                        ),
+                        0,
+                    );
+                    assert!(edit.pb.upgrade().is_none());
+                }
+                drop(edit);
+                assert!(observer.upgrade().is_some());
+                if finish == "cancel" {
+                    spawn_cancel_editor(&mut editor);
+                    spawn_cancel_editor(&mut editor);
+                } else {
+                    editor.cb.take().unwrap()(Some(b"after\0\xff\n".to_vec()));
+                }
+                assert!(observer.upgrade().is_none());
+                assert!(editor.cb.is_none());
+                let buffer = paste_get_name(name).unwrap();
+                let expected = match finish {
+                    "complete" => b"after\0\xff".as_slice(),
+                    "cancel" => b"before",
+                    _ => b"replacement",
+                };
+                assert_eq!(paste_buffer_data(&buffer.borrow()).unwrap(), expected);
+                paste_free(&buffer);
+            }
+        }
+    }
 
     #[test]
     fn buffer_search_matches_binary_substrings_without_unicode_case_folding() {
