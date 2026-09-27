@@ -2333,7 +2333,6 @@ unsafe fn window_copy_cmd_next_matching_bracket(
         link: 0,
     };
     let mut failed: ::core::ffi::c_int = 0;
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     's_22: while np != 0 as u_int {
         px = (*data).cx;
         py = (*(*s).grid)
@@ -2410,11 +2409,11 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                     if py == yy {
                         break;
                     }
-                    gl = grid_get_line((*s).grid, py);
-                    if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                    let gl = grid_get_line(&*(*s).grid, py);
+                    if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                         break;
                     }
-                    if (*gl).cellsize as u_int > (*(*s).grid).sx {
+                    if gl.cellsize as u_int > (*(*s).grid).sx {
                         break;
                     }
                     px = 0 as u_int;
@@ -2964,7 +2963,7 @@ unsafe fn window_copy_cmd_select_word(
     window_copy_start_selection(wme);
     nextx = px.wrapping_add(1 as u_int);
     nexty = py;
-    if (*grid_get_line((*(*data).backing).grid, nexty)).flags as ::core::ffi::c_int
+    if (*grid_get_line(&*(*(*data).backing).grid, nexty)).flags as ::core::ffi::c_int
         & GRID_LINE_WRAPPED
         != 0
         && nextx > (*(*(*data).backing).grid).sx.wrapping_sub(1 as u_int)
@@ -5322,7 +5321,6 @@ unsafe fn window_copy_search_lr(
     let mut endline: u_int = 0;
     let mut padding: u_int = 0;
     let mut matched: ::core::ffi::c_int = 0;
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -5346,8 +5344,8 @@ unsafe fn window_copy_search_lr(
             px = ax.wrapping_add(bx).wrapping_add(padding);
             pywrap = py;
             while px >= (*gd).sx && pywrap < endline {
-                gl = grid_get_line(gd, pywrap);
-                if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                let gl = grid_get_line(&*gd, pywrap);
+                if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
                 px = px.wrapping_sub((*gd).sx);
@@ -5392,7 +5390,6 @@ unsafe fn window_copy_search_rl(
     let mut endline: u_int = 0;
     let mut padding: u_int = 0;
     let mut matched: ::core::ffi::c_int = 0;
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -5419,8 +5416,8 @@ unsafe fn window_copy_search_rl(
                 .wrapping_add(padding);
             pywrap = py;
             while px >= (*gd).sx && pywrap < endline {
-                gl = grid_get_line(gd, pywrap);
-                if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                let gl = grid_get_line(&*gd, pywrap);
+                if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
                 px = px.wrapping_sub((*gd).sx);
@@ -7974,7 +7971,7 @@ unsafe fn window_copy_get_selection(mut wme: *mut window_mode_entry) -> Option<V
         return None;
     }
     if keys == MODEKEY_EMACS || lastex <= ey_last {
-        if !((*grid_get_line((*(*data).backing).grid, ey)).flags as ::core::ffi::c_int)
+        if !((*grid_get_line(&*(*(*data).backing).grid, ey)).flags as ::core::ffi::c_int)
             & GRID_LINE_WRAPPED
             != 0
             || lastex != ey_last
@@ -8179,7 +8176,6 @@ unsafe fn window_copy_copy_line(
         us: 0,
         link: 0,
     };
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -8193,14 +8189,14 @@ unsafe fn window_copy_copy_line(
     if sx > ex {
         return;
     }
-    gl = grid_get_line(gd, sy);
-    if (*gl).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0
-        && (*gl).cellsize as u_int <= (*gd).sx
+    let gl = grid_get_line(&*gd, sy);
+    if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0
+        && gl.cellsize as u_int <= (*gd).sx
     {
         wrapped = 1 as u_int;
     }
     if wrapped != 0 {
-        xx = (*gl).cellsize as u_int;
+        xx = gl.cellsize as u_int;
     } else {
         xx = window_copy_find_length(wme, sy);
     }
@@ -8997,7 +8993,7 @@ unsafe fn window_copy_cursor_prompt(
             return;
         }
         line = line.wrapping_add(add as u_int);
-        if (*grid_get_line(gd, line)).flags as ::core::ffi::c_int & line_flag != 0 {
+        if (*grid_get_line(&*gd, line)).flags as ::core::ffi::c_int & line_flag != 0 {
             break;
         }
     }

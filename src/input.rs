@@ -15,7 +15,7 @@ use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::grid::{
-    grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line, grid_set_tab,
+    grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line_mut, grid_set_tab,
 };
 use crate::src::hyperlinks::hyperlinks_put;
 use crate::src::log::{fatalx, log_byte, log_cstr, log_cstr_n, log_cstr_width, log_debug, log_hex};
@@ -5348,23 +5348,16 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     let mut s: *mut screen = (*ictx).ctx.s;
     let mut gd: *mut grid = (*s).grid;
     let mut line: u_int = (*s).cy.wrapping_add((*gd).hsize);
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut status: ::core::ffi::c_int = 0;
-    if line < (*gd).hsize.wrapping_add((*gd).sy) {
-        gl = grid_get_line(gd, line);
-    }
+    let line = (line < (*gd).hsize.wrapping_add((*gd).sy)).then_some(line);
     match *p as ::core::ffi::c_int {
         65 | 78 => {
-            if !gl.is_null() {
-                memset(
-                    &raw mut (*gl).osc133_data as *mut ::core::ffi::c_void,
-                    0 as ::core::ffi::c_int,
-                    ::core::mem::size_of::<osc133_data>() as size_t,
-                );
-                (*gl).osc133_data.prompt_col = (*s).cx as u_short;
-                (*gl).flags =
-                    ((*gl).flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
+            if let Some(line) = line {
+                let gl = grid_get_line_mut(&mut *gd, line);
+                gl.osc133_data = osc133_data::default();
+                gl.osc133_data.prompt_col = (*s).cx as u_short;
+                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
             }
             if !wp.is_null() {
                 (*wp).last_prompt_time = time(::core::ptr::null_mut::<time_t>());
@@ -5375,7 +5368,8 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
             }
         }
         80 => {
-            if !gl.is_null() {
+            if let Some(line) = line {
+                let gl = grid_get_line_mut(&mut *gd, line);
                 cp = strstr(p, b";k=s\0" as *const u8 as *const ::core::ffi::c_char);
                 if !cp.is_null()
                     && (*cp.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
@@ -5383,27 +5377,26 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                         || *cp.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
                             == '\0' as i32)
                 {
-                    (*gl).flags =
-                        ((*gl).flags as ::core::ffi::c_int | GRID_LINE_SECOND_PROMPT) as u_short;
+                    gl.flags =
+                        (gl.flags as ::core::ffi::c_int | GRID_LINE_SECOND_PROMPT) as u_short;
                 } else {
-                    (*gl).flags =
-                        ((*gl).flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
+                    gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
                 }
-                (*gl).osc133_data.prompt_col = (*s).cx as u_short;
+                gl.osc133_data.prompt_col = (*s).cx as u_short;
             }
         }
         66 | 73 => {
-            if !gl.is_null() {
-                (*gl).flags =
-                    ((*gl).flags as ::core::ffi::c_int | GRID_LINE_START_COMMAND) as u_short;
-                (*gl).osc133_data.cmd_col = (*s).cx as u_short;
+            if let Some(line) = line {
+                let gl = grid_get_line_mut(&mut *gd, line);
+                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_COMMAND) as u_short;
+                gl.osc133_data.cmd_col = (*s).cx as u_short;
             }
         }
         67 => {
-            if !gl.is_null() {
-                (*gl).flags =
-                    ((*gl).flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
-                (*gl).osc133_data.out_start_col = (*s).cx as u_short;
+            if let Some(line) = line {
+                let gl = grid_get_line_mut(&mut *gd, line);
+                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
+                gl.osc133_data.out_start_col = (*s).cx as u_short;
             }
             if !wp.is_null() {
                 (*wp).cmd_start_time = time(::core::ptr::null_mut::<time_t>());
@@ -5427,10 +5420,11 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                     b"pane-command-finished\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
-            if !gl.is_null() {
-                (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_END_OUTPUT) as u_short;
-                (*gl).osc133_data.out_end_col = (*s).cx as u_short;
-                (*gl).osc133_data.exit_status = status as u_char;
+            if let Some(line) = line {
+                let gl = grid_get_line_mut(&mut *gd, line);
+                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_END_OUTPUT) as u_short;
+                gl.osc133_data.out_end_col = (*s).cx as u_short;
+                gl.osc133_data.exit_status = status as u_char;
             }
         }
         _ => {}

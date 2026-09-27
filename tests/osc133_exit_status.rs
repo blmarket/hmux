@@ -89,3 +89,33 @@ fn pane_reports_osc_133_exit_status_with_following_parameters() {
         thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[test]
+fn clearing_a_line_preserves_shell_markers_and_their_columns() {
+    let server = Server::new();
+    let create = server.run(&[
+        "new-session",
+        "-d",
+        "-s",
+        "osc133-clear",
+        "printf '\\033]133;A\\007p>\\033]133;B\\007run\\033]133;C\\007out\\033]133;D;7\\007\\033[2K'; sleep 30",
+    ]);
+    assert!(create.status.success(), "{:?}", create.stderr);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let capture = server.run(&["capture-pane", "-p", "-R"]);
+        assert!(capture.status.success(), "{:?}", capture.stderr);
+        let text = String::from_utf8(capture.stdout).expect("ASCII grid diagnostic");
+        let first = text.lines().nth(1).expect("first grid row");
+        if first.contains("0/0 osc133=0,2,5,8,7") {
+            assert!(first.contains("flags=START_PROMPT,START_COMMAND,START_OUTPUT,END_OUTPUT["));
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "shell markers lost after clear: {first}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}

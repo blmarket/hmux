@@ -187,8 +187,6 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
 unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     let s = &wp.base;
     let mut gd: *mut grid = s.grid;
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut od: *mut osc133_data = ::core::ptr::null_mut::<osc133_data>();
     let mut buf = Vec::new();
     let mut p: [::core::ffi::c_char; 11] = [0; 11];
     let mut yy: u_int = 0;
@@ -204,7 +202,7 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     cmd_capture_pane_append(&mut buf, header.as_bytes());
     yy = 0 as u_int;
     while yy < total {
-        gl = grid_get_line(gd, yy);
+        let gl = grid_get_line(&*gd, yy);
         if yy < (*gd).hsize {
             snprintf(
                 &raw mut p as *mut ::core::ffi::c_char,
@@ -219,33 +217,33 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
                 yy.wrapping_sub((*gd).hsize),
             );
         }
-        od = &raw mut (*gl).osc133_data;
+        let od = &gl.osc133_data;
         let mut row = Vec::new();
         write!(&mut row, "\tL {} (", yy).expect("writing to a byte vector succeeds");
         row.extend_from_slice(CStr::from_ptr(p.as_ptr()).to_bytes());
         write!(
             &mut row,
             ") flags={}",
-            grid_line_flags_display((*gl).flags as i32)
+            grid_line_flags_display(gl.flags as i32)
         )
         .expect("writing to a byte vector succeeds");
         write!(
             &mut row,
             "[{:x}] {}/{}",
-            (*gl).flags as u32,
-            (*gl).cellused as u32,
-            (*gl).cellsize as u32
+            gl.flags as u32,
+            gl.cellused as u32,
+            gl.cellsize as u32
         )
         .expect("writing to a byte vector succeeds");
-        if (*gl).flags as ::core::ffi::c_int & GRID_LINE_OSC133_FLAGS != 0 {
+        if gl.flags as ::core::ffi::c_int & GRID_LINE_OSC133_FLAGS != 0 {
             write!(
                 &mut row,
                 " osc133={},{},{},{},{}",
-                (*od).prompt_col as u32,
-                (*od).cmd_col as u32,
-                (*od).out_start_col as u32,
-                (*od).out_end_col as u32,
-                (*od).exit_status as u32
+                od.prompt_col as u32,
+                od.cmd_col as u32,
+                od.out_start_col as u32,
+                od.out_end_col as u32,
+                od.exit_status as u32
             )
             .expect("writing to a byte vector succeeds");
         }

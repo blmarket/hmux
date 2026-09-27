@@ -445,7 +445,6 @@ unsafe fn format_cb_current_path(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut size: size_t = 0 as size_t;
     let mut i: u_int = 0;
     let mut value = None;
@@ -455,14 +454,14 @@ unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
     gd = (*wp).base.grid;
     i = 0 as u_int;
     while i < (*gd).hsize.wrapping_add((*gd).sy) {
-        gl = grid_get_line(gd, i);
+        let gl = grid_get_line(&*gd, i);
         size = (size as ::core::ffi::c_ulong).wrapping_add(
-            ((*gl).cellsize as usize)
+            (gl.cellsize as usize)
                 .wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as usize)
                 as ::core::ffi::c_ulong,
         ) as size_t as size_t;
         size = (size as ::core::ffi::c_ulong).wrapping_add(
-            ((*gl).extdsize as usize)
+            (gl.extdsize as usize)
                 .wrapping_mul(::core::mem::size_of::<grid_extd_entry>() as usize)
                 as ::core::ffi::c_ulong,
         ) as size_t as size_t;
@@ -481,7 +480,6 @@ unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_history_all_bytes(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut i: u_int = 0;
     let mut lines: u_int = 0;
     let mut cells: u_int = 0 as u_int;
@@ -494,9 +492,9 @@ unsafe fn format_cb_history_all_bytes(mut ft: *mut format_tree) -> Option<CStrin
     lines = (*gd).hsize.wrapping_add((*gd).sy);
     i = 0 as u_int;
     while i < lines {
-        gl = grid_get_line(gd, i);
-        cells = cells.wrapping_add((*gl).cellsize as u_int);
-        extended_cells = extended_cells.wrapping_add((*gl).extdsize);
+        let gl = grid_get_line(&*gd, i);
+        cells = cells.wrapping_add(gl.cellsize as u_int);
+        extended_cells = extended_cells.wrapping_add(gl.extdsize);
         i = i.wrapping_add(1);
     }
     value = Some(

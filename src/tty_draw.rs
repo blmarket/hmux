@@ -170,7 +170,6 @@ pub unsafe fn tty_draw_line(
         us: 0,
         link: 0,
     };
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut last_i: u_int = 0;
@@ -217,7 +216,7 @@ pub unsafe fn tty_draw_line(
     if nx == 0 as u_int {
         return;
     }
-    cellsize = (*grid_get_line(gd, (*gd).hsize.wrapping_add(py))).cellsize as u_int;
+    cellsize = (*grid_get_line(&*gd, (*gd).hsize.wrapping_add(py))).cellsize as u_int;
     if (*(*s).grid).sx > cellsize {
         ex = cellsize;
     } else {
@@ -302,8 +301,8 @@ pub unsafe fn tty_draw_line(
     match current_block {
         16799951812150840583 => {
             if py != 0 as u_int && atx == 0 as u_int && (*tty).cx >= (*tty).sx && nx == (*tty).sx {
-                gl = grid_get_line(gd, (*gd).hsize.wrapping_add(py).wrapping_sub(1 as u_int));
-                if (*gl).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
+                let gl = grid_get_line(&*gd, (*gd).hsize.wrapping_add(py).wrapping_sub(1 as u_int));
+                if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
                     wrapped = 1 as ::core::ffi::c_int;
                 }
             }

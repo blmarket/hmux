@@ -271,8 +271,11 @@ unsafe fn grid_compact_line(gl: &mut grid_line) {
     gl.extddata = compact;
     gl.extdsize = count as u_int;
 }
-pub unsafe fn grid_get_line(mut gd: *mut grid, mut line: u_int) -> *mut grid_line {
-    return (*gd).linedata.as_mut_ptr().offset(line as isize) as *mut grid_line;
+pub fn grid_get_line(gd: &grid, line: u_int) -> &grid_line {
+    &gd.linedata[line as usize]
+}
+pub fn grid_get_line_mut(gd: &mut grid, line: u_int) -> &mut grid_line {
+    &mut gd.linedata[line as usize]
 }
 pub unsafe fn grid_line_time(gl: &grid_line) -> time_t {
     if gl.time == 0 {
