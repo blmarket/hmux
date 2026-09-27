@@ -18,22 +18,13 @@ pub struct event_payload {
 }
 
 pub struct event_payload_item {
-    pub name: Option<std::ffi::CString>,
+    pub name: std::ffi::CString,
     pub value: EventPayloadValue,
-    /// Weak traversal handle into the payload's ordered item map.
-    pub(crate) owner: Option<refbox::Weak<event_payload_tree_storage>>,
 }
 
 impl event_payload_item {
     pub fn type_0(&self) -> event_payload_type {
         self.value.kind()
-    }
-    pub fn empty() -> Self {
-        Self {
-            name: Default::default(),
-            value: EventPayloadValue::String(Default::default()),
-            owner: None,
-        }
     }
 }
 
@@ -54,13 +45,13 @@ pub fn events_callback(
 
 #[repr(C)]
 pub struct event_payload_tree {
-    pub entries: refbox::RefBox<event_payload_tree_storage>,
+    pub entries: Box<event_payload_tree_storage>,
 }
 
 impl Default for event_payload_tree {
     fn default() -> Self {
         Self {
-            entries: refbox::RefBox::default(),
+            entries: Box::default(),
         }
     }
 }
@@ -69,7 +60,7 @@ impl Default for event_payload_tree {
 /// Keys retain the original C string bytes so ordering matches `strcmp`.
 #[derive(Default)]
 pub struct event_payload_tree_storage {
-    pub(crate) entries: BTreeMap<Vec<u8>, *mut event_payload_item>,
+    pub(crate) entries: BTreeMap<Vec<u8>, Box<event_payload_item>>,
 }
 
 pub enum EventPayloadValue {
