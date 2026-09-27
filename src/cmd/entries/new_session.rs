@@ -565,7 +565,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             env.take()
                                                                 .expect("new session environment"),
                                                             oo.take(),
-                                                            tiop,
+                                                            tiop.as_ref(),
                                                         );
                                                         s = session_owner.get();
                                                         sc.item = item;

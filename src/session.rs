@@ -305,15 +305,11 @@ pub unsafe fn session_create(
     mut cwd: *const ::core::ffi::c_char,
     env: Box<environ>,
     oo: Option<Box<options>>,
-    mut tio: *mut termios,
+    tio: Option<&termios>,
 ) -> Rc<UnsafeCell<session>> {
     let owner = session::new();
     let s = crate::src::shared::rc::as_ptr(&owner);
-    (*s).tio = if tio.is_null() {
-        None
-    } else {
-        Some(Box::new(*tio))
-    };
+    (*s).tio = tio.copied().map(Box::new);
     (*s).cwd = Some(CStr::from_ptr(cwd).to_owned());
 
     (*s).flags = 0 as ::core::ffi::c_int;
