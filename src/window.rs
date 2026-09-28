@@ -2844,7 +2844,7 @@ unsafe fn window_pane_error_callback(owner: &Rc<std::cell::UnsafeCell<window_pan
     log_debug(format_args!("%{} error", ((*wp).id) as u32));
     (*wp).flags |= PANE_EXITED;
     if window_pane_destroy_ready(wp) != 0 {
-        server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+        server_destroy_pane(owner, 1);
     }
 }
 pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {

@@ -70,7 +70,8 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
+    let wp = pane_owner.get();
     let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
@@ -92,7 +93,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
         if window_pane_destroy_ready(wp) != 0 {
-            server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+            server_destroy_pane(&pane_owner, 1);
             return CMD_RETURN_NORMAL;
         }
     }
@@ -211,16 +212,25 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 ::core::mem::size_of::<window_pane_offset>() as size_t,
             );
             setblocking((*wp).pipe_fd, 0 as ::core::ffi::c_int);
+            let read_observer = std::rc::Rc::downgrade(&pane_owner);
+            let write_observer = read_observer.clone();
+            let error_observer = read_observer.clone();
             (*wp).pipe_event = bufferevent_new(
                 (*wp).pipe_fd,
                 bufferevent_data_callback(move |_| unsafe {
-                    cmd_pipe_pane_read_callback(wp as *mut ::core::ffi::c_void)
+                    if let Some(owner) = read_observer.upgrade() {
+                        cmd_pipe_pane_read_callback(&owner);
+                    }
                 }),
                 bufferevent_data_callback(move |_| unsafe {
-                    cmd_pipe_pane_write_callback(wp as *mut ::core::ffi::c_void)
+                    if let Some(owner) = write_observer.upgrade() {
+                        cmd_pipe_pane_write_callback(&owner);
+                    }
                 }),
                 bufferevent_event_callback(move |_, _| unsafe {
-                    cmd_pipe_pane_error_callback(wp as *mut ::core::ffi::c_void)
+                    if let Some(owner) = error_observer.upgrade() {
+                        cmd_pipe_pane_error_callback(&owner);
+                    }
                 }),
             );
             if (*wp).pipe_event.is_null() {
@@ -236,8 +246,8 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
     };
 }
-unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut wp: *mut window_pane = data as *mut window_pane;
+unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut available: size_t = 0;
     if (*wp).pipe_event.is_null() {
         return;
@@ -257,23 +267,23 @@ unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     );
     evbuffer_drain(evb, available);
     if window_pane_destroy_ready(wp) != 0 {
-        server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+        server_destroy_pane(&pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_write_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut wp: *mut window_pane = data as *mut window_pane;
+unsafe fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe empty", ((*wp).id) as u32));
     if window_pane_destroy_ready(wp) != 0 {
-        server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+        server_destroy_pane(&pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_error_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut wp: *mut window_pane = data as *mut window_pane;
+unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe error", ((*wp).id) as u32));
     bufferevent_free((*wp).pipe_event);
     close((*wp).pipe_fd);
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     if window_pane_destroy_ready(wp) != 0 {
-        server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+        server_destroy_pane(&pane_owner, 1);
     }
 }

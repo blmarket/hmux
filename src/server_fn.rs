@@ -439,7 +439,8 @@ pub unsafe fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {
         server_redraw_session_group(s);
     };
 }
-pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::ffi::c_int) {
+pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut notify: ::core::ffi::c_int) {
+    let wp = pane_owner.get();
     let mut w: *mut window = (*wp).window as *mut window;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),

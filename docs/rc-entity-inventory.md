@@ -1519,3 +1519,16 @@ at the call boundary.
 `cargo test --workspace` and `git diff --check` passed. Window-kill internals,
 parent-window fields, command traversal and other raw model projections remain
 pending.
+
+## Implemented retained pane-exit destruction
+
+`server_destroy_pane` borrows a retained pane handle through exit handling and
+teardown. Error, dead-key, child-exit and pipe callers supply owners; child-exit
+traversal retains its current pane through wait/editor completion. Pipe command
+setup upgrades the target observer, and its read/write/error callbacks capture
+Weak handles instead of raw pane pointers, retaining each successful upgrade
+through callback execution without creating event/pane ownership cycles.
+
+`cargo test --workspace` and `git diff --check` passed. Destruction internals,
+raw parent-window links, dead-key entry arguments and lower-level removal APIs
+remain pending.

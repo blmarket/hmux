@@ -653,8 +653,9 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.as_ptr();
         window_cursor = windows_next(&*w);
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
+        let mut pane_cursor = window_pane_first(w);
+        while let Some(pane_owner) = pane_cursor {
+            wp = pane_owner.get();
             if (*wp).pid == pid {
                 (*wp).status = status;
                 (*wp).flags |= PANE_STATUSREADY;
@@ -663,11 +664,11 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 window_pane_wait_finish(wp);
                 spawn_editor_finish(wp);
                 if window_pane_destroy_ready(wp) != 0 {
-                    server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+                    server_destroy_pane(&pane_owner, 1);
                 }
                 break;
             } else {
-                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                pane_cursor = window_pane_next(wp);
             }
         }
     }

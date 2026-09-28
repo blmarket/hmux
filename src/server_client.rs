@@ -2726,7 +2726,8 @@ unsafe fn server_client_handle_dead_key(
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
-    server_destroy_pane(wp, 0 as ::core::ffi::c_int);
+    let pane_owner = (*wp).observer.upgrade().expect("live dead pane");
+    server_destroy_pane(&pane_owner, 0);
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_client_key_callback(
