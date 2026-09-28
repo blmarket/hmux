@@ -901,7 +901,7 @@ pub unsafe fn key_tables_insert(head: *mut key_tables, table: std::rc::Rc<std::c
     let observer = owner.downgrade();
     let mut map = owner.try_borrow_mut().expect("key table index already borrowed");
     if let Some(existing) = map.get(&key) { return Some(existing.clone()); }
-    table.borrow_mut().entry.owner = Some(observer);
+    table.borrow_mut().entry.owner = observer;
     map.insert(key, table);
     None
 }
@@ -914,7 +914,7 @@ pub unsafe fn key_tables_remove(head: *mut key_tables, table: &std::rc::Rc<std::
         let detached = map.remove(&key).expect("matching key table");
         (detached, map.is_empty())
     };
-    table.borrow_mut().entry.owner = None;
+    table.borrow_mut().entry.owner = refbox::Weak::new();
     if empty { (*head).storage = None; }
     Some(detached)
 }
@@ -924,7 +924,7 @@ pub fn key_tables_minmax(head: &key_tables) -> Option<std::rc::Rc<std::cell::Ref
     map.first_key_value().map(|(_, table)| table.clone())
 }
 pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let owner = elm.entry.owner.as_ref()?;
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return None,
@@ -977,7 +977,7 @@ mod ownership_tests {
             let observed = Rc::downgrade(&a);
             let found = key_tables_find(&index, &duplicate.borrow()).unwrap();
             drop(key_tables_remove(&mut index, &a));
-            assert!(a.borrow().entry.owner.is_none());
+            assert!(a.borrow().entry.owner.is_empty());
             drop(a);
             assert!(observed.upgrade().is_some());
             drop(found);
