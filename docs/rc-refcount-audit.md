@@ -12,6 +12,13 @@ back-links, prompt identities, and mode-tree parent identities, now use an
 empty weak handle for absence. Optional borrowed weak parameters and optional
 containers of weak handles are separate contracts.
 
+A source scan of `#[derive(Clone)]` on struct and enum bodies found no remaining
+automatically cloned model `Rc` field. `HyperlinksRef` still derives `Clone`:
+baseline `src/hyperlinks.rs::hyperlinks_copy` increments its references, and
+the current copy function clones the wrapper. `window_mode` only mentions `Rc`
+in callback parameter types. Client mode rows now implement `Clone` explicitly
+so an action snapshot gets a scoped guard and immediate drop.
+
 ## Completed field reviews
 
 | Holder | Result | Evidence |
