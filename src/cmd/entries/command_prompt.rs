@@ -233,8 +233,8 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let inputcb = cdata.into_callback();
     if pane != 0 {
         window_pane_set_prompt(
-            wp,
-            tc,
+            &(*wp).observer.upgrade().expect("prompt target pane"),
+            tc_owner.as_ref(),
             target,
             prompt_ptr,
             input_ptr,
@@ -288,7 +288,7 @@ unsafe fn cmd_command_prompt_callback(
                         let Some(pane) = window_pane_upgrade(pane) else {
                             return PROMPT_CLOSE;
                         };
-                        window_pane_update_prompt(rc::as_ptr(&pane), prompt_ptr, input_ptr);
+                        window_pane_update_prompt(&pane, prompt_ptr, input_ptr);
                     } else {
                         status_prompt_update(c, prompt_ptr, input_ptr);
                     }

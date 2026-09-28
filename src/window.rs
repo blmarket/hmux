@@ -3115,8 +3115,8 @@ unsafe fn window_pane_prompt_free_callback(data: &WindowPanePromptOwner) {
     drop(inputcb);
 }
 pub unsafe fn window_pane_set_prompt(
-    mut wp: *mut window_pane,
-    mut c: *mut client,
+    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+    client_owner: Option<&Rc<std::cell::UnsafeCell<client>>>,
     mut fs: *mut cmd_find_state,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
@@ -3125,24 +3125,19 @@ pub unsafe fn window_pane_set_prompt(
     mut flags: ::core::ffi::c_int,
     mut type_0: prompt_type,
 ) {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let wp = pane_owner.get();
+    let session_owner = client_owner.and_then(|owner| (*owner.get()).session.as_ref())
+        .and_then(|session| session.observer.upgrade());
     let mut pd = prompt_create_data::default();
-    if !c.is_null() {
-        s = (*c).session;
-    }
     window_pane_clear_prompt(wp);
     let wpp = refbox::RefBox::new(window_pane_prompt {
         wp_id: (*wp).id,
-        c: if c.is_null() {
-            Weak::new()
-        } else {
-            (*c).observer.clone()
-        },
+        c: client_owner.map(Rc::downgrade).unwrap_or_default(),
         inputcb,
         freecb,
         type_0,
     });
-    prompt_set_options(&mut pd, s.as_mut());
+    prompt_set_options(&mut pd, session_owner.as_ref().map(|owner| &mut *owner.get()));
     pd.fs = fs.as_ref();
     pd.prompt = CStr::from_ptr(msg);
     pd.input = if input.is_null() {
@@ -3197,10 +3192,11 @@ pub unsafe fn window_pane_has_prompt(mut wp: *mut window_pane) -> ::core::ffi::c
     return (*wp).prompt.is_some() as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_update_prompt(
-    mut wp: *mut window_pane,
+    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
 ) {
+    let wp = pane_owner.get();
     if (*wp).prompt.is_some() {
         prompt_update(
             &mut (*wp).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt"),

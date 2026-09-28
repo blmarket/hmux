@@ -1086,3 +1086,14 @@ pane removal before updating prompt state.
 `cargo test --workspace` and `git diff --check` passed, including the prompt
 replacement regression through the typed API. Prompt setup/update APIs, model
 association storage and local raw projections remain pending.
+
+## Implemented retained models for pane prompt setup and updates
+
+Pane prompt setup borrows retained pane/client handles and downgrades the client
+for callback storage. It retains the client's session before clearing the old
+prompt, keeping that session available while cleanup callbacks run and prompt
+options are read. Prompt updates borrow the pane owner already held by the command
+callback.
+
+`cargo test --workspace` and `git diff --check` passed. Prompt clearing, client
+session storage and local raw model projections remain pending.
