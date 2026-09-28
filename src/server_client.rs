@@ -2413,7 +2413,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         {
             window_redraw_active_switch(w, wp);
             window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-            server_redraw_window_borders(w);
+            server_redraw_window_borders(&*(w));
             server_status_window(w);
         }
     }

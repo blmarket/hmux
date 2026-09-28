@@ -57,7 +57,7 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
-    server_redraw_window_borders((*wl).window_ptr());
+    server_redraw_window_borders(&*((*wl).window_ptr()));
     server_status_window((*wl).window_ptr());
     return CMD_RETURN_NORMAL;
 }

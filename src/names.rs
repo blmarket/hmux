@@ -126,7 +126,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
             log_cstr(((*w).name.as_ptr()) as *const _)
         ));
         window_set_name(w, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
-        server_redraw_window_borders(w);
+        server_redraw_window_borders(&*(w));
         server_status_window(w);
     } else {
         log_debug(format_args!(

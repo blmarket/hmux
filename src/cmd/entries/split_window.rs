@@ -673,5 +673,5 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &std::rc::Rc<std::cell::Un
     layout_set_size(lc, sx, sy, xoff, yoff);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     server_redraw_window(w);
-    server_redraw_window_borders(w);
+    server_redraw_window_borders(&*(w));
 }

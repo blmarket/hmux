@@ -2196,3 +2196,15 @@ that scope before cancellation callbacks. No new Rc-managed type is introduced.
 `cargo test --workspace` and `git diff --check` passed. Client/session and current
 link relationships still require unsafe acquisition; broader redraw APIs and
 remaining menu style access remain pending.
+
+## Implemented borrowed windows for border redraw
+
+Border redraw accepts a shared window borrow and walks retained client registry
+handles. Matching uses weak window identity against the current link's existing
+window holder instead of raw pointer equality. All 25 callers pass window borrows;
+legacy raw relationships are adapted at those call boundaries. This operation
+only marks redraw flags and does not add persistent ownership or new Rc-managed
+types.
+
+`cargo test --workspace` and `git diff --check` passed. Raw parent/session
+relationships at callers and other redraw/status APIs remain pending.

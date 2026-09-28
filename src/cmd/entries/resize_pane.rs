@@ -445,7 +445,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
     if resizes != 0 as ::core::ffi::c_int {
         layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
         server_redraw_window(w);
-        server_redraw_window_borders(w);
+        server_redraw_window_borders(&*(w));
     }
 }
 unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {

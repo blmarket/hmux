@@ -543,7 +543,7 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
         (*lc).g.yoff += y - ly;
         layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
         server_redraw_window(w);
-        server_redraw_window_borders(w);
+        server_redraw_window_borders(&*(w));
     }
 }
 unsafe fn cmd_join_pane_zindex(

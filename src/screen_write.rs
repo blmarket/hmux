@@ -3482,7 +3482,7 @@ pub unsafe fn screen_write_alternateon(
             window_pane_send_resize(&*wp, (*wp).sx, (*wp).sy);
             window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
         }
-        server_redraw_window_borders((*wp).window as *mut window);
+        server_redraw_window_borders(&*((*wp).window));
     }
     screen_write_initctx(
         ctx,
@@ -3520,7 +3520,7 @@ pub unsafe fn screen_write_alternateoff(
             (*wp).window as *mut window,
             ::core::ptr::null_mut::<window_pane>(),
         );
-        server_redraw_window_borders((*wp).window as *mut window);
+        server_redraw_window_borders(&*((*wp).window));
     }
     screen_write_initctx(
         ctx,

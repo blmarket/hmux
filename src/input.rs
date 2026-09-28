@@ -4022,7 +4022,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                         screen_pop_title(&mut *(*sctx).s);
                         if !wp.is_null() {
                             input_fire_pane_title_changed(wp, (*(*sctx).s).title.as_ptr());
-                            server_redraw_window_borders(w);
+                            server_redraw_window_borders(&*(w));
                             server_status_window(w);
                         }
                     }
@@ -4731,7 +4731,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                 ) != 0
             {
                 input_fire_pane_title_changed(wp, p as *const ::core::ffi::c_char);
-                server_redraw_window_borders((*wp).window as *mut window);
+                server_redraw_window_borders(&*((*wp).window));
                 server_status_window((*wp).window as *mut window);
             }
         }
@@ -4740,7 +4740,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         }
         7 => {
             if !wp.is_null() && screen_set_path(&mut *(*sctx).s, CStr::from_ptr(p.cast())) != 0 {
-                server_redraw_window_borders((*wp).window as *mut window);
+                server_redraw_window_borders(&*((*wp).window));
                 server_status_window((*wp).window as *mut window);
             }
         }
@@ -4817,7 +4817,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
         ) != 0
     {
         input_fire_pane_title_changed(wp, (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char);
-        server_redraw_window_borders((*wp).window as *mut window);
+        server_redraw_window_borders(&*((*wp).window));
         server_status_window((*wp).window as *mut window);
     }
 }
@@ -4889,7 +4889,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
             1 as ::core::ffi::c_int,
         );
     }
-    server_redraw_window_borders(w);
+    server_redraw_window_borders(&*(w));
     server_status_window(w);
 }
 unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
@@ -5136,7 +5136,7 @@ unsafe fn input_set_progress_bar(
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     screen_set_progress_bar(&mut *(*ictx).ctx.s, state, p);
     if !input_pane.is_null() {
-        server_redraw_window_borders((*input_pane).window as *mut window);
+        server_redraw_window_borders(&*((*input_pane).window));
         server_status_window((*input_pane).window as *mut window);
     }
 }
