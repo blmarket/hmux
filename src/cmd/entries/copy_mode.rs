@@ -80,7 +80,6 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wp: *mut window_pane = (*target).wp_ptr();
-    let mut swp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
         window_pane_reset_mode_all(wp);
@@ -102,8 +101,8 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clock_mode_entry) {
         window_pane_set_mode(
-            wp,
-            ::core::ptr::null_mut::<window_pane>(),
+            &(*wp).observer.upgrade().expect("mode target pane"),
+            None,
             &window_clock_mode,
             item,
             ::core::ptr::null_mut::<cmd_find_state>(),
@@ -111,11 +110,11 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         );
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 's' as i32 as u_char) != 0 {
-        swp = (*source).wp_ptr();
+    let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
+        (*source).wp.upgrade()
     } else {
-        swp = wp;
-    }
+        (*wp).observer.upgrade()
+    };
     line_numbers = 1 as ::core::ffi::c_int;
     if !event.is_null()
         && ((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -130,8 +129,8 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         line_numbers = 0 as ::core::ffi::c_int;
     }
     if window_pane_set_mode(
-        wp,
-        swp,
+        &(*wp).observer.upgrade().expect("mode target pane"),
+        source_owner.as_ref(),
         &window_copy_mode,
         item,
         ::core::ptr::null_mut::<cmd_find_state>(),

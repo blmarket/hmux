@@ -815,3 +815,15 @@ later refresh, preserving an existing snapshot without accessing freed pane data
 pane and verifies source expiration, disabled synchronization/refresh and retained
 snapshot contents. The owning-pane backreference, mode API raw parameters and
 legacy raw projections remain pending.
+
+## Implemented retained pane arguments for mode creation
+
+`window_pane_set_mode` now borrows an Rc target pane and an optional Rc source
+pane. Callers keep these owners alive through mode initialization and callbacks;
+the stored source association is downgraded directly to Weak. Copy-mode commands
+upgrade their saved source target directly, removing the intermediate raw source
+lookup. Modes without a source pass `None`.
+
+`cargo test --workspace` and `git diff --check` passed. All mode-creation callers
+compile against the typed pane arguments. The mode's owning-pane backreference,
+other raw callback arguments and internal model projections remain pending.

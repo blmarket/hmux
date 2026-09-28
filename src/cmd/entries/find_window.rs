@@ -79,8 +79,8 @@ unsafe fn cmd_find_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     args_set_owned_string(&mut *new_args, filter_value);
     window_pane_set_mode(
-        wp,
-        ::core::ptr::null_mut::<window_pane>(),
+        &(*wp).observer.upgrade().expect("mode target pane"),
+        None,
         &window_tree_mode,
         item,
         target,

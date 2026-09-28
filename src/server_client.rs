@@ -5352,8 +5352,8 @@ pub unsafe fn server_client_print(
             wme = (*wp).modes.active;
             if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
                 window_pane_set_mode(
-                    wp,
-                    ::core::ptr::null_mut::<window_pane>(),
+                    &(*wp).observer.upgrade().expect("mode target pane"),
+                    None,
                     &window_view_mode,
                     ::core::ptr::null_mut::<cmdq_item>(),
                     ::core::ptr::null_mut::<cmd_find_state>(),

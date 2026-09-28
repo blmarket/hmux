@@ -224,8 +224,8 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         mode = &window_tree_mode;
     }
     window_pane_set_mode(
-        wp,
-        ::core::ptr::null_mut::<window_pane>(),
+        &(*wp).observer.upgrade().expect("mode target pane"),
+        None,
         mode,
         item,
         target,

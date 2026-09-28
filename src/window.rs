@@ -2920,13 +2920,14 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
     );
 }
 pub unsafe fn window_pane_set_mode(
-    mut wp: *mut window_pane,
-    mut swp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    source_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mode: &'static window_mode,
     mut item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> ::core::ffi::c_int {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut w: *mut window = (*wp).window as *mut window;
     let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
@@ -2955,7 +2956,7 @@ pub unsafe fn window_pane_set_mode(
         // The pane owns a stable Box address for as long as callbacks retain it.
         let entry = Box::new(window_mode_entry {
             wp,
-            swp: swp.as_ref().map(|pane| pane.observer.clone()).unwrap_or_default(),
+            swp: source_owner.map(std::rc::Rc::downgrade).unwrap_or_default(),
             mode,
             data: ::core::ptr::null_mut(),
             data_owner: None,
