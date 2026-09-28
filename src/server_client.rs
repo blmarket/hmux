@@ -2690,12 +2690,13 @@ unsafe fn server_client_repeat_time(mut c: *mut client, bd: &KeyBindingCommand) 
     return repeat;
 }
 unsafe fn server_client_handle_dead_key(
-    mut wp: *mut window_pane,
+    pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut key: key_code,
 ) -> ::core::ffi::c_int {
+    let Some(pane_owner) = pane_owner else { return 0; };
+    let wp = pane_owner.get();
     let mut remain_on_exit: ::core::ffi::c_int = 0;
-    if wp.is_null()
-        || !(*wp).flags & PANE_EXITED != 0
+    if !(*wp).flags & PANE_EXITED != 0
         || (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -2726,8 +2727,7 @@ unsafe fn server_client_handle_dead_key(
         b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
-    let pane_owner = (*wp).observer.upgrade().expect("live dead pane");
-    server_destroy_pane(&pane_owner, 0);
+    server_destroy_pane(pane_owner, 0);
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_client_key_callback(
@@ -3151,10 +3151,11 @@ unsafe fn server_client_key_callback(
                 match current_block {
                     1578459965781631232 => {}
                     _ => {
-                        if !(server_client_handle_dead_key(wp, key) != 0) {
+                        let pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
+                        if !(server_client_handle_dead_key(pane_owner.as_ref(), key) != 0) {
                             if !((*c).flags & CLIENT_READONLY as uint64_t != 0) {
-                                if !wp.is_null() {
-                                    window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), Some(&c_owner), wl, key, m);
+                                if let Some(pane_owner) = pane_owner.as_ref() {
+                                    window_pane_key(pane_owner, Some(&c_owner), wl, key, m);
                                 }
                             }
                         }
@@ -3265,7 +3266,8 @@ unsafe fn server_client_handle_key0(
         }
         server_client_clear_overlay(c);
         wp = (*(*(*s).curw).window_ptr()).active;
-        if server_client_handle_dead_key(wp, (*event).key) != 0 {
+        let active_pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
+        if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
         if !wp.is_null()
@@ -3274,8 +3276,7 @@ unsafe fn server_client_handle_key0(
             && ((*event).key == '\u{1b}' as i32 as key_code
                 || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
         {
-            let pane_owner = (*wp).observer.upgrade().expect("live modal pane");
-            server_kill_pane(&pane_owner);
+            server_kill_pane(active_pane_owner.as_ref().expect("live modal pane"));
             return 0 as ::core::ffi::c_int;
         }
         if !wp.is_null()
@@ -3292,7 +3293,7 @@ unsafe fn server_client_handle_key0(
                             << 32 as ::core::ffi::c_int)
         {
             if !(*wp).flags & PANE_EXITED != 0 {
-                window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), Some(owner), (*s).curw, (*event).key, &raw mut (*event).m);
+                window_pane_key(active_pane_owner.as_ref().expect("key target pane"), Some(owner), (*s).curw, (*event).key, &raw mut (*event).m);
                 return 0 as ::core::ffi::c_int;
             }
         }

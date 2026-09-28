@@ -1545,3 +1545,14 @@ registry owner in its existing order, while the caller retains the allocation.
 expiry and empty-pane stream callback release tests adapted to the typed API.
 Raw window arguments, pane-parent links and internal teardown projections remain
 pending.
+
+## Implemented retained dead-pane key dispatch
+
+Dead-pane key handling accepts an optional borrowed pane owner. Queued and direct
+key dispatch retain their selected pane before checking exit behavior and reuse
+that handle for key delivery or modal cancellation. The dead-key helper forwards
+its owner to destruction without recovering it from a raw pointer.
+
+`cargo test --workspace` and `git diff --check` passed. Initial active/target-pane
+lookup, prompt selection traversal and other key-handler raw model projections
+remain pending.
