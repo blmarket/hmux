@@ -9,8 +9,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::layout::layout_cell;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::{WindowOwner, winlink};
 use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_pane_first, window_pane_last, window_pane_list_insert_back,
@@ -47,9 +46,8 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_ptr();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wp2: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let window_owner = WindowOwner::adopt((*target).w.upgrade().expect("live rotation window"));
+    let w = window_owner.as_ptr();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
@@ -60,8 +58,9 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         0 as ::core::ffi::c_int,
         args_has(args, 'Z' as i32 as u_char),
     );
-    if args_has(args, 'D' as i32 as u_char) != 0 {
-        wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let selected_pane = if args_has(args, 'D' as i32 as u_char) != 0 {
+        let moved_owner = window_pane_last(Some(&*w)).expect("rotation window has panes");
+        let wp = moved_owner.get();
         window_pane_list_remove(&mut *w, &*wp);
         window_pane_list_insert_front(&mut *w, &*wp);
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -69,12 +68,13 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         yoff = (*wp).yoff as u_int;
         sx = (*wp).sx;
         sy = (*wp).sy;
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            wp2 = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if wp2.is_null() {
+        let mut cursor = window_pane_first(Some(&*w)).expect("rotation window has panes");
+        loop {
+            let wp = cursor.get();
+            let Some(neighbor) = window_pane_next(Some(&*wp)) else {
                 break;
-            }
+            };
+            let wp2 = neighbor.get();
             (*wp).layout_cell = (*wp2).layout_cell;
             if !(*wp).layout_cell.is_null() {
                 (*(*wp).layout_cell).wp = (*wp).observer.clone();
@@ -82,8 +82,9 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
             window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
-            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            cursor = window_pane_next(Some(&*wp)).expect("rotation neighbor remains in order");
         }
+        let wp = cursor.get();
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
             (*(*wp).layout_cell).wp = (*wp).observer.clone();
@@ -91,12 +92,11 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(wp, sx, sy);
-        wp = window_pane_previous(((*w).active).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if wp.is_null() {
-            wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        }
+        window_pane_previous(((*w).active).as_ref())
+            .or_else(|| window_pane_last(Some(&*w)))
     } else {
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        let moved_owner = window_pane_first(Some(&*w)).expect("rotation window has panes");
+        let wp = moved_owner.get();
         window_pane_list_remove(&mut *w, &*wp);
         window_pane_list_insert_back(&mut *w, &*wp);
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -104,12 +104,13 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         yoff = (*wp).yoff as u_int;
         sx = (*wp).sx;
         sy = (*wp).sy;
-        wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            wp2 = window_pane_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if wp2.is_null() {
+        let mut cursor = window_pane_last(Some(&*w)).expect("rotation window has panes");
+        loop {
+            let wp = cursor.get();
+            let Some(neighbor) = window_pane_previous(Some(&*wp)) else {
                 break;
-            }
+            };
+            let wp2 = neighbor.get();
             (*wp).layout_cell = (*wp2).layout_cell;
             if !(*wp).layout_cell.is_null() {
                 (*(*wp).layout_cell).wp = (*wp).observer.clone();
@@ -117,8 +118,9 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
             window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
-            wp = window_pane_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            cursor = window_pane_previous(Some(&*wp)).expect("rotation neighbor remains in order");
         }
+        let wp = cursor.get();
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
             (*(*wp).layout_cell).wp = (*wp).observer.clone();
@@ -126,11 +128,10 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(wp, sx, sy);
-        wp = window_pane_next(((*w).active).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if wp.is_null() {
-            wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        }
-    }
+        window_pane_next(((*w).active).as_ref())
+            .or_else(|| window_pane_first(Some(&*w)))
+    }.expect("rotation window has an active candidate");
+    let wp = selected_pane.get();
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
     window_pop_zoom(w);

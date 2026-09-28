@@ -1772,3 +1772,16 @@ owned through layout, focus, redraw and event operations.
 
 `cargo test --workspace` and `git diff --check` passed. Legacy layout/focus APIs and
 pane-to-window links still use raw projections within the retained operation.
+
+## Implemented retained pane rotation dispatch
+
+Rotate-window retains its target window with WindowOwner. In both rotation
+directions, the moved pane, current pane and neighboring pane stay in Rc handles
+while order and geometry are updated. The final active candidate is selected as
+an Option<Rc> with wraparound and remains retained through focus/state updates,
+zoom restoration and redraw. Traversal no longer drops a temporary owner before
+using a raw pane local.
+
+`cargo test --workspace` and `git diff --check` passed. The active-pane relationship
+and legacy resize/focus/layout calls still require raw projections from retained
+models; these remain pending.
