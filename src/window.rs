@@ -2700,21 +2700,21 @@ unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pa
     (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
     window_pane_scrollbar_hide(wp);
 }
-unsafe fn window_pane_scrollbar_auto_hide(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    return ((*(*wp).window).sb == PANE_SCROLLBARS_MODAL
-        || (*(*wp).window).sb == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int;
+unsafe fn window_pane_scrollbar_auto_hide(wp: &window_pane) -> ::core::ffi::c_int {
+    return ((*wp.window).sb == PANE_SCROLLBARS_MODAL
+        || (*wp.window).sb == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_scrollbar_overlay_visible(
-    mut wp: *mut window_pane,
+    wp: &window_pane,
 ) -> ::core::ffi::c_int {
     return (window_pane_scrollbar_overlay(wp) != 0 && window_pane_scrollbar_visible(wp) != 0)
         as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_scrollbar_redraw(mut wp: *mut window_pane) {
-    if window_pane_scrollbar_visible(wp) == 0 {
+    if window_pane_scrollbar_visible(&*wp) == 0 {
         return;
     }
-    if window_pane_scrollbar_overlay_visible(wp) != 0 {
+    if window_pane_scrollbar_overlay_visible(&*wp) != 0 {
         (*wp).flags |= PANE_REDRAW;
         return;
     }
@@ -3573,7 +3573,7 @@ unsafe fn window_pane_full_size_offset(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> (::core::ffi::c_int, ::core::ffi::c_int, u_int, u_int) {
     let wp = pane_owner.get();
-    let sb_w = if window_pane_scrollbar_reserve(wp) != 0 {
+    let sb_w = if window_pane_scrollbar_reserve(&*wp) != 0 {
         ((*wp).scrollbar_style.width + (*wp).scrollbar_style.pad) as u_int
     } else {
         0
@@ -3944,21 +3944,21 @@ pub unsafe fn window_pane_update_used_data(
 pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
     screen_set_default_cursor(&mut *(*wp).screen, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
 }
-pub unsafe fn window_pane_mode(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    if !(*wp).modes.active.is_null() {
-        if std::ptr::eq((*(*wp).modes.active).mode, &window_copy_mode) {
+pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
+    if !wp.modes.active.is_null() {
+        if std::ptr::eq((*wp.modes.active).mode, &window_copy_mode) {
             return 1 as ::core::ffi::c_int;
         }
-        if std::ptr::eq((*(*wp).modes.active).mode, &window_view_mode) {
+        if std::ptr::eq((*wp.modes.active).mode, &window_view_mode) {
             return 2 as ::core::ffi::c_int;
         }
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_show_scrollbar(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    let mut w: *mut window = (*wp).window as *mut window;
+pub unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
+    let mut w: *mut window = wp.window as *mut window;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    if (*wp).base.saved_grid.is_some() {
+    if wp.base.saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active.is_null() {
@@ -3975,26 +3975,26 @@ pub unsafe fn window_pane_show_scrollbar(mut wp: *mut window_pane) -> ::core::ff
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_scrollbar_reserve(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_scrollbar_reserve(wp: &window_pane) -> ::core::ffi::c_int {
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return ((*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int;
+    return ((*wp.window).sb == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_scrollbar_overlay(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_scrollbar_overlay(wp: &window_pane) -> ::core::ffi::c_int {
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     return window_pane_scrollbar_auto_hide(wp);
 }
-pub unsafe fn window_pane_scrollbar_visible(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_scrollbar_visible(wp: &window_pane) -> ::core::ffi::c_int {
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     if window_pane_scrollbar_auto_hide(wp) == 0 {
         return 1 as ::core::ffi::c_int;
     }
-    return (*wp).sb_auto_visible;
+    return wp.sb_auto_visible;
 }
 pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
     let mut tv: timeval = timeval {
@@ -4002,7 +4002,7 @@ pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
         tv_usec: 0,
     };
     let mut delay: u_int = 0;
-    if window_pane_scrollbar_auto_hide(wp) == 0 || (*wp).sb_auto_visible == 0 {
+    if window_pane_scrollbar_auto_hide(&*wp) == 0 || (*wp).sb_auto_visible == 0 {
         return;
     }
     delay = options_get_number(
@@ -4017,10 +4017,10 @@ pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
 }
 pub unsafe fn window_pane_scrollbar_show(mut wp: *mut window_pane) {
     let mut changed: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if window_pane_scrollbar_auto_hide(wp) == 0 {
+    if window_pane_scrollbar_auto_hide(&*wp) == 0 {
         return;
     }
-    if window_pane_show_scrollbar(wp) == 0 {
+    if window_pane_show_scrollbar(&*wp) == 0 {
         return;
     }
     if (*wp).sb_auto_visible == 0 {

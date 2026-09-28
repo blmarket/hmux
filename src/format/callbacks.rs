@@ -877,7 +877,7 @@ unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     if !(*wp).modes.active.is_null() {
-        if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
+        if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_word_cstring(wp, x, y);
         }
         return None;
@@ -914,7 +914,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
         return None;
     }
     if !(*wp).modes.active.is_null() {
-        if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
+        if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_hyperlink_cstring(wp, x, y);
         }
         return None;
@@ -951,7 +951,7 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     if !(*wp).modes.active.is_null() {
-        if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
+        if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_line_cstring(wp, y);
         }
         return None;
@@ -2487,7 +2487,7 @@ unsafe fn format_cb_pane_unzoomed_width(mut ft: *mut format_tree) -> Option<CStr
     }
     sx = (*lc).g.sx;
     if saved != 0 && (*wp).base.saved_grid.is_none() && (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS
-        || saved == 0 && window_pane_scrollbar_reserve(wp) != 0
+        || saved == 0 && window_pane_scrollbar_reserve(&*wp) != 0
     {
         sb_w = (*wp).scrollbar_style.width;
         sb_pad = (*wp).scrollbar_style.pad;

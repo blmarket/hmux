@@ -77,7 +77,7 @@ pub unsafe fn window_visible_ranges(
                 && py <= bb
                 && (floating || (py != tb && py != bb))
             {
-                let (sb_w, sb_pos) = if window_pane_scrollbar_reserve(wp) != 0 {
+                let (sb_w, sb_pos) = if window_pane_scrollbar_reserve(&*wp) != 0 {
                     (
                         (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad,
                         (*w).sb_pos,

@@ -452,7 +452,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
                     sy = sy.wrapping_sub(1);
                 }
             }
-            if window_pane_scrollbar_reserve(wp) != 0 {
+            if window_pane_scrollbar_reserve(&*wp) != 0 {
                 sb_w = (*wp).scrollbar_style.width;
                 sb_pad = (*wp).scrollbar_style.pad;
                 if sb_w < 1 as ::core::ffi::c_int {

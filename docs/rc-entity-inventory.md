@@ -1621,3 +1621,14 @@ source or candidate owner. Modal mouse handling forwards its retained handle.
 `cargo test --workspace` and `git diff --check` passed, including coordinate-pane
 ownership coverage. Internal pane/window projections and scrollbar/layout helper
 APIs remain pending.
+
+## Implemented borrowed mode and scrollbar queries
+
+Seven read-only helpers (pane mode, scrollbar show/reserve/overlay/visible,
+auto-hide, and visible overlay) take shared pane borrows. Their nested calls pass
+those borrows directly, and layout, rendering, copy mode, formatting, resize and
+input callers use the typed signatures.
+
+`cargo test --workspace` and `git diff --check` passed. Queries remain unsafe
+where they follow raw parent-window or active-mode fields; scrollbar mutation,
+timer APIs and other internal model projections remain pending.

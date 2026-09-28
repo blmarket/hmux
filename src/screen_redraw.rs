@@ -743,8 +743,8 @@ unsafe fn redraw_mark_pane(mut bctx: *mut redraw_build_ctx, mut wp: *mut window_
     if window_pane_is_visible(&*wp) == 0 {
         return;
     }
-    if window_pane_scrollbar_visible(wp) != 0 {
-        overlay = window_pane_scrollbar_overlay(wp);
+    if window_pane_scrollbar_visible(&*wp) != 0 {
+        overlay = window_pane_scrollbar_overlay(&*wp);
         if overlay != 0 {
             sb_w = (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
             if sb_w > (*wp).sx as ::core::ffi::c_int {
@@ -1393,7 +1393,7 @@ unsafe fn redraw_draw_scrollbar_span(
     let mut off: u_int = 0;
     let mut sb_w: u_int = 0;
     let mut sb_pad: u_int = 0;
-    if window_pane_mode(wp) == WINDOW_PANE_NO_MODE {
+    if window_pane_mode(&*wp) == WINDOW_PANE_NO_MODE {
         total_height = (*s).grid().sy.wrapping_add((*s).grid().hsize);
         if total_height == 0 as u_int {
             return;

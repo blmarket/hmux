@@ -2430,7 +2430,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
         screen_write_redraw_pane(ctx, &mut ttyctx);
         return 0 as ::core::ffi::c_int;
     }
-    if !wp.is_null() && window_pane_scrollbar_overlay_visible(wp) != 0 {
+    if !wp.is_null() && window_pane_scrollbar_overlay_visible(&*wp) != 0 {
         (*wp).flags |= PANE_REDRAW;
         return 0 as ::core::ffi::c_int;
     }

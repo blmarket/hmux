@@ -7490,7 +7490,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
         return;
     }
-    if window_pane_scrollbar_overlay_visible(wp) != 0 {
+    if window_pane_scrollbar_overlay_visible(&*wp) != 0 {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
         screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
@@ -9188,7 +9188,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
         return;
     }
-    if window_pane_scrollbar_overlay_visible(wp) != 0 {
+    if window_pane_scrollbar_overlay_visible(&*wp) != 0 {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
         screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
@@ -9294,7 +9294,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
         return;
     }
-    if window_pane_scrollbar_overlay_visible(wp) != 0 {
+    if window_pane_scrollbar_overlay_visible(&*wp) != 0 {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
         screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());

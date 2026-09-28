@@ -1687,7 +1687,7 @@ unsafe fn server_client_in_scrollbar_area(
     let mut total: u_int = 0;
     let mut start: ::core::ffi::c_int = 0;
     let mut end: ::core::ffi::c_int = 0;
-    if window_pane_scrollbar_overlay(wp) == 0 {
+    if window_pane_scrollbar_overlay(&*wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     if py < (*wp).yoff || py >= (*wp).yoff + (*wp).sy as ::core::ffi::c_int {
@@ -1755,8 +1755,8 @@ unsafe fn server_client_check_mouse_in_pane(
     let mut sb_end: ::core::ffi::c_int = 0;
     let mut sb_overlay: ::core::ffi::c_int = 0;
     pane_status = window_pane_get_pane_status(wp);
-    sb_overlay = window_pane_scrollbar_overlay(wp);
-    if window_pane_scrollbar_visible(wp) != 0 {
+    sb_overlay = window_pane_scrollbar_overlay(&*wp);
+    if window_pane_scrollbar_visible(&*wp) != 0 {
         sb_w = (*wp).scrollbar_style.width;
         sb_pad = (*wp).scrollbar_style.pad;
         if sb_overlay != 0 && sb_w > (*wp).sx as ::core::ffi::c_int {
@@ -1860,7 +1860,7 @@ unsafe fn server_client_check_mouse_in_pane(
                     && window_pane_get_pane_lines(fwp) as ::core::ffi::c_uint
                         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    if window_pane_scrollbar_reserve(fwp) != 0 {
+                    if window_pane_scrollbar_reserve(&*fwp) != 0 {
                         sb_w = (*fwp).scrollbar_style.width;
                         sb_pad = (*fwp).scrollbar_style.pad;
                     } else {
@@ -3945,7 +3945,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                 if !window_position_is_visible(&r, cx) {
                     cursor = 0 as ::core::ffi::c_int;
                 }
-                if window_pane_scrollbar_overlay_visible(wp) != 0 {
+                if window_pane_scrollbar_overlay_visible(&*wp) != 0 {
                     sb_w = (*wp).scrollbar_style.width as u_int;
                     if sb_w > (*wp).sx {
                         sb_w = (*wp).sx;

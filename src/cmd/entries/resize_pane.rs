@@ -335,9 +335,9 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
     sy = (*wp).sy as ::core::ffi::c_int;
     left = (*wp).xoff - 1 as ::core::ffi::c_int;
     right = (*wp).xoff + sx;
-    if window_pane_scrollbar_reserve(wp) != 0 && (*w).sb_pos == PANE_SCROLLBARS_LEFT {
+    if window_pane_scrollbar_reserve(&*wp) != 0 && (*w).sb_pos == PANE_SCROLLBARS_LEFT {
         left -= (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
-    } else if window_pane_scrollbar_reserve(wp) != 0 && (*w).sb_pos == PANE_SCROLLBARS_RIGHT {
+    } else if window_pane_scrollbar_reserve(&*wp) != 0 && (*w).sb_pos == PANE_SCROLLBARS_RIGHT {
         right += (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
     }
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
