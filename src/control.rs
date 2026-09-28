@@ -332,15 +332,14 @@ mod control_queue_tests {
         use std::rc::Rc;
 
         struct CleanupProbe {
-            client: *mut client,
+            client: std::rc::Weak<std::cell::UnsafeCell<client>>,
             label: &'static str,
             order: Rc<RefCell<Vec<&'static str>>>,
         }
         impl Drop for CleanupProbe {
             fn drop(&mut self) {
-                unsafe {
-                    assert!((*self.client).control_state.is_some());
-                }
+                let owner = self.client.upgrade().expect("client retained during control stop");
+                unsafe { assert!((*owner.get()).control_state.is_some()); }
                 self.order.borrow_mut().push(self.label);
             }
         }
@@ -356,7 +355,7 @@ mod control_queue_tests {
                 let c = owner.get();
                 let order = Rc::new(RefCell::new(Vec::new()));
                 let probe = CleanupProbe {
-                    client: c,
+                    client: Rc::downgrade(&owner),
                     label: "monitor",
                     order: order.clone(),
                 };
@@ -367,7 +366,7 @@ mod control_queue_tests {
                     }),
                 );
                 let probe = CleanupProbe {
-                    client: c,
+                    client: Rc::downgrade(&owner),
                     label: "read",
                     order: order.clone(),
                 };
@@ -383,7 +382,7 @@ mod control_queue_tests {
                     read_event
                 } else {
                     let probe = CleanupProbe {
-                        client: c,
+                        client: Rc::downgrade(&owner),
                         label: "write",
                         order: order.clone(),
                     };
