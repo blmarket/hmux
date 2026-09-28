@@ -87,7 +87,6 @@ unsafe fn cmd_save_buffer_done(
 }
 unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -138,7 +137,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let buffer = pb.borrow();
     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
     file_write_with_cmdq_wait(
-        queue_client_ptr,
+        queue_client.as_ref(),
         path,
         flags,
         bufdata.as_ptr().cast(),

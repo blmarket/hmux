@@ -1956,3 +1956,16 @@ completion preserve the existing wait-cleanup order.
 `cargo test --workspace` and `git diff --check` passed, including file-backed wait
 and cancellation coverage. Raw client inputs to transfer creation and remaining
 internal file projections remain pending.
+
+## Implemented typed clients for file transfer startup
+
+Client-backed file creation takes an optional borrowed Rc and explicitly clones
+the client it owns, preserving the rule that attached clients are excluded.
+Read/write transfer startup accepts the same typed input. Load/save/source-file
+commands and pane input forward existing handles; source-file reading retains a
+client while moving its callback state. File-record initialization uses a scoped
+mutable borrow. Legacy printing entry points still adapt their raw client inputs
+at the constructor boundary.
+
+`cargo test --workspace` and `git diff --check` passed. Raw printing inputs,
+transfer internals and broader model relationships remain pending.

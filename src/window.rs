@@ -3881,7 +3881,7 @@ pub unsafe fn window_pane_start_input(
         file: Weak::new(),
     });
     file_read_with_cmdq_wait_init(
-        c,
+        c_owner.as_ref(),
         c"-".as_ptr(),
         move |file| {
             cdata.file = file;

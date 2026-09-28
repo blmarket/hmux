@@ -159,10 +159,10 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
 }
 
 unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
-    let c = cdata.client_ptr();
+    let client_owner = cdata.client.clone();
     let item = cdata.item;
     let path = cdata.files[cdata.current as usize].as_ptr();
-    file_read_with_cmdq_wait(c, path, cdata.into_read_callback(), item, None);
+    file_read_with_cmdq_wait(client_owner.as_ref(), path, cdata.into_read_callback(), item, None);
 }
 
 unsafe fn cmd_source_file_done(
