@@ -1644,3 +1644,14 @@ traversal owners. Timer callbacks continue to observe panes weakly.
 `cargo test --workspace` and `git diff --check` passed. Internal raw parent-window
 access, mouse-hover client/window arguments and other model projections remain
 pending.
+
+## Implemented retained mouse hit testing
+
+Mouse hit testing borrows a retained target pane and writes slider position
+through a mutable reference. Its border traversal retains each visited pane.
+Scrollbar-area checks take shared pane borrows. The existing selection boundary
+upgrades the selected pane observer before dispatching the hit test.
+
+`cargo test --workspace` and `git diff --check` passed. Initial mouse target
+selection, parent-window access, hover client arguments and geometry helper
+internals still contain raw projections and remain pending.

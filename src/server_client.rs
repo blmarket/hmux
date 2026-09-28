@@ -1677,33 +1677,33 @@ pub unsafe fn server_client_exec(mut c: *mut client, mut cmd: *const ::core::ffi
     );
 }
 unsafe fn server_client_in_scrollbar_area(
-    mut wp: *mut window_pane,
+    wp: &window_pane,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = wp.window as *mut window;
     let mut width: u_int = 0;
     let mut pad: u_int = 0;
     let mut total: u_int = 0;
     let mut start: ::core::ffi::c_int = 0;
     let mut end: ::core::ffi::c_int = 0;
-    if window_pane_scrollbar_overlay(&*wp) == 0 {
+    if window_pane_scrollbar_overlay(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if py < (*wp).yoff || py >= (*wp).yoff + (*wp).sy as ::core::ffi::c_int {
+    if py < wp.yoff || py >= wp.yoff + wp.sy as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    width = (*wp).scrollbar_style.width as u_int;
-    pad = (*wp).scrollbar_style.pad as u_int;
+    width = wp.scrollbar_style.width as u_int;
+    pad = wp.scrollbar_style.pad as u_int;
     total = width.wrapping_add(pad);
-    if total == 0 as u_int || total > (*wp).sx {
-        total = (*wp).sx;
+    if total == 0 as u_int || total > wp.sx {
+        total = wp.sx;
     }
     if (*w).sb_pos == PANE_SCROLLBARS_LEFT {
-        start = (*wp).xoff;
-        end = (*wp).xoff + total as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+        start = wp.xoff;
+        end = wp.xoff + total as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
     } else {
-        end = (*wp).xoff + (*wp).sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+        end = wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
         start = end - total as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     }
     return (px >= start && px <= end) as ::core::ffi::c_int;
@@ -1723,7 +1723,7 @@ unsafe fn server_client_update_scrollbar_hover(
     while let Some(pane_owner) = cursor {
         wp = pane_owner.get();
         if !(window_pane_is_visible(&*wp) == 0) {
-            if server_client_in_scrollbar_area(wp, px, py) != 0 {
+            if server_client_in_scrollbar_area(&*wp, px, py) != 0 {
                 (*wp).sb_auto_hover = 1 as ::core::ffi::c_int;
                 window_pane_scrollbar_show(&pane_owner);
             } else {
@@ -1735,11 +1735,12 @@ unsafe fn server_client_update_scrollbar_hover(
     }
 }
 unsafe fn server_client_check_mouse_in_pane(
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
-    mut sl_mpos: *mut u_int,
+    sl_mpos: &mut u_int,
 ) -> key_code_mouse_location {
+    let wp = pane_owner.get();
     let mut w: *mut window = (*wp).window as *mut window;
     let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut pane_status: ::core::ffi::c_int = 0;
@@ -1854,8 +1855,9 @@ unsafe fn server_client_check_mouse_in_pane(
             return KEYC_MOUSE_LOCATION_PANE;
         }
     } else {
-        fwp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !fwp.is_null() {
+        let mut cursor = window_pane_first(w);
+        while let Some(border_pane) = cursor {
+            fwp = border_pane.get();
             if !(window_pane_is_visible(&*fwp) == 0) {
                 if !(window_pane_is_floating(&*fwp) != 0
                     && window_pane_get_pane_lines(fwp) as ::core::ffi::c_uint
@@ -1907,7 +1909,7 @@ unsafe fn server_client_check_mouse_in_pane(
                     }
                 }
             }
-            fwp = window_pane_next(fwp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            cursor = window_pane_next(fwp);
         }
         if !fwp.is_null() {
             return KEYC_MOUSE_LOCATION_BORDER;
@@ -2270,11 +2272,12 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             ));
         } else {
             if modal_drag == 0 {
+                let pane_owner = (*wp).observer.upgrade().expect("mouse target pane");
                 loc = server_client_check_mouse_in_pane(
-                    wp,
+                    &pane_owner,
                     px as ::core::ffi::c_int,
                     py as ::core::ffi::c_int,
-                    &raw mut sl_mpos,
+                    &mut sl_mpos,
                 );
             }
             if loc as ::core::ffi::c_uint
