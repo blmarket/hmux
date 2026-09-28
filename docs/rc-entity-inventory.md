@@ -1122,3 +1122,16 @@ that can exit the mode.
 multiple mode cleanup callbacks, checks removal before callback invocation and
 parent availability, and verifies final pane release. Mode-entry pointers,
 parent-window storage and internal raw model projections still require migration.
+
+## Implemented weak client captures for copy-mode dragging
+
+Copy-mode drag update/release closures hold Weak clients instead of NonNull raw
+addresses. Each invocation upgrades and retains the client, or skips work after
+its expiration. Drag startup borrows the optional Rc client already held by the
+command or copy-command state; update/release take retained client arguments.
+These callback captures are observers, avoiding a client/terminal callback cycle.
+
+`cargo test --workspace` and `git diff --check` passed. The detached-callback
+regression verifies the callbacks do not retain the client and can be invoked
+after it expires. Raw client captures in pane resize/move commands and internal
+model pointer projections remain pending.

@@ -1544,11 +1544,10 @@ unsafe fn window_copy_cmd_begin_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut m: *mut mouse_event = (*cs).m;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     if !m.is_null() {
-        window_copy_start_drag(c, m);
+        window_copy_start_drag((*cs).c, m);
         return WINDOW_COPY_CMD_MOVE;
     }
     (*data).lineflag = LINE_SEL_NONE;
@@ -9381,7 +9380,24 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
     x = window_copy_cursor_unoffset(wme, x, (*data).screen.grid().sx);
     window_copy_update_cursor(wme, x, y);
 }
-pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn window_copy_install_drag_callbacks(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = client_owner.get();
+    let drag_client = std::rc::Rc::downgrade(client_owner);
+    (*c).tty.mouse_drag_update = Some(Box::new(move |m| {
+        if let Some(owner) = drag_client.upgrade() {
+            unsafe { window_copy_drag_update(&owner, m) }
+        }
+    }));
+    let drag_client = std::rc::Rc::downgrade(client_owner);
+    (*c).tty.mouse_drag_release = Some(Box::new(move |m| {
+        if let Some(owner) = drag_client.upgrade() {
+            unsafe { window_copy_drag_release(&owner, m) }
+        }
+    }));
+}
+
+pub unsafe fn window_copy_start_drag(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>, mut m: *mut mouse_event) {
+    let Some(client_owner) = client_owner else { return; };
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -9392,9 +9408,6 @@ pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event
     let mut inside_selection: ::core::ffi::c_int = 0;
     let mut on_start: ::core::ffi::c_int = 0;
     let mut on_end: ::core::ffi::c_int = 0;
-    if c.is_null() {
-        return;
-    }
     mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
@@ -9416,14 +9429,7 @@ pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event
     {
         return;
     }
-    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
-    (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
-        window_copy_drag_update(drag_client.as_ptr(), m as *mut mouse_event)
-    }));
-    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
-    (*c).tty.mouse_drag_release = Some(Box::new(move |m| unsafe {
-        window_copy_drag_release(drag_client.as_ptr(), m as *mut mouse_event)
-    }));
+    window_copy_install_drag_callbacks(client_owner);
     data = (*wme).data as *mut window_copy_mode_data;
     on_end = 0 as ::core::ffi::c_int;
     on_start = on_end;
@@ -9477,9 +9483,9 @@ pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event
         _ => {}
     }
     window_copy_redraw_screen(wme);
-    window_copy_drag_update(c, m);
+    window_copy_drag_update(client_owner, m);
 }
-unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn window_copy_drag_update(_client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -9492,9 +9498,6 @@ unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
         tv_sec: 0,
         tv_usec: WINDOW_COPY_DRAG_REPEAT_TIME as __suseconds_t,
     };
-    if c.is_null() {
-        return;
-    }
     mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
@@ -9535,14 +9538,11 @@ unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
         }
     }
 }
-unsafe fn window_copy_drag_release(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn window_copy_drag_release(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
-    if c.is_null() {
-        return;
-    }
     mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
@@ -9561,7 +9561,7 @@ unsafe fn window_copy_drag_release(mut c: *mut client, mut m: *mut mouse_event) 
     }
     data = (*wme).data as *mut window_copy_mode_data;
     if window_copy_line_numbers_active(wme) != 0 {
-        window_copy_drag_update(c, m);
+        window_copy_drag_update(client_owner, m);
     }
     (*data).cursordrag = CURSORDRAG_NONE;
     event_del(&raw mut (*data).dragtimer);
@@ -9655,6 +9655,31 @@ unsafe fn window_copy_acquire_cursor_down(
     }
     if window_copy_update_selection(wme, 1 as ::core::ffi::c_int, no_reset) != 0 {
         window_copy_redraw_lines(wme, oldy, nd);
+    }
+}
+
+#[cfg(test)]
+mod drag_client_tests {
+    use super::*;
+
+    #[test]
+    fn detached_drag_callbacks_do_not_keep_client_alive() {
+        unsafe {
+            let owner = client::new();
+            let weak = std::rc::Rc::downgrade(&owner);
+            window_copy_install_drag_callbacks(&owner);
+            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
+            let mut update = (*owner.get()).tty.mouse_drag_update.take().unwrap();
+            let release = (*owner.get()).tty.mouse_drag_release.take().unwrap();
+            drop(owner);
+            assert!(weak.upgrade().is_none());
+
+            let mut mouse = mouse_event::default();
+            update(&mut mouse);
+            update(&mut mouse);
+            release(&mut mouse);
+            assert!(weak.upgrade().is_none());
+        }
     }
 }
 

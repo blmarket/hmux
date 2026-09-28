@@ -140,7 +140,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     {
         window_copy_set_line_numbers(wp, line_numbers);
         if args_has(args, 'M' as i32 as u_char) != 0 {
-            window_copy_start_drag(c, &raw mut (*event).m);
+            window_copy_start_drag(c_owner.as_ref(), &raw mut (*event).m);
         }
     } else {
         window_copy_set_line_numbers(wp, line_numbers);
