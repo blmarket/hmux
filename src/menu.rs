@@ -26,7 +26,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::menu::{
     menu, menu_item, MenuRow, MenuSelection, MENU_NOMOUSE, MENU_STAYOPEN, MENU_TAB,
 };
-use crate::src::shared::menu::{menu_choice_cb, menu_data, MenuOwner, MenuWeak};
+use crate::src::shared::menu::{menu_choice_cb, menu_data};
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
@@ -230,7 +230,7 @@ pub unsafe fn menu_update(md: &mut menu_data) {
     );
     screen_write_stop(&mut ctx);
 }
-fn menu_free_data(owner: MenuOwner) {
+fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
     let callback = {
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
         if md.closed {
@@ -248,7 +248,7 @@ fn menu_free_data(owner: MenuOwner) {
     }
 }
 
-pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&MenuWeak>) {
+pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&refbox::Weak<crate::src::shared::menu::menu_data>>) {
     let menu = {
         let Some(owner) = window.upgrade() else {
             return;
@@ -276,7 +276,7 @@ pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&Me
         server_redraw_window(&*(w));
     }
 }
-pub fn menu_destroy(menu: Option<MenuOwner>) {
+pub fn menu_destroy(menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>) {
     if let Some(menu) = menu {
         menu_free_data(menu);
     }
@@ -511,7 +511,7 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
     MenuKeyAction::Redraw
 }
 
-pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>, owner: &MenuWeak, event: &key_event) -> ::core::ffi::c_int {
+pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>, owner: &refbox::Weak<crate::src::shared::menu::menu_data>, event: &key_event) -> ::core::ffi::c_int {
     let action = {
         let mut md = match owner.try_borrow_mut() {
             Ok(md) => md,
@@ -642,7 +642,7 @@ pub unsafe fn menu_display(
     if lines == BOX_LINES_DEFAULT {
         lines = options_get_number(options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options), c"menu-border-lines".as_ptr()) as box_lines;
     }
-    let owner = MenuOwner::new(menu_data {
+    let owner = refbox::RefBox::new(menu_data {
         w: window.clone(),
         flags,
         border_lines: lines,
@@ -860,11 +860,11 @@ mod tests {
 
     #[test]
     fn selected_callback_can_close_and_release_its_menu() {
-        let slot = Rc::new(RefCell::new(None::<MenuOwner>));
+        let slot = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::menu::menu_data>>));
         let callback_slot = Rc::clone(&slot);
         let called = Rc::new(Cell::new(false));
         let callback_called = Rc::clone(&called);
-        let md = MenuOwner::new(state(&[Some(c"close myself")]));
+        let md = refbox::RefBox::new(state(&[Some(c"close myself")]));
         let weak = md.downgrade();
         md.try_borrow_mut().unwrap().cb = Some(Box::new(move |selection| {
             assert_eq!(
@@ -894,7 +894,7 @@ mod tests {
     }
     #[test]
     fn cancellation_keeps_screen_alive_until_callback_returns() {
-        let owner = MenuOwner::new(state(&[Some(c"cancel me")]));
+        let owner = refbox::RefBox::new(state(&[Some(c"cancel me")]));
         let observer = owner.downgrade();
         let callback_observer = observer.clone();
         let calls = Rc::new(Cell::new(0));
@@ -933,10 +933,10 @@ mod tests {
                 window::new();
             let weak_window = Rc::downgrade(&window);
             let w = crate::src::shared::rc::as_ptr(&window);
-            let first = MenuOwner::new(state(&[Some(c"first")]));
+            let first = refbox::RefBox::new(state(&[Some(c"first")]));
             first.try_borrow_mut().unwrap().w = weak_window.clone();
             let first_observer = first.downgrade();
-            let replacement = MenuOwner::new(state(&[Some(c"replacement")]));
+            let replacement = refbox::RefBox::new(state(&[Some(c"replacement")]));
             replacement.try_borrow_mut().unwrap().w = weak_window.clone();
             let replacement_observer = replacement.downgrade();
             let closed = Rc::new(Cell::new(0));
@@ -990,9 +990,9 @@ mod tests {
                 (*w).sy = 24;
                 let slot = Rc::new(RefCell::new(Some(window)));
                 let callback_slot = Rc::clone(&slot);
-                let first = MenuOwner::new(state(&[Some(c"first")]));
+                let first = refbox::RefBox::new(state(&[Some(c"first")]));
                 first.try_borrow_mut().unwrap().w = observer.clone();
-                let intermediate = MenuOwner::new(state(&[Some(c"intermediate")]));
+                let intermediate = refbox::RefBox::new(state(&[Some(c"intermediate")]));
                 intermediate.try_borrow_mut().unwrap().w = observer.clone();
                 let intermediate_observer = intermediate.downgrade();
                 let intermediate_cancelled = Rc::new(Cell::new(0));

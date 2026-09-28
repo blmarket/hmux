@@ -13,8 +13,6 @@ use std::ffi::CStr;
 use std::rc::Weak;
 
 /// Windows own menus; redraw scenes only observe them.
-pub type MenuOwner = refbox::RefBox<menu_data>;
-pub type MenuWeak = refbox::Weak<menu_data>;
 
 /// A borrowed menu definition. An empty name denotes a separator.
 #[derive(Copy, Clone)]

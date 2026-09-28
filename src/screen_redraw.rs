@@ -2048,12 +2048,11 @@ pub unsafe fn redraw_pane_scrollbar(client_owner: &std::rc::Rc<std::cell::Unsafe
 #[cfg(test)]
 mod menu_observer_tests {
     use super::*;
-    use crate::src::shared::menu::MenuOwner;
-    use crate::src::shared::menu::{menu, menu_data};
+        use crate::src::shared::menu::{menu, menu_data};
     use crate::src::shared::redraw::RedrawMenuSpan;
 
     fn owned_scene(
-        menu: &crate::src::shared::menu::MenuOwner,
+        menu: &refbox::RefBox<crate::src::shared::menu::menu_data>,
         generation: u64,
     ) -> Box<redraw_scene> {
         let mut line = redraw_line::default();
@@ -2080,7 +2079,7 @@ mod menu_observer_tests {
 
     #[test]
     fn active_scene_borrows_survive_nested_cache_replacement() {
-        let menu = MenuOwner::new(menu_data::new(Box::new(menu {
+        let menu = refbox::RefBox::new(menu_data::new(Box::new(menu {
             title: c"Scene".to_owned(),
             items: Vec::new(),
             count: 0,
@@ -2112,7 +2111,7 @@ mod menu_observer_tests {
 
     #[test]
     fn returning_an_active_scene_reuses_its_box_and_spans() {
-        let menu = MenuOwner::new(menu_data::new(Box::new(menu {
+        let menu = refbox::RefBox::new(menu_data::new(Box::new(menu {
             title: c"Scene".to_owned(),
             items: Vec::new(),
             count: 0,
@@ -2373,7 +2372,7 @@ mod menu_observer_tests {
 
     #[test]
     fn cached_spans_observe_menu_lifetimes_and_scratch_releases_observers() {
-        let owner = MenuOwner::new(menu_data::new(Box::new(menu {
+        let owner = refbox::RefBox::new(menu_data::new(Box::new(menu {
             title: c"Observed".to_owned(),
             items: Vec::new(),
             count: 0,

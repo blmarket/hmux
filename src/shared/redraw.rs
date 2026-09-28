@@ -3,7 +3,6 @@
 use super::abi::{u_int, uint64_t};
 use super::client::client;
 use super::layout::pane_lines;
-use super::menu::MenuWeak;
 use super::pane::window_pane;
 use super::window::window;
 use std::{cell::UnsafeCell, rc::Weak};
@@ -224,7 +223,7 @@ impl Eq for RedrawScrollbarSpan {}
 
 #[derive(Clone)]
 pub struct RedrawMenuSpan {
-    pub md: MenuWeak,
+    pub md: refbox::Weak<crate::src::shared::menu::menu_data>,
     pub px: u_int,
     pub py: u_int,
 }
