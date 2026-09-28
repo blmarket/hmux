@@ -47,7 +47,7 @@ use crate::src::shared::client::client;
 use crate::src::shared::command::CMDQ_STATE_NOHOOKS;
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::events::{event_payload, events_callback, events_sink};
+use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::key_event;
@@ -103,7 +103,7 @@ pub struct hooks_monitor {
     // options_entry.monitor_data owns the boxed record; callbacks only borrow it.
     pub oo: *mut options,
     pub set: Option<crate::src::shared::monitor::MonitorOwner>,
-    pub sink: *mut events_sink,
+    pub sink: EventSinkId,
     pub fs: cmd_find_state,
     pub type_0: monitor_type,
     pub id: ::core::ffi::c_int,
@@ -554,7 +554,7 @@ pub unsafe fn hooks_monitor_add(
     let mut owner = Box::new(hooks_monitor {
         oo,
         set: None,
-        sink: ::core::ptr::null_mut(),
+        sink: EventSinkId::default(),
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut(),

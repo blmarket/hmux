@@ -31,11 +31,16 @@ impl event_payload_item {
 }
 
 pub struct events_sink {
+    pub id: EventSinkId,
     pub name: std::ffi::CString,
     pub cb: events_cb,
     pub dead: ::core::ffi::c_int,
     pub generation: u_int,
 }
+
+/// A cancellation identity; ownership remains with the event-sink registry.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EventSinkId(pub(crate) u64);
 
 pub type events_cb = std::rc::Rc<dyn Fn(&std::ffi::CStr, &mut event_payload)>;
 

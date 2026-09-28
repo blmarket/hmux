@@ -7,14 +7,13 @@ use crate::src::events_payload::{
     event_payload_set_pane, event_payload_set_session, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_get_level;
 use crate::src::session::session_alive;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::events::{event_payload, events_cb, events_sink};
+use crate::src::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
@@ -23,51 +22,55 @@ use std::ffi::CStr;
 static mut events_sinks: Vec<Box<events_sink>> = Vec::new();
 static mut events_dispatching: u_int = 0;
 static mut events_generation: u_int = 0;
+static mut events_next_sink_id: u64 = 0;
 
-unsafe fn events_free_sink(mut es: *mut events_sink) {
-    let sinks = &mut *(&raw mut events_sinks);
-    if let Some(index) = sinks
-        .iter()
-        .position(|sink| (&**sink as *const events_sink).cast_mut() == es)
-    {
-        drop(sinks.remove(index));
-    }
-}
 unsafe fn events_free_dead() {
-    let sinks = &mut *(&raw mut events_sinks);
-    let mut index = 0;
-    while index < sinks.len() {
-        if sinks[index].dead != 0 {
-            drop(sinks.remove(index));
-        } else {
-            index += 1;
-        }
+    loop {
+        let removed = {
+            let sinks = &mut *(&raw mut events_sinks);
+            sinks.iter().position(|sink| sink.dead != 0).map(|index| sinks.remove(index))
+        };
+        let Some(owner) = removed else { break };
+        drop(owner);
     }
 }
-pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> *mut events_sink {
+pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> EventSinkId {
     events_generation = events_generation.wrapping_add(1);
-    let mut owner = Box::new(events_sink {
+    events_next_sink_id = events_next_sink_id.checked_add(1).expect("event sink IDs exhausted");
+    let id = EventSinkId(events_next_sink_id);
+    let owner = Box::new(events_sink {
+        id,
         name: name.to_owned(),
         cb: cb,
         dead: 0,
         generation: events_generation,
     });
 
-    let es = &raw mut *owner;
     (&mut *(&raw mut events_sinks)).push(owner);
-    es
+    id
 }
-pub unsafe fn events_remove_sink(mut es: *mut events_sink) {
-    if !es.is_null() && (*es).dead == 0 {
-        if events_dispatching != 0 as u_int {
-            (*es).dead = 1 as ::core::ffi::c_int;
-        } else {
-            events_free_sink(es);
-        }
+pub unsafe fn events_remove_sink(id: EventSinkId) {
+    if id == EventSinkId::default() {
+        return;
     }
+    let removed = {
+        let sinks = &mut *(&raw mut events_sinks);
+        let Some(index) = sinks.iter().position(|sink| sink.id == id) else {
+            return;
+        };
+        if sinks[index].dead != 0 {
+            return;
+        }
+        if events_dispatching != 0 {
+            sinks[index].dead = 1;
+            None
+        } else {
+            Some(sinks.remove(index))
+        }
+    };
+    drop(removed);
 }
 pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<event_payload>) {
-    let mut es: *mut events_sink = ::core::ptr::null_mut::<events_sink>();
     let mut generation: u_int = events_generation;
     event_payload_set_string(
         &mut *ep,
@@ -88,16 +91,21 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<even
     events_dispatching = events_dispatching.wrapping_add(1);
     let mut index = 0;
     while index < (&*(&raw const events_sinks)).len() {
-        es = {
-            let sinks = &mut *(&raw mut events_sinks);
-            &raw mut *sinks[index]
+        let callback = {
+            let sinks = &*(&raw const events_sinks);
+            let sink = &sinks[index];
+            if sink.dead == 0
+                && sink.generation <= generation
+                && sink.name.as_c_str() == CStr::from_ptr(name)
+            {
+                Some(sink.cb.clone())
+            } else {
+                None
+            }
         };
         index += 1;
-        if !((*es).dead != 0 || (*es).generation > generation) {
-            if strcmp(((*es).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
-                let callback = (*es).cb.clone();
-                callback(CStr::from_ptr(name), &mut *ep);
-            }
+        if let Some(callback) = callback {
+            callback(CStr::from_ptr(name), &mut *ep);
         }
     }
     events_dispatching = events_dispatching.wrapping_sub(1);

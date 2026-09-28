@@ -16,7 +16,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wait_item};
-use crate::src::shared::events::{event_payload, event_payload_item, events_callback, events_sink};
+use crate::src::shared::events::{event_payload, event_payload_item, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use std::ffi::{CStr, CString};
@@ -39,7 +39,7 @@ pub struct wait_channels {
 #[repr(C)]
 pub struct wait_event_item {
     pub item: *mut cmdq_item,
-    pub sink: *mut events_sink,
+    pub sink: EventSinkId,
     pub name: std::ffi::CString,
     pub filter: Option<std::ffi::CString>,
     pub verbose: ::core::ffi::c_int,
@@ -339,7 +339,7 @@ unsafe fn cmd_wait_for_event(
     }
     let mut owner = Box::new(wait_event_item {
         item: item,
-        sink: ::core::ptr::null_mut(),
+        sink: EventSinkId::default(),
         name: CStr::from_ptr(name).to_owned(),
         filter: if filter.is_null() {
             None
@@ -713,7 +713,7 @@ mod tests {
         for _ in 0..128 {
             let mut owner = Box::new(wait_event_item {
                 item: ::core::ptr::null_mut(),
-                sink: ::core::ptr::null_mut(),
+                sink: EventSinkId::default(),
                 name: name.clone(),
                 filter: None,
                 verbose: 0,
