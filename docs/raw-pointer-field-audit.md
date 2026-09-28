@@ -5,9 +5,10 @@ including raw pointers nested in collections or smart pointers, excluding
 `src/compat/`. Function-pointer parameters/results are not stored data pointers.
 Foreign ABI/resource fields are excluded from migration work. The offending
 integration test under `tests/` has been deleted; the scanner still detects any
-new raw fields added there. The requested
-[remaining-field report](../../report.md) is written outside the repository.
-The three supporting workspace crates contain no such fields.
+new raw fields added there. The earlier external
+[remaining-field report](../../report.md) is a historical snapshot; current
+counts and decisions are recorded here and in the inventory below. The three
+supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
 fields and their lifecycle decisions. The current scanner finds **38 raw fields in
