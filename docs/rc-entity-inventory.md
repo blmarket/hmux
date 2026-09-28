@@ -2720,3 +2720,8 @@ C-string holder for these sites. Raw logger callers elsewhere remain.
 
 The prompt history logger now borrows its owned `CString` path bytes for load
 and save messages. Libc error strings still use the deferred raw formatter.
+
+Input and window mode names, hook names, terminal feature and capability names,
+terminal names, process names, and window names now pass typed `CStr` or
+`CString` bytes to the deferred formatter. These calls retain their owners
+through the synchronous log invocation. Other raw logger callers remain.

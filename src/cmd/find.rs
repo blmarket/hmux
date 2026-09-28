@@ -867,7 +867,7 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
             ((*(*fs).wl_ptr()).idx) as u32,
             ((*(*fs).wl_ptr()).window_ptr() == (*fs).w_ptr()) as ::core::ffi::c_int,
             ((*(*fs).w_ptr()).id) as u32,
-            log_cstr(((*(*fs).w_ptr()).name.as_ptr()) as *const _)
+            crate::src::log::log_bytes((*(*fs).w_ptr()).name.as_bytes())
         ));
     } else {
         log_debug(format_args!("{}: wl=none", log_cstr((prefix) as *const _)));

@@ -2252,7 +2252,7 @@ unsafe fn input_ground_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     log_debug(format_args!(
         "{}: {} expired",
         "input_ground_timer_callback",
-        log_cstr((*(*ictx).state).name.as_ptr())
+        crate::src::log::log_bytes((*(*ictx).state).name.to_bytes())
     ));
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
@@ -2483,7 +2483,7 @@ pub unsafe fn input_parse_buffer(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
         ((*wp).id) as u32,
-        log_cstr((*(*ictx).state).name.as_ptr()),
+        crate::src::log::log_bytes((*(*ictx).state).name.to_bytes()),
         (len) as usize,
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
     ));

@@ -122,8 +122,8 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         log_debug(format_args!(
             "@{} new name {} (was {})",
             ((*w).id) as u32,
-            log_cstr((name.as_ptr()) as *const _),
-            log_cstr(((*w).name.as_ptr()) as *const _)
+            crate::src::log::log_bytes(name.as_bytes()),
+            crate::src::log::log_bytes((*w).name.as_bytes())
         ));
         window_set_name(w, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
         server_redraw_window_borders(&*(w));
@@ -132,7 +132,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         log_debug(format_args!(
             "@{} name not changed (still {})",
             ((*w).id) as u32,
-            log_cstr(((*w).name.as_ptr()) as *const _)
+            crate::src::log::log_bytes((*w).name.as_bytes())
         ));
     }
 }

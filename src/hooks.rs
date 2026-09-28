@@ -125,7 +125,7 @@ unsafe fn hooks_insert_one(
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",
-            log_cstr((*hd).name.as_ptr()),
+            crate::src::log::log_bytes((*hd).name.to_bytes()),
             log_cstr((s.as_ptr()) as *const _)
         ));
     }
@@ -178,7 +178,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     log_debug(format_args!(
         "{}: inserting hook {}",
         "hooks_insert",
-        log_cstr((*hd).name.as_ptr())
+        crate::src::log::log_bytes((*hd).name.to_bytes())
     ));
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if cmd_find_empty_state(&(*hd).fs) != 0 || cmd_find_valid_state(&(*hd).fs) == 0 {
@@ -209,7 +209,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         log_debug(format_args!(
             "{}: hook {} not found",
             "hooks_insert",
-            log_cstr((*hd).name.as_ptr())
+            crate::src::log::log_bytes((*hd).name.to_bytes())
         ));
         return;
     }
@@ -232,7 +232,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 log_debug(format_args!(
                     "{}: can't parse hook {}: {}",
                     "hooks_insert",
-                    log_cstr((*hd).name.as_ptr()),
+                    crate::src::log::log_bytes((*hd).name.to_bytes()),
                     log_cstr(
                         (pr.error
                             .as_ref()

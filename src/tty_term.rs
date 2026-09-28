@@ -1331,7 +1331,7 @@ pub unsafe fn tty_term_create(
                                 if !errstr.is_null() {
                                     log_debug(format_args!(
                                         "{}: {}",
-                                        log_cstr((*ent).name.as_ptr()),
+                                        crate::src::log::log_bytes((*ent).name.to_bytes()),
                                         log_cstr((errstr) as *const _)
                                     ));
                                 } else {
@@ -1489,7 +1489,10 @@ impl Drop for tty_term {
             return;
         }
         unsafe {
-            log_debug(format_args!("removing term {}", log_cstr(self.name.as_ptr())));
+            log_debug(format_args!(
+                "removing term {}",
+                crate::src::log::log_bytes(self.name.as_bytes())
+            ));
             if !self.entry.le_next.is_null() {
                 (*self.entry.le_next).entry.le_prev = self.entry.le_prev;
             }
@@ -1638,7 +1641,7 @@ pub unsafe fn tty_term_string_i(
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
-            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+            crate::src::log::log_bytes(tty_term_codes[code as usize].name.to_bytes())
         ));
         return std::ffi::CString::default();
     }
@@ -1656,7 +1659,7 @@ pub unsafe fn tty_term_string_ii(
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
-            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+            crate::src::log::log_bytes(tty_term_codes[code as usize].name.to_bytes())
         ));
         return std::ffi::CString::default();
     }
@@ -1675,7 +1678,7 @@ pub unsafe fn tty_term_string_iii(
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
-            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+            crate::src::log::log_bytes(tty_term_codes[code as usize].name.to_bytes())
         ));
         return std::ffi::CString::default();
     }
@@ -1692,7 +1695,7 @@ pub unsafe fn tty_term_string_s(
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
-            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+            crate::src::log::log_bytes(tty_term_codes[code as usize].name.to_bytes())
         ));
         return std::ffi::CString::default();
     }
@@ -1710,7 +1713,7 @@ pub unsafe fn tty_term_string_ss(
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
-            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+            crate::src::log::log_bytes(tty_term_codes[code as usize].name.to_bytes())
         ));
         return std::ffi::CString::default();
     }

@@ -260,7 +260,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
 pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut() -> bool>) {
     log_debug(format_args!(
         "{} loop enter",
-        log_cstr(((*tp).name.as_ptr()) as *const _)
+        crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
     loop {
         event_loop();
@@ -270,7 +270,7 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
     }
     log_debug(format_args!(
         "{} loop exit",
-        log_cstr(((*tp).name.as_ptr()) as *const _)
+        crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
 }
 pub unsafe fn proc_exit(mut tp: *mut tmuxproc) {

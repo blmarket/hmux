@@ -3096,7 +3096,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
         log_debug(format_args!(
             "{}: next mode is {}",
             "window_pane_reset_mode",
-            log_cstr(((*(*next).mode).name.as_ptr()) as *const _)
+            crate::src::log::log_bytes((*(*next).mode).name.to_bytes())
         ));
         assert!(!(*wp).screen_ptr().is_null(), "restored mode has a screen");
         if (*(*next).mode).resize.is_some() {

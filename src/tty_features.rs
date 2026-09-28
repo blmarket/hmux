@@ -269,7 +269,7 @@ pub unsafe fn tty_parse_features(
         } else if remove != 0 {
             log_debug(format_args!(
                 "removing terminal feature: {}",
-                log_cstr(((*tf).name.as_ptr()) as *const _)
+                crate::src::log::log_bytes((*tf).name.to_bytes())
             ));
             *enabled &= !((1 as ::core::ffi::c_int) << i);
             if !disabled.is_null() {
@@ -282,7 +282,7 @@ pub unsafe fn tty_parse_features(
             if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
                 log_debug(format_args!(
                     "adding terminal feature: {}",
-                    log_cstr(((*tf).name.as_ptr()) as *const _)
+                    crate::src::log::log_bytes((*tf).name.to_bytes())
                 ));
                 *enabled |= (1 as ::core::ffi::c_int) << i;
             }
@@ -372,13 +372,13 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int 
             tf = tty_features[i as usize];
             log_debug(format_args!(
                 "applying terminal feature: {}",
-                log_cstr(((*tf).name.as_ptr()) as *const _)
+                crate::src::log::log_bytes((*tf).name.to_bytes())
             ));
             if let Some(capabilities) = (*tf).capabilities {
                 for capability in capabilities {
                     log_debug(format_args!(
                         "adding capability: {}",
-                        log_cstr((capability.as_ptr()) as *const _)
+                        crate::src::log::log_bytes(capability.to_bytes())
                     ));
                     tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int);
                 }
