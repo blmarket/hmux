@@ -17,7 +17,7 @@ pub fn window_position_is_visible(ranges: &[visible_range], px: u_int) -> bool {
 /// coordinates, retaining its allocation. Callers may reuse the buffer once its
 /// previous result is consumed; nested queries need a separate buffer.
 pub unsafe fn window_visible_ranges(
-    base_wp: *mut window_pane,
+    base_wp: Option<&window_pane>,
     mut px: ::core::ffi::c_int,
     py: ::core::ffi::c_int,
     mut width: u_int,
@@ -34,15 +34,15 @@ pub unsafe fn window_visible_ranges(
         width = width.wrapping_sub(-px as u_int);
         px = 0;
     }
-    if base_wp.is_null() {
+    let Some(base_wp) = base_wp else {
         ranges.push(visible_range {
             px: px as u_int,
             nx: width,
         });
         return;
-    }
+    };
 
-    let w = (*base_wp).window;
+    let w = base_wp.window;
     if py as u_int >= (*w).sy || px as u_int >= (*w).sx {
         return;
     }
@@ -54,9 +54,10 @@ pub unsafe fn window_visible_ranges(
         nx: width,
     });
     let mut found_self = false;
-    let mut wp = window_pane_z_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if wp == base_wp {
+    let mut cursor = window_pane_z_last(w);
+    while let Some(pane_owner) = cursor {
+        let wp = pane_owner.get();
+        if std::ptr::eq(&*wp, base_wp) {
             found_self = true;
         } else {
             let floating = window_pane_is_floating(&*wp) != 0;
@@ -140,6 +141,6 @@ pub unsafe fn window_visible_ranges(
                 }
             }
         }
-        wp = window_pane_z_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_z_previous(wp);
     }
 }

@@ -1568,3 +1568,14 @@ scoped borrows at their existing boundaries.
 `cargo test --workspace` and `git diff --check` passed. The window active-pane
 relationship, cursor helper arguments, command targets and other raw projections
 remain pending.
+
+## Implemented borrowed pane visibility and prompt cursor inputs
+
+Prompt cursor calculation borrows pane data. Horizontal visibility queries take
+an optional shared pane borrow, preserving the no-pane unclipped-span behavior.
+The z-order walk keeps each pane owner until its geometry and visibility have
+been consumed. Screen-write, cursor and test callers use the typed input.
+
+`cargo test --workspace` and `git diff --check` passed, including clipping,
+occlusion, edge-coordinate and reusable visibility-buffer tests. Raw pane-parent
+window access and lower-level geometry helper arguments remain pending.

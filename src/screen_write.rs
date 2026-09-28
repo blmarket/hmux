@@ -738,7 +738,7 @@ pub unsafe fn screen_write_fast_copy(
             0 as ::core::ffi::c_int,
         );
         window_visible_ranges(
-            wp,
+            wp.as_ref(),
             (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
             (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
             nx,
@@ -1321,7 +1321,7 @@ unsafe fn screen_write_redraw_line(
     let mut xoff: ::core::ffi::c_int = (*wp).xoff;
     let mut yoff: ::core::ffi::c_int = (*wp).yoff;
     window_visible_ranges(
-        wp,
+        wp.as_ref(),
         xoff,
         (yoff as u_int).wrapping_add(yy) as ::core::ffi::c_int,
         sx,
@@ -2119,7 +2119,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
     }
     if (*s).cx <= sx.wrapping_sub(1 as u_int) {
         window_visible_ranges(
-            write_pane,
+            write_pane.as_ref(),
             xoff.wrapping_add((*s).cx) as ::core::ffi::c_int,
             yoff.wrapping_add((*s).cy) as ::core::ffi::c_int,
             sx.wrapping_sub((*s).cx),
@@ -2138,7 +2138,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
     while y < sy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
         window_visible_ranges(
-            write_pane,
+            write_pane.as_ref(),
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
@@ -2217,7 +2217,7 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
     while y < (*s).cy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
         window_visible_ranges(
-            write_pane,
+            write_pane.as_ref(),
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
@@ -2235,7 +2235,7 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
     }
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, (*s).cy as ::core::ffi::c_int);
     window_visible_ranges(
-        write_pane,
+        write_pane.as_ref(),
         xoff as ::core::ffi::c_int,
         yoff.wrapping_add(ocy) as ::core::ffi::c_int,
         (*s).cx.wrapping_add(1 as u_int),
@@ -2304,7 +2304,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     while y < sy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
         window_visible_ranges(
-            write_pane,
+            write_pane.as_ref(),
             xoff as ::core::ffi::c_int,
             yoff.wrapping_add(y) as ::core::ffi::c_int,
             sx,
@@ -2507,7 +2507,7 @@ unsafe fn screen_write_collect_flush_line(
         return 0 as u_int;
     }
     window_visible_ranges(
-        wp,
+        wp.as_ref(),
         0 as ::core::ffi::c_int,
         y.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         wsx,
@@ -3105,7 +3105,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         yoff = (*wp).yoff;
     }
     window_visible_ranges(
-        wp,
+        wp.as_ref(),
         (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
         (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         width,
@@ -3305,7 +3305,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         yoff = (*wp).yoff;
     }
     window_visible_ranges(
-        wp,
+        wp.as_ref(),
         (xoff as u_int).wrapping_add(cx).wrapping_sub(n) as ::core::ffi::c_int,
         cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         n,

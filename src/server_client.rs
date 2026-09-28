@@ -3717,26 +3717,26 @@ struct PromptCursor {
 // the cursor but hides it, retaining the incoming coordinates outside the view.
 unsafe fn server_client_prompt_cursor(
     c: &client,
-    wp: *mut window_pane,
+    wp: &window_pane,
     mut cursor: PromptCursor,
 ) -> Option<PromptCursor> {
     let mut r = Vec::new();
     let tty = &c.tty;
     let mut px: ::core::ffi::c_int = 0;
     let mut py: ::core::ffi::c_int = 0;
-    if window_pane_has_prompt(&*wp) == 0 {
+    if window_pane_has_prompt(wp) == 0 {
         return None;
     }
     cursor.mode &= !MODE_CURSOR;
     let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(tty);
     if status_at_line(c) == 0 as ::core::ffi::c_int {
-        py = (*wp).yoff;
+        py = wp.yoff;
     } else {
-        py = ((*wp).yoff as u_int)
-            .wrapping_add((*wp).sy)
+        py = (wp.yoff as u_int)
+            .wrapping_add(wp.sy)
             .wrapping_sub(1 as u_int) as ::core::ffi::c_int;
     }
-    px = ((*wp).xoff as u_int).wrapping_add((*wp).prompt_cx) as ::core::ffi::c_int;
+    px = (wp.xoff as u_int).wrapping_add(wp.prompt_cx) as ::core::ffi::c_int;
     if px < ox as ::core::ffi::c_int
         || px > ox.wrapping_add(sx) as ::core::ffi::c_int
         || py < oy as ::core::ffi::c_int
@@ -3747,7 +3747,7 @@ unsafe fn server_client_prompt_cursor(
     cursor.cx = (px as u_int).wrapping_sub(ox);
     cursor.cy = (py as u_int).wrapping_sub(oy);
     window_visible_ranges(
-        wp,
+        Some(wp),
         cursor.cx as ::core::ffi::c_int,
         cursor.cy as ::core::ffi::c_int,
         1 as u_int,
@@ -3827,7 +3827,7 @@ mod prompt_cursor_tests {
                     (*cover).sy = 1;
                     window.z_index.push_front(std::rc::Rc::downgrade(&blocker));
                 }
-                let result = server_client_prompt_cursor(&c, wp, incoming);
+                let result = server_client_prompt_cursor(&c, &*wp, incoming);
                 assert_eq!(
                     result.map(|cursor| (cursor.mode, cursor.cx, cursor.cy)),
                     expected,
@@ -3912,7 +3912,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
             }
             prompt = 1 as u_int;
         } else {
-            if let Some(cursor) = server_client_prompt_cursor(&*c, wp, PromptCursor { mode, cx, cy }) {
+            if let Some(cursor) = server_client_prompt_cursor(&*c, &*wp, PromptCursor { mode, cx, cy }) {
                 prompt = 1;
                 mode = cursor.mode;
                 cx = cursor.cx;
@@ -3936,7 +3936,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                 cy = ((*wp).yoff + (*s).cy as ::core::ffi::c_int - oy as ::core::ffi::c_int)
                     as u_int;
                 window_visible_ranges(
-                    wp,
+                    wp.as_ref(),
                     cx as ::core::ffi::c_int,
                     cy as ::core::ffi::c_int,
                     1 as u_int,

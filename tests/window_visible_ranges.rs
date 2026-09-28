@@ -18,7 +18,7 @@ unsafe fn calculate_ranges(
     width: u32,
 ) -> Vec<visible_range> {
     let mut ranges = Vec::new();
-    window_visible_ranges(pane, x, y, width, &mut ranges);
+    window_visible_ranges(pane.as_ref(), x, y, width, &mut ranges);
     ranges
 }
 
@@ -148,7 +148,7 @@ fn reuses_capacity_and_replaces_results_including_empty_queries() {
         let mut ranges = Vec::with_capacity(8);
         let storage = ranges.as_ptr();
         let capacity = ranges.capacity();
-        window_visible_ranges(base, 10, 5, 20, &mut ranges);
+        window_visible_ranges(base.as_ref(), 10, 5, 20, &mut ranges);
         assert_eq!(segments(&ranges), [(10, 4), (21, 3), (28, 2)]);
         assert_eq!(ranges.as_ptr(), storage);
         assert_eq!(ranges.capacity(), capacity);
@@ -164,16 +164,16 @@ fn reuses_capacity_and_replaces_results_including_empty_queries() {
             (null_mut(), -3, 0, 3),
             (null_mut(), 0, 0, 0),
         ] {
-            window_visible_ranges(base, 10, 5, 20, &mut ranges);
+            window_visible_ranges(base.as_ref(), 10, 5, 20, &mut ranges);
             assert_eq!(ranges.len(), 3);
-            window_visible_ranges(pane, x, y, width, &mut ranges);
+            window_visible_ranges(pane.as_ref(), x, y, width, &mut ranges);
             assert!(ranges.is_empty());
             assert_eq!(ranges.as_ptr(), storage);
             assert_eq!(ranges.capacity(), capacity);
         }
-        window_visible_ranges(null_mut(), 2, 0, 7, &mut ranges);
+        window_visible_ranges(None, 2, 0, 7, &mut ranges);
         assert_eq!(segments(&ranges), [(2, 7)]);
-        window_visible_ranges(base, 78, 0, 8, &mut ranges);
+        window_visible_ranges(base.as_ref(), 78, 0, 8, &mut ranges);
         assert_eq!(segments(&ranges), [(78, 2)]);
         assert_eq!(ranges.as_ptr(), storage);
         assert_eq!(ranges.capacity(), capacity);
