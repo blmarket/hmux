@@ -1,6 +1,6 @@
 # Raw pointer field lifecycle audit
 
-Reviewed 2026-09-27. Scope: workspace Rust struct, union, tuple and enum fields,
+Reviewed 2026-09-28. Scope: workspace Rust struct, union, tuple and enum fields,
 including raw pointers nested in collections or smart pointers, excluding
 `src/compat/`. Function-pointer parameters/results are not stored data pointers.
 Foreign ABI/resource fields are excluded from migration work. The offending
@@ -14,17 +14,19 @@ The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** origi
 fields and their lifecycle decisions. The current scanner finds **32 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
 200 explicitly record a migration and sixteen record
-removal. The remaining 32 comprise 1 needing
-an access or teardown design, and 31 retained raw under current ownership.
+removal. The remaining 32 are retained raw under their current contracts.
 
-The remaining 32 fields have audit dispositions. Design entries
-are pending work, not implemented changes.
+The remaining 32 fields have audit dispositions.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
 
 A skipped candidate is not a claim that its current raw API is
 safe, nor that migration is impossible. It means this review did not establish
 the ownership, aliasing, and callback guarantees needed for that substitution.
+`LogCStr.ptr` is a deferred raw C input: callers may pass nullable or bounded
+nonterminated buffers, and disabled logging does not read them. Typed C string
+owners use `log_bytes` where established; the remaining raw inputs keep an
+explicit unsafe constructor contract until their call boundaries become typed.
 
 Reproduce the remaining inventory and check coverage:
 
