@@ -3998,13 +3998,12 @@ pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
 }
 pub unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
     let mut w: *mut window = wp.window_ptr();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if wp.base.saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active_ptr().is_null() {
-        wme = (*(*w).active_ptr()).modes.active_ptr();
-        if !wme.is_null() && (*(*wme).mode).flags & WINDOW_MODE_HIDE_SCROLLBARS != 0 {
+        if (*(*w).active_ptr()).modes.active_mode()
+            .is_some_and(|mode| mode.flags & WINDOW_MODE_HIDE_SCROLLBARS != 0) {
             return 0 as ::core::ffi::c_int;
         }
     }
