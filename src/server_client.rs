@@ -1499,8 +1499,8 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
     server_check_unattached();
     server_update_socket();
 }
-pub unsafe fn server_client_lost(mut c: *mut client) {
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
+pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = client_owner.get();
     if (&*std::ptr::addr_of!(cfg_client)).ptr_eq(&(*c).observer) {
         cfg_client = std::rc::Weak::new();
     }
@@ -1508,10 +1508,10 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     server_client_clear_overlay(c);
     status_prompt_clear(c);
     status_message_clear(c);
-    cmdq_abort_file_wait(&(*c).observer.upgrade().expect("disconnecting client is live"));
+    cmdq_abort_file_wait(client_owner);
     let mut next_file = client_files_minmax(&(*c).files);
     while let Some(file) = next_file {
-        cf = crate::src::shared::rc::as_ptr(&file);
+        let cf = &mut *file.get();
         next_file = client_files_next(&*cf);
         (*cf).error = EINTR;
         file_fire_done(cf);
@@ -4084,7 +4084,7 @@ unsafe fn server_client_exit_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<cli
                     as *const _
             )
         ));
-        server_client_lost(c);
+        server_client_lost(owner);
     } else if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         log_debug(format_args!(
             "{}: {} took too long to flush",
@@ -4507,7 +4507,7 @@ unsafe fn server_client_dispatch(
     }
     let imsg = match message {
         crate::src::shared::process::PeerMessage::Disconnected => {
-            server_client_lost(c);
+            server_client_lost(owner);
             return;
         }
         crate::src::shared::process::PeerMessage::Message(imsg) => imsg,

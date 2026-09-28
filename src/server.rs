@@ -415,27 +415,19 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_send_exit() {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut c1: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c1_owner;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     cmd_wait_for_flush();
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() && {
-        registry_c1_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c1 = registry_c1_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        1 as ::core::ffi::c_int != 0
-    } {
+    while let Some(client_owner) = registry_c_owner {
+        let c = client_owner.get();
+        registry_c_owner = clients.next(&client_owner);
         if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
-            server_client_lost(c);
+            server_client_lost(&client_owner);
         } else {
             (*c).flags |= CLIENT_EXIT as uint64_t;
             (*c).exit_type = CLIENT_EXIT_SHUTDOWN;
         }
         (*c).session = ::core::ptr::null_mut::<session>();
-        registry_c_owner = registry_c1_owner.take();
-        c = c1;
     }
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);

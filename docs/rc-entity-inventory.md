@@ -1858,3 +1858,15 @@ from its retained handle instead of maintaining a raw client_file local.
 
 `cargo test --workspace` and `git diff --check` passed. Client-loss dispatch and
 remaining control/transport internals still use raw projections and remain pending.
+
+## Implemented retained client-loss boundary
+
+Client-loss handling accepts a retained client from peer dispatch, terminal input,
+the exit timer or server shutdown. File-wait cancellation reuses that handle;
+file completion traversal borrows records from retained file handles. Registry
+removal and deferred release of its owning client reference remain at their
+original cleanup points. Server shutdown uses an owning cursor and retains its
+successor before disconnecting the current client.
+
+`cargo test --workspace` and `git diff --check` passed. Client cleanup internals,
+file-completion scheduling and raw session relationships remain pending.

@@ -265,7 +265,7 @@ unsafe fn tty_read_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) 
             ));
         }
         event_del(&raw mut (*tty).event_in);
-        server_client_lost(c);
+        server_client_lost(owner);
         return;
     }
     log_debug(format_args!(
