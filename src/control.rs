@@ -51,6 +51,8 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use std::collections::VecDeque;
+use std::cell::UnsafeCell;
+use std::rc::Rc;
 use std::ffi::{CStr, CString};
 
 pub const POLLIN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -303,6 +305,28 @@ mod control_queue_tests {
     }
 
     #[test]
+    fn detached_stream_callbacks_do_not_retain_or_access_expired_clients() {
+        unsafe {
+            let owner = client::new();
+            let observer = Rc::downgrade(&owner);
+            let (read, write, error) = control_stream_callbacks(&owner);
+            let mut stream = bufferevent::default();
+            let stream = std::ptr::NonNull::from(&mut stream);
+            assert_eq!(Rc::strong_count(&owner), 1);
+            // Read/write tolerate stopped control state; error marks a live client.
+            read.as_ref().unwrap().borrow_mut()(stream);
+            write.as_ref().unwrap().borrow_mut()(stream);
+            error.as_ref().unwrap().borrow_mut()(stream, 0);
+            assert_ne!((*owner.get()).flags & CLIENT_EXIT as uint64_t, 0);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            read.as_ref().unwrap().borrow_mut()(stream);
+            write.as_ref().unwrap().borrow_mut()(stream);
+            error.as_ref().unwrap().borrow_mut()(stream, 0);
+        }
+    }
+
+    #[test]
     fn stop_keeps_state_owned_until_monitor_and_stream_callbacks_are_released() {
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -323,12 +347,13 @@ mod control_queue_tests {
 
         unsafe {
             for shared_stream in [false, true] {
-                let mut client = client::empty();
+                let owner = client::new();
+                let client = &mut *owner.get();
                 if shared_stream {
                     client.flags = CLIENT_CONTROLCONTROL as uint64_t;
                 }
                 client.control_state = Some(Box::new(control_state::new()));
-                let c = &raw mut client;
+                let c = owner.get();
                 let order = Rc::new(RefCell::new(Vec::new()));
                 let probe = CleanupProbe {
                     client: c,
@@ -400,8 +425,8 @@ mod control_queue_tests {
                     }
                 );
                 control_stop(c);
-                control_read_callback(c);
-                control_write_callback(c);
+                control_read_callback(&owner);
+                control_write_callback(&owner);
             }
         }
     }
@@ -1023,10 +1048,12 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
     );
     return CMD_RETURN_NORMAL;
 }
-unsafe fn control_error_callback(c: *mut client) {
+unsafe fn control_error_callback(owner: &Rc<UnsafeCell<client>>) {
+    let c = owner.get();
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
-unsafe fn control_read_callback(c: *mut client) {
+unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
+    let c = owner.get();
     loop {
         let Some(cs) = (*c).control_state.as_deref_mut() else {
             break;
@@ -1054,10 +1081,9 @@ unsafe fn control_read_callback(c: *mut client) {
                 ::core::ptr::null_mut::<key_event>(),
                 CMDQ_STATE_CONTROL,
             );
-            let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
             match cmd_parse_and_append(
                 CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
-                parse_client_owner.as_ref(), Some(&state),
+                Some(owner), Some(&state),
             ) {
                 Err(error) => {
                     let error_item = cmdq_get_callback_owned(
@@ -1066,7 +1092,7 @@ unsafe fn control_read_callback(c: *mut client) {
                             control_error(item.as_ptr(), error)
                         })),
                     );
-                    cmdq_append(parse_client_owner.as_ref(), error_item);
+                    cmdq_append(Some(owner), error_item);
                 }
                 Ok(_) => {}
             }
@@ -1383,7 +1409,8 @@ unsafe fn control_write_pending(
         .blocks
         .is_empty() as ::core::ffi::c_int;
 }
-unsafe fn control_write_callback(c: *mut client) {
+unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
+    let c = owner.get();
     if (*c).control_state.is_none() {
         return;
     }
@@ -1507,7 +1534,31 @@ unsafe fn control_sub_change(change: &monitor_change) {
     session_remove_ref(session_owner, c"control_sub_change");
     server_client_unref_owned(client_owner);
 }
-pub unsafe fn control_start(mut c: *mut client) {
+fn control_stream_callbacks(owner: &Rc<UnsafeCell<client>>) -> (bufferevent_data_cb, bufferevent_data_cb, bufferevent_event_cb) {
+    let read = Rc::downgrade(owner);
+    let write = read.clone();
+    let error = read.clone();
+    (
+        bufferevent_data_callback(move |_| {
+            if let Some(owner) = read.upgrade() {
+                unsafe { control_read_callback(&owner) };
+            }
+        }),
+        bufferevent_data_callback(move |_| {
+            if let Some(owner) = write.upgrade() {
+                unsafe { control_write_callback(&owner) };
+            }
+        }),
+        bufferevent_event_callback(move |_, _| {
+            if let Some(owner) = error.upgrade() {
+                unsafe { control_error_callback(&owner) };
+            }
+        }),
+    )
+}
+
+pub unsafe fn control_start(owner: &Rc<UnsafeCell<client>>) {
+    let c = owner.get();
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         close((*c).out_fd);
         (*c).out_fd = -(1 as ::core::ffi::c_int);
@@ -1525,11 +1576,12 @@ pub unsafe fn control_start(mut c: *mut client) {
         .as_deref_mut()
         .expect("control client state");
     cs.subs = Some(subs);
+    let (read, write, error) = control_stream_callbacks(owner);
     cs.read_event = bufferevent_new(
         (*c).fd,
-        bufferevent_data_callback(move |_| unsafe { control_read_callback(c) }),
-        bufferevent_data_callback(move |_| unsafe { control_write_callback(c) }),
-        bufferevent_event_callback(move |_, _| unsafe { control_error_callback(c) }),
+        read,
+        write.clone(),
+        error.clone(),
     );
     if cs.read_event.is_null() {
         fatalx(|out| out.write_all(b"out of memory"));
@@ -1540,8 +1592,8 @@ pub unsafe fn control_start(mut c: *mut client) {
         cs.write_event = bufferevent_new(
             (*c).out_fd,
             None,
-            bufferevent_data_callback(move |_| unsafe { control_write_callback(c) }),
-            bufferevent_event_callback(move |_, _| unsafe { control_error_callback(c) }),
+            write,
+            error,
         );
         if cs.write_event.is_null() {
             fatalx(|out| out.write_all(b"out of memory"));

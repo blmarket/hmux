@@ -928,3 +928,17 @@ Error queue items reuse that same owner instead of recovering it from a raw view
 
 `cargo test --workspace` and `git diff --check` passed. Outer command callbacks,
 control stream callback captures and other model projections remain pending.
+
+## Implemented weak client captures for control streams
+
+Control read/write/error callbacks capture weak client handles and upgrade them
+for dispatch. Expired clients are skipped; live clients remain retained through
+callback processing. `control_start` and the callback bodies borrow Rc clients,
+and control reads pass their owner directly through parsing and queue append.
+Both shared and separate control output streams use these callback captures.
+
+`cargo test --workspace` and `git diff --check` passed. A detached-callback
+regression verifies nonownership, live error dispatch, stopped-state handling and
+safe invocation after client expiration. Existing shared/separate stream cleanup
+ordering tests now use real Rc clients and pass. Other control APIs and local raw
+model projections remain pending.

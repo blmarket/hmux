@@ -4961,7 +4961,7 @@ unsafe fn server_client_dispatch_identify(
         )
     ));
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        control_start(c);
+        control_start(owner);
     } else if (*c).fd != -(1 as ::core::ffi::c_int) {
         if tty_init(owner) != 0 as ::core::ffi::c_int {
             close((*c).fd);
