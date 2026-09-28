@@ -2050,3 +2050,17 @@ The shared raw Rc projection helper is no longer used by file.rs.
 completion lifetime and wait cancellation coverage. UnsafeCell remains at borrow
 acquisition; this does not establish complete alias safety or finish the broader
 refcounted model migration.
+
+## Implemented owning mode-tree accessors in chooser modes
+
+Buffer, client, tree and customize modes expose an Rc-cloning tree accessor
+instead of returning a nullable raw mode_tree_data pointer. Existing callers
+require an initialized tree and now explicitly check that invariant. Field/query
+operations borrow from these owners for the call. Buffer and client key handlers
+retain a tree owner across key dispatch instead of caching a raw tree pointer
+for later selection and preview operations.
+
+`cargo test --workspace` and `git diff --check` passed. No explicit raw
+mode_tree_data declarations remain in these four chooser modules. UnsafeCell
+projections, mode payload pointers, other model accesses and raw mode-tree test
+helpers remain pending; this is not a complete alias-safety migration.

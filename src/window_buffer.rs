@@ -74,8 +74,8 @@ pub struct window_buffer_modedata {
 }
 
 impl window_buffer_modedata {
-    fn data_ptr(&self) -> *mut mode_tree_data {
-        self.data.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+    fn tree_owner(&self) -> Rc<UnsafeCell<mode_tree_data>> {
+        self.data.as_ref().expect("mode tree owner").clone()
     }
 }
 
@@ -271,7 +271,7 @@ unsafe fn window_buffer_build(
                 _ => {
                     let text = format_expand_cstring(ft, (*data).format.as_ptr());
                     mode_tree_add(
-                        &mut *(*data).data_ptr(),
+                        &mut *(*data).tree_owner().get(),
                         None,
                         ModeTreeItemData::Buffer(item_handle.clone()),
                         item.order as uint64_t,
@@ -559,11 +559,11 @@ unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     item: &ModeTreeItemSnapshot<window_buffer_itemdata>,
 ) {
-    if mode_tree_get_current(&*(*data).data_ptr())
+    if mode_tree_get_current(&*(*data).tree_owner().get())
         .is_buffer(item)
-        && mode_tree_down(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int) == 0
+        && mode_tree_down(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int) == 0
     {
-        mode_tree_up(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int);
+        mode_tree_up(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
     }
     if let Some(pb) = paste_get_name(&item.name) {
         paste_free(&pb);
@@ -793,7 +793,7 @@ unsafe fn window_buffer_key(
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
-    let mut mtd: *mut mode_tree_data = (*data).data_ptr();
+    let tree_owner = (*data).tree_owner();
     let mut finished: ::core::ffi::c_int = 0;
     if paste_is_empty() != 0 {
         finished = 1 as ::core::ffi::c_int;
@@ -817,13 +817,13 @@ unsafe fn window_buffer_key(
         );
         match key {
             101 => {
-                let item_owner = mode_tree_get_current(&*mtd);
+                let item_owner = mode_tree_get_current(&*tree_owner.get());
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_start_edit(data, &item, client_owner);
                 }
             }
             100 => {
-                let item_owner = mode_tree_get_current(&*mtd);
+                let item_owner = mode_tree_get_current(&*tree_owner.get());
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_delete(data, &item);
                 }
@@ -861,7 +861,7 @@ unsafe fn window_buffer_key(
                 finished = 1 as ::core::ffi::c_int;
             }
             112 | 13 => {
-                let item_owner = mode_tree_get_current(&*mtd);
+                let item_owner = mode_tree_get_current(&*tree_owner.get());
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_paste(data, &item, client_owner);
                 }
