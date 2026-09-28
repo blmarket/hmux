@@ -1842,7 +1842,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
-            window_pane_scrollbar_hide(wp);
+            window_pane_scrollbar_hide(indexed_pane_owner.as_ref().expect("indexed pane"));
             indexed_pane_owner = window_pane_tree_next(&*wp);
             wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }

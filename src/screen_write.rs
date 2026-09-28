@@ -2463,7 +2463,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     ttyctx.bg = ctx.bg;
     tty_write(|tty, ctx| tty_cmd_scrollup(tty, ctx, &*s), &mut ttyctx);
     if !wp.is_null() {
-        window_pane_scrollbar_redraw(wp);
+        window_pane_scrollbar_redraw(write_pane_owner.as_ref().expect("write pane"));
     }
     return 1 as ::core::ffi::c_int;
 }

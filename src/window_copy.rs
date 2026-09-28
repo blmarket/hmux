@@ -943,7 +943,7 @@ unsafe fn window_copy_scroll1(
         );
     }
     window_copy_update_selection_view(wme, 1 as ::core::ffi::c_int);
-    window_pane_scrollbar_show(wp);
+    window_pane_scrollbar_show(pane_owner);
     window_copy_redraw_screen(wme);
 }
 pub unsafe fn window_copy_pageup(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -1008,7 +1008,7 @@ unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::
         );
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show(mode_pane);
+    window_pane_scrollbar_show(&mode_pane_owner);
     window_copy_redraw_screen(wme);
 }
 pub unsafe fn window_copy_pagedown(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut scroll_exit: ::core::ffi::c_int) {
@@ -1083,7 +1083,7 @@ unsafe fn window_copy_pagedown1(
         );
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show(mode_pane);
+    window_pane_scrollbar_show(&mode_pane_owner);
     window_copy_redraw_screen(wme);
     return 0 as ::core::ffi::c_int;
 }
@@ -2109,7 +2109,7 @@ unsafe fn window_copy_cmd_history_bottom(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show(mode_pane);
+        window_pane_scrollbar_show(&mode_pane_owner);
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -2145,7 +2145,7 @@ unsafe fn window_copy_cmd_history_top(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show(mode_pane);
+        window_pane_scrollbar_show(&mode_pane_owner);
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -5301,7 +5301,7 @@ unsafe fn window_copy_scroll_to(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show(mode_pane);
+        window_pane_scrollbar_show(&mode_pane_owner);
     }
     if no_redraw == 0 {
         window_copy_redraw_screen(wme);
@@ -7507,7 +7507,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&mut ctx);
-    window_pane_scrollbar_redraw(wp);
+    window_pane_scrollbar_redraw(&mode_pane_owner);
 }
 unsafe fn window_copy_redraw_screen(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
@@ -9134,7 +9134,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         return;
     }
     (*data).oy = (*data).oy.wrapping_sub(ny);
-    window_pane_scrollbar_show(wp);
+    window_pane_scrollbar_show(&mode_pane_owner);
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
@@ -9222,7 +9222,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&mut ctx);
-    window_pane_scrollbar_redraw(wp);
+    window_pane_scrollbar_redraw(&mode_pane_owner);
 }
 unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
@@ -9249,7 +9249,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         return;
     }
     (*data).oy = (*data).oy.wrapping_add(ny);
-    window_pane_scrollbar_show(wp);
+    window_pane_scrollbar_show(&mode_pane_owner);
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme,
@@ -9319,7 +9319,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&mut ctx);
-    window_pane_scrollbar_redraw(wp);
+    window_pane_scrollbar_redraw(&mode_pane_owner);
 }
 unsafe fn window_copy_rectangle_set(
     mut wme: *mut window_mode_entry,

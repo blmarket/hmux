@@ -2698,7 +2698,7 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
 unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
     (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
-    window_pane_scrollbar_hide(wp);
+    window_pane_scrollbar_hide(owner);
 }
 unsafe fn window_pane_scrollbar_auto_hide(wp: &window_pane) -> ::core::ffi::c_int {
     return ((*wp.window).sb == PANE_SCROLLBARS_MODAL
@@ -2710,7 +2710,8 @@ pub unsafe fn window_pane_scrollbar_overlay_visible(
     return (window_pane_scrollbar_overlay(wp) != 0 && window_pane_scrollbar_visible(wp) != 0)
         as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_scrollbar_redraw(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_scrollbar_redraw(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     if window_pane_scrollbar_visible(&*wp) == 0 {
         return;
     }
@@ -2720,7 +2721,8 @@ pub unsafe fn window_pane_scrollbar_redraw(mut wp: *mut window_pane) {
     }
     (*wp).flags |= PANE_REDRAWSCROLLBAR;
 }
-unsafe fn window_pane_scrollbar_redraw_visibility(mut wp: *mut window_pane) {
+unsafe fn window_pane_scrollbar_redraw_visibility(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     redraw_invalidate_scene((*wp).window as *mut window);
     (*wp).flags |= PANE_REDRAW;
     server_redraw_window((*wp).window as *mut window);
@@ -3996,7 +3998,8 @@ pub unsafe fn window_pane_scrollbar_visible(wp: &window_pane) -> ::core::ffi::c_
     }
     return wp.sb_auto_visible;
 }
-pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -4015,7 +4018,8 @@ pub unsafe fn window_pane_scrollbar_start_timer(mut wp: *mut window_pane) {
     event_del(&raw mut (*wp).sb_auto_timer);
     event_add(&raw mut (*wp).sb_auto_timer, &raw mut tv);
 }
-pub unsafe fn window_pane_scrollbar_show(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_scrollbar_show(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut changed: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if window_pane_scrollbar_auto_hide(&*wp) == 0 {
         return;
@@ -4029,13 +4033,14 @@ pub unsafe fn window_pane_scrollbar_show(mut wp: *mut window_pane) {
     }
     event_del(&raw mut (*wp).sb_auto_timer);
 
-    window_pane_scrollbar_start_timer(wp);
+    window_pane_scrollbar_start_timer(pane_owner);
 
     if changed != 0 {
-        window_pane_scrollbar_redraw_visibility(wp);
+        window_pane_scrollbar_redraw_visibility(pane_owner);
     }
 }
-pub unsafe fn window_pane_scrollbar_hide(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_scrollbar_hide(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     if event_initialized(&(*wp).sb_auto_timer) != 0 {
         event_del(&raw mut (*wp).sb_auto_timer);
     }
@@ -4044,7 +4049,7 @@ pub unsafe fn window_pane_scrollbar_hide(mut wp: *mut window_pane) {
         return;
     }
     (*wp).sb_auto_visible = 0 as ::core::ffi::c_int;
-    window_pane_scrollbar_redraw_visibility(wp);
+    window_pane_scrollbar_redraw_visibility(pane_owner);
 }
 pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut c: ::core::ffi::c_int = 0;

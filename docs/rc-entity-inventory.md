@@ -1632,3 +1632,15 @@ input callers use the typed signatures.
 `cargo test --workspace` and `git diff --check` passed. Queries remain unsafe
 where they follow raw parent-window or active-mode fields; scrollbar mutation,
 timer APIs and other internal model projections remain pending.
+
+## Implemented retained scrollbar mutations and scheduling
+
+Scrollbar redraw, visibility redraw, timer setup, show and hide borrow retained
+pane handles. The timer callback forwards its existing owner, as do copy-mode,
+screen-write and option-update callers. Mouse-hover traversal retains its current
+pane through scrollbar updates instead of extracting pointers from temporary
+traversal owners. Timer callbacks continue to observe panes weakly.
+
+`cargo test --workspace` and `git diff --check` passed. Internal raw parent-window
+access, mouse-hover client/window arguments and other model projections remain
+pending.

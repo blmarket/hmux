@@ -1719,18 +1719,19 @@ unsafe fn server_client_update_scrollbar_hover(
     if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
         return;
     }
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
+    let mut cursor = window_pane_first(w);
+    while let Some(pane_owner) = cursor {
+        wp = pane_owner.get();
         if !(window_pane_is_visible(&*wp) == 0) {
             if server_client_in_scrollbar_area(wp, px, py) != 0 {
                 (*wp).sb_auto_hover = 1 as ::core::ffi::c_int;
-                window_pane_scrollbar_show(wp);
+                window_pane_scrollbar_show(&pane_owner);
             } else {
                 (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
-                window_pane_scrollbar_start_timer(wp);
+                window_pane_scrollbar_start_timer(&pane_owner);
             }
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(wp);
     }
 }
 unsafe fn server_client_check_mouse_in_pane(
