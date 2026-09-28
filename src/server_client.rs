@@ -3314,7 +3314,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         if !wp.is_null() && window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
-            match window_pane_prompt_key(wp, c, (*event).key, &raw mut (*event).m)
+            match window_pane_prompt_key(&(*wp).observer.upgrade().expect("prompt target pane"), Some(owner), (*event).key, &raw mut (*event).m)
                 as ::core::ffi::c_uint
             {
                 1..=3 => return 0 as ::core::ffi::c_int,

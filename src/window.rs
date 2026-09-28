@@ -3211,11 +3211,12 @@ pub unsafe fn window_pane_update_prompt(
     }
 }
 pub unsafe fn window_pane_prompt_key(
-    mut wp: *mut window_pane,
-    mut c: *mut client,
+    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+    client_owner: Option<&Rc<std::cell::UnsafeCell<client>>>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
+    let mut wp = pane_owner.get();
     let prompt = (*wp).prompt.as_ref().map(|prompt| prompt.downgrade());
     let wpp = (*wp).prompt_data.clone();
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
@@ -3228,11 +3229,7 @@ pub unsafe fn window_pane_prompt_key(
         return PROMPT_KEY_NOT_HANDLED;
     };
     if let Some(wpp) = &wpp {
-        wpp.try_borrow_mut().expect("live prompt callback record").c = if c.is_null() {
-            Weak::new()
-        } else {
-            (*c).observer.clone()
-        };
+        wpp.try_borrow_mut().expect("live prompt callback record").c = client_owner.map(Rc::downgrade).unwrap_or_default();
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -3252,7 +3249,7 @@ pub unsafe fn window_pane_prompt_key(
         {
             result = PROMPT_KEY_NOT_HANDLED;
         } else {
-            if !c.is_null() && status_at_line(&*c) == 0 as ::core::ffi::c_int {
+            if client_owner.is_some_and(|owner| status_at_line(&*owner.get()) == 0) {
                 py = 0 as u_int;
             } else {
                 py = (*wp).sy.wrapping_sub(1 as u_int);
@@ -4562,8 +4559,8 @@ mod pane_prompt_data_tests {
             (*wp).prompt_data = Some(old_weak.clone());
             assert_eq!(
                 window_pane_prompt_key(
-                    wp,
-                    std::ptr::null_mut(),
+                    &pane,
+                    None,
                     b'x' as key_code,
                     std::ptr::null_mut()
                 ),

@@ -1075,3 +1075,14 @@ retains its selected pane before invoking the paste API.
 
 `cargo test --workspace` and `git diff --check` passed. Pane/window association
 storage, outer pane lookup paths and local raw model projections remain pending.
+
+## Implemented retained model arguments for pane prompt dispatch
+
+`window_pane_prompt_key` borrows an Rc pane and optional Rc client. Prompt callback
+records receive only a downgraded client association. Dispatch retains both inputs
+through callbacks and preserves the registry lookup afterward to detect logical
+pane removal before updating prompt state.
+
+`cargo test --workspace` and `git diff --check` passed, including the prompt
+replacement regression through the typed API. Prompt setup/update APIs, model
+association storage and local raw projections remain pending.
