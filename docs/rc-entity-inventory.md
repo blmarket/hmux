@@ -856,3 +856,16 @@ output fixtures now use real Rc clients. The terminal-record lifecycle regressio
 also verifies that a surviving terminal does not keep its client alive. Raw
 terminal/event callback pointers, model API arguments and local raw projections
 remain pending.
+
+## Implemented retained client path for terminal initialization
+
+Peer-message dispatch and client identification now borrow the retained Rc client
+from the peer callback. `tty_init` accepts that owner and derives its terminal,
+removing both raw arguments and the possibility of a mismatched terminal/client
+pair. The terminal stores only a downgrade of the supplied owner.
+
+`cargo test --workspace` and `git diff --check` passed. A real pseudo-terminal
+regression covers successful and repeated initialization, stable weak-reference
+counts, preservation on invalid-descriptor failure and client expiration after
+detaching the terminal. Other dispatch branches, terminal APIs and internal raw
+model projections remain pending.

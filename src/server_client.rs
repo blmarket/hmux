@@ -1193,7 +1193,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
         fd,
         Box::new(move |message| unsafe {
             if let Some(owner) = peer_observer.upgrade() {
-                server_client_dispatch(owner.get(), message);
+                server_client_dispatch(&owner, message);
             }
         }),
     );
@@ -4448,9 +4448,10 @@ unsafe fn server_client_set_progress_bar(mut c: *mut client) {
     tty_set_progress_bar(&raw mut (*c).tty, &raw mut (*c).progress_bar);
 }
 unsafe fn server_client_dispatch(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     message: crate::src::shared::process::PeerMessage<'_>,
 ) {
+    let c = owner.get();
     let mut current_block: u64;
     let mut datalen: ssize_t = 0;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -4472,7 +4473,7 @@ unsafe fn server_client_dispatch(
         | MSG_IDENTIFY_FEATURES | MSG_IDENTIFY_FLAGS | MSG_IDENTIFY_LONGFLAGS
         | MSG_IDENTIFY_STDIN | MSG_IDENTIFY_STDOUT | MSG_IDENTIFY_TERM
         | MSG_IDENTIFY_TERMINFO | MSG_IDENTIFY_TTYNAME | MSG_IDENTIFY_DONE => {
-            if server_client_dispatch_identify(c, imsg) != 0 as ::core::ffi::c_int {
+            if server_client_dispatch_identify(owner, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
@@ -4739,9 +4740,10 @@ unsafe fn server_client_dispatch_command(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn server_client_dispatch_identify(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     imsg: &mut imsg,
 ) -> ::core::ffi::c_int {
+    let c = owner.get();
     let mut data: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut datalen: size_t = 0;
     let mut flags: ::core::ffi::c_int = 0;
@@ -4960,11 +4962,10 @@ unsafe fn server_client_dispatch_identify(
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         control_start(c);
     } else if (*c).fd != -(1 as ::core::ffi::c_int) {
-        if tty_init(&raw mut (*c).tty, c) != 0 as ::core::ffi::c_int {
+        if tty_init(owner) != 0 as ::core::ffi::c_int {
             close((*c).fd);
             (*c).fd = -(1 as ::core::ffi::c_int);
         } else {
-            let _owner = c;
             (*c).tty.r.ensure(1);
             tty_resize(&raw mut (*c).tty);
             (*c).flags |= CLIENT_TERMINAL as uint64_t;

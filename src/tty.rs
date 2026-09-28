@@ -144,14 +144,16 @@ pub unsafe fn tty_create_log() {
         fatal(|out| out.write_all(b"fcntl failed"));
     }
 }
-pub unsafe fn tty_init(mut tty: *mut tty, mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn tty_init(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     if isatty((*c).fd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
     tty_keys_free(tty);
     // Reset Rust-owned fields normally; byte-zeroing would invalidate Weak.
     *tty = crate::src::shared::tty::tty::empty();
-    (*tty).client = (*c).observer.clone();
+    (*tty).client = std::rc::Rc::downgrade(owner);
     (*tty).cstyle = SCREEN_CURSOR_DEFAULT;
     (*tty).ccolour = -(1 as ::core::ffi::c_int);
     (*tty).bg = -(1 as ::core::ffi::c_int);
@@ -3423,6 +3425,45 @@ mod clipping_tests {
                 area,
                 "area {input:?}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod initialization_owner_tests {
+    use super::*;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use std::rc::Rc;
+
+    #[test]
+    fn initialization_resets_terminal_and_replaces_weak_client_without_leaking() {
+        unsafe {
+            let mut master = -1;
+            let mut slave = -1;
+            assert_eq!(libc::openpty(
+                &mut master, &mut slave, std::ptr::null_mut(),
+                std::ptr::null(), std::ptr::null(),
+            ), 0);
+            let _master = OwnedFd::from_raw_fd(master);
+            let slave = OwnedFd::from_raw_fd(slave);
+            let owner = client::new();
+            (*owner.get()).fd = slave.as_raw_fd();
+            assert_eq!(tty_init(&owner), 0);
+            let weak_count = Rc::weak_count(&owner);
+            (*owner.get()).tty.sx = 99;
+            (*owner.get()).tty.r.ensure(4);
+            assert_eq!(tty_init(&owner), 0);
+            assert_eq!(Rc::weak_count(&owner), weak_count);
+            assert_eq!((*owner.get()).tty.sx, 0);
+            assert!(Rc::ptr_eq(&(*owner.get()).tty.client.upgrade().unwrap(), &owner));
+            (*owner.get()).fd = -1;
+            // A failed initialization must leave the existing terminal intact.
+            (*owner.get()).tty.sx = 42;
+            assert_eq!(tty_init(&owner), -1);
+            assert_eq!((*owner.get()).tty.sx, 42);
+            let terminal = std::mem::take(&mut (*owner.get()).tty);
+            drop(owner);
+            assert!(terminal.client.upgrade().is_none());
         }
     }
 }
