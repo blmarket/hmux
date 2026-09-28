@@ -136,7 +136,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
         }
     }
     let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
         window_pane_set_mode(
             &pane_owner,

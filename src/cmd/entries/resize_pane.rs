@@ -91,7 +91,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut i: ::core::ffi::c_ulong = 0;
     let mut gd: *mut grid = (*wp).base.grid_mut();
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        if !(*wp).modes.active.is_null() {
+        if !(*wp).modes.active_ptr().is_null() {
             return CMD_RETURN_NORMAL;
         }
         adjust = (*wp).base.grid()

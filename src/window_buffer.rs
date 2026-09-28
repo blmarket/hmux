@@ -368,7 +368,7 @@ unsafe fn window_buffer_menu(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() || (*wme).data != modedata {
         return;
     }
@@ -699,7 +699,7 @@ unsafe fn window_buffer_edit_close_cb(
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        wme = (*wp).modes.active;
+        wme = (*wp).modes.active_ptr();
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
             data = (*wme).data as *mut window_buffer_modedata;
             if NonNull::new((*data).editor) == Some(editor) {
@@ -737,7 +737,7 @@ unsafe fn window_buffer_edit_close_cb(
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        wme = (*wp).modes.active;
+        wme = (*wp).modes.active_ptr();
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
             data = (*wme).data as *mut window_buffer_modedata;
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));

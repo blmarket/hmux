@@ -117,7 +117,7 @@ unsafe fn cmd_send_keys_inject_key(
         }
         return item;
     }
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() || (*(*wme).mode).key_table.is_none() {
         if window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl, key, ::core::ptr::null_mut::<mouse_event>())
             != 0 as ::core::ffi::c_int
@@ -215,7 +215,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut event_snapshot = cmdq_get_event(item);
     let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut after: *mut cmdq_item = item;
     let mut key: key_code = 0;
     let mut i: u_int = 0;

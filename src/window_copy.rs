@@ -484,7 +484,7 @@ unsafe fn window_copy_scroll_timer(mut arg: *mut ::core::ffi::c_void) {
         tv_usec: WINDOW_COPY_DRAG_REPEAT_TIME as __suseconds_t,
     };
     event_del(&raw mut (*data).dragtimer);
-    if (*wp).modes.active != wme {
+    if (*wp).modes.active_ptr() != wme {
         return;
     }
     if (*data).cy == 0 as u_int {
@@ -790,7 +790,7 @@ pub unsafe fn window_copy_add(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut backing: *mut screen = (*data).backing_mut();
     let mut backing_ctx: screen_write_ctx = screen_write_ctx {
@@ -876,7 +876,7 @@ pub unsafe fn window_copy_scroll(
     mut scroll_exit: ::core::ffi::c_int,
 ) {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     if !wme.is_null() {
         window_set_active_pane((*wp).window as *mut window, wp, 0 as ::core::ffi::c_int);
         window_copy_scroll1(wme, pane_owner, sl_mpos, my, tty_oy, scroll_exit);
@@ -992,7 +992,7 @@ unsafe fn window_copy_scroll1(
 pub unsafe fn window_copy_pageup(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    window_copy_pageup1((*wp).modes.active, half_page);
+    window_copy_pageup1((*wp).modes.active_ptr(), half_page);
 }
 unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::core::ffi::c_int) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
@@ -1057,7 +1057,7 @@ unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::
 pub unsafe fn window_copy_pagedown(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut scroll_exit: ::core::ffi::c_int) {
     let wp = pane_owner.get();
     let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if window_copy_pagedown1((*wp).modes.active, half_page, scroll_exit) != 0 {
+    if window_copy_pagedown1((*wp).modes.active_ptr(), half_page, scroll_exit) != 0 {
         window_pane_reset_mode(pane_owner);
         return;
     }
@@ -1173,7 +1173,7 @@ pub(crate) unsafe fn window_copy_get_word_cstring(
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
     return crate::src::format::format_grid_word_cstring(
@@ -1186,7 +1186,7 @@ pub(crate) unsafe fn window_copy_get_line_cstring(
     mut wp: *mut window_pane,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
     return crate::src::format::format_grid_line_cstring(
@@ -1199,7 +1199,7 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid_mut();
     return crate::src::format::format_grid_hyperlink_cstring(
@@ -1212,7 +1212,7 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
 unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {
     let pane_owner = format_get_pane(&*ft)?;
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid_mut();
     return format_grid_hyperlink_cstring(
@@ -1225,21 +1225,21 @@ unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CS
 unsafe fn window_copy_cursor_word_cb(mut ft: *mut format_tree) -> Option<CString> {
     let pane_owner = format_get_pane(&*ft)?;
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_get_word_cstring(wp, (*data).cx, (*data).cy);
 }
 unsafe fn window_copy_cursor_line_cb(mut ft: *mut format_tree) -> Option<CString> {
     let pane_owner = format_get_pane(&*ft)?;
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_get_line_cstring(wp, (*data).cy);
 }
 unsafe fn window_copy_search_match_cb(mut ft: *mut format_tree) -> Option<CString> {
     let pane_owner = format_get_pane(&*ft)?;
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_match_at_cursor_cstring(data);
 }
@@ -3609,7 +3609,7 @@ unsafe fn window_copy_refresh_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut follow: ::core::ffi::c_int = 0;
-    if (*wp).modes.active != wme || (*data).refresh_active == 0 {
+    if (*wp).modes.active_ptr() != wme || (*data).refresh_active == 0 {
         return;
     }
     if (*wp).flags & PANE_UNSEENCHANGES != 0
@@ -7117,7 +7117,7 @@ pub unsafe fn window_copy_set_line_numbers(
     mut enabled: ::core::ffi::c_int,
 ) {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
     if wme.is_null() || !std::ptr::eq((*wme).mode, &window_copy_mode) {
         return;
     }
@@ -7157,7 +7157,7 @@ unsafe fn window_copy_set_line_numbers1(
     window_copy_redraw_screen(wme);
 }
 pub unsafe fn window_copy_get_current_offset(pane: &window_pane) -> Option<(u_int, u_int)> {
-    let mode = pane.modes.active.as_ref()?;
+    let mode = pane.modes.active_ptr().as_ref()?;
     if !std::ptr::eq(mode.mode, &window_copy_mode) && !std::ptr::eq(mode.mode, &window_view_mode) {
         return None;
     }
@@ -9395,7 +9395,7 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() {
         return;
     }
@@ -9448,7 +9448,7 @@ pub unsafe fn window_copy_start_drag(client_owner: Option<&std::rc::Rc<std::cell
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() {
         return;
     }
@@ -9538,7 +9538,7 @@ unsafe fn window_copy_drag_update(_client_owner: &std::rc::Rc<std::cell::UnsafeC
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() {
         return;
     }
@@ -9583,7 +9583,7 @@ unsafe fn window_copy_drag_release(client_owner: &std::rc::Rc<std::cell::UnsafeC
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() {
         return;
     }
@@ -9864,47 +9864,50 @@ mod backing_owner_tests {
             ));
             window_copy_sync_snapshot(&mut data, pane.base.grid_mut());
             let original = data.backing() as *const screen;
-            let mut mode = window_mode_entry {
+            let mode = refbox::RefBox::new(window_mode_entry {
                 wp: std::rc::Rc::downgrade(&pane_owner),
                 swp: std::rc::Rc::downgrade(&pane_owner),
                 mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),
-            data_owner: None,
+                data_owner: None,
                 screen: std::ptr::null_mut(),
                 prefix: 0,
                 kill: 0,
-            };
+            });
+            let mode_ptr = mode.as_ptr().cast_mut();
             assert_eq!(window_copy_get_current_offset(pane), None);
-            pane.modes.active = &mut mode;
+            pane.modes.storage = Some(Box::new(crate::src::shared::pane::WindowPaneModesStorage {
+                entries: vec![mode],
+            }));
             let hsize = data.backing().grid().hsize;
             assert_eq!(window_copy_get_current_offset(pane), Some((hsize, hsize)));
-            mode.mode = &window_view_mode;
+            (*mode_ptr).mode = &window_view_mode;
             assert_eq!(window_copy_get_current_offset(pane), Some((hsize, hsize)));
-            mode.mode = &crate::src::window_clock::window_clock_mode;
+            (*mode_ptr).mode = &crate::src::window_clock::window_clock_mode;
             assert_eq!(window_copy_get_current_offset(pane), None);
-            mode.mode = &window_copy_mode;
-            pane.modes.active = std::ptr::null_mut();
+            (*mode_ptr).mode = &window_copy_mode;
+            let _mode_owner = pane.modes.storage.take().unwrap().entries.pop().unwrap();
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'B';
             grid_set_cell(pane.base.grid_mut(), 0, 0, &cell);
             assert_eq!(byte_at(data.backing(), 0, 0), b' ');
-            assert_eq!(window_copy_sync_backing(&mut mode), 1);
+            assert_eq!(window_copy_sync_backing(mode_ptr), 1);
             assert_eq!(data.backing() as *const screen, original);
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
 
             pane.base.grid_mut().scroll_generation += 1;
-            assert_eq!(window_copy_sync_backing(&mut mode), 0);
+            assert_eq!(window_copy_sync_backing(mode_ptr), 0);
             data.clear_backing();
             assert!(data.backing.is_none());
             data.backing = Some(window_copy_clone_screen(&pane.base, &pane.base, None, true));
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
             assert_eq!(byte_at(&pane.base, 0, 0), b'B');
             drop(pane_owner);
-            assert!(mode.swp.upgrade().is_none());
+            assert!((*mode_ptr).swp.upgrade().is_none());
             // An expired source leaves the independently owned snapshot intact.
-            assert_eq!(window_copy_sync_backing(&mut mode), 0);
-            assert_eq!(window_copy_refresh_allowed(&mut mode), 0);
-            window_copy_do_refresh(&mut mode, 0);
+            assert_eq!(window_copy_sync_backing(mode_ptr), 0);
+            assert_eq!(window_copy_refresh_allowed(mode_ptr), 0);
+            window_copy_do_refresh(mode_ptr, 0);
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
             drop(data);
             // An empty backing during initialization or repeated cleanup is valid.

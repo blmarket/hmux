@@ -2889,7 +2889,7 @@ unsafe fn window_customize_menu(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() || (*wme).data != data.cast() {
         return;
     }
@@ -3579,7 +3579,7 @@ unsafe fn window_customize_edit_close_cb(
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        wme = (*wp).modes.active;
+        wme = (*wp).modes.active_ptr();
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_customize_mode) {
             mode_owner = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>();
             if let Some(owner) = mode_owner.as_ref() {

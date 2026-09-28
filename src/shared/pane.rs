@@ -252,19 +252,19 @@ pub struct WindowPaneModesStorage {
     pub(crate) entries: Vec<refbox::RefBox<window_mode_entry>>,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct window_pane_modes {
-    /// Compatibility view of the top mode; the storage owns every entry.
-    pub active: *mut window_mode_entry,
     pub storage: Option<Box<WindowPaneModesStorage>>,
 }
 
-impl Default for window_pane_modes {
-    fn default() -> Self {
-        Self {
-            active: std::ptr::null_mut(),
-            storage: None,
-        }
+impl window_pane_modes {
+    /// A borrowed compatibility pointer valid until the mode stack changes.
+    pub fn active_ptr(&self) -> *mut window_mode_entry {
+        self.storage
+            .as_ref()
+            .and_then(|storage| storage.entries.first())
+            .map_or(std::ptr::null_mut(), |entry| entry.as_ptr().cast_mut())
     }
 }
 

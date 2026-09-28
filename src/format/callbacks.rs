@@ -745,7 +745,7 @@ unsafe fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     while !wme.is_null() {
         n = n.wrapping_add(1);
         wme = crate::src::window::window_pane_mode_next(wme);
@@ -876,7 +876,7 @@ unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
     {
         return None;
     }
-    if !(*wp).modes.active.is_null() {
+    if !(*wp).modes.active_ptr().is_null() {
         if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_word_cstring(wp, x, y);
         }
@@ -913,7 +913,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
     {
         return None;
     }
-    if !(*wp).modes.active.is_null() {
+    if !(*wp).modes.active_ptr().is_null() {
         if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_hyperlink_cstring(wp, x, y);
         }
@@ -950,7 +950,7 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
     {
         return None;
     }
-    if !(*wp).modes.active.is_null() {
+    if !(*wp).modes.active_ptr().is_null() {
         if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_line_cstring(wp, y);
         }
@@ -2246,7 +2246,7 @@ unsafe fn format_cb_pane_mode(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if !format_pane.is_null() {
-        wme = (*format_pane).modes.active;
+        wme = (*format_pane).modes.active_ptr();
         if !wme.is_null() {
             return Some(CStr::from_ptr((*(*wme).mode).name.as_ptr()).to_owned());
         }

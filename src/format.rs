@@ -495,7 +495,7 @@ pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, mut wp: *mut window
         format_defaults_window(ft, (*wp).window as *mut window);
     }
     (*ft).wp = (*wp).observer.clone();
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if !wme.is_null() && (*(*wme).mode).formats.is_some() {
         (*(*wme).mode).formats.expect("non-null function pointer")(wme, ft);
     }

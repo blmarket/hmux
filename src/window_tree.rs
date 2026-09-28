@@ -1541,7 +1541,7 @@ unsafe fn window_tree_menu(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.active;
+    wme = (*wp).modes.active_ptr();
     if wme.is_null() || (*wme).data != data.cast() {
         return;
     }

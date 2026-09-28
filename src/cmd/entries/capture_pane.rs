@@ -374,7 +374,7 @@ unsafe fn cmd_capture_pane_history(
         };
         (saved, &wp.base)
     } else {
-        let active = wp.modes.active;
+        let active = wp.modes.active_ptr();
         let s = if args_has(args, b'M') != 0 && !active.is_null() {
             match (*(*active).mode).get_screen {
                 Some(get_screen) => &*get_screen(active),
