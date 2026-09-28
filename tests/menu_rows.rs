@@ -22,17 +22,16 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         global_w_options = options_create(null_mut());
         global_environ = Some(environ_create());
         let owner = client::new();
-        let client = hmux2::src::shared::rc::as_ptr(&owner);
-        (*client).tty.sx = 120;
+        (&mut *owner.get()).tty.sx = 120;
         let mut menu = menu_create(c"Rows");
         let separator = menu_item {
             name: c"",
             key: KEYC_NONE,
             command: None,
         };
-        menu_add_item(&mut *menu, None, null_mut(), client, null_mut());
-        menu_add_items(&mut *menu, &[], client);
-        menu_add_item(&mut *menu, Some(&separator), null_mut(), client, null_mut());
+        menu_add_item(&mut *menu, None, null_mut(), Some(&owner), null_mut());
+        menu_add_items(&mut *menu, &[], Some(&owner));
+        menu_add_item(&mut *menu, Some(&separator), null_mut(), Some(&owner), null_mut());
         assert_eq!((*menu).count, 0);
 
         for index in 0..64 {
@@ -47,7 +46,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
                 &mut *menu,
                 Some(&definition),
                 null_mut(),
-                client,
+                Some(&owner),
                 null_mut(),
             );
             // Definitions expire on each iteration; runtime strings must survive.
@@ -61,12 +60,12 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             &mut *menu,
             Some(&suppressed),
             null_mut(),
-            client,
+            Some(&owner),
             null_mut(),
         );
         assert_eq!((*menu).count, 64);
-        menu_add_item(&mut *menu, Some(&separator), null_mut(), client, null_mut());
-        menu_add_item(&mut *menu, Some(&separator), null_mut(), client, null_mut());
+        menu_add_item(&mut *menu, Some(&separator), null_mut(), Some(&owner), null_mut());
+        menu_add_item(&mut *menu, Some(&separator), null_mut(), Some(&owner), null_mut());
         assert_eq!((*menu).count, 65);
         for (index, row) in (&(*menu).items)[..64].iter().enumerate() {
             assert_eq!(
@@ -98,7 +97,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
                 },
             ];
             // A bounded stack array needs no terminal item, and its text may expire.
-            menu_add_items(&mut *menu, &definitions, client);
+            menu_add_items(&mut *menu, &definitions, Some(&owner));
         }
         assert_eq!((*menu).count, 67);
         assert_eq!((&(*menu).items)[65].name.as_deref(), Some(c"借用"));

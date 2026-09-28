@@ -1796,7 +1796,7 @@ unsafe fn mode_tree_display_menu(
         c"".to_owned()
     };
     let mut menu = menu_create(&title);
-    menu_add_items(&mut menu, items, client_owner.get());
+    menu_add_items(&mut menu, items, Some(client_owner));
     drop(title);
     let client = Rc::downgrade(client_owner);
     if x >= (*menu)

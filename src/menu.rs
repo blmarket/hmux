@@ -39,7 +39,7 @@ use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
 impl menu {
     fn refresh_items(&mut self) {
@@ -53,13 +53,13 @@ impl menu {
         index
     }
 }
-pub unsafe fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], c: *mut client) {
+pub unsafe fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], client_owner: Option<&Rc<UnsafeCell<client>>>) {
     for item in items {
         menu_add_item(
             menu,
             Some(item),
             std::ptr::null_mut(),
-            c,
+            client_owner,
             std::ptr::null_mut(),
         );
     }
@@ -68,7 +68,7 @@ pub unsafe fn menu_add_item(
     menu: &mut menu,
     item: Option<&menu_item<'_>>,
     qitem: *mut cmdq_item,
-    c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     fs: *mut cmd_find_state,
 ) {
     let Some(item) = item.filter(|item| !item.name.is_empty()) else {
@@ -79,12 +79,12 @@ pub unsafe fn menu_add_item(
     };
     let index = menu.push_empty();
     let expanded = if !fs.is_null() {
-        format_single_from_state_cstring(qitem, item.name.as_ptr(), c, fs)
+        format_single_from_state_cstring(qitem, item.name.as_ptr(), client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()), fs)
     } else {
         format_single_cstring(
             qitem,
             item.name.as_ptr(),
-            c,
+            client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
@@ -96,7 +96,8 @@ pub unsafe fn menu_add_item(
         menu.refresh_items();
         return;
     }
-    let mut max_width = (*c).tty.sx.wrapping_sub(4);
+    let client = &*client_owner.expect("menu row requires a client").get();
+    let mut max_width = client.tty.sx.wrapping_sub(4);
     let text = expanded.as_bytes();
     let mut key = if text[0] != b'-' && item.key != KEYC_UNKNOWN && item.key != KEYC_NONE {
         Some(key_string_format(item.key, false))
@@ -129,12 +130,12 @@ pub unsafe fn menu_add_item(
     menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
     menu.items[index].command = item.command.map(|command| {
         if !fs.is_null() {
-            format_single_from_state_cstring(qitem, command.as_ptr(), c, fs)
+            format_single_from_state_cstring(qitem, command.as_ptr(), client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()), fs)
         } else {
             format_single_cstring(
                 qitem,
                 command.as_ptr(),
-                c,
+                client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),

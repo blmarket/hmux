@@ -960,7 +960,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
         let name = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
         i += 1;
         if name.is_empty() {
-            menu_add_item(&mut menu, None, item, tc, target);
+            menu_add_item(&mut menu, None, item, tc_owner.as_ref(), target);
             continue;
         }
         if count - i < 2 {
@@ -975,7 +975,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
             key: key_string_parse_cstr(key).unwrap_or(KEYC_UNKNOWN),
             command: Some(command),
         };
-        menu_add_item(&mut menu, Some(&definition), item, tc, target);
+        menu_add_item(&mut menu, Some(&definition), item, tc_owner.as_ref(), target);
     }
     let mut px = 0;
     let mut py = 0;

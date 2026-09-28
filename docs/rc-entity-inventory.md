@@ -2145,3 +2145,17 @@ No new Rc-managed type is introduced.
 `cargo test --workspace` and `git diff --check` passed, including menu callback
 replacement, mode destruction, expired-client and cancellation coverage. Rendering
 and remaining raw model APIs still require migration.
+
+## Implemented typed client inputs for menu item construction
+
+Menu item and item-list builders accept optional borrowed client Rc handles.
+Mode-tree menus and display-menu commands forward existing holders, preserving
+missing-client support for separator and suppressed rows. Visible-row sizing uses
+a short shared client borrow. Formatting calls still adapt to their existing raw
+client interfaces, which remain pending. Menu-row tests forward their existing
+client owner and no longer keep a raw client local. No new Rc-managed type is
+introduced.
+
+`cargo test --workspace` and `git diff --check` passed, including menu row growth,
+separator, expansion ownership and client reference-count coverage. Menu display
+and formatting interfaces still require migration.
