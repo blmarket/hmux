@@ -1465,8 +1465,8 @@ unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptOwner) {
     };
     if let Some(mtd) = &mtd {
         let mtd = crate::src::shared::rc::as_ptr(mtd);
-        if (*mtd).prompt_data.as_ref().is_some_and(|current| current.is(data)) {
-            (*mtd).prompt_data = None;
+        if (*mtd).prompt_data.is(data) {
+            (*mtd).prompt_data = refbox::Weak::new();
         }
     }
     if let Some(callback) = callback {
@@ -1530,7 +1530,7 @@ pub unsafe fn mode_tree_set_prompt(
     }));
     let prompt = prompt_create(pd);
     (*mtd).prompt = Some(prompt);
-    (*mtd).prompt_data = Some(identity);
+    (*mtd).prompt_data = identity;
     mode_tree_draw(&tree);
     (*mode_pane).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && client_owner.is_some() {
@@ -2009,7 +2009,7 @@ pub unsafe fn mode_tree_key(
         let tree_observer = (*mtd).observer.clone();
         redraw = 0 as ::core::ffi::c_int;
         let mtp = (*mtd).prompt_data.clone();
-        if let Some(mtp) = &mtp {
+        if !mtp.is_empty() {
             mtp.try_borrow_mut().expect("live prompt callback record").c = client_owner.map(Rc::downgrade).unwrap_or_default();
         }
         if *key & KEYC_MASK_KEY == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -2064,8 +2064,8 @@ pub unsafe fn mode_tree_key(
             *key = KEYC_NONE;
             return 0;
         }
-        if let Some(mtp) = &mtp {
-            if (*mtd).prompt_data.as_ref() == Some(mtp) {
+        if !mtp.is_empty() {
+            if (*mtd).prompt_data == mtp {
                 mtp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
             }
         }
@@ -2756,7 +2756,7 @@ mod mode_prompt_data_tests {
             let weak_tree = Rc::downgrade(&tree);
             let old = data(&tree);
             let replacement = data(&tree);
-            (*mtd).prompt_data = Some(replacement.downgrade());
+            (*mtd).prompt_data = replacement.downgrade();
             let frees = Rc::new(Cell::new(0));
             let count = frees.clone();
             let weak_old = old.downgrade();
@@ -2770,15 +2770,12 @@ mod mode_prompt_data_tests {
             mode_tree_prompt_free_callback(&old);
             assert_eq!(Rc::strong_count(&tree), 2);
             assert!(old.try_borrow_mut().unwrap().mtd.is_none());
-            assert!((*mtd)
-                .prompt_data
-                .as_ref()
-                .is_some_and(|current| current.is(&replacement)));
+            assert!((*mtd).prompt_data.is(&replacement));
             mode_tree_prompt_free_callback(&old);
             assert_eq!(frees.get(), 1);
             assert_eq!(Rc::strong_count(&tree), 2);
             mode_tree_prompt_free_callback(&replacement);
-            assert!((*mtd).prompt_data.is_none());
+            assert!((*mtd).prompt_data.is_empty());
             assert_eq!(Rc::strong_count(&tree), 1);
             drop(tree);
             // Retaining the closed callback records does not retain the tree.

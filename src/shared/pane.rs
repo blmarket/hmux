@@ -133,7 +133,7 @@ pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
 pub type WindowPanePromptOwner = refbox::RefBox<window_pane_prompt>;
-pub type WindowPanePromptWeak = Option<refbox::Weak<window_pane_prompt>>;
+pub type WindowPanePromptWeak = refbox::Weak<window_pane_prompt>;
 
 pub struct window_pane_prompt {
     pub wp_id: u_int,

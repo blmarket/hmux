@@ -3169,13 +3169,8 @@ unsafe fn window_pane_prompt_free_callback(data: &WindowPanePromptOwner) {
     };
     let lookup_wp_owner = window_pane_find_by_id(wp_id);
     let wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !wp.is_null()
-        && (*wp)
-            .prompt_data
-            .as_ref()
-            .is_some_and(|current| current.is(data))
-    {
-        (*wp).prompt_data = None;
+    if !wp.is_null() && (*wp).prompt_data.is(data) {
+        (*wp).prompt_data = refbox::Weak::new();
     }
     if let Some(callback) = callback {
         callback();
@@ -3227,7 +3222,7 @@ pub unsafe fn window_pane_set_prompt(
     let prompt_observer = prompt.downgrade();
     (*wp).prompt = Some(prompt);
     let prompt = prompt_observer;
-    (*wp).prompt_data = Some(identity);
+    (*wp).prompt_data = identity;
     (*wp).flags |= PANE_REDRAW;
     prompt_incremental_start(&prompt);
     window_fire_pane_prompt(
@@ -3242,7 +3237,7 @@ pub unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_p
     let wpp = (*wp).prompt_data.clone();
     let mut type_0: prompt_type = PROMPT_TYPE_INVALID;
     if let Some(prompt) = prompt {
-        if let Some(wpp) = wpp {
+        if !wpp.is_empty() {
             type_0 = wpp.try_borrow_mut().expect("live pane prompt record").type_0;
         }
         prompt_free(&prompt.downgrade());
@@ -3292,7 +3287,7 @@ pub unsafe fn window_pane_prompt_key(
     let Some(prompt) = prompt else {
         return PROMPT_KEY_NOT_HANDLED;
     };
-    if let Some(wpp) = &wpp {
+    if !wpp.is_empty() {
         wpp.try_borrow_mut().expect("live prompt callback record").c = client_owner.map(Rc::downgrade).unwrap_or_default();
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -3338,8 +3333,8 @@ pub unsafe fn window_pane_prompt_key(
     if wp.is_null() {
         return result;
     }
-    if let Some(wpp) = &wpp {
-        if (*wp).prompt_data.as_ref() == Some(wpp) {
+    if !wpp.is_empty() {
+        if (*wp).prompt_data == wpp {
             wpp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
         }
     }
@@ -4600,7 +4595,7 @@ mod pane_prompt_data_tests {
                 assert_eq!(kind, PROMPT_KEY_CLOSE);
                 window_pane_clear_prompt(&pane);
                 (*wp).prompt = next_prompt.take();
-                (*wp).prompt_data = Some(next_data.clone());
+                (*wp).prompt_data = next_data.clone();
                 PROMPT_CLOSE
             }));
             let frees = Rc::new(Cell::new(0));
@@ -4609,7 +4604,7 @@ mod pane_prompt_data_tests {
                 Some(Box::new(move || count.set(count.get() + 1)));
             let old_observer = old_prompt.downgrade();
             (*wp).prompt = Some(old_prompt);
-            (*wp).prompt_data = Some(old_weak.clone());
+            (*wp).prompt_data = old_weak.clone();
             assert_eq!(
                 window_pane_prompt_key(
                     &pane,
@@ -4620,13 +4615,13 @@ mod pane_prompt_data_tests {
                 PROMPT_KEY_CLOSE
             );
             assert_eq!(frees.get(), 1);
-            assert!((*wp).prompt_data.as_ref() == Some(&replacement_weak));
+            assert_eq!((*wp).prompt_data, replacement_weak);
             assert!(replacement_observer.is((*wp).prompt.as_ref().unwrap()));
             assert!(!old_observer.is_alive());
             drop(old_data);
             assert!(!old_weak.is_alive());
             window_pane_clear_prompt(&pane);
-            assert!((*wp).prompt_data.is_none());
+            assert!((*wp).prompt_data.is_empty());
             assert!(!replacement_observer.is_alive());
             drop(replacement);
             assert!(!replacement_weak.is_alive());
