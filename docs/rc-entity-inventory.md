@@ -1532,3 +1532,16 @@ through callback execution without creating event/pane ownership cycles.
 `cargo test --workspace` and `git diff --check` passed. Destruction internals,
 raw parent-window links, dead-key entry arguments and lower-level removal APIs
 remain pending.
+
+## Implemented retained pane removal and logical destructor
+
+`window_remove_pane` and the internal `window_pane_destroy` borrow retained pane
+handles. Bulk window destruction forwards its traversal owner; server teardown
+and kill-all forward existing owners. Spawn/split failure cleanup retains the new
+pane before client/layout removal. The destructor still removes and releases the
+registry owner in its existing order, while the caller retains the allocation.
+
+`cargo test --workspace` and `git diff --check` passed, including pane observer
+expiry and empty-pane stream callback release tests adapted to the typed API.
+Raw window arguments, pane-parent links and internal teardown projections remain
+pending.

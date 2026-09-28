@@ -2011,12 +2011,13 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
     }
     redraw_invalidate_scene(w);
 }
-pub unsafe fn window_remove_pane(mut w: *mut window, mut wp: *mut window_pane) {
+pub unsafe fn window_remove_pane(mut w: *mut window, pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     window_lost_pane(w, wp);
     window_pane_list_remove(w, wp);
     window_pane_z_remove(w, wp);
     redraw_invalidate_scene(w);
-    window_pane_destroy(wp);
+    window_pane_destroy(pane_owner);
 }
 pub unsafe fn window_pane_at_index(w: &mut window, idx: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let base = options_get_number(
@@ -2101,7 +2102,7 @@ pub unsafe fn window_destroy_panes(w: *mut window) {
         let wp = owner.get();
         window_pane_list_remove(w, wp);
         window_pane_z_remove(w, wp);
-        window_pane_destroy(wp);
+        window_pane_destroy(&owner);
     }
 }
 pub unsafe fn window_printable_flags(
@@ -2737,7 +2738,8 @@ unsafe fn window_pane_scrollbar_redraw_visibility(mut wp: *mut window_pane) {
     (*wp).flags |= PANE_REDRAW;
     server_redraw_window((*wp).window as *mut window);
 }
-unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
+unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     window_pane_wait_finish(wp);
     spawn_editor_finish(wp);
     let owner = window_pane_tree_remove(&mut *std::ptr::addr_of_mut!(all_window_panes), &mut *wp).expect("registered pane owner");
@@ -4778,7 +4780,7 @@ mod pane_stream_lifecycle_tests {
             assert_eq!(rc::as_ptr(&guard), pane);
 
             window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane_owner);
-            window_pane_destroy(pane);
+            window_pane_destroy(&observer.upgrade().expect("registered pane"));
 
             // An in-flight operation can still hold the allocation, but new
             // operations must not follow a mode's link into a destroyed pane.
@@ -4805,7 +4807,7 @@ mod pane_stream_lifecycle_tests {
             let callback = Rc::downgrade((*(*pane).event).readcb.as_ref().unwrap());
 
             window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane_owner);
-            window_pane_destroy(pane);
+            window_pane_destroy(&observer.upgrade().expect("registered pane"));
 
             assert!(observer.upgrade().is_none());
             assert!(callback.upgrade().is_none());

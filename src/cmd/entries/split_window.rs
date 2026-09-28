@@ -564,11 +564,12 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
     }
     if !new_wp.is_null() {
+        let pane_owner = (*new_wp).observer.upgrade().expect("new pane owner");
         server_client_remove_pane(new_wp);
         if is_floating == 0 {
             layout_close_pane(new_wp);
         }
-        window_remove_pane((*wp).window as *mut window, new_wp);
+        window_remove_pane((*wp).window as *mut window, &pane_owner);
     }
     if restore_zoom != 0 || !flags & SPAWN_FLOATING != 0 {
         window_pop_zoom((*wp).window as *mut window);

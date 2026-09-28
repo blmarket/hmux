@@ -786,9 +786,10 @@ pub unsafe fn spawn_pane(
             );
             (*new_wp).fd = -(1 as ::core::ffi::c_int);
             if !(*sc).flags & SPAWN_RESPAWN != 0 {
+                let pane_owner = (*new_wp).observer.upgrade().expect("new pane owner");
                 server_client_remove_pane(new_wp);
                 layout_close_pane(new_wp);
-                window_remove_pane(w, new_wp);
+                window_remove_pane(w, &pane_owner);
             }
             sigprocmask(
                 SIG_SETMASK,

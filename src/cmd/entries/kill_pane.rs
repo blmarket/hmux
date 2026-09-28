@@ -80,7 +80,7 @@ unsafe fn cmd_kill_pane_all(
         {
             server_client_remove_pane(pane_owner.get());
             layout_close_pane(pane_owner.get());
-            window_remove_pane((*wl).window_ptr(), pane_owner.get());
+            window_remove_pane((*wl).window_ptr(), &pane_owner);
         }
     }
     server_redraw_window((*wl).window_ptr());

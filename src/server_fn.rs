@@ -307,7 +307,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
         window_push_zoom(w, 0 as ::core::ffi::c_int, (*wp).flags & PANE_FLOATOVERZOOM);
         server_client_remove_pane(wp);
         layout_close_pane(wp);
-        window_remove_pane(w, wp);
+        window_remove_pane(w, pane_owner);
         window_pop_zoom(w);
         server_redraw_window(w);
     };
@@ -574,7 +574,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     window_push_zoom(w, 0 as ::core::ffi::c_int, (*wp).flags & PANE_FLOATOVERZOOM);
     server_client_remove_pane(wp);
     layout_close_pane(wp);
-    window_remove_pane(w, wp);
+    window_remove_pane(w, pane_owner);
     if window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
         server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
     } else {
