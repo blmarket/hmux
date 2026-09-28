@@ -92,9 +92,9 @@ unsafe fn cmd_send_keys_inject_key(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut new_after: *mut cmdq_item = after;
     if args_has(args, 'K' as i32 as u_char) != 0 {
@@ -132,7 +132,7 @@ unsafe fn cmd_send_keys_inject_key(
         after = key_bindings_dispatch(
             command,
             after,
-            tc,
+            (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             ::core::ptr::null_mut::<key_event>(),
             target,
         );
@@ -209,9 +209,9 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut event_snapshot = cmdq_get_event(item);
     let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -265,7 +265,9 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
-        mouse_pane_owner = cmd_mouse_pane(m, &raw mut s, ::core::ptr::null_mut::<*mut winlink>());
+        let mut mouse_session_owner = None;
+        mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), ::core::ptr::null_mut::<*mut winlink>());
+        s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             cmdq_error(item, |out| out.write_all(b"no mouse target"));

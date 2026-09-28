@@ -123,33 +123,37 @@ static mut message_next: u_int = 0;
 pub static mut message_log: message_list = message_list::new();
 pub static mut current_time: time_t = 0;
 pub unsafe fn server_set_marked(
-    mut s: *mut session,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
-    marked_pane.set_s(s);
+    marked_pane.set_s((s).as_ref());
     marked_pane.set_wl(wl);
     if !wl.is_null() {
-        marked_pane.set_w((*wl).window_ptr());
+        marked_pane.set_w(((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     }
-    marked_pane.set_wp(wp);
+    marked_pane.set_wp((wp).as_ref());
 }
 pub unsafe fn server_clear_marked() {
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
 }
 pub unsafe fn server_is_marked(
-    mut s: *mut session,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> ::core::ffi::c_int {
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if s.is_null() || wl.is_null() || wp.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.s_ptr() != s || marked_pane.wl_ptr() != wl {
+    if marked_pane.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || marked_pane.wl_ptr() != wl {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.wp_ptr() != wp {
+    if marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != wp {
         return 0 as ::core::ffi::c_int;
     }
     return server_check_marked();
@@ -398,7 +402,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session_ptr().is_null() {
+        if !(*c).session_handle().is_none() {
             return 0 as ::core::ffi::c_int;
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
@@ -426,14 +430,14 @@ unsafe fn server_send_exit() {
             (*c).flags |= CLIENT_EXIT as uint64_t;
             (*c).exit_type = CLIENT_EXIT_SHUTDOWN;
         }
-        (*c).set_session(::core::ptr::null_mut::<session>());
+        (*c).set_session(None);
     }
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         let name = sessions_key(&*s);
         session_destroy(
-            s,
+            s_owner.as_ref().expect("registered session"),
             1 as ::core::ffi::c_int,
             b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
         );
@@ -545,7 +549,7 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
     }
     let owner = server_client_create(newfd);
     c = owner.get();
-    if server_acl_join(c) == 0 {
+    if server_acl_join(&mut *(c)) == 0 {
         server_client_set_exit_message(&mut *c, Some(CString::new("access not allowed").unwrap()));
         (*c).retval = 1 as ::core::ffi::c_int;
         (*c).flags |= CLIENT_EXIT as uint64_t;
@@ -652,9 +656,9 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 (*wp).flags |= PANE_STATUSREADY;
                 log_debug(format_args!("%{} exited", ((*wp).id) as u32));
                 (*wp).flags |= PANE_EXITED;
-                window_pane_wait_finish(wp);
-                spawn_editor_finish(wp);
-                if window_pane_destroy_ready(wp) != 0 {
+                window_pane_wait_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
+                spawn_editor_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
+                if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
                     server_destroy_pane(&pane_owner, 1);
                 }
                 break;

@@ -79,15 +79,15 @@ pub unsafe fn menu_add_item(
     };
     let index = menu.push_empty();
     let expanded = if !fs.is_null() {
-        format_single_from_state_cstring(qitem, item.name.as_ptr(), client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()), fs)
+        format_single_from_state_cstring(qitem, item.name.as_ptr(), client_owner, fs)
     } else {
         format_single_cstring(
             qitem,
             item.name.as_ptr(),
-            client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()),
+            client_owner,
+            None,
             std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
+            None,
         )
     };
     if expanded.is_empty() {
@@ -130,15 +130,15 @@ pub unsafe fn menu_add_item(
     menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
     menu.items[index].command = item.command.map(|command| {
         if !fs.is_null() {
-            format_single_from_state_cstring(qitem, command.as_ptr(), client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()), fs)
+            format_single_from_state_cstring(qitem, command.as_ptr(), client_owner, fs)
         } else {
             format_single_cstring(
                 qitem,
                 command.as_ptr(),
-                client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()),
+                client_owner,
+                None,
                 std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                None,
             )
         }
     });
@@ -168,10 +168,10 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options).map_or(std::ptr::null_mut(), |options| options);
     let ft = format_create_defaults(
         std::ptr::null_mut(),
-        std::ptr::null_mut(),
-        md.fs.s_ptr(),
+        None,
+        (md.fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         md.fs.wl_ptr(),
-        md.fs.wp_ptr(),
+        (md.fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     let mut parsed = style::default();
     for (cell, option, override_style) in [
@@ -271,8 +271,8 @@ pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&re
     menu_free_data(menu);
     if let Some(owner) = window.upgrade() {
         let w = crate::src::shared::rc::as_ptr(&owner);
-        redraw_invalidate_scene(w);
-        window_update_focus(w);
+        redraw_invalidate_scene(&mut *(w));
+        window_update_focus((w).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         server_redraw_window(&*(w));
     }
 }
@@ -618,7 +618,7 @@ pub unsafe fn menu_display(
 ) {
     let setup_window = if fs.is_null() {
         let client = &*client_owner.expect("menu without a target requires a client").get();
-        let link = &*(*client.session_ptr()).curw_ptr();
+        let link = &*(*client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr();
         link.window_owner.as_ref().expect("current link has a window").clone()
     } else {
         (*fs).w.upgrade().expect("live menu target window")
@@ -665,7 +665,7 @@ pub unsafe fn menu_display(
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
         if !fs.is_null() {
             cmd_find_copy_state(&mut md.fs, fs);
-        } else if cmd_find_from_window(&mut md.fs, setup_window.get(), 0) != 0 {
+        } else if cmd_find_from_window(&mut md.fs, &setup_window, 0) != 0 {
             cmd_find_clear_state(&mut md.fs, 0);
         }
         screen_init(&mut md.s, sx, sy, 0);
@@ -689,8 +689,8 @@ pub unsafe fn menu_display(
     }
     if let Some(retained) = window.upgrade() {
         let w = crate::src::shared::rc::as_ptr(&retained);
-        redraw_invalidate_scene(w);
-        window_update_focus(w);
+        redraw_invalidate_scene(&mut *(w));
+        window_update_focus((w).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         server_redraw_window(&*(w));
     }
 }

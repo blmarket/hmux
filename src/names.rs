@@ -25,10 +25,12 @@ use std::ffi::{CStr, CString};
 
 pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 
-unsafe fn name_time_callback(w: *mut window) {
+unsafe fn name_time_callback(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     log_debug(format_args!("@{} name timer expired", ((*w).id) as u32));
 }
-unsafe fn name_time_expired(mut w: *mut window, mut tv: *mut timeval) -> ::core::ffi::c_int {
+unsafe fn name_time_expired(w_value: &window, mut tv: *mut timeval) -> ::core::ffi::c_int {
+    let w: *mut window = w_value as *const _ as *mut _;
     let mut offset: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -44,7 +46,8 @@ unsafe fn name_time_expired(mut w: *mut window, mut tv: *mut timeval) -> ::core:
     }
     return (NAME_INTERVAL as __suseconds_t - offset.tv_usec) as ::core::ffi::c_int;
 }
-pub unsafe fn check_window_name(mut w: *mut window) {
+pub unsafe fn check_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -54,7 +57,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         tv_usec: 0,
     };
     let mut left: ::core::ffi::c_int = 0;
-    if (*w).active_ptr().is_null() {
+    if (*w).active_pane().is_none() {
         return;
     }
     if options_get_number(
@@ -64,7 +67,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
     {
         return;
     }
-    if !(*(*w).active_ptr()).flags & PANE_CHANGED != 0 {
+    if !(*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & PANE_CHANGED != 0 {
         log_debug(format_args!(
             "@{} active pane not changed",
             ((*w).id) as u32
@@ -73,14 +76,21 @@ pub unsafe fn check_window_name(mut w: *mut window) {
     }
     log_debug(format_args!("@{} active pane changed", ((*w).id) as u32));
     gettimeofday(&raw mut tv, NULL);
-    left = name_time_expired(w, &raw mut tv);
+    left = name_time_expired(&*(w), &raw mut tv);
     if left != 0 as ::core::ffi::c_int {
         if event_initialized(&(*w).name_event) == 0 {
             event_set(
                 &raw mut (*w).name_event,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                move |_, _| unsafe { name_time_callback(w) },
+                {
+                let observer = std::rc::Rc::downgrade(w_owner);
+                move |_, _| unsafe {
+                    if let Some(owner) = observer.upgrade() {
+                        name_time_callback(&owner);
+                    }
+                }
+            },
             );
         }
         if event_pending(
@@ -115,8 +125,8 @@ pub unsafe fn check_window_name(mut w: *mut window) {
     if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
     }
-    (*(*w).active_ptr()).flags &= !PANE_CHANGED;
-    let name = format_window_name(w);
+    (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags &= !PANE_CHANGED;
+    let name = format_window_name(w_owner);
     if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut()) != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "@{} new name {} (was {})",
@@ -124,7 +134,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
             crate::src::log::log_bytes(name.as_bytes()),
             crate::src::log::log_bytes((*w).name.as_bytes())
         ));
-        window_set_name(w, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
+        window_set_name(w_owner, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
         server_redraw_window_borders(&*(w));
         server_status_window(&*(w));
     } else {
@@ -137,32 +147,33 @@ pub unsafe fn check_window_name(mut w: *mut window) {
 }
 
 pub(crate) unsafe fn default_window_name_cstring(w: &window) -> CString {
-    if w.active_ptr().is_null() {
+    if w.active_pane().is_none() {
         return c"".to_owned();
     }
-    let cmd = cmd_stringify_argv_cstring(&(*w.active_ptr()).argv);
+    let cmd = cmd_stringify_argv_cstring(&(*w.active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).argv);
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         parse_window_name_cstring(cmd)
     } else {
         parse_window_name_cstring(CStr::from_ptr(
-            (*w.active_ptr())
+            (*w.active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))
                 .shell
                 .as_ref()
                 .map_or(::core::ptr::null(), |value| value.as_ptr()),
         ))
     }
 }
-unsafe fn format_window_name(w: *mut window) -> CString {
+unsafe fn format_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> CString {
+    let mut w = w_owner.get();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut fmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    format_defaults_window(ft, w);
-    format_defaults_pane(ft, (*w).active_ptr());
+    format_defaults_window(ft, Some(w_owner));
+    format_defaults_pane(ft, &(*((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"));
     fmt = options_get_string(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,

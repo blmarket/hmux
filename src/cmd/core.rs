@@ -566,12 +566,13 @@ pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn cmd_mouse_at(
-    mut wp: *mut window_pane,
+    wp_value: &window_pane,
     mut m: *mut mouse_event,
     mut xp: *mut u_int,
     mut yp: *mut u_int,
     mut last: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let wp = wp_value as *const window_pane;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if last != 0 {
@@ -615,19 +616,20 @@ pub unsafe fn cmd_mouse_at(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut session) -> *mut winlink {
+pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>) -> *mut winlink {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if (*m).valid == 0 {
         return ::core::ptr::null_mut::<winlink>();
     }
-    if (*m).s == -(1 as ::core::ffi::c_int) || {
-        s = session_find_by_id((*m).s as u_int).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        s.is_null()
-    } {
-        return ::core::ptr::null_mut::<winlink>();
+    if (*m).s == -1 {
+        return std::ptr::null_mut();
     }
+    let Some(session_owner) = session_find_by_id((*m).s as u_int) else {
+        return std::ptr::null_mut();
+    };
+    s = session_owner.get();
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = (*s).curw_ptr();
     } else {
@@ -639,19 +641,19 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut sessio
         if w.is_null() {
             return ::core::ptr::null_mut::<winlink>();
         }
-        wl = winlink_find_by_window(&raw mut (*s).windows, w);
+        wl = winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window"));
         if let Some(window) = window_owner {
             crate::src::window::window_remove_ref(window, c"cmd_mouse_window".as_ptr());
         }
     }
-    if !sp.is_null() {
-        *sp = s;
+    if let Some(sp) = sp {
+        *sp = Some(session_owner);
     }
     return wl;
 }
 pub unsafe fn cmd_mouse_pane(
     mut m: *mut mouse_event,
-    mut sp: *mut *mut session,
+    sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
     mut wlp: *mut *mut winlink,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -662,7 +664,7 @@ pub unsafe fn cmd_mouse_pane(
     }
     let pane_owner;
     if (*m).wp == -(1 as ::core::ffi::c_int) {
-        pane_owner = (*(*wl).window_ptr()).active.upgrade();
+        pane_owner = (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active.upgrade();
         wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         pane_owner = window_pane_find_by_id((*m).wp as u_int);
@@ -670,11 +672,11 @@ pub unsafe fn cmd_mouse_pane(
         if wp.is_null() {
             return None;
         }
-        if !window_has_pane(&*(*wl).window_ptr(), &(*wp).observer) {
+        if !window_has_pane(&*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &(*wp).observer) {
             return None;
         }
     }
-    if (*(*wl).window_ptr()).modal.upgrade().is_some() && !pane_owner.as_ref().is_some_and(|owner| (*(*wl).window_ptr()).modal.ptr_eq(&std::rc::Rc::downgrade(owner))) {
+    if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() && !pane_owner.as_ref().is_some_and(|owner| (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.ptr_eq(&std::rc::Rc::downgrade(owner))) {
         return None;
     }
     if !wlp.is_null() {

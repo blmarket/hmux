@@ -68,7 +68,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         order_seq: &[],
     };
     if args_has(args, 't' as i32 as u_char) != 0 {
-        s = (*target).s_ptr();
+        s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         s = ::core::ptr::null_mut::<session>();
     }
@@ -90,7 +90,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
-        if !((*c).session_ptr().is_null() || !s.is_null() && s != (*c).session_ptr()) {
+        if !((*c).session_handle().is_none() || !s.is_null() && s != (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) {
             ft = format_create_with_client(
                 queue_client.as_ref(),
                 item,
@@ -104,10 +104,10 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             );
             format_defaults(
                 ft,
-                c,
-                ::core::ptr::null_mut::<session>(),
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                None,
                 ::core::ptr::null_mut::<winlink>(),
-                ::core::ptr::null_mut::<window_pane>(),
+                None,
             );
             if !filter.is_null() {
                 let expanded = format_expand_cstring(ft, filter);

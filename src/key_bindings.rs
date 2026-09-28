@@ -155,7 +155,7 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !c.is_null() {
             if (*c).keytable.as_ref().is_some_and(|current| std::rc::Rc::ptr_eq(current, &owner)) {
-                server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
+                server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
             }
             registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
             c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -851,10 +851,11 @@ unsafe fn key_bindings_read_only(mut item: *mut cmdq_item) -> cmd_retval {
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
     mut item: *mut cmdq_item,
-    mut c: *mut client,
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut event: *mut key_event,
     mut fs: *mut cmd_find_state,
 ) -> *mut cmdq_item {
+    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let new_state;
     let mut readonly: ::core::ffi::c_int = 0;

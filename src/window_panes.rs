@@ -143,56 +143,31 @@ unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<Rc<Un
     Some(owner)
 }
 
-// The caller holds session_owner through every use of the raw output
-// parameters. Session membership still determines logical liveness.
+// Retain the source session through the caller's operation. The window remains
+// owned by its existing relationships; release the lookup owner explicitly.
 unsafe fn window_panes_get_source(
-    mut data: *mut window_panes_modedata,
-    mut sp: *mut *mut session,
-    mut wlp: *mut *mut winlink,
-    mut wp: *mut *mut window,
+    data: *mut window_panes_modedata,
+    wlp: *mut *mut winlink,
     session_owner: &mut Option<Rc<UnsafeCell<session>>>,
-) -> ::core::ffi::c_int {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let window_owner = window_find_by_id((*data).source_window);
-    w = window_owner.as_ref().map_or(
-        std::ptr::null_mut(),
-        crate::src::shared::rc::as_ptr,
-    );
-    if w.is_null() {
-        return 0 as ::core::ffi::c_int;
+) -> Option<Weak<UnsafeCell<window>>> {
+    let window_owner = window_find_by_id((*data).source_window)?;
+    let mut link = std::ptr::null_mut();
+    *session_owner = session_find_by_id((*data).source_session);
+    if let Some(session) = session_owner.as_ref() {
+        link = winlink_find_by_window(&raw mut (*session.get()).windows, &window_owner);
     }
-    let next_owner = session_find_by_id((*data).source_session);
-    s = next_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if let Some(owner) = std::mem::replace(session_owner, next_owner) {
-        drop(owner);
+    if link.is_null() {
+        *session_owner = window_panes_session(data);
     }
-    if !s.is_null() {
-        wl = winlink_find_by_window(&raw mut (*s).windows, w);
-    }
-    if wl.is_null() {
-        if let Some(owner) = std::mem::replace(session_owner, window_panes_session(data)) {
-            drop(owner);
-        }
-        s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    }
-    if !s.is_null() {
-        wl = winlink_find_by_window(&raw mut (*s).windows, w);
-    }
-    if !sp.is_null() {
-        *sp = s;
+    if let Some(session) = session_owner.as_ref() {
+        link = winlink_find_by_window(&raw mut (*session.get()).windows, &window_owner);
     }
     if !wlp.is_null() {
-        *wlp = wl;
+        *wlp = link;
     }
-    if !wp.is_null() {
-        *wp = w;
-    }
-    if let Some(window) = window_owner {
-        crate::src::window::window_remove_ref(window, c"window_panes_get_source".as_ptr());
-    }
-    return 1 as ::core::ffi::c_int;
+    let window = Rc::downgrade(&window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"window_panes_get_source".as_ptr());
+    Some(window)
 }
 unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
@@ -227,12 +202,13 @@ unsafe fn window_panes_free_areas(mut data: *mut window_panes_modedata) {
 }
 unsafe fn window_panes_add_area(
     mut data: *mut window_panes_modedata,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let mut wp = wp_owner.get();
     (*data).areas.push(window_panes_area {
         id: (*wp).id,
         x,
@@ -241,7 +217,8 @@ unsafe fn window_panes_add_area(
         sy,
     });
 }
-unsafe fn window_panes_pane_floating(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+unsafe fn window_panes_pane_floating(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut lc: *mut layout_cell = (*wp).saved_layout_cell;
     if lc.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -251,14 +228,15 @@ unsafe fn window_panes_pane_floating(mut wp: *mut window_pane) -> ::core::ffi::c
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn window_panes_pane_visible(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+unsafe fn window_panes_pane_visible(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     if !(*wp).saved_layout_cell.is_null() {
         return 1 as ::core::ffi::c_int;
     }
     return window_pane_is_visible(&*wp);
 }
 unsafe fn window_panes_get_geometry(
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut root: *mut layout_cell,
     mut osx: u_int,
     mut osy: u_int,
@@ -269,6 +247,7 @@ unsafe fn window_panes_get_geometry(
     mut sxp: *mut u_int,
     mut syp: *mut u_int,
 ) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut lc: *mut layout_cell = (*wp).saved_layout_cell;
     let mut status: ::core::ffi::c_int = 0;
     let mut x: u_int = 0;
@@ -325,7 +304,7 @@ unsafe fn window_panes_get_geometry(
     if sx == 0 as u_int || sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    status = window_get_pane_status(&*(*wp).window_ptr());
+    status = window_get_pane_status(&*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
     if layout_add_horizontal_border(root, lc, status) != 0 && sy > 1 as u_int {
         if status == PANE_STATUS_TOP {
             y = y.wrapping_add(1);
@@ -357,14 +336,14 @@ unsafe fn window_panes_get_border_cell(
     );
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
-        s,
+        None,
+        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() },
-        wp,
+        (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     style_apply(
         gc,
-        options_owner_ptr(&mut (*(*wp).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         b"display-panes-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
@@ -540,13 +519,14 @@ unsafe fn window_panes_mark_borders_cell(
 }
 unsafe fn window_panes_mark_pane_status_borders(
     mut map: *mut u_char,
-    mut w: *mut window,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut root: *mut layout_cell,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut status: ::core::ffi::c_int = 0;
@@ -560,7 +540,7 @@ unsafe fn window_panes_mark_pane_status_borders(
     }
     wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
-        if !(window_panes_pane_visible(wp) == 0) {
+        if !(window_panes_pane_visible(&(*(wp)).observer.upgrade().expect("live window_pane")) == 0) {
             lc = (*wp).saved_layout_cell;
             if lc.is_null() {
                 lc = (*wp).layout_cell as *mut layout_cell;
@@ -585,7 +565,7 @@ unsafe fn window_panes_mark_pane_status_borders(
     }
 }
 unsafe fn window_panes_get_floating_borders(
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
@@ -595,6 +575,7 @@ unsafe fn window_panes_get_floating_borders(
     mut x2p: *mut ::core::ffi::c_int,
     mut y2p: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     lc = (*wp).saved_layout_cell;
     if lc.is_null() {
@@ -618,7 +599,7 @@ unsafe fn window_panes_get_floating_borders(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_panes_clip_floating_pane(
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
@@ -628,6 +609,7 @@ unsafe fn window_panes_clip_floating_pane(
     mut sxp: *mut u_int,
     mut syp: *mut u_int,
 ) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut x: ::core::ffi::c_int = 0;
     let mut y: ::core::ffi::c_int = 0;
     let mut x2: ::core::ffi::c_int = 0;
@@ -637,7 +619,7 @@ unsafe fn window_panes_clip_floating_pane(
     let mut bx2: ::core::ffi::c_int = 0;
     let mut by2: ::core::ffi::c_int = 0;
     if window_panes_get_floating_borders(
-        wp,
+        wp_owner,
         osx,
         osy,
         dsx,
@@ -872,7 +854,7 @@ unsafe fn window_panes_mark_border_joins_cell(
 }
 unsafe fn window_panes_draw_borders(
     mut ctx: *mut screen_write_ctx,
-    mut w: *mut window,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut lc: *mut layout_cell,
     mut gc: *const grid_cell,
     mut osx: u_int,
@@ -880,6 +862,7 @@ unsafe fn window_panes_draw_borders(
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
+    let mut w = w_owner.get();
     let mut border_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -903,7 +886,7 @@ unsafe fn window_panes_draw_borders(
     let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
     let mut map = vec![0; map_size];
     window_panes_mark_borders_cell(map.as_mut_ptr(), lc, osx, osy, dsx, dsy);
-    window_panes_mark_pane_status_borders(map.as_mut_ptr(), w, lc, osx, osy, dsx, dsy);
+    window_panes_mark_pane_status_borders(map.as_mut_ptr(), w_owner, lc, osx, osy, dsx, dsy);
     window_panes_mark_border_joins_cell(map.as_mut_ptr(), lc, osx, osy, dsx, dsy);
     yy = 0 as u_int;
     while yy < dsy {
@@ -938,13 +921,14 @@ unsafe fn window_panes_draw_borders(
 }
 unsafe fn window_panes_draw_floating_border(
     mut ctx: *mut screen_write_ctx,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut gc: *const grid_cell,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
+    let mut wp = wp_owner.get();
     let mut border_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -970,7 +954,7 @@ unsafe fn window_panes_draw_floating_border(
         return;
     }
     if window_panes_get_floating_borders(
-        wp,
+        wp_owner,
         osx,
         osy,
         dsx,
@@ -1050,12 +1034,13 @@ unsafe fn window_panes_draw_floating_border(
 }
 unsafe fn window_panes_clear_floating_area(
     mut ctx: *mut screen_write_ctx,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
+    let mut wp = wp_owner.get();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1077,7 +1062,7 @@ unsafe fn window_panes_clear_floating_area(
     let mut xx: ::core::ffi::c_int = 0;
     let mut yy: ::core::ffi::c_int = 0;
     if window_panes_get_floating_borders(
-        wp,
+        wp_owner,
         osx,
         osy,
         dsx,
@@ -1124,12 +1109,13 @@ unsafe fn window_panes_clear_floating_area(
 unsafe fn window_panes_draw_format(
     mut data: *mut window_panes_modedata,
     mut ctx: *mut screen_write_ctx,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
     mut gc: *const grid_cell,
 ) {
+    let mut wp = wp_owner.get();
     let mut source_session_owner = None;
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
@@ -1146,7 +1132,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     format = options_get_string(
-        options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*mode_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         b"display-panes-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *format as ::core::ffi::c_int == '\0' as i32 {
@@ -1155,13 +1141,9 @@ unsafe fn window_panes_draw_format(
         }
         return;
     }
-    window_panes_get_source(
-        data,
-        &raw mut s,
-        &raw mut wl,
-        ::core::ptr::null_mut::<*mut window>(),
-        &mut source_session_owner,
-    );
+    if window_panes_get_source(data, &raw mut wl, &mut source_session_owner).is_some() {
+        s = source_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    }
     if s.is_null() {
         if let Some(owner) = session_owner {
             drop(owner);
@@ -1174,10 +1156,10 @@ unsafe fn window_panes_draw_format(
     let expanded = format_single_cstring(
         ::core::ptr::null_mut::<cmdq_item>(),
         format,
-        ::core::ptr::null_mut::<client>(),
-        s,
+        None,
+        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         wl,
-        wp,
+        Some(wp_owner),
     );
     if !expanded.is_empty() {
         screen_write_cursormove(
@@ -1205,13 +1187,14 @@ unsafe fn window_panes_draw_format(
 unsafe fn window_panes_draw_number(
     mut data: *mut window_panes_modedata,
     mut ctx: *mut screen_write_ctx,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut pane: u_int,
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let mut wp = wp_owner.get();
     let mut source_session_owner = None;
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
@@ -1219,9 +1202,9 @@ unsafe fn window_panes_draw_number(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
     let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() };
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1297,29 +1280,25 @@ unsafe fn window_panes_draw_number(
         }
         return;
     }
-    window_panes_get_source(
-        data,
-        &raw mut s,
-        &raw mut wl,
-        ::core::ptr::null_mut::<*mut window>(),
-        &mut source_session_owner,
-    );
+    if window_panes_get_source(data, &raw mut wl, &mut source_session_owner).is_some() {
+        s = source_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    }
     if !s.is_null() {
         if wl.is_null() {
             wl = (*s).curw_ptr();
         }
     }
-    if (*w).active_ptr() == wp {
+    if (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == wp {
         name = b"display-panes-active-colour\0" as *const u8 as *const ::core::ffi::c_char;
     } else {
         name = b"display-panes-colour\0" as *const u8 as *const ::core::ffi::c_char;
     }
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
-        s,
+        None,
+        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         wl,
-        wp,
+        Some(wp_owner),
     );
     style_apply(&raw mut fgc, oo, name, ft);
     format_free(Box::from_raw(ft));
@@ -1372,7 +1351,7 @@ unsafe fn window_panes_draw_number(
             });
         }
         if format != 0 && sy > 1 as u_int {
-            window_panes_draw_format(data, ctx, wp, x, y, sx, &raw mut fgc);
+            window_panes_draw_format(data, ctx, wp_owner, x, y, sx, &raw mut fgc);
         }
         if let Some(owner) = session_owner {
             drop(owner);
@@ -1418,7 +1397,7 @@ unsafe fn window_panes_draw_number(
         }
         return;
     }
-    window_panes_draw_format(data, ctx, wp, x, y, sx, &raw mut fgc);
+    window_panes_draw_format(data, ctx, wp_owner, x, y, sx, &raw mut fgc);
     if llen != 0 as size_t {
         cx = (x.wrapping_add(px) as size_t)
             .wrapping_sub(llen)
@@ -1444,13 +1423,14 @@ unsafe fn window_panes_draw_number(
 unsafe fn window_panes_draw_pane(
     mut data: *mut window_panes_modedata,
     mut ctx: *mut screen_write_ctx,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut root: *mut layout_cell,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
+    let mut wp = wp_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -1461,11 +1441,11 @@ unsafe fn window_panes_draw_pane(
     let mut y: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    if window_panes_pane_visible(wp) == 0 {
+    if window_panes_pane_visible(wp_owner) == 0 {
         return;
     }
     if window_panes_get_geometry(
-        wp,
+        wp_owner,
         root,
         osx,
         osy,
@@ -1480,7 +1460,7 @@ unsafe fn window_panes_draw_pane(
         return;
     }
     if window_panes_clip_floating_pane(
-        wp,
+        wp_owner,
         osx,
         osy,
         dsx,
@@ -1496,7 +1476,7 @@ unsafe fn window_panes_draw_pane(
     if !window_pane_index(&*wp).map(|value| { pane = value; }).is_some() {
         return;
     }
-    window_panes_add_area(data, wp, x, y, sx, sy);
+    window_panes_add_area(data, wp_owner, x, y, sx, sy);
     screen_write_cursormove(
         &mut *ctx,
         x as ::core::ffi::c_int,
@@ -1519,7 +1499,7 @@ unsafe fn window_panes_draw_pane(
     } else {
         screen_write_preview(&mut *ctx, &*s, sx, sy);
     }
-    window_panes_draw_number(data, ctx, wp, pane, x, y, sx, sy);
+    window_panes_draw_number(data, ctx, wp_owner, pane, x, y, sx, sy);
 }
 unsafe fn window_panes_data(wme: *mut window_mode_entry) -> *mut window_panes_modedata {
     (*wme)
@@ -1564,19 +1544,14 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     let mut osy: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    if window_panes_get_source(
-        data,
-        ::core::ptr::null_mut::<*mut session>(),
-        ::core::ptr::null_mut::<*mut winlink>(),
-        &raw mut w,
-        &mut source_session_owner,
-    ) == 0
-    {
+    let source_window = window_panes_get_source(data, std::ptr::null_mut(), &mut source_session_owner);
+    if source_window.is_none() {
         if let Some(owner) = source_session_owner {
             drop(owner);
         }
         return;
     }
+    w = source_window.unwrap().upgrade().expect("source window remains owned").get();
     root = (*w).saved_layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     if root.is_null() {
         root = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
@@ -1596,21 +1571,21 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
-        if !(window_panes_pane_floating(wp) != 0) {
-            window_panes_draw_pane(data, &raw mut ctx, wp, root, osx, osy, sx, sy);
+        if !(window_panes_pane_floating(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0) {
+            window_panes_draw_pane(data, &raw mut ctx, &(*(wp)).observer.upgrade().expect("live window_pane"), root, osx, osy, sx, sy);
         }
         wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     window_panes_get_border_cell(data, &raw mut border_gc);
-    window_panes_draw_borders(&raw mut ctx, w, root, &raw mut border_gc, osx, osy, sx, sy);
+    window_panes_draw_borders(&raw mut ctx, &(*(w)).observer.upgrade().expect("live window"), root, &raw mut border_gc, osx, osy, sx, sy);
     wp = window_pane_z_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
-        if !(window_panes_pane_floating(wp) == 0) {
-            window_panes_clear_floating_area(&raw mut ctx, wp, osx, osy, sx, sy);
-            window_panes_draw_pane(data, &raw mut ctx, wp, root, osx, osy, sx, sy);
+        if !(window_panes_pane_floating(&(*(wp)).observer.upgrade().expect("live window_pane")) == 0) {
+            window_panes_clear_floating_area(&raw mut ctx, &(*(wp)).observer.upgrade().expect("live window_pane"), osx, osy, sx, sy);
+            window_panes_draw_pane(data, &raw mut ctx, &(*(wp)).observer.upgrade().expect("live window_pane"), root, osx, osy, sx, sy);
             window_panes_draw_floating_border(
                 &raw mut ctx,
-                wp,
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
                 &raw mut border_gc,
                 osx,
                 osy,
@@ -1640,7 +1615,7 @@ unsafe fn window_panes_init(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut data: *mut window_panes_modedata = ::core::ptr::null_mut::<window_panes_modedata>();
     let mut self_0: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut source: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
@@ -1662,7 +1637,7 @@ unsafe fn window_panes_init(
     }
     source = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    s = (*target).s_ptr();
+    s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
             options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
@@ -1701,7 +1676,7 @@ unsafe fn window_panes_init(
     }));
     data = owner.get();
     (*wme).boxed_data = Some(owner);
-    (*data).wp = window_pane_weak(wp);
+    (*data).wp = window_pane_weak(&*(wp));
     (*data).session = (*s).observer.clone();
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
     (*data).screen.mode &= !MODE_CURSOR;
@@ -1714,11 +1689,11 @@ unsafe fn window_panes_init(
         0 as ::core::ffi::c_int,
     ));
     if args_has(args, 's' as i32 as u_char) != 0 {
-        (*data).source_session = (*(*source).s_ptr()).id;
-        (*data).source_window = (*(*source).w_ptr()).id;
+        (*data).source_session = (*(*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id;
+        (*data).source_window = (*(*source).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id;
     } else {
-        (*data).source_session = (*(*target).s_ptr()).id;
-        (*data).source_window = (*(*target).w_ptr()).id;
+        (*data).source_session = (*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id;
+        (*data).source_window = (*(*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id;
     }
     (*data).delay = delay;
     (*data).ignore_keys = args_has(args, 'N' as i32 as u_char);
@@ -1766,10 +1741,10 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_panes_modedata = window_panes_data(wme);
-    let mut w: *mut window = (*mode_pane).window_ptr();
+    let mut w: *mut window = (*mode_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     event_del(&raw mut (*data).timer);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window(w);
+        server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
     }
     server_redraw_window(&*(w));
     server_redraw_window_borders(&*(w));
@@ -1853,19 +1828,14 @@ unsafe fn window_panes_key_pane(
     } else {
         return None;
     }
-    if window_panes_get_source(
-        data,
-        ::core::ptr::null_mut::<*mut session>(),
-        ::core::ptr::null_mut::<*mut winlink>(),
-        &raw mut w,
-        &mut source_session_owner,
-    ) == 0
-    {
+    let source_window = window_panes_get_source(data, std::ptr::null_mut(), &mut source_session_owner);
+    if source_window.is_none() {
         if let Some(owner) = source_session_owner {
             drop(owner);
         }
         return None;
     }
+    w = source_window.unwrap().upgrade().expect("source window remains owned").get();
     let result = window_pane_at_index(&mut *w, index);
     if let Some(owner) = source_session_owner {
         drop(owner);
@@ -1897,7 +1867,7 @@ unsafe fn window_panes_get_target(
         if key != KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code
             || m.is_null()
             || cmd_mouse_at(
-                mode_pane,
+                &*(mode_pane),
                 m,
                 &raw mut x,
                 &raw mut y,
@@ -1945,8 +1915,8 @@ unsafe fn window_panes_key(
         }
         return;
     }
-    if (*(*wp).window_ptr()).flags & WINDOW_ZOOMED != 0 {
-        window_unzoom((*wp).window_ptr(), 1 as ::core::ffi::c_int);
+    if (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED != 0 {
+        window_unzoom(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), 1 as ::core::ffi::c_int);
     }
     window_panes_run_command(data, client_owner, &*target);
     window_pane_reset_mode(&mode_pane_owner);
@@ -1968,7 +1938,7 @@ mod session_observer_tests {
             let owner = session::new();
             let session = rc::as_ptr(&owner);
             (*session).name = c"panes-mode-session".to_owned();
-            sessions_insert(&raw mut sessions, owner);
+            sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
             let observer = (*session).observer.clone();
             let mut mode = window_panes_modedata {
                 wp: Weak::new(),
@@ -1987,7 +1957,7 @@ mod session_observer_tests {
             assert_eq!((*session).observer.strong_count(), 1);
             let guard = window_panes_session(&mut mode).unwrap();
             assert_eq!(rc::as_ptr(&guard), session);
-            let owner = sessions_remove(&raw mut sessions, session).unwrap();
+            let owner = sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*session).observer.upgrade().expect("indexed session")).unwrap();
             assert!(window_panes_session(&mut mode).is_none());
             assert_eq!(observer.strong_count(), 2);
             drop(owner);

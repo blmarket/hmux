@@ -1,6 +1,6 @@
 use crate::src::server_client::server_client_unref_owned;
 use std::rc::Rc;
-use crate::src::shared::client::{client_retain, client_rc_ptr};
+use crate::src::shared::client::{client_retain, client_handle};
 use crate::src::options::options_owner_ptr;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::ffi::libc::memcpy;
@@ -195,7 +195,8 @@ fn popup_check_callback(handle: PopupHandle) -> overlay_check_cb {
     }))
 }
 
-unsafe fn popup_restore_check(c: *mut client, popup: &PopupGuard) {
+unsafe fn popup_restore_check(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
+    let mut c = c_owner.get();
     if popup.is_current(&*c) {
         (*c).overlay_check = popup_check_callback(popup.handle());
     }
@@ -224,7 +225,7 @@ impl Drop for popup_data {
                 if let Some(item) = self.item.upgrade() {
                     let c_owner = cmdq_get_client(item.get());
                     let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-                    if !c.is_null() && (*c).session_ptr().is_null() {
+                    if !c.is_null() && (*c).session_handle().is_none() {
                         (*c).retval = self.status;
                     }
                     cmdq_continue(item.get());
@@ -251,8 +252,8 @@ impl Drop for popup_data {
 }
 unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    let mut c: *mut client = client_rc_ptr(&(*pd).c);
-    let mut s: *mut session = (*c).session_ptr();
+    let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut o: *mut options = ::core::ptr::null_mut::<options>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sytmp: style = style {
@@ -287,13 +288,13 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     if s.is_null() {
         return;
     }
-    o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        c,
-        s,
+        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         (*s).curw_ptr(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     memcpy(
         &raw mut (*pd).defaults as *mut ::core::ffi::c_void,
@@ -368,10 +369,10 @@ impl PopupRenderSnapshot {
         let border = u_int::from((*pd).border_lines != BOX_LINES_NONE);
         Self {
             popup: popup.handle(),
-            client: if client_rc_ptr(&(*pd).c).is_null() {
+            client: if client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
                 Weak::new()
             } else {
-                (*client_rc_ptr(&(*pd).c)).observer.clone()
+                (*client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get())).observer.clone()
             },
             palette: (*pd).palette.downgrade(),
             defaults: (*pd).defaults,
@@ -463,7 +464,8 @@ unsafe fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> vi
     );
     ranges
 }
-unsafe fn popup_draw(c: *mut client, popup: &PopupGuard) {
+unsafe fn popup_draw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
+    let mut c = c_owner.get();
     let pd = popup.as_ptr();
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut s: screen = screen::empty();
@@ -582,9 +584,10 @@ unsafe fn popup_draw(c: *mut client, popup: &PopupGuard) {
         i = i.wrapping_add(1);
     }
     screen_free(&mut s);
-    popup_restore_check(c, popup);
+    popup_restore_check(c_owner, popup);
 }
-unsafe fn popup_resize(c: *mut client, popup: &PopupGuard) {
+unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
+    let mut c = c_owner.get();
     let pd = popup.as_ptr();
     let mut tty: *mut tty = &raw mut (*c).tty;
     if (*pd).psy > (*tty).sy {
@@ -628,7 +631,8 @@ unsafe fn popup_resize(c: *mut client, popup: &PopupGuard) {
         }
     }
 }
-unsafe fn popup_handle_drag(mut c: *mut client, popup: &PopupGuard, mut m: *mut mouse_event) {
+unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard, mut m: *mut mouse_event) {
+    let mut c = c_owner.get();
     let pd = popup.as_ptr();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -703,7 +707,8 @@ unsafe fn popup_handle_drag(mut c: *mut client, popup: &PopupGuard, mut m: *mut 
         server_redraw_client(&mut *(c));
     }
 }
-unsafe fn popup_key(c: *mut client, popup: &PopupGuard, event: *mut key_event) -> i32 {
+unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard, event: *mut key_event) -> i32 {
+    let mut c = c_owner.get();
     let pd = popup.as_ptr();
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -721,7 +726,7 @@ unsafe fn popup_key(c: *mut client, popup: &PopupGuard, event: *mut key_event) -
     {
         if (*pd).dragging as ::core::ffi::c_uint != OFF as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            popup_handle_drag(c, popup, m);
+            popup_handle_drag(c_owner, popup, m);
             current_block = 9022331712714349549;
         } else {
             if (*m).x < (*pd).px
@@ -839,7 +844,7 @@ unsafe fn popup_key(c: *mut client, popup: &PopupGuard, event: *mut key_event) -
 unsafe fn popup_job_update_cb(job: &mut job, popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let evb: &mut evbuffer = &mut *(*job_get_event(job as *mut job)).input;
-    let mut c: *mut client = client_rc_ptr(&(*pd).c);
+    let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
@@ -857,7 +862,7 @@ unsafe fn popup_job_update_cb(job: &mut job, popup: &PopupGuard) {
         data as *const u_char,
         size,
     );
-    popup_restore_check(c, popup);
+    popup_restore_check(&(*(c)).observer.upgrade().expect("live client"), popup);
     evbuffer_drain(evb, size);
 }
 unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
@@ -871,25 +876,27 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
     if (*pd).flags & POPUP_CLOSEEXIT != 0
         || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int
     {
-        if popup.is_current(&*client_rc_ptr(&(*pd).c)) {
-            server_client_clear_overlay(client_rc_ptr(&(*pd).c));
+        if popup.is_current(&*client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get())) {
+            server_client_clear_overlay(&(*(client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live client"));
         }
     }
 }
-pub unsafe fn popup_present(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn popup_present(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {
+    let mut c = c_owner.get();
     return (*c)
         .overlay_data
         .as_ref()
         .is_some_and(|data| data.is::<refbox::RefBox<PopupState>>()) as ::core::ffi::c_int;
 }
 pub unsafe fn popup_modify(
-    mut c: *mut client,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut title: *const ::core::ffi::c_char,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
     mut lines: box_lines,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut c = c_owner.get();
     let Some(handle) = (*c)
         .overlay_data
         .as_ref()
@@ -1012,11 +1019,13 @@ pub unsafe fn popup_display(
     argv: &Vec<CString>,
     mut cwd: *const ::core::ffi::c_char,
     mut title: *const ::core::ffi::c_char,
-    mut c: *mut client,
-    mut s: *mut session,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let mut c = c_owner.get();
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut jx: u_int = 0;
     let mut jy: u_int = 0;
     let mut o: *mut options = ::core::ptr::null_mut::<options>();
@@ -1050,9 +1059,9 @@ pub unsafe fn popup_display(
         link: 0,
     };
     if !s.is_null() {
-        o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     } else {
-        o = options_owner_ptr(&mut (*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*(*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     }
     if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
         lines = options_get_number(
@@ -1087,7 +1096,7 @@ pub unsafe fn popup_display(
     let pd = popup.as_ptr();
     (*pd).item = if item.is_null() { Weak::new() } else { (*item).observer.clone() };
     (*pd).flags = flags;
-    (*pd).c = client_retain(c);
+    (*pd).c = client_retain((c).as_ref());
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
     memcpy(
@@ -1163,7 +1172,7 @@ pub unsafe fn popup_display(
         (!shellcmd.is_null()).then(|| CStr::from_ptr(shellcmd)),
         argv,
         env,
-        s,
+        s_owner,
         (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
         job_update_callback(move |job| unsafe {
             if let Some(popup) = update.upgrade() {
@@ -1199,23 +1208,23 @@ pub unsafe fn popup_display(
     let draw = PopupHandle(owner.downgrade());
     let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
         if let Some(popup) = draw.upgrade() {
-            popup_draw(c as *mut client, &popup);
+            popup_draw(&(*(c as *mut client)).observer.upgrade().expect("live client"), &popup);
         }
     }));
     let key = PopupHandle(owner.downgrade());
     let key_cb: overlay_key_cb = Some(Box::new(move |c, event| unsafe {
-        key.upgrade().map_or(0, |popup| popup_key(c, &popup, event))
+        key.upgrade().map_or(0, |popup| popup_key(&(*(c)).observer.upgrade().expect("live client"), &popup, event))
     }));
     let free_cb: overlay_free_cb = None;
     let resize = PopupHandle(owner.downgrade());
     let resize_cb: overlay_resize_cb = Some(Box::new(move |c| unsafe {
         if let Some(popup) = resize.upgrade() {
-            popup_resize(c as *mut client, &popup);
+            popup_resize(&(*(c as *mut client)).observer.upgrade().expect("live client"), &popup);
         }
     }));
     drop(popup);
     server_client_set_overlay(
-        c,
+        &(*(c)).observer.upgrade().expect("live client"),
         check_cb,
         mode_cb,
         draw_cb,
@@ -1343,7 +1352,7 @@ mod tests {
 
     unsafe fn close_during_dispatch<'a>(handle: &'a PopupHandle, c: &mut client) -> PopupGuard<'a> {
         let popup = handle.upgrade().unwrap();
-        server_client_clear_overlay(c);
+        server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
         assert!(handle.upgrade().is_none());
         assert_eq!((*popup.as_ptr()).title.as_deref(), Some(c"active popup"));
         popup
@@ -1353,55 +1362,56 @@ mod tests {
     fn every_overlay_dispatch_holds_the_owner_across_self_close() {
         unsafe {
             for kind in 0..5 {
-                let mut client = Box::new(client::empty());
+                let client_owner = client::new();
+                let client = client_owner.get();
                 let owner = owner();
                 let handle = PopupHandle(owner.downgrade());
                 let observer = handle.clone();
-                client.overlay_data = Some(Box::new(owner));
-                client.overlay_draw = Some(Box::new(|_| {}));
+                (*client).overlay_data = Some(Box::new(owner));
+                (*client).overlay_draw = Some(Box::new(|_| {}));
 
                 match kind {
                     0 => {
-                        client.overlay_draw = Some(Box::new(move |c| {
+                        (*client).overlay_draw = Some(Box::new(move |c| {
                             let _active = close_during_dispatch(&handle, c);
                         }));
-                        server_client_overlay_draw(&mut *client);
-                        assert!(client.overlay_draw.is_none());
+                        server_client_overlay_draw(&client_owner);
+                        assert!((*client).overlay_draw.is_none());
                     }
                     1 => {
-                        client.overlay_key = Some(Box::new(move |c, _| {
+                        (*client).overlay_key = Some(Box::new(move |c, _| {
                             let _active = close_during_dispatch(&handle, c);
                             1
                         }));
                         let mut event = key_event::new(0, mouse_event::default(), None);
-                        assert_eq!(server_client_overlay_key(&mut *client, &mut event), Some(0));
-                        assert!(client.overlay_key.is_none());
+                        assert_eq!(server_client_overlay_key(&client_owner, &mut event), Some(0));
+                        assert!((*client).overlay_key.is_none());
                     }
                     2 => {
-                        client.overlay_resize = Some(Box::new(move |c| {
+                        (*client).overlay_resize = Some(Box::new(move |c| {
                             let _active = close_during_dispatch(&handle, c);
                         }));
-                        server_client_overlay_resize(&mut *client);
-                        assert!(client.overlay_resize.is_none());
+                        server_client_overlay_resize(&client_owner);
+                        assert!((*client).overlay_resize.is_none());
                     }
                     3 => {
-                        client.overlay_mode = Some(Box::new(move |c| {
+                        (*client).overlay_mode = Some(Box::new(move |c| {
                             let active = close_during_dispatch(&handle, c);
                             popup_mode(&active)
                         }));
-                        assert!(server_client_overlay_mode(&mut *client).is_none());
-                        assert!(client.overlay_mode.is_none());
+                        assert!(server_client_overlay_mode(&client_owner).is_none());
+                        assert!((*client).overlay_mode.is_none());
                     }
                     _ => {
-                        client.overlay_check = Some(Box::new(move |c, x, y, n| {
+                        (*client).overlay_check = Some(Box::new(move |c, x, y, n| {
                             let active = close_during_dispatch(&handle, c);
                             popup_check(&active, x, y, n)
                         }));
-                        assert!(server_client_overlay_check(&mut *client, 0, 0, 10).is_none());
-                        assert!(client.overlay_check.is_none());
+                        assert!(server_client_overlay_check(&client_owner, 0, 0, 10).is_none());
+                        assert!((*client).overlay_check.is_none());
                     }
                 }
-                assert!(client.overlay_data.is_none());
+                assert!((*client).overlay_data.is_none());
                 assert!(!observer.0.is_alive());
             }
         }
@@ -1418,7 +1428,7 @@ mod tests {
             (*item).client = (*c).observer.clone();
             (*item).flags = CMDQ_WAITING;
             let mut data = Box::new(popup_data::empty());
-            data.c = client_retain(c);
+            data.c = client_retain((c).as_ref());
             data.item = (*item).observer.clone();
             data.flags = POPUP_CLOSEEXIT;
             data.published = true;

@@ -235,9 +235,9 @@ unsafe fn window_buffer_build(
         );
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
-        s = (*data).fs.s_ptr();
+        s = (*data).fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         wl = (*data).fs.wl_ptr();
-        wp = (*data).fs.wp_ptr();
+        wp = (*data).fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     let mut current_block_32: u64;
     i = 0 as u_int;
@@ -246,12 +246,12 @@ unsafe fn window_buffer_build(
         let item = ModeTreeItemData::Buffer(item_handle.clone()).as_buffer().unwrap();
         if let Some(pb) = paste_get_name(&item.name) {
             ft = format_create(
-                ::core::ptr::null_mut::<client>(),
+                None,
                 ::core::ptr::null_mut::<cmdq_item>(),
                 FORMAT_NONE,
                 0 as ::core::ffi::c_int,
             );
-            format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
+            format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             format_defaults_paste_buffer(&mut *ft, &pb);
             if !filter.is_null() {
                 let cp = format_expand_cstring(ft, filter);
@@ -388,27 +388,27 @@ unsafe fn window_buffer_get_key(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;
     if cmd_find_valid_state(&(*data).fs) != 0 {
-        s = (*data).fs.s_ptr();
+        s = (*data).fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         wl = (*data).fs.wl_ptr();
-        wp = (*data).fs.wp_ptr();
+        wp = (*data).fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     let Some(pb) = paste_get_name(&item.name) else {
         return KEYC_NONE;
     };
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
-    format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
+    format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     format_defaults_paste_buffer(&mut *ft, &pb);
     format_add(
         ft,

@@ -92,7 +92,8 @@ fn server_acl_entries_clear(head: &mut server_acl_entries) {
     head.entries.clear();
 }
 
-unsafe fn server_acl_check(mut c: *mut client) -> *mut server_acl_entry {
+unsafe fn server_acl_check(c_value: &client) -> *mut server_acl_entry {
+    let c: *mut client = c_value as *const _ as *mut _;
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut uid: uid_t = 0;
     let mut gid: gid_t = 0;
@@ -120,7 +121,7 @@ unsafe fn server_acl_update() {
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        entry = server_acl_check(c);
+        entry = server_acl_check(&*(c));
         if entry.is_null() {
             server_client_set_exit_message(
                 &mut *c,
@@ -241,9 +242,10 @@ pub unsafe fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int)
     (*entry).flags |= SERVER_ACL_READONLY;
     server_acl_update();
 }
-pub unsafe fn server_acl_join(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn server_acl_join(c_value: &mut client) -> ::core::ffi::c_int {
+    let c: *mut client = c_value as *mut _;
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_check(c);
+    entry = server_acl_check(&*(c));
     if entry.is_null() {
         return 0 as ::core::ffi::c_int;
     }

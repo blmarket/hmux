@@ -1,13 +1,15 @@
 # Rc ownership audit
 
-The current [entity and holder inventory](rc-entity-inventory.md) tracks the 12
-application Rc entities, infrastructure Rc values, ownership classifications,
-and remaining raw relationships. It also records the weak window-index migration.
+The [entity and holder inventory](rc-entity-inventory.md) tracks application Rc
+entities, infrastructure Rc values, ownership classifications, and remaining raw
+relationships. The [current raw-pointer review](rc-raw-pointer-review.md) includes
+command-queue items and separates ownership transfers from borrowed views.
 
 The former `shared::rc::take` call sites now obtain ownership from an existing
-`Rc` or by upgrading a `Weak` created with the allocation. Ownership is never
-transferred through a raw pointer. `shared::rc` only provides borrowed pointer
-views and deferred dropping of an ordinary `Rc`.
+`Rc` or by upgrading a `Weak` created with the allocation. These migrated paths do not transfer ownership through a raw pointer. Detached
+command-queue items remain an exception: `cmdq_new_named_item` and
+`cmdq_take_detached` transfer an Rc through the legacy raw API. `shared::rc` only
+provides borrowed pointer views and deferred dropping of an ordinary `Rc`.
 
 | Former source | Authoritative owner and transfer |
 | --- | --- |
@@ -47,8 +49,9 @@ Normal unlinking releases that reference before dropping the winlink.
 
 - Source inspection covers every former `take` source listed above, including
   its indirect users through `release`, `downgrade`, and `strong_count`.
-- The raw allocation/retention/reconstruction helpers have been deleted. The
-  source contains no `Rc::from_raw`, `Rc::into_raw`, or manual strong-count updates.
+- The former shared raw allocation/retention/reconstruction helpers have been
+  deleted. Detached queue items still use `Rc::into_raw` and `Rc::from_raw` in
+  `src/cmd/queue.rs`; the earlier claim that these were absent was too broad.
 - `cargo test --workspace` covers ownership release, reentrant prompt teardown,
   command-list survival, session and pane index removal, live window-close
   notification, and file completion/cancellation. The added cancellation test

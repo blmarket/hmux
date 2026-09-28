@@ -297,10 +297,10 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     );
     format_defaults(
         ft,
-        tc,
-        ::core::ptr::null_mut::<session>(),
+        (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     format_add(
         ft,
@@ -327,7 +327,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         let line = format_expand_cstring(ft, template);
         if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
             status_message_set(
-                tc,
+                (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,

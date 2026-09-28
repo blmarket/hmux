@@ -1368,7 +1368,7 @@ pub unsafe fn tty_term_create(
             ) == 0
         }) {
             tty_parse_client_features(
-                c,
+                &mut *(c),
                 s.offset(offset as isize),
                 b":\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1410,7 +1410,7 @@ pub unsafe fn tty_term_create(
             ) == 0 as ::core::ffi::c_int
         {
             tty_parse_client_features(
-                c,
+                &mut *(c),
                 b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1423,7 +1423,7 @@ pub unsafe fn tty_term_create(
         .is_null()
         {
             tty_parse_client_features(
-                c,
+                &mut *(c),
                 b"256\0" as *const u8 as *const ::core::ffi::c_char,
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1445,7 +1445,7 @@ pub unsafe fn tty_term_create(
         {
             (*term).flags |= TERM_VT100LIKE;
             tty_parse_client_features(
-                c,
+                &mut *(c),
                 b"bpaste,focus,title\0" as *const u8 as *const ::core::ffi::c_char,
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1454,7 +1454,7 @@ pub unsafe fn tty_term_create(
             && (tty_term_has(term, TTYC_SETRGBF) == 0 || tty_term_has(term, TTYC_SETRGBB) == 0)
         {
             tty_parse_client_features(
-                c,
+                &mut *(c),
                 b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );

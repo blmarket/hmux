@@ -104,10 +104,11 @@ pub static cmd_move_pane_entry: cmd_entry = {
 unsafe fn cmd_join_pane_place(
     mut item: *mut cmdq_item,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut position: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut w: *mut window = (*wl).window_ptr();
+    let mut wp = wp_owner.get();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wx: ::core::ffi::c_int = (*w).sx as ::core::ffi::c_int;
@@ -344,12 +345,12 @@ unsafe fn cmd_join_pane_place(
     if xoff != (*lc).g.xoff || yoff != (*lc).g.yoff {
         (*lc).g.xoff = xoff;
         (*lc).g.yoff = yoff;
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+        layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
     }
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
@@ -358,9 +359,10 @@ unsafe fn cmd_join_pane_move(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> cmd_retval {
-    let mut w: *mut window = (*wl).window_ptr();
+    let mut wp = wp_owner.get();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut argval: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -463,10 +465,10 @@ unsafe fn cmd_join_pane_move(
     if xoff != (*lc).g.xoff || yoff != (*lc).g.yoff {
         (*lc).g.xoff = xoff;
         (*lc).g.yoff = yoff;
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+        layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
         events_fire_window(
             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-            w,
+            (*(w)).observer.upgrade().expect("live window"),
         );
         server_redraw_window(&*(w));
     }
@@ -479,24 +481,26 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let event: *mut key_event = &mut event_snapshot;
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }
-    mouse_pane_owner = cmd_mouse_pane(&raw mut (*event).m, &raw mut s, &raw mut wl);
+    let mut mouse_session_owner = None;
+    mouse_pane_owner = cmd_mouse_pane(&raw mut (*event).m, Some(&mut mouse_session_owner), &raw mut wl);
+    s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() || c.is_null() || (*c).session_ptr() != s {
+    if wp.is_null() || c.is_null() || (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s {
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(&*wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
-    w = (*wl).window_ptr();
-    window_redraw_active_switch(w, wp);
-    window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
+    w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
     (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
         c_owner.as_ref().expect("live drag client"),
         cmd_join_pane_mouse_move,
@@ -515,13 +519,13 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
     let mut ly: ::core::ffi::c_int = 0;
     let mut x: ::core::ffi::c_int = 0;
     let mut lx: ::core::ffi::c_int = 0;
-    mouse_pane_owner = cmd_mouse_pane(m, ::core::ptr::null_mut::<*mut session>(), &raw mut wl);
+    mouse_pane_owner = cmd_mouse_pane(m, None, &raw mut wl);
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window_ptr();
+    w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lc = (*wp).layout_cell as *mut layout_cell;
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
     x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
@@ -541,7 +545,7 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
     if x != lx || y != ly {
         (*lc).g.xoff += x - lx;
         (*lc).g.yoff += y - ly;
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+        layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
         server_redraw_window(&*(w));
         server_redraw_window_borders(&*(w));
     }
@@ -549,10 +553,11 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
 unsafe fn cmd_join_pane_zindex(
     mut item: *mut cmdq_item,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut s: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut w: *mut window = (*wl).window_ptr();
+    let mut wp = wp_owner.get();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;
@@ -588,10 +593,10 @@ unsafe fn cmd_join_pane_zindex(
     } else {
         window_pane_z_insert_back(&mut *w, &*wp);
     }
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
@@ -599,9 +604,11 @@ unsafe fn cmd_join_pane_zindex(
 unsafe fn cmd_join_pane_tile(
     mut item: *mut cmdq_item,
     mut args: *mut args,
-    mut w: *mut window,
-    mut wp: *mut window_pane,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> cmd_retval {
+    let mut w = w_owner.get();
+    let mut wp = wp_owner.get();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     if window_pane_is_floating(&*wp) == 0 {
         cmdq_error(item, |out| out.write_all(b"pane is not floating"));
@@ -617,7 +624,7 @@ unsafe fn cmd_join_pane_tile(
     (*lc).fg.sy = (*lc).g.sy;
     (*lc).fg.xoff = (*lc).g.xoff;
     (*lc).fg.yoff = (*lc).g.yoff;
-    if layout_insert_tile(w, lc) != 0 as ::core::ffi::c_int {
+    if layout_insert_tile(w_owner, lc) != 0 as ::core::ffi::c_int {
         cmdq_error(item, |out| out.write_all(b"no space for a new pane"));
         return CMD_RETURN_ERROR;
     }
@@ -625,14 +632,14 @@ unsafe fn cmd_join_pane_tile(
     window_pane_z_remove(&mut *w, &*wp);
     window_pane_z_insert_back(&mut *w, &*wp);
     if args_has(args, 'd' as i32 as u_char) == 0 {
-        window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
+        window_set_active_pane(w_owner, wp_owner, 1 as ::core::ffi::c_int);
     }
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-    redraw_invalidate_scene(w);
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
+    redraw_invalidate_scene(&mut *(w));
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
@@ -653,10 +660,10 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut dst_idx: ::core::ffi::c_int = 0;
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    dst_s = (*target).s_ptr();
+    dst_s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     dst_wl = (*target).wl_ptr();
-    dst_wp = (*target).wp_ptr();
-    dst_w = (*dst_wl).window_ptr();
+    dst_wp = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    dst_w = (*dst_wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     dst_idx = (*dst_wl).idx;
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_pane_entry) {
         if args_has(args, 'M' as i32 as u_char) != 0 {
@@ -675,30 +682,30 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 cmdq_error(item, |out| out.write_all(b"pane is not floating"));
                 return CMD_RETURN_ERROR;
             }
-            server_unzoom_window(dst_w);
+            server_unzoom_window(&(*(dst_w)).observer.upgrade().expect("live window"));
             s = args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !s.is_null() {
-                return cmd_join_pane_place(item, dst_wl, dst_wp, s);
+                return cmd_join_pane_place(item, dst_wl, &(*(dst_wp)).observer.upgrade().expect("live pane"), s);
             }
             s = args_get(&*(args), 'z' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !s.is_null() {
-                return cmd_join_pane_zindex(item, dst_wl, dst_wp, s);
+                return cmd_join_pane_zindex(item, dst_wl, &(*(dst_wp)).observer.upgrade().expect("live pane"), s);
             }
-            return cmd_join_pane_move(item, args, dst_wl, dst_wp);
+            return cmd_join_pane_move(item, args, dst_wl, &(*(dst_wp)).observer.upgrade().expect("live window_pane"));
         }
     }
     src_wl = (*source).wl_ptr();
-    src_wp = (*source).wp_ptr();
-    src_w = (*src_wl).window_ptr();
+    src_wp = (*source).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    src_w = (*src_wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
-    server_unzoom_window(dst_w);
-    server_unzoom_window(src_w);
+    server_unzoom_window(&(*(dst_w)).observer.upgrade().expect("live window"));
+    server_unzoom_window(&(*(src_w)).observer.upgrade().expect("live window"));
     if src_wp == dst_wp {
         if window_pane_is_floating(&*src_wp) != 0 {
-            return cmd_join_pane_tile(item, args, src_w, src_wp);
+            return cmd_join_pane_tile(item, args, &(*(src_w)).observer.upgrade().expect("live window"), &(*(src_wp)).observer.upgrade().expect("live window_pane"));
         }
         cmdq_error(item, |out| {
             out.write_all(b"source and target panes must be different")
@@ -714,7 +721,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'f' as i32 as u_char) != 0 {
         flags |= SPAWN_FULLSIZE;
     }
-    lc = match layout_get_tiled_cell(item, args, dst_w, dst_wp, flags) {
+    lc = match layout_get_tiled_cell(item, args, &(*(dst_w)).observer.upgrade().expect("live window"), &(*(dst_wp)).observer.upgrade().expect("live window_pane"), flags) {
         Ok(cell) => cell,
         Err(cause) => {
             cmdq_error(item, |out| {
@@ -724,9 +731,9 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return CMD_RETURN_ERROR;
         }
     };
-    layout_close_pane(src_wp);
-    server_client_remove_pane(src_wp);
-    window_lost_pane(src_w, src_wp);
+    layout_close_pane(&(*(src_wp)).observer.upgrade().expect("live window_pane"));
+    server_client_remove_pane(&(*(src_wp)).observer.upgrade().expect("live window_pane"));
+    window_lost_pane(&(*(src_w)).observer.upgrade().expect("live window"), &(*(src_wp)).observer.upgrade().expect("live window_pane"));
     window_pane_list_remove(&mut *src_w, &*src_wp);
     window_pane_z_remove(&mut *src_w, &*src_wp);
     (*src_wp).window = (*dst_w).observer.clone();
@@ -739,31 +746,31 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_pane_list_insert_after(&mut *dst_w, &*dst_wp, &*src_wp);
         window_pane_z_insert_after(&mut *dst_w, &*dst_wp, &*src_wp);
     }
-    layout_assign_pane(lc, src_wp, 0 as ::core::ffi::c_int);
+    layout_assign_pane(lc, &(*(src_wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     colour_palette_from_option(Some(&mut (*src_wp).palette), options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options));
     recalculate_sizes();
     server_redraw_window(&*(src_w));
     server_redraw_window(&*(dst_w));
     if args_has(args, 'd' as i32 as u_char) == 0 {
-        window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
-        session_select(dst_s, dst_idx);
-        cmd_find_from_session(&mut *current.current.borrow_mut(), dst_s, 0 as ::core::ffi::c_int);
+        window_set_active_pane(&(*(dst_w)).observer.upgrade().expect("live window"), &(*(src_wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
+        session_select(&(*dst_s).observer.upgrade().expect("live session"), dst_idx);
+        cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(dst_s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
         server_redraw_session(&*(dst_s));
     } else {
         server_status_session(&*(dst_s));
     }
-    window_fire_pane_moved(src_wp, src_w, (*src_wl).idx, dst_w, dst_idx);
+    window_fire_pane_moved(&(*(src_wp)).observer.upgrade().expect("live window_pane"), &(*(src_w)).observer.upgrade().expect("live window"), (*src_wl).idx, &(*(dst_w)).observer.upgrade().expect("live window"), dst_idx);
     if window_count_panes(&*src_w, 1 as ::core::ffi::c_int) == 0 as u_int {
         server_kill_window((*source).w.upgrade().expect("live source window"), 1);
     } else {
         events_fire_window(
             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-            src_w,
+            (*(src_w)).observer.upgrade().expect("live window"),
         );
     }
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        dst_w,
+        (*(dst_w)).observer.upgrade().expect("live window"),
     );
     return CMD_RETURN_NORMAL;
 }

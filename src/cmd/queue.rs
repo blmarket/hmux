@@ -275,7 +275,7 @@ pub unsafe fn cmdq_add_format(state: &cmdq_state, key: &CStr, value: &CStr) {
     let mut formats = state.formats.borrow_mut();
     if formats.is_none() {
         *formats = Some(format_create_owned(
-            ::core::ptr::null_mut::<client>(),
+            None,
             ::core::ptr::null_mut::<cmdq_item>(),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
@@ -287,7 +287,7 @@ pub unsafe fn cmdq_add_formats(state: &cmdq_state, mut ft: *mut format_tree) {
     let mut formats = state.formats.borrow_mut();
     if formats.is_none() {
         *formats = Some(format_create_owned(
-            ::core::ptr::null_mut::<client>(),
+            None,
             ::core::ptr::null_mut::<cmdq_item>(),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
@@ -390,11 +390,12 @@ pub unsafe fn cmdq_insert_after(
     return after;
 }
 pub unsafe fn cmdq_insert_hook(
-    _s: *mut session,
+    _s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut item: *mut cmdq_item,
     mut current: *mut cmd_find_state,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
+    let mut _s = _s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut cmd: *mut cmd = (*item).cmd_ptr();
     let mut args_0: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
@@ -550,7 +551,7 @@ unsafe fn cmdq_find_flag(
     if flag.flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         let target_client = cmdq_get_target_client(item);
         let target_client_ptr = target_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        cmd_find_from_client(fs, target_client_ptr, 0 as ::core::ffi::c_int);
+        cmd_find_from_client(fs, (target_client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
     value = args_get(&*(cmd_get_args_mut(&mut *(*item).cmd_ptr()).map_or(std::ptr::null_mut(), |args| args)), flag.flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -584,7 +585,7 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
         } else {
             c"".to_owned()
         };
-        if !(*c).session_ptr().is_null()
+        if !(*c).session_handle().is_none()
             && state.event.key != KEYC_NONE as ::core::ffi::c_ulong as key_code
         {
             let key = key_string_format(state.event.key, false);
@@ -720,7 +721,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                                 current_block = 8704759739624374314;
                             } else if cmd_find_from_client(
                                 &raw mut fs,
-                                execution_client_ptr,
+                                (execution_client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                                 0 as ::core::ffi::c_int,
                             ) == 0 as ::core::ffi::c_int
                             {
@@ -732,7 +733,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                             match current_block {
                                 7379054416801212160 => {}
                                 _ => {
-                                    cmdq_insert_hook((*fsp).s_ptr(), item, fsp, |out| {
+                                    cmdq_insert_hook(((*fsp).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, fsp, |out| {
                                         out.write_all(b"after-")?;
                                         write_cstr(out, entry.name.as_ptr())
                                     });
@@ -753,17 +754,17 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         } else if cmd_find_valid_state(&state.current.borrow()) != 0 {
             fs = state.current_snapshot();
             fsp = &mut fs;
-        } else if cmd_find_from_client(&raw mut fs, saved_client_ptr, 0 as ::core::ffi::c_int)
+        } else if cmd_find_from_client(&raw mut fs, (saved_client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int)
             == 0 as ::core::ffi::c_int
         {
             fsp = &raw mut fs;
         }
         cmdq_insert_hook(
-            if !fsp.is_null() {
-                (*fsp).s_ptr()
+            (if !fsp.is_null() {
+                (*fsp).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())
             } else {
                 ::core::ptr::null_mut::<session>()
-            },
+            }).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             item,
             fsp,
             |out| out.write_all(b"command-error"),
@@ -946,7 +947,7 @@ pub unsafe fn cmdq_guard(
     let mut t: ::core::ffi::c_long = (*item).time as ::core::ffi::c_long;
     let mut number: u_int = (*item).number;
     if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        control_write_guard(c, guard, t, number, flags);
+        control_write_guard(&(*(c)).observer.upgrade().expect("live client"), guard, t, number, flags);
     }
 }
 pub unsafe fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: &mut evbuffer) {
@@ -1003,7 +1004,7 @@ pub unsafe fn cmdq_error(
                 write_cstr(out, msg.as_ptr())
             });
         }
-    } else if (*c).session_ptr().is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+    } else if (*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         server_add_message(|out| {
             write_cstr(
                 out,
@@ -1018,7 +1019,7 @@ pub unsafe fn cmdq_error(
             msg = utf8_sanitize_cstring(msg.as_c_str());
         }
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(c, |out| write_cstr(out, msg.as_ptr()));
+            control_write(&(*(c)).observer.upgrade().expect("live client"), |out| write_cstr(out, msg.as_ptr()));
         } else {
             file_error(c_owner.as_ref(), |out| {
                 write_cstr(out, msg.as_ptr())?;
@@ -1033,7 +1034,7 @@ pub unsafe fn cmdq_error(
         // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
         msg = CString::from_vec_with_nul_unchecked(bytes);
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,

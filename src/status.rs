@@ -67,8 +67,9 @@ use crate::src::shared::tty::tty;
 use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
 use crate::src::shared::window::winlink;
 
-unsafe fn status_timer_callback(c: *mut client) {
-    let mut s: *mut session = (*c).session_ptr();
+unsafe fn status_timer_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
+    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -95,8 +96,9 @@ unsafe fn status_timer_callback(c: *mut client) {
         tv.tv_sec as ::core::ffi::c_int
     ));
 }
-pub unsafe fn status_timer_start(mut c: *mut client) {
-    let mut s: *mut session = (*c).session_ptr();
+pub unsafe fn status_timer_start(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
+    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if event_initialized(&(*c).status.timer) != 0 {
         event_del(&raw mut (*c).status.timer);
     } else {
@@ -104,7 +106,14 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
             &raw mut (*c).status.timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |_, _| unsafe { status_timer_callback(c) },
+            {
+                let observer = std::rc::Rc::downgrade(c_owner);
+                move |_, _| unsafe {
+                    if let Some(owner) = observer.upgrade() {
+                        status_timer_callback(&owner);
+                    }
+                }
+            },
         );
     }
     if !s.is_null()
@@ -113,7 +122,7 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
             b"status\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
-        status_timer_callback(c);
+        status_timer_callback(c_owner);
     }
 }
 pub unsafe fn status_timer_start_all() {
@@ -121,12 +130,13 @@ pub unsafe fn status_timer_start_all() {
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        status_timer_start(c);
+        status_timer_start(&(*(c)).observer.upgrade().expect("live client"));
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-pub unsafe fn status_update_cache(mut s: *mut session) {
+pub unsafe fn status_update_cache(s_value: &mut session) {
+    let s: *mut session = s_value as *mut _;
     (*s).statuslines = options_get_number(
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"status\0" as *const u8 as *const ::core::ffi::c_char,
@@ -144,7 +154,7 @@ pub unsafe fn status_update_cache(mut s: *mut session) {
     };
 }
 pub unsafe fn status_at_line(c: &client) -> ::core::ffi::c_int {
-    let mut s: *mut session = c.session_ptr();
+    let mut s: *mut session = c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if c.flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return -(1 as ::core::ffi::c_int);
     }
@@ -154,7 +164,7 @@ pub unsafe fn status_at_line(c: &client) -> ::core::ffi::c_int {
     return c.tty.sy.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int;
 }
 pub unsafe fn status_line_size(c: &client) -> u_int {
-    let mut s: *mut session = c.session_ptr();
+    let mut s: *mut session = c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if c.flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return 0 as u_int;
     }
@@ -167,7 +177,7 @@ pub unsafe fn status_line_size(c: &client) -> u_int {
     return (*s).statuslines;
 }
 pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
-    let mut s: *mut session = c.session_ptr();
+    let mut s: *mut session = c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut line: u_int = 0;
     let mut lines: u_int = 0;
     lines = status_line_size(c);
@@ -188,7 +198,8 @@ pub fn status_get_range(c: &client, x: u_int, y: u_int) -> Option<style_range> {
         .find(|range| x >= range.start && x < range.end)
         .map(|range| **range)
 }
-unsafe fn status_push_screen(mut c: *mut client) {
+unsafe fn status_push_screen(c_value: &mut client) {
+    let c: *mut client = c_value as *mut _;
     let mut sl: *mut status_line = &raw mut (*c).status;
     if (*sl).active.is_none() {
         (*sl).active = Some(Box::new(screen::empty()));
@@ -202,7 +213,8 @@ unsafe fn status_push_screen(mut c: *mut client) {
     }
     (*sl).screen_users += 1;
 }
-unsafe fn status_pop_screen(mut c: *mut client) {
+unsafe fn status_pop_screen(c_value: &mut client) {
+    let c: *mut client = c_value as *mut _;
     let mut sl: *mut status_line = &raw mut (*c).status;
     (*sl).screen_users -= 1;
     if (*sl).screen_users == 0 as ::core::ffi::c_int {
@@ -213,7 +225,8 @@ unsafe fn status_pop_screen(mut c: *mut client) {
         screen_free(&mut *active);
     }
 }
-pub unsafe fn status_init(mut c: *mut client) {
+pub unsafe fn status_init(c_value: &mut client) {
+    let c: *mut client = c_value as *mut _;
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -229,7 +242,8 @@ pub unsafe fn status_init(mut c: *mut client) {
     screen_init(&mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
     (*sl).active = None;
 }
-pub unsafe fn status_free(mut c: *mut client) {
+pub unsafe fn status_free(c_value: &mut client) {
+    let c: *mut client = c_value as *mut _;
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -251,10 +265,11 @@ pub unsafe fn status_free(mut c: *mut client) {
     }
     screen_free(&mut (*sl).screen);
 }
-pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {
+    let mut c = c_owner.get();
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut sle: *mut style_line_entry = ::core::ptr::null_mut::<style_line_entry>();
-    let mut s: *mut session = (*c).session_ptr();
+    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -302,13 +317,13 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     if (*c).flags & CLIENT_STATUSFORCE as uint64_t != 0 {
         flags |= FORMAT_FORCE;
     }
-    ft = format_create(c, ::core::ptr::null_mut::<cmdq_item>(), FORMAT_NONE, flags);
+    ft = format_create(Some(c_owner), ::core::ptr::null_mut::<cmdq_item>(), FORMAT_NONE, flags);
     format_defaults(
         ft,
-        c,
-        ::core::ptr::null_mut::<session>(),
+        Some(c_owner),
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     style_apply(
         &raw mut gc,
@@ -440,13 +455,14 @@ mod status_message_escape_tests {
     }
 }
 pub unsafe fn status_message_set(
-    mut c: *mut client,
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut delay: ::core::ffi::c_int,
     mut ignore_styles: ::core::ffi::c_int,
     mut ignore_keys: ::core::ffi::c_int,
     mut no_freeze: ::core::ffi::c_int,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
+    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -464,8 +480,8 @@ pub unsafe fn status_message_set(
         });
         return;
     }
-    status_message_clear(c);
-    status_push_screen(c);
+    status_message_clear(&mut *c);
+    status_push_screen(&mut *(c));
     server_client_set_message(&mut *c, Some(s));
     server_add_message(|out| {
         write_cstr(
@@ -484,7 +500,7 @@ pub unsafe fn status_message_set(
     });
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
-            options_owner_ptr(&mut (*(*c).session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
             b"display-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
     }
@@ -499,7 +515,14 @@ pub unsafe fn status_message_set(
             &raw mut (*c).message_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |_, _| unsafe { status_message_callback(c) },
+            {
+                let observer = std::rc::Rc::downgrade(c_owner.expect("message client checked above"));
+                move |_, _| unsafe {
+                    if let Some(owner) = observer.upgrade() {
+                        status_message_callback(&owner);
+                    }
+                }
+            },
         );
         event_add(&raw mut (*c).message_timer, &raw mut tv);
     }
@@ -513,7 +536,7 @@ pub unsafe fn status_message_set(
     (*c).tty.flags |= TTY_NOCURSOR;
     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
-pub unsafe fn status_message_clear(mut c: *mut client) {
+pub unsafe fn status_message_clear(c: &mut client) {
     if (*c).message_string.is_none() {
         return;
     }
@@ -522,11 +545,11 @@ pub unsafe fn status_message_clear(mut c: *mut client) {
         (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     }
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
-    status_pop_screen(c);
+    status_pop_screen(&mut *(c));
 }
 unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
     let sy = options_string_to_style(
-        options_owner_ptr(&mut (*c.session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         c"message-style".as_ptr(),
         std::ptr::null_mut(),
     )
@@ -548,10 +571,12 @@ unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
     };
     (x, width)
 }
-unsafe fn status_message_callback(c: *mut client) {
-    status_message_clear(c);
+unsafe fn status_message_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
+    status_message_clear(&mut *(c_owner).get());
 }
-pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_message_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {
+    let mut c = c_owner.get();
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -562,7 +587,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut session = (*c).session_ptr();
+    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut old_screen: screen = screen::empty();
     let mut lines: u_int = 0;
     let mut messageline: u_int = 0;
@@ -598,10 +623,10 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let (ax, aw) = status_message_area(&*c);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        c,
-        ::core::ptr::null_mut::<session>(),
+        Some(c_owner),
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     style_apply(
         &raw mut gc,
@@ -672,10 +697,11 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     screen_free(&mut old_screen);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
+unsafe fn status_prompt_accept(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> cmd_retval {
+    let mut c = c_owner.get();
     if (*c).prompt.is_some() {
         status_prompt_key(
-            c,
+            c_owner,
             'y' as i32 as key_code,
             ::core::ptr::null_mut::<mouse_event>(),
         );
@@ -683,7 +709,7 @@ unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
     return CMD_RETURN_NORMAL;
 }
 pub unsafe fn status_prompt_set(
-    mut c: *mut client,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut fs: *mut cmd_find_state,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
@@ -692,12 +718,13 @@ pub unsafe fn status_prompt_set(
     mut flags: ::core::ffi::c_int,
     mut prompt_type: prompt_type,
 ) {
+    let mut c = c_owner.get();
     let mut pd = prompt_create_data::default();
-    server_client_clear_overlay(c);
-    status_message_clear(c);
-    status_prompt_clear(c);
-    status_push_screen(c);
-    prompt_set_options(&mut pd, ((*c).session_ptr()).as_mut());
+    server_client_clear_overlay(c_owner);
+    status_message_clear(&mut *(c_owner).get());
+    status_prompt_clear(c_owner);
+    status_push_screen(&mut *(c));
+    prompt_set_options(&mut pd, ((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_mut());
     pd.fs = fs.as_ref();
     pd.prompt = CStr::from_ptr(msg);
     pd.input = if input.is_null() {
@@ -708,8 +735,10 @@ pub unsafe fn status_prompt_set(
     pd.type_0 = prompt_type;
     pd.flags = flags;
     if let Some(mut inputcb) = inputcb.take() {
+        let client = (*c).observer.clone();
         pd.inputcb = Some(Box::new(move |s, key| {
-            inputcb(std::ptr::NonNull::new(c), s, key)
+            let owner = client.upgrade();
+            inputcb(owner.as_ref(), s, key)
         }));
     }
     pd.freecb = freecb.take();
@@ -727,26 +756,33 @@ pub unsafe fn status_prompt_set(
             c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
             cmdq_get_callback_owned(
                 b"status_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
-                Some(Box::new(move |_| unsafe { status_prompt_accept(c) })),
+                Some(Box::new({
+                    let observer = std::rc::Rc::downgrade(c_owner);
+                    move |_| unsafe {
+                        observer.upgrade().map_or(CMD_RETURN_NORMAL, |owner| status_prompt_accept(&owner))
+                    }
+                })),
             ),
         );
     }
 }
-pub unsafe fn status_prompt_clear(mut c: *mut client) {
+pub unsafe fn status_prompt_clear(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
     let Some(prompt) = (*c).prompt.take() else {
         return;
     };
     (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
-    status_pop_screen(c);
+    status_pop_screen(&mut *(c));
     // The old screen and owner are detached before cleanup can install a new prompt.
     prompt_free(&prompt.downgrade());
 }
 pub unsafe fn status_prompt_update(
-    mut c: *mut client,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
 ) {
+    let mut c = c_owner.get();
     if (*c).prompt.is_none() {
         return;
     }
@@ -761,7 +797,7 @@ unsafe fn status_prompt_screen_line(c: &client) -> u_int {
     let tty = &c.tty;
     let mut n: u_int = 0;
     if options_get_number(
-        options_owner_ptr(&mut (*c.session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {
@@ -773,7 +809,8 @@ unsafe fn status_prompt_screen_line(c: &client) -> u_int {
     }
     return tty.sy.wrapping_sub(1 as u_int);
 }
-pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn status_prompt_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {
+    let mut c = c_owner.get();
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -833,10 +870,11 @@ pub unsafe fn status_prompt_cursor(c: &client) -> (u_int, u_int) {
     (c.status.prompt_cx, y)
 }
 pub unsafe fn status_prompt_key(
-    mut c: *mut client,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
+    let mut c = c_owner.get();
     let Some(prompt) = (*c).prompt.as_ref().map(|prompt| prompt.downgrade()) else {
         return PROMPT_KEY_NOT_HANDLED;
     };
@@ -876,7 +914,7 @@ pub unsafe fn status_prompt_key(
     if (*c).prompt.is_some()
         && prompt_closed(&(*c).prompt.as_ref().expect("active prompt").try_borrow_mut().expect("unborrowed prompt")) != 0
     {
-        status_prompt_clear(c);
+        status_prompt_clear(c_owner);
     }
     return result;
 }
@@ -911,7 +949,7 @@ mod status_screen_tests {
             let session = &mut *session_owner.get();
             session.options = Some(Box::from_raw(oo));
             let mut c = client::empty();
-            c.set_session(session);
+            c.set_session(Some(session));
             c.tty.sx = 80;
             for (style, expected) in [
                 ("default", (0, 80)),
@@ -955,7 +993,7 @@ mod status_screen_tests {
             }
             let saved = global_s_options;
             global_s_options = oo;
-            c.set_session(std::ptr::null_mut());
+            c.set_session(None);
             c.flags = 0;
             options_set_number(oo, c"status".as_ptr(), 4);
             assert_eq!(status_line_size(&c), 4);
@@ -984,7 +1022,7 @@ mod status_screen_tests {
             let mut c = Box::new(client::empty());
             c.tty.sx = 80;
             c.tty.sy = 24;
-            status_init(&mut *c);
+            status_init(&mut *(&mut *c));
             let base = &raw mut c.status.screen;
             let base_grid = c.status.screen.grid() as *const grid as usize;
             assert!(c.status.active.is_none());
@@ -994,69 +1032,70 @@ mod status_screen_tests {
             grid_set_cell(c.status.screen.grid_mut(), 0, 0, &cell);
 
             // A prompt and a message share one temporary screen.
-            status_push_screen(&mut *c);
+            status_push_screen(&mut *(&mut *c));
             let temporary = c.status.active_screen() as *mut screen;
             let temporary_grid = c.status.active_screen().grid() as *const grid as usize;
             assert_ne!(temporary, base);
             assert_ne!(temporary_grid, base_grid);
             cell.data.data[0] = b'T';
             grid_set_cell(c.status.active_screen().grid_mut(), 0, 0, &cell);
-            status_push_screen(&mut *c);
+            status_push_screen(&mut *(&mut *c));
             assert_eq!(c.status.screen_users, 2);
             assert_eq!(c.status.active_screen() as *mut screen, temporary);
-            status_pop_screen(&mut *c);
+            status_pop_screen(&mut *(&mut *c));
             assert_eq!(c.status.screen_users, 1);
             assert_eq!(c.status.active_screen().grid() as *const grid as usize, temporary_grid);
             grid_get_cell(c.status.active_screen().grid(), 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'T');
 
-            status_pop_screen(&mut *c);
+            status_pop_screen(&mut *(&mut *c));
             assert_eq!(c.status.screen_users, 0);
             assert!(c.status.active.is_none());
             assert_eq!(c.status.active_screen() as *mut screen, base);
             assert_eq!(c.status.screen.grid() as *const grid as usize, base_grid);
             grid_get_cell(c.status.screen.grid(), 0, 0, &mut cell);
             assert_eq!(cell.data.data[0], b'B');
-            status_free(&mut *c);
+            status_free(&mut *(&mut *c));
             assert!(c.status.screen.grid.is_none());
 
             // Teardown also releases an active temporary screen without a pop.
-            status_init(&mut *c);
-            status_push_screen(&mut *c);
+            status_init(&mut *(&mut *c));
+            status_push_screen(&mut *(&mut *c));
             assert!(c.status.active.is_some());
-            status_free(&mut *c);
+            status_free(&mut *(&mut *c));
             assert!(c.status.active.is_none());
             assert!(c.status.screen.grid.is_none());
 
             // A cleanup callback may clear the old prompt recursively and
             // install a replacement. The outer clear must leave its screen.
-            let mut c = Box::new(client::empty());
-            c.tty.sx = 80;
-            c.tty.sy = 24;
-            status_init(&mut *c);
-            status_push_screen(&mut *c);
+            let c_owner = client::new();
+            let c = c_owner.get();
+            (*c).tty.sx = 80;
+            (*c).tty.sy = 24;
+            status_init(&mut *(&mut *c));
+            status_push_screen(&mut *(&mut *c));
             let old = refbox::RefBox::new(prompt::default());
             let replacement = refbox::RefBox::new(prompt::default());
             let replacement_observer = replacement.downgrade();
             let next = replacement;
             let client = &raw mut *c;
             old.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
-                status_prompt_clear(client);
-                status_push_screen(client);
+                status_prompt_clear(&(*(client)).observer.upgrade().expect("live client"));
+                status_push_screen(&mut *(client));
                 (*client).prompt = Some(next);
                 (*client).tty.flags |= TTY_FREEZE;
             }));
-            c.prompt = Some(old);
-            status_prompt_clear(&mut *c);
-            assert!(replacement_observer.is(c.prompt.as_ref().unwrap()));
-            assert_eq!(c.status.screen_users, 1);
-            assert!(c.status.active.is_some());
-            assert_ne!(c.tty.flags & TTY_FREEZE, 0);
-            status_prompt_clear(&mut *c);
-            assert!(c.prompt.is_none());
-            assert_eq!(c.status.screen_users, 0);
-            assert!(c.status.active.is_none());
-            status_free(&mut *c);
+            (*c).prompt = Some(old);
+            status_prompt_clear(&(*(&mut *c)).observer.upgrade().expect("live client"));
+            assert!(replacement_observer.is((*c).prompt.as_ref().unwrap()));
+            assert_eq!((*c).status.screen_users, 1);
+            assert!((*c).status.active.is_some());
+            assert_ne!((*c).tty.flags & TTY_FREEZE, 0);
+            status_prompt_clear(&(*(&mut *c)).observer.upgrade().expect("live client"));
+            assert!((*c).prompt.is_none());
+            assert_eq!((*c).status.screen_users, 0);
+            assert!((*c).status.active.is_none());
+            status_free(&mut *(&mut *c));
 
             options_free(global_options);
             options_free(global_s_options);

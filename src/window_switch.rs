@@ -145,23 +145,24 @@ unsafe fn window_switch_add_item(
 }
 unsafe fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
-    mut s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut order: *mut u_int,
 ) {
+    let mut s = s_owner.get();
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        s,
+        None,
+        Some(s_owner),
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     item = window_switch_add_item(data);
     (*item).type_0 = WINDOW_SWITCH_TYPE_SESSION;
@@ -182,17 +183,17 @@ unsafe fn window_switch_add_window(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let Some(session_owner) = (*wl).session.upgrade() else { return; };
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        session_owner.get(),
+        None,
+        (session_owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         wl,
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     item = window_switch_add_item(data);
     (*item).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
@@ -250,7 +251,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
             let ns = u_int::try_from(sl.len()).expect("too many sessions for window switch");
             i = 0 as u_int;
             while i < ns {
-                window_switch_add_session(data, sl[i as usize].get(), &raw mut order);
+                window_switch_add_session(data, &sl[i as usize], &raw mut order);
                 i = i.wrapping_add(1);
             }
         }
@@ -506,7 +507,7 @@ unsafe fn window_switch_init(
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    prompt_set_options(&mut pd, ((*fs).s_ptr()).as_mut());
+    prompt_set_options(&mut pd, ((*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_mut());
     pd.fs = fs.as_ref();
     pd.prompt = c"(search) ";
     pd.input = Some(c"");
@@ -534,9 +535,9 @@ unsafe fn window_switch_init(
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
-        (*data).zoomed = (*(*wp).window_ptr()).flags & WINDOW_ZOOMED;
+        (*data).zoomed = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED;
         if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&*((*wp).window_ptr()));
+            server_redraw_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         }
     }
     window_switch_build(data);
@@ -554,7 +555,7 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_switch_modedata = window_switch_data(wme);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window((*mode_pane).window_ptr());
+        server_unzoom_window(&(*((*mode_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
     }
     (*data).matches.clear();
     (*data).item_list.clear();
@@ -603,7 +604,7 @@ unsafe fn window_switch_run_command(
                 bytes.extend_from_slice((*s).name.as_bytes());
                 bytes.push(b':');
                 target = Some(CString::new(bytes).expect("session target contains no NUL"));
-                cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
+                cmd_find_from_session(&raw mut fs, &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
             }
         }
         1 => {
@@ -641,7 +642,7 @@ unsafe fn window_switch_run_command(
             if let Some(owner) = client_owner {
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(
-                    owner.get(),
+                    (owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -712,7 +713,7 @@ unsafe fn window_switch_key(
                     << 32 as ::core::ffi::c_int
     {
         if m.is_null()
-            || cmd_mouse_at(wp, m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
+            || cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
                 != 0 as ::core::ffi::c_int
         {
             return;

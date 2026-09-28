@@ -1287,7 +1287,7 @@ pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
     let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    let mut w: *mut window = (*(*(*c).session_ptr()).curw_ptr()).window_ptr();
+    let mut w: *mut window = (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(&*c)) < (*w).sy)
         as ::core::ffi::c_int;
 }
@@ -1301,8 +1301,8 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     }
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
-    let w = (*(*c.session_ptr()).curw_ptr()).window_ptr();
-    let wp = (*w).active_ptr();
+    let w = (*(*c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
         c.pan_window = std::rc::Weak::new();
@@ -1357,22 +1357,24 @@ unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
     c.pan_window = std::rc::Weak::new();
     view
 }
-pub unsafe fn tty_update_window_offset(mut w: *mut window) {
+pub unsafe fn tty_update_window_offset(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session_ptr().is_null()
-            && !(*(*c).session_ptr()).curw_ptr().is_null()
-            && (*(*(*c).session_ptr()).curw_ptr()).window_ptr() == w
+        if !(*c).session_handle().is_none()
+            && !(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr().is_null()
+            && (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w
         {
-            tty_update_client_offset(c);
+            tty_update_client_offset(&(*(c)).observer.upgrade().expect("live client"));
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-pub unsafe fn tty_update_client_offset(mut c: *mut client) {
+pub unsafe fn tty_update_client_offset(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
     if !(*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
         return;
     }
@@ -1940,7 +1942,7 @@ pub unsafe fn tty_check_overlay_range(
     let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    if let Some(ranges) = server_client_overlay_check(c, px, py, nx) {
+    if let Some(ranges) = server_client_overlay_check(&(*(c)).observer.upgrade().expect("live client"), px, py, nx) {
         (*tty).r = ranges;
     } else {
         server_client_ensure_ranges(&raw mut (*tty).r, 1 as u_int);
@@ -1996,8 +1998,9 @@ pub unsafe fn tty_sync_end(mut tty: *mut tty) {
         tty_putcode_i(tty, TTYC_SYNC, 2 as ::core::ffi::c_int);
     }
 }
-unsafe fn tty_client_ready(ctx: &tty_ctx, mut c: *mut client) -> ::core::ffi::c_int {
-    if (*c).session_ptr().is_null() || tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term).is_null() {
+unsafe fn tty_client_ready(ctx: &tty_ctx, c_value: &client) -> ::core::ffi::c_int {
+    let c: *mut client = c_value as *const _ as *mut _;
+    if (*c).session_handle().is_none() || tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term).is_null() {
         return 0 as ::core::ffi::c_int;
     }
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
@@ -2023,7 +2026,7 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if tty_client_ready(ctx, c) != 0 {
+        if tty_client_ready(ctx, &*(c)) != 0 {
             state = set_client_cb(ctx, &mut *c);
             if state == -(1 as ::core::ffi::c_int) {
                 break;
@@ -3301,24 +3304,25 @@ fn tty_window_default_style(palette: &colour_palette) -> grid_cell {
         ..grid_default_cell
     }
 }
-unsafe fn tty_style_changed(mut wp: *mut window_pane) {
+unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let mut wp = wp_owner.get();
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sy: *mut style = ::core::ptr::null_mut::<style>();
     log_debug(format_args!("%{}: style changed", ((*wp).id) as u32));
     (*wp).flags &= !PANE_STYLECHANGED;
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        wp,
+        Some(wp_owner),
     );
     (*wp).cached_active_gc = tty_window_default_style(&(*wp).palette);
     sy = style_add(
@@ -3338,11 +3342,12 @@ unsafe fn tty_style_changed(mut wp: *mut window_pane) {
     (*wp).cached_dim = (*sy).dim as u_int;
     format_free(Box::from_raw(ft));
 }
-pub unsafe fn tty_default_colours(wp: *mut window_pane) -> (grid_cell, u_int) {
+pub unsafe fn tty_default_colours(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) -> (grid_cell, u_int) {
+    let mut wp = wp_owner.get();
     if (*wp).flags & PANE_STYLECHANGED != 0 {
-        tty_style_changed(wp);
+        tty_style_changed(wp_owner);
     }
-    let active = wp == (*(*wp).window_ptr()).active_ptr();
+    let active = wp == (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut gc = grid_default_cell;
     gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
         (*wp).cached_active_gc.fg

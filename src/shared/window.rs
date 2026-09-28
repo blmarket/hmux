@@ -268,17 +268,14 @@ pub struct windows {
 }
 
 impl window {
-    /// Legacy pointer view. The caller must keep the pane indexed or retain
-    /// an Rc through its use; this liveness check is not a borrow guard.
-    pub fn active_ptr(&self) -> *mut window_pane {
-        self.active
-            .upgrade()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
+    /// Retain the active pane for the current operation.
+    pub fn active_pane(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+        self.active.upgrade()
     }
 
     /// The caller supplies a live Rc-backed pane.
-    pub unsafe fn set_active(&mut self, pane: *mut window_pane) {
-        self.active = pane.as_ref().map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
+    pub fn set_active(&mut self, pane: Option<&window_pane>) {
+        self.active = pane.map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
     }
 
     pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
@@ -299,7 +296,7 @@ impl window {
 }
 
 impl winlink {
-    pub fn window_ptr(&self) -> *mut window {
-        self.window_owner.as_ref().map_or(std::ptr::null_mut(), super::rc::as_ptr)
+    pub fn window_handle(&self) -> Option<&std::rc::Rc<std::cell::UnsafeCell<window>>> {
+        self.window_owner.as_ref()
     }
 }

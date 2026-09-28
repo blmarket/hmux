@@ -83,7 +83,7 @@ pub unsafe fn job_run(
     cmd: Option<&CStr>,
     argv: &Vec<CString>,
     e: Option<&environ>,
-    mut s: *mut session,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     cwd: Option<&CStr>,
     mut updatecb: job_update_cb,
     mut completecb: job_complete_cb,
@@ -92,6 +92,7 @@ pub unsafe fn job_run(
     mut sx: ::core::ffi::c_int,
     mut sy: ::core::ffi::c_int,
 ) -> *mut job {
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
     let mut pid: pid_t = 0;
@@ -118,7 +119,7 @@ pub unsafe fn job_run(
     // in the C-managed job record. The child reaches exec/_exit, while the
     // parent drops the same owner on both success and failure paths.
     let mut env_owner = Some(environ_for_session(
-        s,
+        s_owner,
         (cfg_finished == 0) as ::core::ffi::c_int,
     ));
     let env = env_owner

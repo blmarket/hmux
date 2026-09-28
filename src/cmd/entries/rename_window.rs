@@ -51,13 +51,13 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         });
         return CMD_RETURN_ERROR;
     }
-    window_set_name((*wl).window_ptr(), name.as_ptr(), 0 as ::core::ffi::c_int);
+    window_set_name(&(*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), name.as_ptr(), 0 as ::core::ffi::c_int);
     options_set_number(
-        options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
-    server_redraw_window_borders(&*((*wl).window_ptr()));
-    server_status_window(&*((*wl).window_ptr()));
+    server_redraw_window_borders(&*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_status_window(&*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     return CMD_RETURN_NORMAL;
 }

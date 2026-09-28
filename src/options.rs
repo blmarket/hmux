@@ -1074,9 +1074,9 @@ pub unsafe fn options_scope_from_name(
     mut oo: *mut *mut options,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*fs).s_ptr();
+    let mut s: *mut session = (*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*fs).wl_ptr();
-    let mut wp: *mut window_pane = (*fs).wp_ptr();
+    let mut wp: *mut window_pane = (*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut target: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut scope: ::core::ffi::c_int = OPTIONS_TABLE_NONE;
@@ -1172,7 +1172,7 @@ pub unsafe fn options_scope_from_name(
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+                *oo = options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
                 scope = OPTIONS_TABLE_WINDOW;
             }
         }
@@ -1187,9 +1187,9 @@ pub unsafe fn options_scope_from_flags(
     mut oo: *mut *mut options,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*fs).s_ptr();
+    let mut s: *mut session = (*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*fs).wl_ptr();
-    let mut wp: *mut window_pane = (*fs).wp_ptr();
+    let mut wp: *mut window_pane = (*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut target: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if args_has(args, 's' as i32 as u_char) != 0 {
         *oo = global_options;
@@ -1233,7 +1233,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        *oo = options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
         return 0x4 as ::core::ffi::c_int;
     } else {
         if args_has(args, 'g' as i32 as u_char) != 0 {
@@ -1626,7 +1626,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            server_client_update_theme_colours(loop_0);
+            server_client_update_theme_colours((loop_0).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             if (*loop_0).tty.flags & TTY_OPENED != 0 {
                 tty_invalidate(&raw mut (*loop_0).tty);
             }
@@ -1643,9 +1643,9 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
             w = window_owner.get();
-            if !(*w).active_ptr().is_null() {
+            if !(*w).active_pane().is_none() {
                 if options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), name) != 0 {
-                    (*(*w).active_ptr()).flags |= PANE_CHANGED;
+                    (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags |= PANE_CHANGED;
                 }
             }
             window_cursor = windows_next(&*w);
@@ -1660,7 +1660,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
-            window_pane_default_cursor(wp);
+            window_pane_default_cursor(&(*(wp)).observer.upgrade().expect("live window_pane"));
             indexed_pane_owner = window_pane_tree_next(&*wp);
             wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
@@ -1673,7 +1673,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
         wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
-            window_pane_default_cursor(wp);
+            window_pane_default_cursor(&(*(wp)).observer.upgrade().expect("live window_pane"));
             indexed_pane_owner = window_pane_tree_next(&*wp);
             wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
@@ -1686,7 +1686,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
             w = window_owner.get();
-            window_set_fill_cells(w);
+            window_set_fill_cells(&(*(w)).observer.upgrade().expect("live window"));
             window_cursor = windows_next(&*w);
             crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
@@ -1699,7 +1699,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            server_client_set_key_table(loop_0, ::core::ptr::null::<::core::ffi::c_char>());
+            server_client_set_key_table(&(*(loop_0)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
             registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
             loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
@@ -1835,7 +1835,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
                 options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
                 b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
-            layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+            layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
             window_cursor = windows_next(&*w);
             crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
@@ -1868,7 +1868,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
             w = window_owner.get();
-            layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+            layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
             window_cursor = windows_next(&*w);
             crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
@@ -1903,7 +1903,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
-        status_update_cache(s);
+        status_update_cache(&mut *(s));
         s_owner = sessions_next(&*s);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
@@ -1911,7 +1911,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        if !(*loop_0).session_ptr().is_null() {
+        if !(*loop_0).session_handle().is_none() {
             server_redraw_client(&mut *(loop_0));
         }
         registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));

@@ -1,6 +1,6 @@
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::session::session_remove_ref;
-use crate::src::shared::client::{client_retain, client_rc_ptr};
+use crate::src::shared::client::{client_retain, client_handle};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
@@ -126,14 +126,14 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             cmdq_print(item.get(), |out| write_cstr(out, msg));
             return;
         }
-        if cdata.client.is_some() && !(*client_rc_ptr(&cdata.client)).session_ptr().is_null() {
-            wp = (*(*(*(*client_rc_ptr(&cdata.client)).session_ptr()).curw_ptr()).window_ptr()).active_ptr();
+        if cdata.client.is_some() && !(*client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get())).session_handle().is_none() {
+            wp = (*(*(*(*client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get())).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
                 == 0 as ::core::ffi::c_int
         {
-            wp = fs.wp_ptr();
+            wp = fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if wp.is_null() {
             return;
@@ -171,8 +171,8 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).s_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -247,10 +247,10 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         cdata.wp_id = -(1 as ::core::ffi::c_int);
     }
     if wait != 0 {
-        cdata.client = client_retain(c);
+        cdata.client = client_retain((c).as_ref());
         cdata.item = (*item).observer.clone();
     } else {
-        cdata.client = client_retain(tc);
+        cdata.client = client_retain((tc).as_ref());
         cdata.flags |= JOB_NOWAIT;
     }
     if args_has(args, 'E' as i32 as u_char) != 0 {
@@ -283,7 +283,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     if cdata.wait && item_owner.is_none() {
         return;
     }
-    let mut c: *mut client = client_rc_ptr(&cdata.client);
+    let mut c: *mut client = client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
     let cmd = cdata.cmd.as_deref();
     let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -298,7 +298,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             cmd,
             &Vec::new(),
             None,
-            cdata.s.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr),
+            (cdata.s.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr)).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             Some(cdata.cwd.as_c_str()),
             None,
             None,
@@ -310,7 +310,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
         if job.is_null() {
             if !cdata.wait {
                 status_message_set(
-                    c,
+                    (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -350,7 +350,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                 .map_or(::core::ptr::null(), |cause| cause.as_ptr());
             if !cdata.wait {
                 status_message_set(
-                    c,
+                    (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -437,7 +437,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     if cdata.wait {
         if let Some(client) = cmdq_get_client(item) {
             let c = crate::src::shared::rc::as_ptr(&client);
-            if (*c).session_ptr().is_null() {
+            if (*c).session_handle().is_none() {
                 (*c).retval = retcode;
             }
         }

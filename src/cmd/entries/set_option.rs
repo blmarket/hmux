@@ -146,20 +146,20 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let c_owner = cmdq_get_client(item);
     c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !c.is_null() {
-        event_payload_set_client(&mut *ep, c);
+        event_payload_set_client(&mut *ep, (*(c)).observer.upgrade().expect("live client"));
     }
-    if !(*target).s_ptr().is_null() {
+    if !(*target).session_handle().is_none() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).s_ptr(),
+            (*((*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
         );
     }
-    if !(*target).w_ptr().is_null() {
+    if !(*target).window_handle().is_none() {
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).w_ptr(),
+            (*((*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
     }
     if !(*target).wl_ptr().is_null() {
@@ -175,11 +175,11 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             (*target).idx,
         );
     }
-    if !(*target).wp_ptr().is_null() {
+    if !(*target).pane_handle().is_none() {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).wp_ptr(),
+            (*((*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"),
         );
     }
     events_fire(argument.as_ptr(), ep);
@@ -283,12 +283,12 @@ unsafe fn cmd_set_hook_monitor_exec(
                     }
                 }
                 if oo != global_options && oo != global_s_options && oo != global_w_options {
-                    s = (*target).s_ptr();
+                    s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                 }
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     flags |= MONITOR_NOTIFY_TRUE;
                 }
-                hooks_monitor_add(oo, name, type_0, id, format, flags, &raw mut fs, s);
+                hooks_monitor_add(oo, name, type_0, id, format, flags, &raw mut fs, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             }
             return CMD_RETURN_NORMAL;
         }
@@ -438,7 +438,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                         if args_has(args, 'U' as i32 as u_char) != 0
                             && scope == OPTIONS_TABLE_WINDOW
                         {
-                            loop_0 = window_pane_first(((*target).w_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                            loop_0 = window_pane_first(((*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                             loop {
                                 if loop_0.is_null() {
                                     current_block = 10095721787123848864;

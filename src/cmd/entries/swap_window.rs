@@ -43,8 +43,8 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut src: *mut session = (*source).s_ptr();
-    let mut dst: *mut session = (*target).s_ptr();
+    let mut src: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut dst: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg_src: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl_src: *mut winlink = (*source).wl_ptr();
@@ -59,31 +59,31 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         });
         return CMD_RETURN_ERROR;
     }
-    if (*wl_dst).window_ptr() == (*wl_src).window_ptr() {
+    if (*wl_dst).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wl_src).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         return CMD_RETURN_NORMAL;
     }
-    w_dst = (*wl_dst).window_ptr();
-    w_src = (*wl_src).window_ptr();
-    window_winlinks_remove(w_dst, wl_dst);
-    window_winlinks_remove(w_src, wl_src);
+    w_dst = (*wl_dst).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w_src = (*wl_src).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    window_winlinks_remove(&mut *(w_dst), wl_dst);
+    window_winlinks_remove(&mut *(w_src), wl_src);
     if wl_dst != wl_src {
         std::mem::swap(&mut (*wl_dst).window_owner, &mut (*wl_src).window_owner);
     }
-    window_winlinks_append(w_src, wl_dst);
-    window_winlinks_append(w_dst, wl_src);
+    window_winlinks_append(&mut *(w_src), wl_dst);
+    window_winlinks_append(&mut *(w_dst), wl_src);
     if marked_pane.wl_ptr() == wl_src {
         marked_pane.set_wl(wl_dst);
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        session_select(dst, (*wl_dst).idx);
+        session_select(&(*dst).observer.upgrade().expect("live session"), (*wl_dst).idx);
         if src != dst {
-            session_select(src, (*wl_src).idx);
+            session_select(&(*src).observer.upgrade().expect("live session"), (*wl_src).idx);
         }
     }
-    session_group_synchronize_from(src);
+    session_group_synchronize_from(&(*src).observer.upgrade().expect("live session"));
     server_redraw_session_group(&*(src));
     if src != dst {
-        session_group_synchronize_from(dst);
+        session_group_synchronize_from(&(*dst).observer.upgrade().expect("live session"));
         server_redraw_session_group(&*(dst));
     }
     recalculate_sizes();

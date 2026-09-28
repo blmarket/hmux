@@ -94,19 +94,20 @@ pub static cmd_last_pane_entry: cmd_entry = {
         exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
+unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !((*c).session_ptr().is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-            if (*(*(*c).session_ptr()).curw_ptr()).window_ptr() == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
+        if !((*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
+            if (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
                 server_redraw_client(&mut *(c));
             } else {
-                if (*(*(*c).session_ptr()).curw_ptr()).window_ptr() == w {
+                if (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w {
                     (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
                 }
-                if session_has(&*(*c).session_ptr(), &*w) != 0 {
+                if session_has(&*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) != 0 {
                     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
                 }
             }
@@ -130,75 +131,75 @@ unsafe fn cmd_select_pane_marked_pane(
         idx: 0,
     };
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if args_has(args, 'm' as i32 as u_char) != 0 && window_pane_is_visible(&*wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
     if server_check_marked() != 0 {
-        lwp = marked_pane.wp_ptr();
+        lwp = marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    if args_has(args, 'M' as i32 as u_char) != 0 || server_is_marked(s, wl, wp) != 0 {
+    if args_has(args, 'M' as i32 as u_char) != 0 || server_is_marked((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref()) != 0 {
         server_clear_marked();
     } else {
-        server_set_marked(s, wl, wp);
+        server_set_marked((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
-    mwp = marked_pane.wp_ptr();
+    mwp = marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ep = event_payload_create();
     if !mwp.is_null() {
-        cmd_find_from_pane(&raw mut fs, mwp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, &(*(mwp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     } else if !lwp.is_null() {
-        cmd_find_from_pane(&raw mut fs, lwp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, &(*(lwp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     } else {
-        cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
     event_payload_set_target(&mut *ep, &fs);
     if !mwp.is_null() {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            mwp,
+            (*(mwp)).observer.upgrade().expect("live window_pane"),
         );
         event_payload_set_pane(
             &mut *ep,
             b"new_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            mwp,
+            (*(mwp)).observer.upgrade().expect("live window_pane"),
         );
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*mwp).window_ptr(),
+            (*((*mwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
     } else if !lwp.is_null() {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            lwp,
+            (*(lwp)).observer.upgrade().expect("live window_pane"),
         );
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*lwp).window_ptr(),
+            (*((*lwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
     } else {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            wp,
+            (*(wp)).observer.upgrade().expect("live window_pane"),
         );
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).window_ptr(),
+            (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
     }
     if !lwp.is_null() {
         event_payload_set_pane(
             &mut *ep,
             b"old_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            lwp,
+            (*(lwp)).observer.upgrade().expect("live window_pane"),
         );
     }
     event_payload_set_int(
@@ -212,17 +213,17 @@ unsafe fn cmd_select_pane_marked_pane(
     );
     if !lwp.is_null() {
         (*lwp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
-        server_redraw_window_borders(&*((*lwp).window_ptr()));
-        server_status_window(&*((*lwp).window_ptr()));
+        server_redraw_window_borders(&*((*lwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_status_window(&*((*lwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     }
     if !mwp.is_null() {
         (*mwp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
-        server_redraw_window_borders(&*((*mwp).window_ptr()));
-        server_status_window(&*((*mwp).window_ptr()));
+        server_redraw_window_borders(&*((*mwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_status_window(&*((*mwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     }
     if window_pane_is_floating(&*wp) != 0 {
-        window_redraw_active_switch((*wp).window_ptr(), wp);
-        window_set_active_pane((*wp).window_ptr(), wp, 1 as ::core::ffi::c_int);
+        window_redraw_active_switch(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        window_set_active_pane(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
     }
     return CMD_RETURN_NORMAL;
 }
@@ -240,9 +241,9 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         idx: 0,
     };
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_ptr();
-    let mut s: *mut session = (*target).s_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -252,9 +253,9 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(args, 'l' as i32 as u_char) != 0 {
         lastwp = window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if lastwp.is_null() && window_count_panes(&*w, 1 as ::core::ffi::c_int) == 2 as u_int {
-            lastwp = window_pane_previous(((*w).active_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            lastwp = window_pane_previous(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if lastwp.is_null() {
-                lastwp = window_pane_next(((*w).active_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                lastwp = window_pane_next(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if lastwp.is_null() {
@@ -263,27 +264,27 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
         if args_has(args, 'e' as i32 as u_char) != 0 {
             (*lastwp).flags &= !PANE_INPUTOFF;
-            server_redraw_window_borders(&*((*lastwp).window_ptr()));
-            server_status_window(&*((*lastwp).window_ptr()));
+            server_redraw_window_borders(&*((*lastwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+            server_status_window(&*((*lastwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         } else if args_has(args, 'd' as i32 as u_char) != 0 {
             (*lastwp).flags |= PANE_INPUTOFF;
-            server_redraw_window_borders(&*((*lastwp).window_ptr()));
-            server_status_window(&*((*lastwp).window_ptr()));
+            server_redraw_window_borders(&*((*lastwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+            server_status_window(&*((*lastwp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         } else {
             if (*w).modal.upgrade().is_some() && !lastwp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
                 visible = window_pane_is_visible(&*lastwp);
             }
-            if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
+            if visible == 0 && window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, Zflag) != 0 {
                 server_redraw_window(&*(w));
             }
-            window_redraw_active_switch(w, lastwp);
-            if window_set_active_pane(w, lastwp, 1 as ::core::ffi::c_int) != 0 {
+            window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (lastwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            if window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(lastwp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int) != 0 {
                 cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl, 0 as ::core::ffi::c_int);
-                cmd_select_pane_redraw(w);
+                cmd_select_pane_redraw(&(*(w)).observer.upgrade().expect("live window"));
             }
-            if visible == 0 && window_pop_zoom(w) != 0 {
+            if visible == 0 && window_pop_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0 {
                 server_redraw_window(&*(w));
             }
         }
@@ -330,56 +331,56 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let direction_source = wp.as_ref().and_then(|pane| pane.observer.upgrade());
     let selected_pane_owner;
     if args_has(args, 'L' as i32 as u_char) != 0 {
-        window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
+        window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
         selected_pane_owner = window_pane_find_left(direction_source.as_ref());
         wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pop_zoom(w);
+        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
     } else if args_has(args, 'R' as i32 as u_char) != 0 {
-        window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
+        window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
         selected_pane_owner = window_pane_find_right(direction_source.as_ref());
         wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pop_zoom(w);
+        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
     } else if args_has(args, 'U' as i32 as u_char) != 0 {
-        window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
+        window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
         selected_pane_owner = window_pane_find_up(direction_source.as_ref());
         wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pop_zoom(w);
+        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
     } else if args_has(args, 'D' as i32 as u_char) != 0 {
-        window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
+        window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
         selected_pane_owner = window_pane_find_down(direction_source.as_ref());
         wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pop_zoom(w);
+        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
     }
     if wp.is_null() {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'e' as i32 as u_char) != 0 {
         (*wp).flags &= !PANE_INPUTOFF;
-        server_redraw_window_borders(&*((*wp).window_ptr()));
-        server_status_window(&*((*wp).window_ptr()));
+        server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_status_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
         (*wp).flags |= PANE_INPUTOFF;
-        server_redraw_window_borders(&*((*wp).window_ptr()));
-        server_status_window(&*((*wp).window_ptr()));
+        server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_status_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
         let title = format_single_from_target_cstring(item, args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
         if screen_set_title(&mut (*wp).base, &title, 0 as ::core::ffi::c_int) != 0 {
             let mut ep = event_payload_create();
-            cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+            cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
             event_payload_set_target(&mut *ep, &fs);
             event_payload_set_pane(
                 &mut *ep,
                 b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-                wp,
+                (*(wp)).observer.upgrade().expect("live window_pane"),
             );
             event_payload_set_window(
                 &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).window_ptr(),
+                (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
             );
             event_payload_set_string(
                 &mut *ep,
@@ -390,12 +391,12 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 b"pane-title-changed\0" as *const u8 as *const ::core::ffi::c_char,
                 ep,
             );
-            server_redraw_window_borders(&*((*wp).window_ptr()));
-            server_status_window(&*((*wp).window_ptr()));
+            server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+            server_status_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         }
         return CMD_RETURN_NORMAL;
     }
-    if wp == (*w).active_ptr() {
+    if wp == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         return CMD_RETURN_NORMAL;
     }
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
@@ -403,16 +404,16 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     } else {
         visible = window_pane_is_visible(&*wp);
     }
-    if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
+    if visible == 0 && window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, Zflag) != 0 {
         server_redraw_window(&*(w));
     }
-    window_redraw_active_switch(w, wp);
-    if window_set_active_pane(w, wp, 1 as ::core::ffi::c_int) != 0 {
-        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
+    window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    if window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int) != 0 {
+        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
-    cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
-    cmd_select_pane_redraw(w);
-    if visible == 0 && window_pop_zoom(w) != 0 {
+    cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
+    cmd_select_pane_redraw(&(*(w)).observer.upgrade().expect("live window"));
+    if visible == 0 && window_pop_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0 {
         server_redraw_window(&*(w));
     }
     return CMD_RETURN_NORMAL;

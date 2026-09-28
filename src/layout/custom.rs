@@ -203,7 +203,7 @@ unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
             return -1;
         };
         wp = pane_owner.get();
-        if wp == (*(*wp).window_ptr()).active_ptr() {
+        if wp == (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             ls.extend_from_slice(b",\"a\":true");
         } else if window_pane_last_index(&*wp).map(|value| { i = value; }).is_some() {
             ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());
@@ -409,10 +409,11 @@ unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn layout_parse(
-    mut w: *mut window,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut input: *const ::core::ffi::c_char,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
     let mut current_block: u64;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -463,7 +464,7 @@ pub unsafe fn layout_parse(
                     break;
                 } else {
                     layout_destroy_cell(
-                        ::core::ptr::null_mut::<window>(),
+                        None,
                         lcchild,
                         &mut pctx.root,
                     );
@@ -525,7 +526,7 @@ pub unsafe fn layout_parse(
                 } else {
                     if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
                         window_resize(
-                            w,
+                            &(*(w)).observer.upgrade().expect("live window"),
                             (*lc).g.sx,
                             (*lc).g.sy,
                             -(1 as ::core::ffi::c_int),
@@ -546,12 +547,12 @@ pub unsafe fn layout_parse(
                     }
                     drop((*w).layout_root.take());
                     (*w).layout_root = candidate.take();
-                    layout_assign(w, &raw mut pctx, &mut floating);
+                    layout_assign(w_owner, &raw mut pctx, &mut floating);
                     assert!(floating.is_empty());
-                    layout_fix_offsets(w);
-                    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+                    layout_fix_offsets(w_owner);
+                    layout_fix_panes(w_owner, None);
                     if pctx.version > 1 as int64_t {
-                        layout_parse_apply_ctx(w, &raw mut pctx);
+                        layout_parse_apply_ctx(w_owner, &raw mut pctx);
                     }
                     recalculate_sizes();
                     layout_print_cell(
@@ -562,7 +563,7 @@ pub unsafe fn layout_parse(
                     if pctx.version == 1 as int64_t {
                         events_fire_window(
                             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-                            w,
+                            (*(w)).observer.upgrade().expect("live window"),
                         );
                     }
                     layout_parse_free_ctx(&raw mut pctx);
@@ -575,7 +576,8 @@ pub unsafe fn layout_parse(
     layout_parse_free_ctx(&raw mut pctx);
     return -(1 as ::core::ffi::c_int);
 }
-unsafe fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_assign_from_ctx(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut pctx: *mut layout_parse_ctx) {
+    let mut w = w_owner.get();
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
     let panes = (*w).panes.snapshot();
     assert!(panes.len() >= (*pctx).cctxs.len(), "layout requires enough live panes");
@@ -609,14 +611,15 @@ unsafe fn layout_assign_fallback_tiled(
         _ => {}
     };
 }
-unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
+unsafe fn layout_assign_fallback(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
+    let mut w = w_owner.get();
     let panes = (*w).panes.snapshot();
     layout_assign_fallback_tiled(&mut panes.iter().cloned(), lcroot);
     if window_count_panes(&*w, 1 as ::core::ffi::c_int) > 1 as u_int
         && (*lcroot).type_0 as ::core::ffi::c_uint
             == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        lcroot = layout_replace_with_node(w, lcroot, LAYOUT_TOPBOTTOM);
+        lcroot = layout_replace_with_node(w_owner, lcroot, LAYOUT_TOPBOTTOM);
     }
     for owner in &panes {
         let wp = owner.get();
@@ -626,11 +629,12 @@ unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cel
         }
     }
 }
-unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx, floating: &mut Vec<Box<layout_cell>>) {
+unsafe fn layout_assign(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut pctx: *mut layout_parse_ctx, floating: &mut Vec<Box<layout_cell>>) {
+    let mut w = w_owner.get();
     if !(*pctx).cctxs.is_empty() {
-        layout_assign_from_ctx(w, pctx);
+        layout_assign_from_ctx(w_owner, pctx);
     } else {
-        layout_assign_fallback(w, (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), floating);
+        layout_assign_fallback(w_owner, (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), floating);
     };
 }
 unsafe fn layout_construct_cell(
@@ -964,7 +968,8 @@ unsafe fn layout_construct(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_parse_apply_ctx(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut pctx: *mut layout_parse_ctx) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane;
     for pane_owner in (*w).z_index.snapshot() {
         wp = pane_owner.get();
@@ -985,21 +990,21 @@ unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse
     for cctx in &(*pctx).cctxs {
         if cctx.active == 1 as ::core::ffi::c_int {
             if let Some(pane_owner) = (*cctx.lc).wp.upgrade() {
-                window_set_active_pane(w, pane_owner.get(), 1 as ::core::ffi::c_int);
+                window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &pane_owner, 1 as ::core::ffi::c_int);
             }
             break;
         }
     }
     while let Some(pane_owner) = window_pane_stack_first(w.as_ref()) {
         wp = pane_owner.get();
-        window_pane_stack_remove(&raw mut (*w).last_panes, wp);
+        window_pane_stack_remove(&raw mut (*w).last_panes, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
     (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
     for cctx in &(*pctx).cctxs {
         let Some(pane_owner) = (*cctx.lc).wp.upgrade() else { continue; };
         wp = pane_owner.get();
         if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
-            window_pane_stack_push(&raw mut (*w).last_panes, wp);
+            window_pane_stack_push(&raw mut (*w).last_panes, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         }
     }
 }

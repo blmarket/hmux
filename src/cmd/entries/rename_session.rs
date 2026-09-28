@@ -52,7 +52,7 @@ pub static cmd_rename_session_entry: cmd_entry = {
 unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -82,12 +82,12 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         return CMD_RETURN_ERROR;
     }
     let mut ep = event_payload_create();
-    cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
+    cmd_find_from_session(&raw mut fs, &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_session(
         &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        (*(s)).observer.upgrade().expect("live session"),
     );
     event_payload_set_string(
         &mut *ep,
@@ -99,9 +99,9 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(newname.as_bytes()),
     );
-    let owner = sessions_remove(&raw mut sessions, s).expect("registered session owner");
+    let owner = sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")).expect("registered session owner");
     drop(session_replace_name(&mut *s, newname));
-    sessions_insert(&raw mut sessions, owner);
+    sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
     server_status_session(&*(s));
     events_fire(
         b"session-renamed\0" as *const u8 as *const ::core::ffi::c_char,

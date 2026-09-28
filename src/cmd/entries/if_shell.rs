@@ -1,7 +1,7 @@
 use crate::src::server_client::server_client_unref_owned;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
-use crate::src::shared::client::{client_retain, client_rc_ptr};
+use crate::src::shared::client::{client_retain, client_handle};
 use crate::src::arguments::{
     args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
     args_string,
@@ -82,7 +82,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -134,14 +134,14 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         cdata.client = cmdq_get_client(item);
         cdata.item = (*item).observer.clone();
     } else {
-        cdata.client = client_retain(tc);
+        cdata.client = client_retain((tc).as_ref());
     }
     let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
     let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),
         None,
-        s,
+        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         cwd.as_deref(),
         None,
         None,
@@ -172,7 +172,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
     if cdata.wait && item_owner.is_none() {
         return;
     }
-    let mut c: *mut client = client_rc_ptr(&cdata.client);
+    let mut c: *mut client = client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
     let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let state = if completion.status == JobExitStatus::Exited(0) {
@@ -191,7 +191,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                     .map_or(::core::ptr::null(), |cause| cause.as_ptr());
                 if !cdata.wait {
                     status_message_set(
-                        c,
+                        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                         -(1 as ::core::ffi::c_int),
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,

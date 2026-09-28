@@ -49,8 +49,8 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_ptr();
-    let mut s: *mut session = (*target).s_ptr();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
     let mut sx: u_int = 0;
@@ -125,9 +125,9 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     if args_has(args, 'A' as i32 as u_char) != 0 {
         default_window_size(
-            ::core::ptr::null_mut::<client>(),
-            s,
-            w,
+            None,
+            &(*(s)).observer.upgrade().expect("live session"),
+            (w).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             &raw mut sx,
             &raw mut sy,
             &raw mut xpixel,
@@ -136,9 +136,9 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         );
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
         default_window_size(
-            ::core::ptr::null_mut::<client>(),
-            s,
-            w,
+            None,
+            &(*(s)).observer.upgrade().expect("live session"),
+            (w).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             &raw mut sx,
             &raw mut sy,
             &raw mut xpixel,
@@ -153,6 +153,6 @@ unsafe fn cmd_resize_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     );
     (*w).manual_sx = sx;
     (*w).manual_sy = sy;
-    recalculate_size(w, 1 as ::core::ffi::c_int);
+    recalculate_size(&(*(w)).observer.upgrade().expect("live window"), 1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }

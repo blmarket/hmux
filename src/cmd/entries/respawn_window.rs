@@ -65,7 +65,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();
@@ -104,7 +104,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
-    server_redraw_window(&*((*wl).window_ptr()));
+    server_redraw_window(&*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

@@ -585,7 +585,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if args_has(args, 'H' as i32 as u_char) != 0 {
             screen_reset_hyperlinks(&mut *(*wp).screen_ptr());
         }
-        server_redraw_window(&*((*wp).window_ptr()));
+        server_redraw_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
@@ -609,7 +609,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         // terminator also preserves control_write's first-NUL behavior.
         buf.push(0);
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(c, |out| {
+            control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
                 write_cstr_n(
                     out,
                     buf.as_ptr().cast::<::core::ffi::c_char>(),

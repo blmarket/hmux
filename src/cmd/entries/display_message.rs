@@ -71,9 +71,9 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -86,7 +86,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
         }
-        match window_pane_start_input(wp, item) {
+        match window_pane_start_input(&(*(wp)).observer.upgrade().expect("live window_pane"), item) {
             Err(error) => {
                 cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
                 return CMD_RETURN_ERROR;
@@ -130,7 +130,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
     }
     let best_client_owner;
-    if !tc.is_null() && (*tc).session_ptr() == s {
+    if !tc.is_null() && (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == s {
         c = tc;
     } else if !s.is_null() {
         best_client_owner = cmd_find_best_client(&*s);
@@ -144,7 +144,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         flags = 0 as ::core::ffi::c_int;
     }
     ft = format_create_with_client(queue_client.as_ref(), item, FORMAT_NONE, flags);
-    format_defaults(ft, c, s, wl, wp);
+    format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
             cmdq_print(item, |out| {
@@ -189,7 +189,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         });
         server_client_print(tc_owner.as_ref(), 0 as ::core::ffi::c_int, &mut *evb);
     } else if !tc.is_null() {
-        status_message_set(tc, delay, 0 as ::core::ffi::c_int, Nflag, Cflag, |out| {
+        status_message_set((tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), delay, 0 as ::core::ffi::c_int, Nflag, Cflag, |out| {
             write_cstr(out, msg.as_ptr())
         });
     }

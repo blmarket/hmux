@@ -735,7 +735,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -775,10 +775,10 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     let mut idx: u_int = 0;
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        wp,
+        (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     style_apply(
         &raw mut gc,

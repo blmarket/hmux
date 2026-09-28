@@ -1,6 +1,5 @@
 use hmux2::src::shared::display::visible_range;
 use hmux2::src::shared::pane::{window_pane, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT};
-use hmux2::src::shared::rc;
 use hmux2::src::shared::window::window;
 use hmux2::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use std::cell::UnsafeCell;
@@ -12,13 +11,13 @@ fn segments(ranges: &[visible_range]) -> Vec<(u32, u32)> {
 }
 
 unsafe fn calculate_ranges(
-    pane: *mut window_pane,
+    pane: Option<&window_pane>,
     x: i32,
     y: i32,
     width: u32,
 ) -> Vec<visible_range> {
     let mut ranges = Vec::new();
-    window_visible_ranges(pane.as_ref(), x, y, width, &mut ranges);
+    window_visible_ranges(pane, x, y, width, &mut ranges);
     ranges
 }
 
@@ -44,7 +43,7 @@ impl Scene {
         hmux2::src::window::window_remove_ref(self.window, c"test scene".as_ptr());
     }
 
-    fn add_pane(&mut self, x: i32, y: i32, width: u32, height: u32) -> *mut window_pane {
+    fn add_pane(&mut self, x: i32, y: i32, width: u32, height: u32) -> Rc<UnsafeCell<window_pane>> {
         // These panes have no display resources requiring model cleanup.
         let mut pane = window_pane::empty();
         pane.window = Rc::downgrade(&self.window);
@@ -53,19 +52,18 @@ impl Scene {
         pane.sx = width;
         pane.sy = height;
         let owner = pane.into_shared();
-        let ptr = rc::as_ptr(&owner);
         unsafe { (*self.window.get()).z_index.push_front(Rc::downgrade(&owner)); }
-        self.panes.push(owner);
-        ptr
+        self.panes.push(owner.clone());
+        owner
     }
 }
 
 #[test]
 fn pane_less_results_survive_later_nonempty_and_empty_queries() {
     unsafe {
-        let first = calculate_ranges(null_mut(), 10, 5, 2);
-        let second = calculate_ranges(null_mut(), 0, 6, 80);
-        let empty = calculate_ranges(null_mut(), 0, -1, 80);
+        let first = calculate_ranges(None, 10, 5, 2);
+        let second = calculate_ranges(None, 0, 6, 80);
+        let empty = calculate_ranges(None, 0, -1, 80);
         assert_eq!(segments(&first), [(10, 2)]);
         assert_eq!(segments(&second), [(0, 80)]);
         assert!(empty.is_empty());
@@ -73,7 +71,7 @@ fn pane_less_results_survive_later_nonempty_and_empty_queries() {
         assert!(!window_position_is_visible(&first, 12));
         assert!(!window_position_is_visible(&empty, 10));
 
-        let third = calculate_ranges(null_mut(), -3, 0, 8);
+        let third = calculate_ranges(None, -3, 0, 8);
         assert_eq!(segments(&third), [(0, 5)]);
         assert!(empty.is_empty());
     }
@@ -83,13 +81,13 @@ fn pane_less_results_survive_later_nonempty_and_empty_queries() {
 fn pane_results_survive_flush_shaped_queries_and_pane_destruction() {
     let (character, line) = unsafe {
         let mut scene = Scene::new();
-        let base = scene.add_pane(0, 0, 80, 24);
+        let base = scene.add_pane(0, 0, 80, 24).get();
         // This pane covers the character on row 5, but not row 6.
         scene.add_pane(9, 5, 4, 1);
-        let character = calculate_ranges(base, 10, 5, 2);
-        let line = calculate_ranges(base, 0, 6, 80);
+        let character = calculate_ranges((base).as_ref(), 10, 5, 2);
+        let line = calculate_ranges((base).as_ref(), 0, 6, 80);
         // A subsequent empty query must not clear either result.
-        assert!(calculate_ranges(base, 0, 24, 80).is_empty());
+        assert!(calculate_ranges((base).as_ref(), 0, 24, 80).is_empty());
         scene.free();
         (character, line)
     };
@@ -102,11 +100,11 @@ fn pane_results_survive_flush_shaped_queries_and_pane_destruction() {
 fn clips_to_window_and_preserves_split_ranges_and_border_rules() {
     unsafe {
         let mut scene = Scene::new();
-        let base = scene.add_pane(0, 0, 80, 24);
+        let base = scene.add_pane(0, 0, 80, 24).get();
         // Including side borders, these obscure [14, 21) and [24, 28).
         scene.add_pane(15, 5, 5, 1);
         scene.add_pane(25, 5, 2, 1);
-        let ranges = calculate_ranges(base, 10, 5, 20);
+        let ranges = calculate_ranges((base).as_ref(), 10, 5, 20);
         assert_eq!(segments(&ranges), [(10, 4), (21, 3), (28, 2)]);
         for x in 10..30 {
             assert_eq!(
@@ -116,12 +114,12 @@ fn clips_to_window_and_preserves_split_ranges_and_border_rules() {
             );
         }
         // Non-floating panes do not obscure their horizontal border rows.
-        assert_eq!(segments(&calculate_ranges(base, 10, 4, 20)), [(10, 20)]);
-        assert_eq!(segments(&calculate_ranges(base, 10, 6, 20)), [(10, 20)]);
-        assert_eq!(segments(&calculate_ranges(base, -3, 0, 8)), [(0, 5)]);
-        assert_eq!(segments(&calculate_ranges(base, 78, 0, 8)), [(78, 2)]);
+        assert_eq!(segments(&calculate_ranges((base).as_ref(), 10, 4, 20)), [(10, 20)]);
+        assert_eq!(segments(&calculate_ranges((base).as_ref(), 10, 6, 20)), [(10, 20)]);
+        assert_eq!(segments(&calculate_ranges((base).as_ref(), -3, 0, 8)), [(0, 5)]);
+        assert_eq!(segments(&calculate_ranges((base).as_ref(), 78, 0, 8)), [(78, 2)]);
         for (x, y, width) in [(80, 0, 1), (0, 24, 1), (0, -1, 1), (-3, 0, 3), (0, 0, 0)] {
-            assert!(calculate_ranges(base, x, y, width).is_empty());
+            assert!(calculate_ranges((base).as_ref(), x, y, width).is_empty());
         }
         scene.free();
     }
@@ -131,16 +129,16 @@ fn clips_to_window_and_preserves_split_ranges_and_border_rules() {
 fn reserved_scrollbar_is_included_in_occlusion() {
     unsafe {
         let mut scene = Scene::new();
-        let base = scene.add_pane(0, 0, 80, 24);
-        let cover = scene.add_pane(15, 5, 5, 1);
+        let base = scene.add_pane(0, 0, 80, 24).get();
+        let cover = scene.add_pane(15, 5, 5, 1).get();
         (*cover).scrollbar_style.width = 2;
         (*cover).scrollbar_style.pad = 1;
         (*scene.window.get()).sb = PANE_SCROLLBARS_ALWAYS;
         (*scene.window.get()).sb_pos = PANE_SCROLLBARS_LEFT;
-        let left = calculate_ranges(base, 10, 5, 20);
+        let left = calculate_ranges((base).as_ref(), 10, 5, 20);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);
         (*scene.window.get()).sb_pos = 0;
-        let right = calculate_ranges(base, 10, 5, 20);
+        let right = calculate_ranges((base).as_ref(), 10, 5, 20);
         assert_eq!(segments(&right), [(10, 4), (24, 6)]);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);
         scene.free();
@@ -151,7 +149,7 @@ fn reserved_scrollbar_is_included_in_occlusion() {
 fn reuses_capacity_and_replaces_results_including_empty_queries() {
     unsafe {
         let mut scene = Scene::new();
-        let base = scene.add_pane(0, 0, 80, 24);
+        let base = scene.add_pane(0, 0, 80, 24).get();
         scene.add_pane(15, 5, 5, 1);
         scene.add_pane(25, 5, 2, 1);
         let mut ranges = Vec::with_capacity(8);

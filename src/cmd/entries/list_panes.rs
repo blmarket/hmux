@@ -51,7 +51,7 @@ pub static cmd_list_panes_entry: cmd_entry = {
 unsafe fn cmd_list_panes_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
@@ -64,9 +64,9 @@ unsafe fn cmd_list_panes_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     if args_has(args, 'a' as i32 as u_char) != 0 {
         cmd_list_panes_server(self_0, item);
     } else if args_has(args, 's' as i32 as u_char) != 0 {
-        cmd_list_panes_session(self_0, s, item, 1 as ::core::ffi::c_int);
+        cmd_list_panes_session(self_0, &(*(s)).observer.upgrade().expect("live session"), item, 1 as ::core::ffi::c_int);
     } else {
-        cmd_list_panes_window(self_0, s, wl, item, 0 as ::core::ffi::c_int);
+        cmd_list_panes_window(self_0, &(*(s)).observer.upgrade().expect("live session"), wl, item, 0 as ::core::ffi::c_int);
     }
     return CMD_RETURN_NORMAL;
 }
@@ -75,31 +75,33 @@ unsafe fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
-        cmd_list_panes_session(self_0, s, item, 2 as ::core::ffi::c_int);
+        cmd_list_panes_session(self_0, &(*(s)).observer.upgrade().expect("live session"), item, 2 as ::core::ffi::c_int);
         s_owner = sessions_next(&*s);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }
 unsafe fn cmd_list_panes_session(
     mut self_0: *mut cmd,
-    mut s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut item: *mut cmdq_item,
     mut type_0: ::core::ffi::c_int,
 ) {
+    let mut s = s_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        cmd_list_panes_window(self_0, s, wl, item, type_0);
+        cmd_list_panes_window(self_0, s_owner, wl, item, type_0);
         wl = winlinks_next(&*wl);
     }
 }
 unsafe fn cmd_list_panes_window(
     mut self_0: *mut cmd,
-    mut s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut wl: *mut winlink,
     mut item: *mut cmdq_item,
     mut type_0: ::core::ffi::c_int,
 ) {
+    let mut s = s_owner.get();
     let queue_client = cmdq_get_client(item);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(item);
@@ -136,7 +138,7 @@ unsafe fn cmd_list_panes_window(
     filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let l = sort_get_panes_window(&*(*wl).window_ptr(), &sort_crit);
+    let l = sort_get_panes_window(&*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
     while i < n {
@@ -152,7 +154,7 @@ unsafe fn cmd_list_panes_window(
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (n) as u32),
         );
-        format_defaults(ft, c, s, wl, wp);
+        format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), Some(s_owner), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

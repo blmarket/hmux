@@ -200,32 +200,25 @@ pub unsafe fn windows_insert(
     None
 }
 
-pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut window {
-    if elm.is_null() {
-        return std::ptr::null_mut();
-    }
-    let Some(owner) = (*head).storage.as_ref() else {
-        return std::ptr::null_mut();
+/// Remove the matching observer without retaining or releasing the window.
+pub unsafe fn windows_remove(head: &mut windows, elm: &Rc<std::cell::UnsafeCell<window>>) -> bool {
+    let Some(owner) = head.storage.as_ref() else {
+        return false;
     };
     let empty = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("window index already borrowed");
-        // Compare allocation identity without creating another strong reference.
-        if !map
-            .get(&(*elm).id)
-            .is_some_and(|weak| weak.as_ptr().cast::<window>() == elm)
-        {
-            return std::ptr::null_mut();
+        let mut map = owner.try_borrow_mut().expect("window index already borrowed");
+        let id = (*elm.get()).id;
+        if !map.get(&id).is_some_and(|weak| weak.ptr_eq(&Rc::downgrade(elm))) {
+            return false;
         }
-        map.remove(&(*elm).id);
+        map.remove(&id);
         map.is_empty()
     };
-    (*elm).entry.owner = refbox::Weak::new();
+    (*elm.get()).entry.owner = refbox::Weak::new();
     if empty {
-        (*head).storage = None;
+        head.storage = None;
     }
-    elm
+    true
 }
 
 pub fn windows_minmax(head: &windows) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
@@ -322,7 +315,8 @@ pub unsafe fn winlinks_prev(elm: &winlink) -> *mut winlink {
 }
 
 /// Return the first winlink in a window's association order.
-pub unsafe fn window_winlinks_first(w: *mut window) -> *mut winlink {
+pub unsafe fn window_winlinks_first(w_value: Option<&window>) -> *mut winlink {
+    let w: *mut window = w_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
     if w.is_null() {
         return std::ptr::null_mut();
     }
@@ -337,7 +331,8 @@ pub unsafe fn window_winlinks_first(w: *mut window) -> *mut winlink {
 /// Return the next winlink in `w` after `wl`, or null when it is no longer in
 /// that window. Taking the owner explicitly keeps iteration correct if a
 /// callback moves `wl` to another window while the original list is traversed.
-pub unsafe fn window_winlinks_next(w: *mut window, wl: *mut winlink) -> *mut winlink {
+pub unsafe fn window_winlinks_next(w_value: Option<&window>, wl: *mut winlink) -> *mut winlink {
+    let w: *mut window = w_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
     if w.is_null() || wl.is_null() {
         return std::ptr::null_mut();
     }
@@ -351,7 +346,8 @@ pub unsafe fn window_winlinks_next(w: *mut window, wl: *mut winlink) -> *mut win
 }
 
 /// Append a non-owning winlink handle to the window's association order.
-pub unsafe fn window_winlinks_append(w: *mut window, wl: *mut winlink) {
+pub unsafe fn window_winlinks_append(w_value: &mut window, wl: *mut winlink) {
+    let w: *mut window = w_value as *mut _;
     assert!(!w.is_null() && !wl.is_null());
     let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
     assert!(
@@ -362,7 +358,8 @@ pub unsafe fn window_winlinks_append(w: *mut window, wl: *mut winlink) {
 }
 
 /// Remove a non-owning winlink handle from its window's association order.
-pub unsafe fn window_winlinks_remove(w: *mut window, wl: *mut winlink) {
+pub unsafe fn window_winlinks_remove(w_value: &mut window, wl: *mut winlink) {
+    let w: *mut window = w_value as *mut _;
     assert!(!w.is_null() && !wl.is_null());
     let links = (*w)
         .winlinks
@@ -432,7 +429,8 @@ pub fn window_pane_tree_next(pane: &window_pane) -> Option<Rc<std::cell::UnsafeC
     map.range((std::ops::Bound::Excluded(&pane.id), std::ops::Bound::Unbounded))
         .next().map(|(_, owner)| owner.clone())
 }
-unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::ffi::c_char) {
+unsafe fn window_fire_renamed(w_owner: &Rc<std::cell::UnsafeCell<window>>, mut old_name: *const ::core::ffi::c_char) {
+    let mut w = w_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -442,12 +440,12 @@ unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::f
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_window(&raw mut fs, w, 0 as ::core::ffi::c_int);
+    cmd_find_from_window(&raw mut fs, &(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     event_payload_set_string(
         &mut *ep,
@@ -465,10 +463,13 @@ unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::f
     );
 }
 unsafe fn window_fire_pane_changed(
-    mut w: *mut window,
-    mut wp: *mut window_pane,
-    mut lastwp: *mut window_pane,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+    lastwp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
+    let mut w = w_owner.get();
+    let mut wp = wp_owner.get();
+    let mut lastwp = lastwp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -478,28 +479,28 @@ unsafe fn window_fire_pane_changed(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_pane(
         &mut *ep,
         b"new_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     if !lastwp.is_null() {
         event_payload_set_pane(
             &mut *ep,
             b"old_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            lastwp,
+            (*(lastwp)).observer.upgrade().expect("live window_pane"),
         );
     }
     events_fire(
@@ -508,12 +509,15 @@ unsafe fn window_fire_pane_changed(
     );
 }
 pub unsafe fn window_fire_pane_moved(
-    mut wp: *mut window_pane,
-    mut old_w: *mut window,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+    old_w_owner: &Rc<std::cell::UnsafeCell<window>>,
     mut old_idx: ::core::ffi::c_int,
-    mut new_w: *mut window,
+    new_w_owner: &Rc<std::cell::UnsafeCell<window>>,
     mut new_idx: ::core::ffi::c_int,
 ) {
+    let mut wp = wp_owner.get();
+    let mut old_w = old_w_owner.get();
+    let mut new_w = new_w_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -523,27 +527,27 @@ pub unsafe fn window_fire_pane_moved(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        new_w,
+        (*(new_w)).observer.upgrade().expect("live window"),
     );
     event_payload_set_window(
         &mut *ep,
         b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
-        old_w,
+        (*(old_w)).observer.upgrade().expect("live window"),
     );
     event_payload_set_window(
         &mut *ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
-        new_w,
+        (*(new_w)).observer.upgrade().expect("live window"),
     );
     if old_idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
@@ -571,11 +575,12 @@ pub unsafe fn window_fire_pane_moved(
 }
 unsafe fn window_fire_pane_mode_changed(
     mut name: *const ::core::ffi::c_char,
-    mut wp: *mut window_pane,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     mut previous: *const ::core::ffi::c_char,
     mut current: *const ::core::ffi::c_char,
     mut entered: ::core::ffi::c_int,
 ) {
+    let mut wp = wp_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -585,17 +590,17 @@ unsafe fn window_fire_pane_mode_changed(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window_ptr(),
+        (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
     );
     if !current.is_null() {
         event_payload_set_string(
@@ -620,9 +625,10 @@ unsafe fn window_fire_pane_mode_changed(
 }
 unsafe fn window_fire_pane_prompt(
     mut name: *const ::core::ffi::c_char,
-    mut wp: *mut window_pane,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     mut type_0: prompt_type,
 ) {
+    let mut wp = wp_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -633,17 +639,17 @@ unsafe fn window_fire_pane_prompt(
     };
     let type_string = prompt_type_string(type_0);
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window_ptr(),
+        (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
     );
     event_payload_set_string(
         &mut *ep,
@@ -652,11 +658,12 @@ unsafe fn window_fire_pane_prompt(
     );
     events_fire(name, ep);
 }
-pub unsafe fn winlink_find_by_window(mut wwl: *mut winlinks, mut w: *mut window) -> *mut winlink {
+pub unsafe fn winlink_find_by_window(mut wwl: *mut winlinks, w_owner: &Rc<std::cell::UnsafeCell<window>>) -> *mut winlink {
+    let mut w = w_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
-        if (*wl).window_ptr() == w {
+        if (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w {
             return wl;
         }
         wl = winlinks_next(&*wl);
@@ -685,7 +692,7 @@ pub unsafe fn winlink_find_by_window_id(mut wwl: *mut winlinks, mut id: u_int) -
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
-        if (*(*wl).window_ptr()).id == id {
+        if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id == id {
             return wl;
         }
         wl = winlinks_next(&*wl);
@@ -765,26 +772,26 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
 // inspect the winlink or retain the window. Detach only after that notification,
 // then drop the consumed Rc without notifying or cleaning up twice.
 unsafe fn winlink_release_window(wl: *mut winlink, from: &CStr) {
-    let w = (*wl).window_ptr();
-    window_prepare_release(w, from.as_ptr());
+    window_prepare_release((*wl).window_owner.as_ref().expect("winlink window reference"), from.as_ptr());
     drop((*wl).window_owner.take().expect("winlink window reference"));
 }
 
-pub unsafe fn winlink_set_window(wl: *mut winlink, w: *mut window) {
-    if !(*wl).window_ptr().is_null() {
-        window_winlinks_remove((*wl).window_ptr(), wl);
+pub unsafe fn winlink_set_window(wl: *mut winlink, w_owner: &Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
+    if !(*wl).window_handle().is_none() {
+        window_winlinks_remove(&mut *((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())), wl);
         winlink_release_window(wl, c"winlink_set_window");
     }
-    (*wl).window_owner = Some(window_add_ref(w, c"winlink_set_window".as_ptr()));
-    window_winlinks_append(w, wl);
+    (*wl).window_owner = Some(window_add_ref(w_owner, c"winlink_set_window".as_ptr()));
+    window_winlinks_append(&mut *(w), wl);
 }
 pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
     if let Some(session_owner) = (*wl).session.upgrade() {
         winlink_stack_remove(&raw mut (*session_owner.get()).lastw, wl);
     }
-    let mut w: *mut window = (*wl).window_ptr();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !w.is_null() {
-        window_winlinks_remove(w, wl);
+        window_winlinks_remove(&mut *(w), wl);
         winlink_release_window(wl, c"winlink_remove");
     }
     // Window teardown above may reenter; borrow the owning map only afterward.
@@ -819,9 +826,10 @@ pub unsafe fn winlink_previous(mut wl: *mut winlink) -> *mut winlink {
 }
 pub unsafe fn winlink_next_by_number(
     mut wl: *mut winlink,
-    mut s: *mut session,
+    s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut n: ::core::ffi::c_int,
 ) -> *mut winlink {
+    let mut s = s_owner.get();
     while n > 0 as ::core::ffi::c_int {
         wl = winlinks_next(&*wl);
         if wl.is_null() {
@@ -833,9 +841,10 @@ pub unsafe fn winlink_next_by_number(
 }
 pub unsafe fn winlink_previous_by_number(
     mut wl: *mut winlink,
-    mut s: *mut session,
+    s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut n: ::core::ffi::c_int,
 ) -> *mut winlink {
+    let mut s = s_owner.get();
     while n > 0 as ::core::ffi::c_int {
         wl = winlinks_prev(&*wl);
         if wl.is_null() {
@@ -1013,21 +1022,24 @@ pub unsafe fn window_find_by_id(id: u_int) -> Option<std::rc::Rc<std::cell::Unsa
     w.id = id;
     return windows_find(&*std::ptr::addr_of!(windows), &w);
 }
-pub unsafe fn window_update_activity(mut w: *mut window) {
+pub unsafe fn window_update_activity(w_owner: &Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     gettimeofday(&raw mut (*w).activity_time, NULL);
-    alerts_queue(w, WINDOW_ACTIVITY);
+    alerts_queue(w_owner, WINDOW_ACTIVITY);
 }
 
 pub(crate) unsafe fn window_replace_old_layout(
-    w: *mut window,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
     layout: Option<CString>,
 ) -> Option<CString> {
+    let mut w = w_owner.get();
     ::core::mem::replace(&mut (*w).old_layout, layout)
 }
 
 /// Replace the window's owned name, returning the previous value for callers
 /// that need to keep it alive across synchronous callbacks.
-pub(crate) unsafe fn window_replace_name(w: *mut window, name: CString) -> CString {
+pub(crate) unsafe fn window_replace_name(w_owner: &Rc<std::cell::UnsafeCell<window>>, name: CString) -> CString {
+    let mut w = w_owner.get();
     ::core::mem::replace(&mut (*w).name, name)
 }
 /// Return one owned reference; callers must release it after linking the window.
@@ -1049,7 +1061,7 @@ pub unsafe fn window_create(
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
     (*w).last_panes = window_pane_history::default();
-    (*w).set_active(::core::ptr::null_mut::<window_pane>());
+    (*w).set_active(None);
     (*w).lastlayout = -(1 as ::core::ffi::c_int);
     (*w).layout_root = None;
     (*w).sx = sx;
@@ -1076,7 +1088,7 @@ pub unsafe fn window_create(
     if gettimeofday(&raw mut (*w).creation_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
-    window_update_activity(w);
+    window_update_activity(&(*(w)).observer.upgrade().expect("live window"));
     log_debug(format_args!(
         "{}: @{} create {}x{} ({}x{})",
         "window_create",
@@ -1088,21 +1100,22 @@ pub unsafe fn window_create(
     ));
     owner
 }
-unsafe fn window_destroy(mut w: *mut window) {
+unsafe fn window_destroy(w_owner: &Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     assert_eq!((*w).lifecycle, WindowLifecycle::Live);
     (*w).lifecycle = WindowLifecycle::Destroying;
     log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));
     // The releasing owner keeps weak parent links upgradeable throughout cleanup.
     // Restore layout links without scheduling resize events for dying panes.
-    window_unzoom_internal(w, 0, false);
+    window_unzoom_internal(w_owner, 0, false);
     if !(*w).entry.owner.is_empty() {
-        windows_remove(&raw mut windows, w);
+        windows_remove(&mut *std::ptr::addr_of_mut!(windows), w_owner);
     }
     drop((*w).layout_root.take());
     drop((*w).saved_layout_root.take());
-    drop(window_replace_old_layout(w, None));
+    drop(window_replace_old_layout(w_owner, None));
     menu_destroy((*w).menu.take());
-    window_destroy_panes(w);
+    window_destroy_panes(w_owner);
     if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
     }
@@ -1115,7 +1128,8 @@ unsafe fn window_destroy(mut w: *mut window) {
     drop((*w).options.take());
     (*w).lifecycle = WindowLifecycle::Destroyed;
 }
-pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_destroy_ready(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut n: ::core::ffi::c_int = 0;
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int)
         && (*wp).pipe_event.with_ptr(|event| unsafe {
@@ -1140,8 +1154,9 @@ pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) -> Rc<std::cell::UnsafeCell<window>> {
-    let owner = (*w).observer.upgrade().expect("live Rc window");
+pub unsafe fn window_add_ref(w_owner: &Rc<std::cell::UnsafeCell<window>>, from: *const ::core::ffi::c_char) -> Rc<std::cell::UnsafeCell<window>> {
+    let mut w = w_owner.get();
+    let owner = Rc::clone(w_owner);
     log_debug(format_args!(
         "retain window @{} ({})",
         ((*w).id) as u32,
@@ -1156,18 +1171,19 @@ pub unsafe fn window_remove_ref(
     owner: Rc<std::cell::UnsafeCell<window>>,
     from: *const ::core::ffi::c_char,
 ) {
-    window_prepare_release(owner.get(), from);
+    window_prepare_release(&owner, from);
     drop(owner);
 }
 
 // Both ordinary owners and winlinks keep their reference alive through this call.
 // Winlinks keep the field published so close callbacks can still inspect it.
-unsafe fn window_prepare_release(w: *mut window, from: *const ::core::ffi::c_char) {
-    if (*w).lifecycle == WindowLifecycle::Live && (*w).observer.strong_count() == 1 {
-        events_fire_window(c"window-closed".as_ptr(), w);
+unsafe fn window_prepare_release(w_owner: &Rc<std::cell::UnsafeCell<window>>, from: *const ::core::ffi::c_char) {
+    let mut w = w_owner.get();
+    if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
+        events_fire_window(c"window-closed".as_ptr(), Rc::clone(w_owner));
         // Close callbacks can retain the window. Defer cleanup until their release.
-        if (*w).lifecycle == WindowLifecycle::Live && (*w).observer.strong_count() == 1 {
-            window_destroy(w);
+        if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
+            window_destroy(w_owner);
         }
     }
     log_debug(format_args!(
@@ -1176,8 +1192,9 @@ unsafe fn window_prepare_release(w: *mut window, from: *const ::core::ffi::c_cha
         log_cstr((from) as *const _)
     ));
 }
-pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
-    let owner = (*wp).observer.upgrade().expect("live Rc pane");
+pub unsafe fn window_pane_add_ref(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>, from: *const ::core::ffi::c_char) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
+    let mut wp = wp_owner.get();
+    let owner = Rc::clone(wp_owner);
     log_debug(format_args!(
         "retain pane %{} ({})",
         ((*wp).id) as u32,
@@ -1195,23 +1212,25 @@ pub unsafe fn window_pane_remove_ref(owner: std::rc::Rc<std::cell::UnsafeCell<wi
     drop(owner);
 }
 pub unsafe fn window_set_name(
-    mut w: *mut window,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
     mut new_name: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) {
+    let mut w = w_owner.get();
     if let Some(name) = clean_name_cstring(CStr::from_ptr(new_name), untrusted) {
         // Keep the previous owner alive across synchronous rename callbacks.
-        let last = window_replace_name(w, name);
-        window_fire_renamed(w, last.as_ptr());
+        let last = window_replace_name(w_owner, name);
+        window_fire_renamed(w_owner, last.as_ptr());
     }
 }
 pub unsafe fn window_resize(
-    mut w: *mut window,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
     mut sx: u_int,
     mut sy: u_int,
     mut xpixel: ::core::ffi::c_int,
     mut ypixel: ::core::ffi::c_int,
 ) {
+    let mut w = w_owner.get();
     if xpixel == 0 as ::core::ffi::c_int {
         xpixel = DEFAULT_XPIXEL;
     }
@@ -1251,10 +1270,10 @@ pub unsafe fn window_resize(
     if ypixel != -(1 as ::core::ffi::c_int) {
         (*w).ypixel = ypixel as u_int;
     }
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
 }
 pub unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ws: winsize = winsize {
         ws_row: 0,
         ws_col: 0,
@@ -1337,32 +1356,34 @@ pub unsafe fn window_pane_contains(
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn window_update_focus(mut w: *mut window) {
+pub unsafe fn window_update_focus(w_owner: Option<&Rc<std::cell::UnsafeCell<window>>>) {
+    let mut w = w_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if !w.is_null() {
         log_debug(format_args!(
             "{}: @{}",
             "window_update_focus",
             ((*w).id) as u32
         ));
-        window_pane_update_focus((*w).active_ptr());
+        window_pane_update_focus(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
 }
-pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>) {
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut focused: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if !wp.is_null() && !(*wp).flags & PANE_EXITED != 0 {
-        if wp != (*(*wp).window_ptr()).active_ptr() {
+        if wp != (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             focused = 0 as ::core::ffi::c_int;
         } else {
             let mut registry_c_owner = clients.first();
             c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c.is_null() {
-                if !(*c).session_ptr().is_null()
-                    && (*(*c).session_ptr()).attached != 0 as u_int
+                if !(*c).session_handle().is_none()
+                    && (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).attached != 0 as u_int
                     && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
-                    && (*(*(*c).session_ptr()).curw_ptr()).window_ptr() == (*wp).window_ptr()
+                    && (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())
                     && (*c).overlay_draw.is_none()
-                    && (*(*wp).window_ptr()).menu.is_none()
+                    && (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).menu.is_none()
                 {
                     focused = 1 as ::core::ffi::c_int;
                     break;
@@ -1388,7 +1409,7 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
             }
             events_fire_pane(
                 b"pane-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
-                wp,
+                (*(wp)).observer.upgrade().expect("live window_pane"),
             );
             (*wp).flags &= !PANE_FOCUSED;
         } else if focused != 0 && !(*wp).flags & PANE_FOCUSED != 0 {
@@ -1407,7 +1428,7 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
             }
             events_fire_pane(
                 b"pane-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
-                wp,
+                (*(wp)).observer.upgrade().expect("live window_pane"),
             );
             (*wp).flags |= PANE_FOCUSED;
         } else {
@@ -1420,58 +1441,63 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
     }
 }
 pub unsafe fn window_set_active_pane(
-    mut w: *mut window,
-    mut wp: *mut window_pane,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     mut notify: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
+    let mut wp = wp_owner.get();
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     log_debug(format_args!(
         "{}: pane %{}",
         "window_set_active_pane",
         ((*wp).id) as u32
     ));
-    if wp == (*w).active_ptr() {
+    if wp == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         return 0 as ::core::ffi::c_int;
     }
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         return 0 as ::core::ffi::c_int;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 && window_pane_is_visible(&*wp) == 0 {
-        window_unzoom(w, 1 as ::core::ffi::c_int);
+        window_unzoom(w_owner, 1 as ::core::ffi::c_int);
     }
-    lastwp = (*w).active_ptr();
-    window_pane_stack_remove(&raw mut (*w).last_panes, wp);
-    window_pane_stack_push(&raw mut (*w).last_panes, lastwp);
-    (*w).set_active(wp);
+    lastwp = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    window_pane_stack_remove(&raw mut (*w).last_panes, Some(wp_owner));
+    window_pane_stack_push(&raw mut (*w).last_panes, (lastwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    (*w).set_active((wp).as_ref());
     let fresh1 = next_active_point;
     next_active_point = next_active_point.wrapping_add(1);
-    (*(*w).active_ptr()).active_point = fresh1;
-    (*(*w).active_ptr()).flags |= PANE_CHANGED;
+    (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_point = fresh1;
+    (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags |= PANE_CHANGED;
     if options_get_number(
         global_options,
         b"focus-events\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        window_pane_update_focus(lastwp);
-        window_pane_update_focus((*w).active_ptr());
+        window_pane_update_focus((lastwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        window_pane_update_focus(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
-    tty_update_window_offset(w);
+    tty_update_window_offset(&(*(w)).observer.upgrade().expect("live window"));
     server_redraw_window(&*(w));
     if notify != 0 {
-        window_fire_pane_changed(w, (*w).active_ptr(), lastwp);
+        window_fire_pane_changed(w_owner, &(*((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"), (lastwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_pane_get_palette(
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
     mut c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
     return colour_palette_get(Some(&(*wp).palette), c);
 }
-pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut window_pane) {
+pub unsafe fn window_redraw_active_switch(w_owner: &Rc<std::cell::UnsafeCell<window>>, wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>) {
+    let mut w = w_owner.get();
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut gc1: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut gc2: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut c1: ::core::ffi::c_int = 0;
@@ -1479,7 +1505,7 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         return;
     }
-    if wp == (*w).active_ptr() {
+    if wp == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         return;
     }
     loop {
@@ -1490,28 +1516,28 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
         } else if (*wp).cached_dim != (*wp).cached_active_dim {
             (*wp).flags |= PANE_REDRAW;
         } else {
-            c1 = window_pane_get_palette(wp, (*gc1).fg);
-            c2 = window_pane_get_palette(wp, (*gc2).fg);
+            c1 = window_pane_get_palette((wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*gc1).fg);
+            c2 = window_pane_get_palette((wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*gc2).fg);
             if c1 != c2 {
                 (*wp).flags |= PANE_REDRAW;
             } else {
-                c1 = window_pane_get_palette(wp, (*gc1).bg);
-                c2 = window_pane_get_palette(wp, (*gc2).bg);
+                c1 = window_pane_get_palette((wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*gc1).bg);
+                c2 = window_pane_get_palette((wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*gc2).bg);
                 if c1 != c2 {
                     (*wp).flags |= PANE_REDRAW;
                 }
             }
         }
-        if wp == (*w).active_ptr() {
+        if wp == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             break;
         }
         if window_pane_is_floating(&*wp) != 0 {
             window_pane_z_remove(&mut *w, &*wp);
             window_pane_z_insert_front(&mut *w, &*wp);
             (*wp).flags |= PANE_REDRAW;
-            redraw_invalidate_scene(w);
+            redraw_invalidate_scene(&mut *(w));
         }
-        wp = (*w).active_ptr();
+        wp = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             break;
         }
@@ -1670,7 +1696,7 @@ pub unsafe fn window_find_string(
 }
 pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lg: layout_geometry = layout_geometry {
         sx: 0,
@@ -1684,12 +1710,12 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
     if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         return -(1 as ::core::ffi::c_int);
     }
-    if (*w).active_ptr() != wp
-        && ((*w).active_ptr().is_null()
-            || !(*(*w).active_ptr()).flags & PANE_FLOATOVERZOOM != 0
-            || window_pane_is_floating(&*(*w).active_ptr()) == 0)
+    if (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != wp
+        && ((*w).active_pane().is_none()
+            || !(*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & PANE_FLOATOVERZOOM != 0
+            || window_pane_is_floating(&*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) == 0)
     {
-        window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
+        window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
     }
     (*wp).flags |= PANE_ZOOMED;
     let mut cursor = window_pane_first(w.as_ref());
@@ -1700,7 +1726,7 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
         cursor = window_pane_next(Some(&*wp1));
     }
     (*w).saved_layout_root = (*w).layout_root.take();
-    layout_init(w, wp);
+    layout_init(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"));
     let mut cursor = window_pane_first(w.as_ref());
     while let Some(owner) = cursor {
         let wp1 = owner.get();
@@ -1715,8 +1741,8 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
                 &raw mut (*lc).g as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<layout_geometry>() as size_t,
             );
-            lc = layout_floating_pane(w, wp, &raw mut lg);
-            layout_assign_pane(lc, wp1, 0 as ::core::ffi::c_int);
+            lc = layout_floating_pane(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), &raw mut lg);
+            layout_assign_pane(lc, &(*(wp1)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
         }
         cursor = window_pane_next(Some(&*wp1));
     }
@@ -1727,24 +1753,26 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
     (*w).flags |= WINDOW_ZOOMED;
     events_fire_window(
         b"window-zoomed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn window_unzoom(w: *mut window, notify: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    window_unzoom_internal(w, notify, true)
+pub unsafe fn window_unzoom(w_owner: &Rc<std::cell::UnsafeCell<window>>, notify: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
+    window_unzoom_internal(w_owner, notify, true)
 }
 
 unsafe fn window_unzoom_internal(
-    w: *mut window,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
     notify: ::core::ffi::c_int,
     resize_panes: bool,
 ) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
     let mut zoomed_owner = None;
     let mut slc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if !(*w).flags & WINDOW_ZOOMED != 0 {
@@ -1776,7 +1804,7 @@ unsafe fn window_unzoom_internal(
         cursor = window_pane_next(Some(&*wp));
     }
     (*w).flags &= !WINDOW_ZOOMED;
-    layout_free(w);
+    layout_free(w_owner);
     (*w).layout_root = (*w).saved_layout_root.take();
     let mut cursor = window_pane_first(w.as_ref());
     while let Some(owner) = cursor {
@@ -1789,7 +1817,7 @@ unsafe fn window_unzoom_internal(
     if let Some(zoomed_owner) = zoomed_owner.filter(|owner| window_pane_is_floating(&*owner.get()) != 0) {
         let zoomed = zoomed_owner.get();
         window_pane_z_remove(&mut *w, &*zoomed);
-        if zoomed == (*w).active_ptr() {
+        if zoomed == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             window_pane_z_insert_front(&mut *w, &*zoomed);
         } else {
             let mut before = window_pane_z_first(w.as_ref());
@@ -1807,19 +1835,19 @@ unsafe fn window_unzoom_internal(
         }
     }
     if resize_panes {
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+        layout_fix_panes(w_owner, None);
     }
     if notify != 0 {
         events_fire_window(
             b"window-unzoomed\0" as *const u8 as *const ::core::ffi::c_char,
-            w,
+            (*(w)).observer.upgrade().expect("live window"),
         );
         events_fire_window(
             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-            w,
+            (*(w)).observer.upgrade().expect("live window"),
         );
     }
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn window_zoomed_pane(w: &window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -1831,23 +1859,25 @@ pub unsafe fn window_zoomed_pane(w: &window) -> Option<Rc<std::cell::UnsafeCell<
         !pane.layout_cell.is_null() && window_pane_is_floating(&*owner.get()) == 0
     })
 }
-pub unsafe fn window_active_pane_is_over_zoom(mut w: *mut window) -> ::core::ffi::c_int {
+pub unsafe fn window_active_pane_is_over_zoom(w_owner: &Rc<std::cell::UnsafeCell<window>>) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
     if !(*w).flags & WINDOW_ZOOMED != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if (*w).active_ptr().is_null() {
+    if (*w).active_pane().is_none() {
         return 0 as ::core::ffi::c_int;
     }
-    if !(*(*w).active_ptr()).flags & PANE_FLOATOVERZOOM != 0 {
+    if !(*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & PANE_FLOATOVERZOOM != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return window_pane_is_floating(&*(*w).active_ptr());
+    return window_pane_is_floating(&*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
 }
 pub unsafe fn window_push_zoom(
-    mut w: *mut window,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
     mut always: ::core::ffi::c_int,
     mut flag: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
     let pane_owner = window_zoomed_pane(&*w);
     log_debug(format_args!(
         "{}: @{} {}",
@@ -1865,10 +1895,11 @@ pub unsafe fn window_push_zoom(
     } else {
         (*w).was_zoomed = std::rc::Weak::new();
     }
-    return (window_unzoom(w, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int)
+    return (window_unzoom(w_owner, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int)
         as ::core::ffi::c_int;
 }
-pub unsafe fn window_pop_zoom(mut w: *mut window) -> ::core::ffi::c_int {
+pub unsafe fn window_pop_zoom(w_owner: &Rc<std::cell::UnsafeCell<window>>) -> ::core::ffi::c_int {
+    let mut w = w_owner.get();
     let mut pane_owner = (*w).was_zoomed.upgrade();
     log_debug(format_args!(
         "{}: @{} {}",
@@ -1896,16 +1927,19 @@ pub unsafe fn window_pop_zoom(mut w: *mut window) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn window_add_pane(
-    mut w: *mut window,
-    mut other: *mut window_pane,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
+    other_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
     mut hlimit: u_int,
     mut flags: ::core::ffi::c_int,
-) -> *mut window_pane {
+) -> Rc<std::cell::UnsafeCell<window_pane>> {
+    let mut w = w_owner.get();
+    let mut other = other_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if other.is_null() {
-        other = (*w).active_ptr();
+        other = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    wp = window_pane_create(w, (*w).sx, (*w).sy, hlimit);
+    let owner = window_pane_create(w_owner, (*w).sx, (*w).sy, hlimit);
+    wp = owner.get();
     if window_pane_first(w.as_ref()).is_none() {
         log_debug(format_args!(
             "{}: @{} at start",
@@ -1945,17 +1979,19 @@ pub unsafe fn window_add_pane(
     } else {
         window_pane_z_insert_front(&mut *w, &*wp);
     }
-    redraw_invalidate_scene(w);
-    return wp;
+    redraw_invalidate_scene(&mut *(w));
+    owner
 }
-pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
+pub unsafe fn window_lost_pane(w_owner: &Rc<std::cell::UnsafeCell<window>>, wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let mut w = w_owner.get();
+    let mut wp = wp_owner.get();
     log_debug(format_args!(
         "{}: @{} pane %{}",
         "window_lost_pane",
         ((*w).id) as u32,
         ((*wp).id) as u32
     ));
-    if wp == marked_pane.wp_ptr() {
+    if wp == marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         server_clear_marked();
     }
     if (*w).modal_last.ptr_eq(&(*wp).observer) {
@@ -1964,8 +2000,8 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
     if (*w).was_zoomed.ptr_eq(&(*wp).observer) {
         (*w).was_zoomed = std::rc::Weak::new();
     }
-    window_pane_stack_remove(&raw mut (*w).last_panes, wp);
-    if wp == (*w).active_ptr() {
+    window_pane_stack_remove(&raw mut (*w).last_panes, Some(wp_owner));
+    if wp == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         let mut replacement = if (*w).modal.ptr_eq(&(*wp).observer) {
             (*w).modal = std::rc::Weak::new();
             std::mem::take(&mut (*w).modal_last).upgrade()
@@ -1979,25 +2015,26 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
             replacement = (*w).panes.previous(&(*wp).observer)
                 .or_else(|| (*w).panes.next(&(*wp).observer));
         }
-        (*w).set_active(replacement.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
-        if !(*w).active_ptr().is_null() {
-            window_pane_stack_remove(&raw mut (*w).last_panes, (*w).active_ptr());
-            (*(*w).active_ptr()).flags |= PANE_CHANGED;
-            window_fire_pane_changed(w, (*w).active_ptr(), wp);
-            window_update_focus(w);
+        (*w).set_active((replacement.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        if !(*w).active_pane().is_none() {
+            window_pane_stack_remove(&raw mut (*w).last_panes, ((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags |= PANE_CHANGED;
+            window_fire_pane_changed(w_owner, &(*((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"), Some(wp_owner));
+            window_update_focus(Some(w_owner));
         }
     } else if (*w).modal.ptr_eq(&(*wp).observer) {
         (*w).modal_last = std::rc::Weak::new();
         (*w).modal = std::rc::Weak::new();
     }
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
 }
-pub unsafe fn window_remove_pane(mut w: *mut window, pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn window_remove_pane(w_owner: &Rc<std::cell::UnsafeCell<window>>, pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let mut w = w_owner.get();
     let wp = pane_owner.get();
-    window_lost_pane(w, wp);
+    window_lost_pane(w_owner, &(*(wp)).observer.upgrade().expect("live window_pane"));
     window_pane_list_remove(&mut *w, &*wp);
     window_pane_z_remove(&mut *w, &*wp);
-    redraw_invalidate_scene(w);
+    redraw_invalidate_scene(&mut *(w));
     window_pane_destroy(pane_owner);
 }
 pub unsafe fn window_pane_at_index(w: &mut window, idx: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -2033,7 +2070,7 @@ pub fn window_pane_previous_by_number(
     current
 }
 pub unsafe fn window_pane_index(wp: &window_pane) -> Option<u32> {
-    let w = wp.window_ptr().as_mut()?;
+    let w = wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_mut()?;
     let base = options_get_number(
         options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options),
         c"pane-base-index".as_ptr(),
@@ -2041,7 +2078,7 @@ pub unsafe fn window_pane_index(wp: &window_pane) -> Option<u32> {
     w.panes.position(&wp.observer).map(|position| base.wrapping_add(position as u32))
 }
 pub unsafe fn window_pane_zindex(wp: &window_pane) -> Option<u32> {
-    let w = wp.window_ptr().as_ref()?;
+    let w = wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?;
     let mut index = 0u32;
     for owner in w.z_index.snapshot() {
         let floating = window_pane_is_floating(&*owner.get()) != 0;
@@ -2055,7 +2092,7 @@ pub unsafe fn window_pane_zindex(wp: &window_pane) -> Option<u32> {
     None
 }
 pub unsafe fn window_pane_last_index(wp: &window_pane) -> Option<u32> {
-    let history = &wp.window_ptr().as_ref()?.last_panes;
+    let history = &wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?.last_panes;
     history.storage.as_deref()?.iter()
         .position(|observer| observer.ptr_eq(&wp.observer))
         .map(|position| position as u32)
@@ -2073,9 +2110,10 @@ pub unsafe fn window_count_panes(
         }
     })
 }
-pub unsafe fn window_destroy_panes(w: *mut window) {
+pub unsafe fn window_destroy_panes(w_owner: &Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     while let Some(owner) = window_pane_stack_first(w.as_ref()) {
-        window_pane_stack_remove(&raw mut (*w).last_panes, owner.get());
+        window_pane_stack_remove(&raw mut (*w).last_panes, (owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
     while let Some(owner) = window_pane_first(w.as_ref()) {
         let wp = owner.get();
@@ -2126,12 +2164,12 @@ pub unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh9 as usize] = 'M' as i32 as ::core::ffi::c_char;
     }
-    if (*(*wl).window_ptr()).modal.upgrade().is_some() {
+    if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() {
         let fresh10 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh10 as usize] = 'O' as i32 as ::core::ffi::c_char;
     }
-    if (*(*wl).window_ptr()).flags & WINDOW_ZOOMED != 0 {
+    if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED != 0 {
         let fresh11 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh11 as usize] = 'Z' as i32 as ::core::ffi::c_char;
@@ -2139,11 +2177,12 @@ pub unsafe fn window_printable_flags(
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
     std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
 }
-pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> std::ffi::CString {
-    let mut w: *mut window = (*wp).window_ptr();
+pub unsafe fn window_pane_printable_flags(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> std::ffi::CString {
+    let mut wp = wp_owner.get();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut flags: [::core::ffi::c_char; 32] = [0; 32];
     let mut pos: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if wp == (*w).active_ptr() {
+    if wp == (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         let fresh12 = pos;
         pos = pos + 1;
         flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
@@ -2191,8 +2230,9 @@ pub unsafe fn window_pane_find_by_id(id: u_int) -> Option<Rc<std::cell::UnsafeCe
     window_pane_tree_find(&*std::ptr::addr_of!(all_window_panes), id)
 }
 pub(crate) unsafe fn window_pane_weak(
-    wp: *mut window_pane,
+    wp_value: &window_pane,
 ) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
+    let wp: *mut window_pane = wp_value as *const _ as *mut _;
     (*wp).observer.clone()
 }
 
@@ -2219,12 +2259,12 @@ pub fn window_pane_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<w
 
 pub unsafe fn window_pane_next(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let wp = wp?;
-    wp.window_ptr().as_ref()?.panes.next(&wp.observer)
+    wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?.panes.next(&wp.observer)
 }
 
 pub unsafe fn window_pane_previous(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let wp = wp?;
-    wp.window_ptr().as_ref()?.panes.previous(&wp.observer)
+    wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?.panes.previous(&wp.observer)
 }
 
 pub fn window_pane_z_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -2237,12 +2277,12 @@ pub fn window_pane_z_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell
 
 pub unsafe fn window_pane_z_next(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let wp = wp?;
-    wp.window_ptr().as_ref()?.z_index.next(&wp.observer)
+    wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?.z_index.next(&wp.observer)
 }
 
 pub unsafe fn window_pane_z_previous(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let wp = wp?;
-    wp.window_ptr().as_ref()?.z_index.previous(&wp.observer)
+    wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?.z_index.previous(&wp.observer)
 }
 
 pub fn window_pane_stack_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -2425,9 +2465,10 @@ unsafe fn window_pane_mode_insert_front(
 }
 
 unsafe fn window_pane_mode_remove(
-    wp: *mut window_pane,
+    wp_value: &mut window_pane,
     wme: *mut window_mode_entry,
 ) -> Option<refbox::RefBox<window_mode_entry>> {
+    let wp: *mut window_pane = wp_value as *mut _;
     let modes = &mut (*wp).modes;
     let (removed, empty) = {
         let storage = modes.storage.as_mut()?;
@@ -2443,11 +2484,12 @@ unsafe fn window_pane_mode_remove(
     Some(removed)
 }
 
-unsafe fn window_pane_mode_promote(wp: *mut window_pane, wme: *mut window_mode_entry) {
+unsafe fn window_pane_mode_promote(wp_value: &mut window_pane, wme: *mut window_mode_entry) {
+    let wp: *mut window_pane = wp_value as *mut _;
     if (*wp).modes.active_ptr() == wme {
         return;
     }
-    let Some(entry) = window_pane_mode_remove(wp, wme) else {
+    let Some(entry) = window_pane_mode_remove(&mut *(wp), wme) else {
         return;
     };
     window_pane_mode_insert_front(&mut *wp, entry);
@@ -2488,7 +2530,7 @@ mod window_mode_collection_tests {
             let wp = owner.get();
             (*wp).sx = 0;
             for _ in 0..3 {
-                let mut entry = boxed_mode(wp);
+                let mut entry = boxed_mode(&*wp);
                 entry.get_mut_unchecked().mode = &MODE;
                 window_pane_mode_insert_front(&mut *wp, entry);
             }
@@ -2502,7 +2544,7 @@ mod window_mode_collection_tests {
         }
     }
 
-    unsafe fn boxed_mode(wp: *mut window_pane) -> refbox::RefBox<window_mode_entry> {
+    unsafe fn boxed_mode(wp: &window_pane) -> refbox::RefBox<window_mode_entry> {
         refbox::RefBox::new(window_mode_entry {
             wp: (*wp).observer.clone(),
             swp: std::rc::Weak::new(),
@@ -2522,9 +2564,9 @@ mod window_mode_collection_tests {
             (*wp).modes = window_pane_modes::default();
             assert!(!(*wp).modes.active_weak().is_alive());
 
-            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp)).as_ptr().cast_mut();
-            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp)).as_ptr().cast_mut();
-            let c_observer = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
+            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp)).as_ptr().cast_mut();
+            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp)).as_ptr().cast_mut();
+            let c_observer = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp));
             let c = c_observer.as_ptr().cast_mut();
             assert_eq!((*wp).modes.active_ptr(), c);
             assert_eq!((*wp).modes.active_weak().as_ptr().cast_mut(), c);
@@ -2532,14 +2574,14 @@ mod window_mode_collection_tests {
             assert_eq!(window_pane_mode_next(b), a);
             assert!(window_pane_mode_next(a).is_null());
 
-            window_pane_mode_promote(wp, a);
+            window_pane_mode_promote(&mut *(wp), a);
             assert!(c_observer.is_alive());
             assert_eq!((*wp).modes.active_ptr(), a);
             assert_eq!((*wp).modes.active_weak().as_ptr().cast_mut(), a);
             assert_eq!(window_pane_mode_next(a), c);
             assert_eq!(window_pane_mode_next(c), b);
 
-            let removed = window_pane_mode_remove(wp, c).expect("mode was present");
+            let removed = window_pane_mode_remove(&mut *(wp), c).expect("mode was present");
             assert_eq!(removed.as_ptr().cast_mut(), c);
             assert_eq!((*wp).modes.active_ptr(), a);
             assert_eq!(window_pane_mode_next(a), b);
@@ -2548,19 +2590,19 @@ mod window_mode_collection_tests {
 
             // Force Vec growth after callbacks already hold `a` and `b`.
             for _ in 0..64 {
-                window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
+                window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp));
             }
             assert_eq!(window_pane_mode_next(a), b);
             assert!(window_pane_mode_next(b).is_null());
 
             while !(*wp).modes.is_empty() {
                 let top = (*wp).modes.active_ptr();
-                drop(window_pane_mode_remove(wp, top).expect("mode was present"));
+                drop(window_pane_mode_remove(&mut *(wp), top).expect("mode was present"));
             }
             assert!((*wp).modes.storage.is_none());
             assert!(!(*wp).modes.active_weak().is_alive());
 
-            let detached = boxed_mode(wp);
+            let detached = boxed_mode(&*wp);
             drop(pane_owner);
             assert!(detached.get_unchecked().wp.upgrade().is_none());
             assert!(window_pane_mode_next(detached.as_ptr().cast_mut()).is_null());
@@ -2584,11 +2626,12 @@ pub(crate) fn window_pane_set_cwd(wp: &mut window_pane, cwd: Option<CString>) {
 }
 
 unsafe fn window_pane_create(
-    mut w: *mut window,
+    w_owner: &Rc<std::cell::UnsafeCell<window>>,
     mut sx: u_int,
     mut sy: u_int,
     mut hlimit: u_int,
-) -> *mut window_pane {
+) -> Rc<std::cell::UnsafeCell<window_pane>> {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     let owner = window_pane::new();
@@ -2600,7 +2643,7 @@ unsafe fn window_pane_create(
     let fresh2 = next_window_pane_id;
     next_window_pane_id = next_window_pane_id.wrapping_add(1);
     (*wp).id = fresh2;
-    window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), owner);
+    window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), owner.clone());
     (*wp).fd = -(1 as ::core::ffi::c_int);
     (*wp).modes = window_pane_modes::default();
     (*wp).resize_queue = window_pane_resizes::default();
@@ -2614,7 +2657,7 @@ unsafe fn window_pane_create(
     colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen_source = PaneScreenSource::Base;
-    window_pane_default_cursor(wp);
+    window_pane_default_cursor(&(*(wp)).observer.upgrade().expect("live window_pane"));
     screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&raw mut (*wp).border_status_line.ranges);
     let scrollbar_observer = (*wp).observer.clone();
@@ -2639,9 +2682,10 @@ unsafe fn window_pane_create(
             0 as ::core::ffi::c_int,
         );
     }
-    return wp;
+    owner
 }
-pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let mut wp = wp_owner.get();
     let item_owner = std::mem::take(&mut (*wp).wait_item).upgrade();
     let Some(item_owner) = item_owner else { return };
     let item = item_owner.get();
@@ -2660,7 +2704,7 @@ pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
     }
     let c_owner = cmdq_get_client(item);
     c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    if !c.is_null() && (*c).session_ptr().is_null() {
+    if !c.is_null() && (*c).session_handle().is_none() {
         (*c).retval = retval;
     }
     cmdq_continue(item);
@@ -2670,7 +2714,7 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     while !(*wp).modes.is_empty() {
         wme = (*wp).modes.active_ptr();
-        let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
+        let entry = window_pane_mode_remove(&mut *(wp), wme).expect("mode entry is owned by pane");
         let next = (*wp).modes.active_ptr();
         (*wp).screen_source = if next.is_null() {
             PaneScreenSource::Base
@@ -2688,8 +2732,8 @@ unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pa
     window_pane_scrollbar_hide(owner);
 }
 unsafe fn window_pane_scrollbar_auto_hide(wp: &window_pane) -> ::core::ffi::c_int {
-    return ((*wp.window_ptr()).sb == PANE_SCROLLBARS_MODAL
-        || (*wp.window_ptr()).sb == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int;
+    return ((*wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sb == PANE_SCROLLBARS_MODAL
+        || (*wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sb == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_scrollbar_overlay_visible(
     wp: &window_pane,
@@ -2710,19 +2754,19 @@ pub unsafe fn window_pane_scrollbar_redraw(pane_owner: &Rc<std::cell::UnsafeCell
 }
 unsafe fn window_pane_scrollbar_redraw_visibility(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    redraw_invalidate_scene((*wp).window_ptr());
+    redraw_invalidate_scene(&mut *((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     (*wp).flags |= PANE_REDRAW;
-    server_redraw_window(&*((*wp).window_ptr()));
+    server_redraw_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
 }
 unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    window_pane_wait_finish(wp);
-    spawn_editor_finish(wp);
+    window_pane_wait_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
+    spawn_editor_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
     let owner = window_pane_tree_remove(&mut *std::ptr::addr_of_mut!(all_window_panes), &mut *wp).expect("registered pane owner");
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
-    screen_write_clear_dirty(wp);
+    screen_write_clear_dirty((wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
         kill(getpid(), SIGCHLD);
@@ -2756,14 +2800,15 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
         b"window_pane_destroy\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-unsafe fn window_pane_free(mut wp: *mut window_pane) {
+unsafe fn window_pane_free(wp_value: &mut window_pane) {
+    let wp: *mut window_pane = wp_value as *mut _;
     log_debug(format_args!("pane %{} freed", ((*wp).id) as u32));
     // Logical pane destruction normally takes this first. Also keep direct
     // owner destruction safe: parser timers and sync state precede screens.
     if let Some(input) = (*wp).ictx.take() {
         drop(input);
         // The parser cannot upgrade its weak pane during the final Rc drop.
-        crate::src::screen_write::screen_write_stop_sync(wp);
+        crate::src::screen_write::screen_write_stop_sync((wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
     }
     window_pane_set_searchstr(&mut *wp, None);
     if (*wp).status_screen.grid.is_some() {
@@ -2794,7 +2839,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
             let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
                 bufferevent_write(event, data.as_ptr().cast(), new_size);
             });
-            window_pane_update_used_data(wp, wpo, new_size);
+            window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), wpo, new_size);
         }
     }
     log_debug(format_args!(
@@ -2805,13 +2850,13 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session_ptr().is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write_output(c, wp);
+        if !(*c).session_handle().is_none() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+            control_write_output(&(*(c)).observer.upgrade().expect("live client"), &(*(wp)).observer.upgrade().expect("live window_pane"));
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    input_parse_pane(wp);
+    input_parse_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
     let _ = (*wp).event.with_ptr(|event| unsafe {
         bufferevent_disable(event, EV_READ as ::core::ffi::c_short);
     });
@@ -2820,11 +2865,12 @@ unsafe fn window_pane_error_callback(owner: &Rc<std::cell::UnsafeCell<window_pan
     let wp = owner.get();
     log_debug(format_args!("%{} error", ((*wp).id) as u32));
     (*wp).flags |= PANE_EXITED;
-    if window_pane_destroy_ready(wp) != 0 {
+    if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(owner, 1);
     }
 }
-pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let mut wp = wp_owner.get();
     let read_observer = (*wp).observer.clone();
     let error_observer = read_observer.clone();
     setblocking((*wp).fd, 0 as ::core::ffi::c_int);
@@ -2877,7 +2923,7 @@ pub unsafe fn window_pane_resize(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     if sx == (*wp).sx && sy == (*wp).sy {
         return;
     }
-    screen_write_stop_sync(wp);
+    screen_write_stop_sync((wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
     let old_sx = (*wp).sx;
     let old_sy = (*wp).sy;
     (*wp).resize_queue.push_back(window_pane_resize {
@@ -2902,17 +2948,17 @@ pub unsafe fn window_pane_resize(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         (*(*wme).mode).resize.expect("non-null function pointer")(wme, sx, sy);
     }
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window_ptr(),
+        (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
     );
     event_payload_set_uint(
         &mut *ep,
@@ -2950,7 +2996,7 @@ pub unsafe fn window_pane_set_mode(
     let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mode_screen: *mut screen;
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if let Some(active) = (*wp).modes.active_mode() {
@@ -2972,7 +3018,7 @@ pub unsafe fn window_pane_set_mode(
         .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade);
     if existing.is_alive() {
         wme = existing.as_ptr().cast_mut();
-        window_pane_mode_promote(wp, wme);
+        window_pane_mode_promote(&mut *(wp), wme);
         mode_screen = (*(*wme).mode).display_screen.expect("mode display screen getter")(wme);
     } else {
         // The pane owns a stable RefBox address for as long as callbacks retain it.
@@ -2988,7 +3034,7 @@ pub unsafe fn window_pane_set_mode(
         wme = window_pane_mode_insert_front(&mut *wp, entry).as_ptr().cast_mut();
         mode_screen = (*(*wme).mode).init.expect("non-null function pointer")(wme, item, fs, args);
         if mode_screen.is_null() {
-            drop(window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane"));
+            drop(window_pane_mode_remove(&mut *(wp), wme).expect("mode entry is owned by pane"));
             return 1 as ::core::ffi::c_int;
         }
     }
@@ -3000,19 +3046,19 @@ pub unsafe fn window_pane_set_mode(
     assert!(!mode_screen.is_null(), "active mode has a screen");
     (*wp).screen_source = PaneScreenSource::Mode((*wp).modes.active_weak());
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-    server_redraw_window_borders(&*((*wp).window_ptr()));
-    server_status_window(&*((*wp).window_ptr()));
+    layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
+    server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_status_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     window_fire_pane_mode_changed(
         b"pane-mode-entered\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
         oname,
         name,
         1 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
         b"pane-mode-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
         oname,
         name,
         1 as ::core::ffi::c_int,
@@ -3023,7 +3069,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut next: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut w: *mut window = (*wp).window_ptr();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut kill_0: ::core::ffi::c_int = 0;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut p: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3033,7 +3079,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     wme = (*wp).modes.active_ptr();
     p = (*(*wme).mode).name.as_ptr();
     kill_0 = (*wme).kill;
-    let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
+    let entry = window_pane_mode_remove(&mut *(wp), wme).expect("mode entry is owned by pane");
     next = (*wp).modes.active_ptr();
     (*wp).screen_source = if next.is_null() {
         PaneScreenSource::Base
@@ -3068,19 +3114,19 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
         (*(*next).mode).name.as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-    server_redraw_window_borders(&*((*wp).window_ptr()));
-    server_status_window(&*((*wp).window_ptr()));
+    layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
+    server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_status_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     window_fire_pane_mode_changed(
         b"pane-mode-exited\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
         p,
         name,
         0 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
         b"pane-mode-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
         p,
         name,
         0 as ::core::ffi::c_int,
@@ -3110,9 +3156,7 @@ fn window_pane_prompt_input_callback(
         return PROMPT_CLOSE;
     };
     let result = callback(
-        client
-            .as_ref()
-            .and_then(|client| std::ptr::NonNull::new(crate::src::shared::rc::as_ptr(client))),
+        client.as_ref(),
         input,
         key,
     );
@@ -3186,7 +3230,7 @@ pub unsafe fn window_pane_set_prompt(
     prompt_incremental_start(&prompt);
     window_fire_pane_prompt(
         b"pane-prompt-opened\0" as *const u8 as *const ::core::ffi::c_char,
-        wp,
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
         type_0,
     );
 }
@@ -3204,7 +3248,7 @@ pub unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_p
         if !(*wp).flags & PANE_DESTROYED != 0 {
             window_fire_pane_prompt(
                 b"pane-prompt-closed\0" as *const u8 as *const ::core::ffi::c_char,
-                wp,
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
                 type_0,
             );
         }
@@ -3262,7 +3306,7 @@ pub unsafe fn window_pane_prompt_key(
             || (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
             || (*m).b & MOUSE_MASK_DRAG as u_int != 0
             || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            || cmd_mouse_at(wp, m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
+            || cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
                 != 0 as ::core::ffi::c_int
         {
             result = PROMPT_KEY_NOT_HANDLED;
@@ -3322,7 +3366,7 @@ unsafe fn window_pane_copy_paste(
     bytes: &[u8],
 ) {
     let wp = owner.get();
-    let window_owner = (*(*wp).window_ptr()).observer.upgrade().expect("pane window");
+    let window_owner = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).observer.upgrade().expect("pane window");
     let mut cursor = window_pane_first((window_owner.get()).as_ref());
     while let Some(pane_owner) = cursor {
         let loop_0 = pane_owner.get();
@@ -3350,7 +3394,7 @@ unsafe fn window_pane_copy_paste(
 }
 unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, key: key_code) {
     let wp = owner.get();
-    let window_owner = (*(*wp).window_ptr()).observer.upgrade().expect("pane window");
+    let window_owner = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).observer.upgrade().expect("pane window");
     let mut cursor = window_pane_first((window_owner.get()).as_ref());
     while let Some(pane_owner) = cursor {
         let loop_0 = pane_owner.get();
@@ -3470,7 +3514,7 @@ pub unsafe fn window_pane_key(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_is_visible(wp: &window_pane) -> ::core::ffi::c_int {
-    if !(*wp.window_ptr()).flags & WINDOW_ZOOMED != 0 {
+    if !(*wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED != 0 {
         return 1 as ::core::ffi::c_int;
     }
     return (!wp.layout_cell.is_null()) as ::core::ffi::c_int;
@@ -3578,7 +3622,7 @@ unsafe fn window_pane_full_size_offset(
     } else {
         0
     };
-    let xoff = if (*(*wp).window_ptr()).sb_pos == PANE_SCROLLBARS_LEFT {
+    let xoff = if (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sb_pos == PANE_SCROLLBARS_LEFT {
         ((*wp).xoff as u_int).wrapping_sub(sb_w) as ::core::ffi::c_int
     } else {
         (*wp).xoff
@@ -3601,7 +3645,7 @@ pub unsafe fn window_pane_find_up(source: Option<&Rc<std::cell::UnsafeCell<windo
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    w = (*wp).window_ptr();
+    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     status = window_get_pane_status(&*w);
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff;
@@ -3656,7 +3700,7 @@ pub unsafe fn window_pane_find_down(source: Option<&Rc<std::cell::UnsafeCell<win
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    w = (*wp).window_ptr();
+    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     status = window_get_pane_status(&*w);
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
@@ -3710,7 +3754,7 @@ pub unsafe fn window_pane_find_left(source: Option<&Rc<std::cell::UnsafeCell<win
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    w = (*wp).window_ptr();
+    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff;
     if edge == 0 as ::core::ffi::c_int {
@@ -3755,7 +3799,7 @@ pub unsafe fn window_pane_find_right(source: Option<&Rc<std::cell::UnsafeCell<wi
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    w = (*wp).window_ptr();
+    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if edge >= (*w).sx as ::core::ffi::c_int {
@@ -3787,18 +3831,20 @@ pub unsafe fn window_pane_find_right(source: Option<&Rc<std::cell::UnsafeCell<wi
 }
 pub unsafe fn window_pane_stack_push(
     mut stack: *mut window_pane_history,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        window_pane_stack_remove(stack, wp);
-        (*stack).push_front(window_pane_weak(wp));
+        window_pane_stack_remove(stack, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        (*stack).push_front(window_pane_weak(&*(wp)));
         (*wp).flags |= PANE_VISITED;
     }
 }
 pub unsafe fn window_pane_stack_remove(
     mut stack: *mut window_pane_history,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     // Cross-window swaps may look for a pane in the destination history while
     // it is still recorded in the source history. Only clear the flag when
     // this history actually contained the pane; membership is authoritative.
@@ -3808,9 +3854,9 @@ pub unsafe fn window_pane_stack_remove(
 }
 pub unsafe fn winlink_clear_flags(mut wl: *mut winlink) {
     let mut loop_0: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let w = (*wl).window_ptr();
+    let w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     (*w).flags &= !WINDOW_ALERTFLAGS;
-    loop_0 = window_winlinks_first(w);
+    loop_0 = window_winlinks_first((w).as_ref());
     while !loop_0.is_null() {
         if (*loop_0).flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
             (*loop_0).flags &= !WINLINK_ALERTFLAGS;
@@ -3818,14 +3864,15 @@ pub unsafe fn winlink_clear_flags(mut wl: *mut winlink) {
                 server_status_session(&*(session_owner.get()));
             }
         }
-        loop_0 = window_winlinks_next(w, loop_0);
+        loop_0 = window_winlinks_next((w).as_ref(), loop_0);
     }
 }
 pub unsafe fn winlink_shuffle_up(
-    mut s: *mut session,
+    s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut wl: *mut winlink,
     mut before: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mut s = s_owner.get();
     let mut idx: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;
     if wl.is_null() {
@@ -3877,15 +3924,16 @@ unsafe fn window_pane_input_callback(
     } else if file.is_none() || closed || error != 0 {
         cmdq_continue(cdata.item.as_ptr());
     } else {
-        input_parse_buffer(wp, buf, len);
+        input_parse_buffer(&(*(wp)).observer.upgrade().expect("live window_pane"), buf, len);
     }
     evbuffer_drain(buffer, len);
 }
 
 pub unsafe fn window_pane_start_input(
-    wp: *mut window_pane,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     item: *mut cmdq_item,
 ) -> Result<::core::ffi::c_int, std::ffi::CString> {
+    let mut wp = wp_owner.get();
     let c_owner = cmdq_get_client(item);
     let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if (*wp).flags & PANE_EMPTY == 0 {
@@ -3894,7 +3942,7 @@ pub unsafe fn window_pane_start_input(
     if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
         return Ok(1);
     }
-    if !(*c).session_ptr().is_null() {
+    if !(*c).session_handle().is_none() {
         return Ok(1);
     }
     // The file initializer publishes its weak identity before dispatch. The
@@ -3931,10 +3979,11 @@ pub fn window_pane_get_new_data<'a>(
     data.get(used..).expect("pane offset is within input buffer")
 }
 pub unsafe fn window_pane_update_used_data(
-    mut wp: *mut window_pane,
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     mut wpo: *mut window_pane_offset,
     mut size: size_t,
 ) {
+    let mut wp = wp_owner.get();
     let used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
     let Some(available) = (*wp).event.with_ptr(|event| unsafe {
         evbuffer_get_length(&*(*event).input)
@@ -3944,7 +3993,8 @@ pub unsafe fn window_pane_update_used_data(
     }
     (*wpo).used = (*wpo).used.wrapping_add(size);
 }
-pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let mut wp = wp_owner.get();
     screen_set_default_cursor(&mut *(*wp).screen_ptr(), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
 }
 pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
@@ -3959,12 +4009,12 @@ pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
-    let mut w: *mut window = wp.window_ptr();
+    let mut w: *mut window = wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.base.saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
-    if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active_ptr().is_null() {
-        if (*(*w).active_ptr()).modes.active_mode()
+    if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active_pane().is_none() {
+        if (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modes.active_mode()
             .is_some_and(|mode| mode.flags & WINDOW_MODE_HIDE_SCROLLBARS != 0) {
             return 0 as ::core::ffi::c_int;
         }
@@ -3981,7 +4031,7 @@ pub unsafe fn window_pane_scrollbar_reserve(wp: &window_pane) -> ::core::ffi::c_
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return ((*wp.window_ptr()).sb == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int;
+    return ((*wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sb == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int;
 }
 pub unsafe fn window_pane_scrollbar_overlay(wp: &window_pane) -> ::core::ffi::c_int {
     if window_pane_show_scrollbar(wp) == 0 {
@@ -4009,7 +4059,7 @@ pub unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::Unsaf
         return;
     }
     delay = options_get_number(
-        options_owner_ptr(&mut (*(*wp).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-scrollbars-timeout\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     tv.tv_sec = delay.wrapping_div(1000 as u_int) as __time_t;
@@ -4051,7 +4101,8 @@ pub unsafe fn window_pane_scrollbar_hide(pane_owner: &Rc<std::cell::UnsafeCell<w
     (*wp).sb_auto_visible = 0 as ::core::ffi::c_int;
     window_pane_scrollbar_redraw_visibility(pane_owner);
 }
-pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_get_bg(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut c: ::core::ffi::c_int = 0;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
@@ -4067,25 +4118,26 @@ pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int
         us: 0,
         link: 0,
     };
-    c = window_pane_get_bg_control_client(wp);
+    c = window_pane_get_bg_control_client(wp_owner);
     if c == -(1 as ::core::ffi::c_int) {
-        defaults = tty_default_colours(wp).0;
+        defaults = tty_default_colours(&(*(wp)).observer.upgrade().expect("live window_pane")).0;
         if defaults.bg == 8 as ::core::ffi::c_int || defaults.bg == 9 as ::core::ffi::c_int {
-            c = window_get_bg_client(wp);
+            c = window_get_bg_client(wp_owner);
         } else {
             c = defaults.bg;
         }
     }
     return c;
 }
-pub unsafe fn window_get_bg_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    let mut w: *mut window = (*wp).window_ptr();
+pub unsafe fn window_get_bg_client(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
+            if !((*loop_0).session_handle().is_none() || session_has(&*(*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) == 0) {
                 if !((*loop_0).tty.bg == -(1 as ::core::ffi::c_int)) {
                     return (*loop_0).tty.bg;
                 }
@@ -4096,7 +4148,8 @@ pub unsafe fn window_get_bg_client(mut wp: *mut window_pane) -> ::core::ffi::c_i
     }
     return -(1 as ::core::ffi::c_int);
 }
-pub unsafe fn window_pane_get_bg_control_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_get_bg_control_client(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if (*wp).control_bg == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
@@ -4112,14 +4165,15 @@ pub unsafe fn window_pane_get_bg_control_client(mut wp: *mut window_pane) -> ::c
     }
     return -(1 as ::core::ffi::c_int);
 }
-pub unsafe fn window_pane_get_fg(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    let mut w: *mut window = (*wp).window_ptr();
+pub unsafe fn window_pane_get_fg(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
+    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
+            if !((*loop_0).session_handle().is_none() || session_has(&*(*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) == 0) {
                 if !((*loop_0).tty.fg == -(1 as ::core::ffi::c_int)) {
                     return (*loop_0).tty.fg;
                 }
@@ -4130,7 +4184,8 @@ pub unsafe fn window_pane_get_fg(mut wp: *mut window_pane) -> ::core::ffi::c_int
     }
     return -(1 as ::core::ffi::c_int);
 }
-pub unsafe fn window_pane_get_fg_control_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_get_fg_control_client(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if (*wp).control_fg == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
@@ -4146,7 +4201,8 @@ pub unsafe fn window_pane_get_fg_control_client(mut wp: *mut window_pane) -> ::c
     }
     return -(1 as ::core::ffi::c_int);
 }
-pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
+pub unsafe fn window_pane_get_theme(wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>) -> client_theme {
+    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut found_light: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4154,12 +4210,12 @@ pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
     if wp.is_null() {
         return THEME_UNKNOWN;
     }
-    w = (*wp).window_ptr();
+    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
+            if !((*loop_0).session_handle().is_none() || session_has(&*(*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) == 0) {
                 match (*loop_0).theme as ::core::ffi::c_uint {
                     1 => {
                         found_light = 1 as ::core::ffi::c_int;
@@ -4180,7 +4236,7 @@ pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
     if found_light != 0 && found_dark == 0 {
         return THEME_LIGHT;
     }
-    return colour_totheme(window_pane_get_bg(wp));
+    return colour_totheme(window_pane_get_bg(wp_owner.expect("pane checked above")));
 }
 pub unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
@@ -4194,7 +4250,7 @@ pub unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCel
     if !(*(*wp).screen_ptr()).mode & MODE_THEME_UPDATES != 0 {
         return;
     }
-    theme = window_pane_get_theme(wp);
+    theme = window_pane_get_theme((wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     if theme as ::core::ffi::c_uint == (*wp).last_theme as ::core::ffi::c_uint {
         return;
     }
@@ -4264,7 +4320,7 @@ pub unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
 }
 pub unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
     let options = if window_pane_is_floating(wp) == 0 {
-        (*wp.window_ptr()).options.as_deref().expect("window options")
+        (*wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options.as_deref().expect("window options")
     } else {
         wp.options.as_deref().expect("pane options")
     };
@@ -4286,7 +4342,7 @@ pub unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_in
         return 0;
     }
     if window_pane_is_floating(wp) == 0 {
-        return window_get_pane_status(&*wp.window_ptr());
+        return window_get_pane_status(&*wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
     }
     if window_pane_get_pane_lines(wp) == PANE_LINES_NONE as pane_lines {
         return 0;
@@ -4321,8 +4377,8 @@ mod collection_index_tests {
             // retain/release functions with ordinary field drop.
             let wp_owner = window_pane::new();
             let wp = crate::src::shared::rc::as_ptr(&wp_owner);
-            let weak = window_pane_weak(wp);
-            let callback = window_pane_add_ref(wp, c"callback".as_ptr());
+            let weak = window_pane_weak(&*(wp));
+            let callback = window_pane_add_ref(&(*(wp)).observer.upgrade().expect("live window_pane"), c"callback".as_ptr());
             window_pane_remove_ref(wp_owner, c"pane shutdown".as_ptr());
             let retained = weak.upgrade().expect("callback keeps the pane alive");
             assert_eq!(crate::src::shared::rc::as_ptr(&retained), wp);
@@ -4489,7 +4545,7 @@ mod pane_prompt_data_tests {
                 assert_eq!(text, Some(c"input"));
                 assert_eq!(key, PROMPT_KEY_HANDLED);
                 if count.get() == 0 {
-                    assert_eq!(client.unwrap().as_ptr(), pointer);
+                    assert_eq!(client.unwrap().get(), pointer);
                     drop(slot.borrow_mut().take());
                     assert!(observed.upgrade().is_some());
                     // Dispatch must release the data borrow before callbacks.
@@ -4680,10 +4736,10 @@ mod pane_input_owner_tests {
                 let item = cmdq_get_callback_owned(c"pane input test".as_ptr(), None);
                 (*item).client = Rc::downgrade(&owner);
                 (*item).flags = CMDQ_WAITING;
-                let mut pane = window_pane::empty();
-                pane.flags = PANE_EMPTY;
-                pane.id = u_int::MAX;
-                assert_eq!(window_pane_start_input(&mut pane, item), Ok(0));
+                let pane = window_pane::new();
+                (*pane.get()).flags = PANE_EMPTY;
+                (*pane.get()).id = u_int::MAX;
+                assert_eq!(window_pane_start_input(&pane, item), Ok(0));
                 let file_owner = (*item).wait_file.upgrade().unwrap();
                 let file = rc::as_ptr(&file_owner);
                 assert!(!file.is_null());
@@ -4751,7 +4807,7 @@ mod pane_stream_lifecycle_tests {
             let pane = crate::src::shared::rc::as_ptr(&pane_owner);
             (*pane).fd = -1;
             (*pane).pipe_fd = -1;
-            let observer = window_pane_weak(pane);
+            let observer = window_pane_weak(&*(pane));
             assert_eq!((*pane).observer.strong_count(), 1);
             let guard = window_pane_upgrade(&observer).unwrap();
             assert_eq!(rc::as_ptr(&guard), pane);
@@ -4775,11 +4831,11 @@ mod pane_stream_lifecycle_tests {
         unsafe {
             let pane_owner = window_pane::new();
             let pane = crate::src::shared::rc::as_ptr(&pane_owner);
-            let observer = window_pane_weak(pane);
+            let observer = window_pane_weak(&*(pane));
             (*pane).fd = -1;
             (*pane).pipe_fd = -1;
             (*pane).flags = PANE_EMPTY;
-            window_pane_set_event(pane);
+            window_pane_set_event(&(*(pane)).observer.upgrade().expect("live window_pane"));
             assert!((*pane).ictx.is_some());
             let stale_stream = (*pane).event.clone();
             assert!(stale_stream.is_alive());
@@ -4816,7 +4872,7 @@ mod zoom_teardown_tests {
         let pane = &mut *pane_owner.get();
         let parent_owner = pane.window.upgrade().expect("cleanup retains the parent");
         assert_eq!((*parent_owner.get()).lifecycle, WindowLifecycle::Destroying);
-        let parent = pane.window_ptr();
+        let parent = pane.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         assert_eq!(parent, parent_owner.get());
         // Releasing a temporary owner during cleanup must not restart cleanup.
         window_remove_ref(parent_owner.clone(), c"reentrant mode cleanup".as_ptr());
@@ -4836,7 +4892,7 @@ mod zoom_teardown_tests {
         });
         unsafe {
             let owner = zoomed_window();
-            let pane = (*owner.get()).active_ptr();
+            let pane = (*owner.get()).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             let retained = (*pane).observer.upgrade().expect("registered pane");
             let before = (*pane).sx;
             let late_owner = Rc::new(RefCell::new(None::<Rc<std::cell::UnsafeCell<window>>>));
@@ -4885,7 +4941,7 @@ mod zoom_teardown_tests {
             let slot = retained.clone();
             let sink = events_add_sink(c"window-closed", events_callback(move |_, payload| {
                 *slot.borrow_mut() = Some(window_add_ref(
-                    event_payload_get_window(payload), c"close callback".as_ptr(),
+                    &(*(event_payload_get_window(payload).map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), c"close callback".as_ptr(),
                 ));
             }));
             window_remove_ref(owner, c"initial owner".as_ptr());
@@ -4922,7 +4978,7 @@ mod zoom_teardown_tests {
         (*pane).base.grid = Some(grid_create(80, 24, 0));
         (*pane).screen_source = PaneScreenSource::Base;
         (*pane).flags = PANE_ZOOMED;
-        (*w).set_active(pane);
+        (*w).set_active((pane).as_ref());
         (*w).panes.push_back((*pane).observer.clone());
         (*w).z_index.push_back((*pane).observer.clone());
         let mut saved = layout_create_cell();
@@ -4943,10 +4999,10 @@ mod zoom_teardown_tests {
         unsafe {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
-            let pane = (*w).active_ptr();
+            let pane = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             let tree_owner = std::rc::Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
                 observer: observer.clone(),
-                wp: window_pane_weak(pane),
+                wp: window_pane_weak(&*(pane)),
                 zoomed: 0,
                 ..Default::default()
             }));
@@ -4969,7 +5025,7 @@ mod zoom_teardown_tests {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
             let observer = (*w).observer.clone();
-            let pane_observer = (*(*w).active_ptr()).observer.clone();
+            let pane_observer = (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).observer.clone();
             let resized = Rc::new(Cell::new(0));
             let resize_count = resized.clone();
             let resize_sink = events_add_sink(
@@ -4986,7 +5042,7 @@ mod zoom_teardown_tests {
                 events_callback(move |_, payload| {
                     assert!(live.upgrade().is_some());
                     assert_ne!(
-                        (*event_payload_get_window(payload)).flags & WINDOW_ZOOMED,
+                        (*event_payload_get_window(payload).map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED,
                         0
                     );
                     close_count.set(close_count.get() + 1);
@@ -5007,7 +5063,7 @@ mod zoom_teardown_tests {
         unsafe {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
-            let pane = (*w).active_ptr();
+            let pane = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             let notifications = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
             for name in [c"pane-resized", c"window-unzoomed", c"window-closed"] {
@@ -5019,7 +5075,7 @@ mod zoom_teardown_tests {
                     }),
                 ));
             }
-            assert_eq!(window_unzoom(w, 1), 0);
+            assert_eq!(window_unzoom(&(*(w)).observer.upgrade().expect("live window"), 1), 0);
             assert_eq!(((*pane).sx, (*pane).sy), (40, 24));
             assert!((*w).saved_layout_root.is_none());
             window_remove_ref(w_owner, c"test live close".as_ptr());

@@ -1,3 +1,4 @@
+use std::{cell::UnsafeCell, rc::Rc};
 use crate::src::options::options_owner_ptr;
 use crate::src::events::events_fire_winlink;
 use crate::src::format::bytes::write_cstr;
@@ -23,7 +24,7 @@ use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 use crate::src::window::windows;
 use crate::src::window::{
-    window_add_ref, window_remove_ref, window_winlinks_first, window_winlinks_next, windows_minmax,
+    window_remove_ref, window_winlinks_first, window_winlinks_next, windows_minmax,
     windows_next, winlinks_minmax, winlinks_next,
 };
 use std::collections::VecDeque;
@@ -50,7 +51,7 @@ fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, i
 unsafe fn alerts_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
     let w = owner.get();
     log_debug(format_args!("@{} alerts timer expired", ((*w).id) as u32));
-    alerts_queue(w, WINDOW_SILENCE);
+    alerts_queue(owner, WINDOW_SILENCE);
 }
 unsafe fn alerts_callback() {
     let mut alerts: ::core::ffi::c_int = 0;
@@ -64,7 +65,7 @@ unsafe fn alerts_callback() {
         };
         let w = crate::src::shared::rc::as_ptr(&owner);
         // Keep the membership flag set during checks to suppress duplicate requeues.
-        alerts = alerts_check_all(w);
+        alerts = alerts_check_all(&owner);
         log_debug(format_args!(
             "@{} alerts check, alerts {}",
             ((*w).id) as u32,
@@ -98,22 +99,24 @@ unsafe fn alerts_action_applies(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn alerts_check_all(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_all(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
     let mut alerts: ::core::ffi::c_int = 0;
-    alerts = alerts_check_bell(w);
-    alerts |= alerts_check_activity(w);
-    alerts |= alerts_check_silence(w);
+    alerts = alerts_check_bell(w_owner);
+    alerts |= alerts_check_activity(w_owner);
+    alerts |= alerts_check_silence(w_owner);
     return alerts;
 }
-pub unsafe fn alerts_check_session(mut s: *mut session) {
+pub unsafe fn alerts_check_session(s_owner: &Rc<UnsafeCell<session>>) {
+    let s = s_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        alerts_check_all((*wl).window_ptr());
+        alerts_check_all(&(*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
         wl = winlinks_next(&*wl);
     }
 }
-unsafe fn alerts_enabled(mut w: *mut window, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn alerts_enabled(w_owner: &Rc<UnsafeCell<window>>, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    let w = w_owner.get();
     if flags & WINDOW_BELL != 0 {
         if options_get_number(
             options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
@@ -148,12 +151,13 @@ pub unsafe fn alerts_reset_all() {
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
-        alerts_reset(w);
+        alerts_reset(&window_owner);
         window_cursor = windows_next(&*w);
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
-unsafe fn alerts_reset(mut w: *mut window) {
+unsafe fn alerts_reset(w_owner: &Rc<UnsafeCell<window>>) {
+    let w = w_owner.get();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -188,8 +192,9 @@ unsafe fn alerts_reset(mut w: *mut window) {
         event_add(&raw mut (*w).alerts_timer, &raw mut tv);
     }
 }
-pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
-    alerts_reset(w);
+pub unsafe fn alerts_queue(w_owner: &Rc<UnsafeCell<window>>, mut flags: ::core::ffi::c_int) {
+    let w = w_owner.get();
+    alerts_reset(w_owner);
     if (*w).flags & flags != flags {
         (*w).flags |= flags;
         log_debug(format_args!(
@@ -198,9 +203,9 @@ pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
             log_hex(((flags) as u32) as u64)
         ));
     }
-    if alerts_enabled(w, flags) != 0 {
+    if alerts_enabled(w_owner, flags) != 0 {
         if (*w).alerts_queued == 0 {
-            let owner = window_add_ref(w, c"alerts_queue".as_ptr());
+            let owner = Rc::clone(w_owner);
             let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
             alerts_enqueue(queue, &mut (*w).alerts_queued, owner);
         }
@@ -214,7 +219,8 @@ pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
         }
     }
 }
-unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_bell(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+    let w = w_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*w).flags & WINDOW_BELL != 0 {
@@ -227,17 +233,17 @@ unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
     {
         return 0 as ::core::ffi::c_int;
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if let Some(session_owner) = (*wl).session.upgrade() {
             (*session_owner.get()).flags &= !SESSION_ALERTED;
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         let Some(session_owner) = (*wl).session.upgrade() else {
-            wl = window_winlinks_next(w, wl);
+            wl = window_winlinks_next((w).as_ref(), wl);
             continue;
         };
         s = session_owner.get();
@@ -263,11 +269,12 @@ unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
                 );
             }
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
     return 0x1 as ::core::ffi::c_int;
 }
-unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_activity(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+    let w = w_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*w).flags & WINDOW_ACTIVITY != 0 {
@@ -280,18 +287,18 @@ unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
     {
         return 0 as ::core::ffi::c_int;
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if let Some(session_owner) = (*wl).session.upgrade() {
             (*session_owner.get()).flags &= !SESSION_ALERTED;
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ACTIVITY != 0) {
             let Some(session_owner) = (*wl).session.upgrade() else {
-                wl = window_winlinks_next(w, wl);
+                wl = window_winlinks_next((w).as_ref(), wl);
                 continue;
             };
             s = session_owner.get();
@@ -318,11 +325,12 @@ unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
                 }
             }
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
     return 0x2 as ::core::ffi::c_int;
 }
-unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
+unsafe fn alerts_check_silence(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+    let w = w_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*w).flags & WINDOW_SILENCE != 0 {
@@ -335,18 +343,18 @@ unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
     {
         return 0 as ::core::ffi::c_int;
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if let Some(session_owner) = (*wl).session.upgrade() {
             (*session_owner.get()).flags &= !SESSION_ALERTED;
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_SILENCE != 0) {
             let Some(session_owner) = (*wl).session.upgrade() else {
-                wl = window_winlinks_next(w, wl);
+                wl = window_winlinks_next((w).as_ref(), wl);
                 continue;
             };
             s = session_owner.get();
@@ -373,7 +381,7 @@ unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
                 }
             }
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
     return 0x4 as ::core::ffi::c_int;
 }
@@ -390,14 +398,14 @@ unsafe fn alerts_set_message(
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !((*c).session_ptr() != s || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
+        if !((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
             if visual == VISUAL_OFF || visual == VISUAL_BOTH {
                 tty_putcode(&raw mut (*c).tty, TTYC_BEL);
             }
             if !(visual == VISUAL_OFF) {
-                if (*(*c).session_ptr()).curw_ptr() == wl {
+                if (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr() == wl {
                     status_message_set(
-                        c,
+                        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                         -(1 as ::core::ffi::c_int),
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -409,7 +417,7 @@ unsafe fn alerts_set_message(
                     );
                 } else {
                     status_message_set(
-                        c,
+                        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                         -(1 as ::core::ffi::c_int),
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,

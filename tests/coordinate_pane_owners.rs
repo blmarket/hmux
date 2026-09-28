@@ -26,7 +26,7 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
             (*window.get()).z_index.push_back(Rc::downgrade(owner));
         }
         (*window.get()).modal = Rc::downgrade(&first);
-        hmux2::src::window::window_redraw_active_switch(window.get(), std::ptr::null_mut());
+        hmux2::src::window::window_redraw_active_switch(&window, None);
         assert!(Rc::ptr_eq(&window_get_active_at(&window, 2, 2).unwrap(), &first));
         assert!(window_get_active_at(&window, 12, 2).is_none());
         (*window.get()).modal = std::rc::Weak::new();
@@ -47,7 +47,7 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         assert!((*window.get()).modal.upgrade().is_none());
         assert!(window_get_active_at(&window, 12, 2).is_none());
         (*window.get()).flags |= hmux2::src::window::WINDOW_WASZOOMED;
-        assert_eq!(hmux2::src::window::window_pop_zoom(window.get()), 0);
+        assert_eq!(hmux2::src::window::window_pop_zoom(&window), 0);
         assert_eq!((*window.get()).flags & hmux2::src::window::WINDOW_WASZOOMED, 0);
         options_set_number((*window.get()).options.as_deref_mut().unwrap(), c"pane-border-status".as_ptr(), 1);
         (*first.get()).yoff = 3;

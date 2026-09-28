@@ -1794,9 +1794,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                     key = KEYC_UNKNOWN as ::core::ffi::c_ulong
                                                         as key_code;
                                                     if (*tty).bg != bg {
-                                                        server_client_update_theme_colours(c);
+                                                        server_client_update_theme_colours((c).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                                                     }
-                                                    session_theme_changed(((*c).session_ptr()).as_ref());
+                                                    session_theme_changed(((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                                                     current_block = 5025795842197473417;
                                                 }
                                                 -1 => {
@@ -1804,9 +1804,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                 }
                                                 1 => {
                                                     if (*tty).bg != bg {
-                                                        server_client_update_theme_colours(c);
+                                                        server_client_update_theme_colours((c).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                                                     }
-                                                    session_theme_changed(((*c).session_ptr()).as_ref());
+                                                    session_theme_changed(((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                                                     current_block = 16977559109335092698;
                                                 }
                                                 _ => {
@@ -2106,18 +2106,18 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 }
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     (*c).flags &= !CLIENT_FOCUSED as uint64_t;
-                    window_update_focus((*(*(*c).session_ptr()).curw_ptr()).window_ptr());
+                    window_update_focus(((*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                     events_fire_client(
                         b"client-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
-                        c,
+                        (*(c)).observer.upgrade().expect("live client"),
                     );
                 } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code {
                     (*c).flags |= CLIENT_FOCUSED as uint64_t;
                     events_fire_client(
                         b"client-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
-                        c,
+                        (*(c)).observer.upgrade().expect("live client"),
                     );
-                    window_update_focus((*(*(*c).session_ptr()).curw_ptr()).window_ptr());
+                    window_update_focus(((*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                 }
                 if key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                     let bytes = if size == 0 {
@@ -2190,7 +2190,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                     if (*tty).flags & (TTY_WAITFG | TTY_WAITBG) != 0
                         || (*tty).flags & (TTY_OSC52QUERY | TTY_WINSIZEQUERY) != 0
                         || (*tty).flags & TTY_ALL_REQUEST_FLAGS != TTY_ALL_REQUEST_FLAGS
-                        || input_client_has_requests(c)
+                        || input_client_has_requests(&mut *(c))
                     {
                         log_debug(format_args!(
                             "{}: increasing delay (active query)",
@@ -2670,7 +2670,7 @@ unsafe fn tty_keys_clipboard(
         )
     ));
     let cd = input_request_clipboard_data { data: out, clip };
-    input_request_reply(c, InputRequestReply::Clipboard(&cd));
+    input_request_reply(&(*(c)).observer.upgrade().expect("live client"), InputRequestReply::Clipboard(&cd));
     if (*tty).flags & TTY_OSC52QUERY != 0 {
         paste_add_owned(None, cd.data.into_boxed_slice());
         event_del(&raw mut (*tty).clipboard_timer);
@@ -2809,28 +2809,28 @@ unsafe fn tty_keys_device_attributes(
                 ));
                 if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
                     tty_parse_client_features(
-                        c,
+                        &mut *(c),
                         b"sixel\0" as *const u8 as *const ::core::ffi::c_char,
                         b",\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 }
                 if p[i as usize] as ::core::ffi::c_int == 21 as ::core::ffi::c_int {
                     tty_parse_client_features(
-                        c,
+                        &mut *(c),
                         b"margins\0" as *const u8 as *const ::core::ffi::c_char,
                         b",\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 }
                 if p[i as usize] as ::core::ffi::c_int == 28 as ::core::ffi::c_int {
                     tty_parse_client_features(
-                        c,
+                        &mut *(c),
                         b"rectfill\0" as *const u8 as *const ::core::ffi::c_char,
                         b",\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 }
                 if p[i as usize] as ::core::ffi::c_int == 52 as ::core::ffi::c_int {
                     tty_parse_client_features(
-                        c,
+                        &mut *(c),
                         b"clipboard\0" as *const u8 as *const ::core::ffi::c_char,
                         b",\0" as *const u8 as *const ::core::ffi::c_char,
                     );
@@ -2915,7 +2915,7 @@ unsafe fn tty_keys_sync(
         || status == 3 as ::core::ffi::c_int
     {
         tty_parse_client_features(
-            c,
+            &mut *(c),
             b"sync\0" as *const u8 as *const ::core::ffi::c_char,
             b",\0" as *const u8 as *const ::core::ffi::c_char,
         );
@@ -3051,14 +3051,14 @@ unsafe fn tty_keys_device_attributes2(
     }
     match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
         77 => {
-            tty_default_features(c, b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_default_features(&mut *(c), b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
         }
         84 => {
-            tty_default_features(c, b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_default_features(&mut *(c), b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
         }
         85 => {
             tty_default_features(
-                c,
+                &mut *(c),
                 b"rxvt-unicode\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
@@ -3151,56 +3151,56 @@ unsafe fn tty_keys_extended_device_attributes(
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"tmux \0" as *const u8 as *const ::core::ffi::c_char,
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"XTerm(\0" as *const u8 as *const ::core::ffi::c_char,
         6 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"XTerm\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"XTerm\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"mintty \0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"foot(\0" as *const u8 as *const ::core::ffi::c_char,
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"foot\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"foot\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"WezTerm \0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"ghostty \0" as *const u8 as *const ::core::ffi::c_char,
         8 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"ghostty\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"ghostty\0" as *const u8 as *const ::core::ffi::c_char);
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"Rio \0" as *const u8 as *const ::core::ffi::c_char,
         4 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(c, b"Rio\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(&mut *(c), b"Rio\0" as *const u8 as *const ::core::ffi::c_char);
     }
     log_debug(format_args!(
         "{}: received extended DA {}",
@@ -3449,7 +3449,7 @@ unsafe fn tty_keys_palette(
         return 0 as ::core::ffi::c_int;
     }
     pd.idx = idx;
-    input_request_reply(c, InputRequestReply::Palette(&pd));
+    input_request_reply(&(*(c)).observer.upgrade().expect("live client"), InputRequestReply::Palette(&pd));
     return 0 as ::core::ffi::c_int;
 }
 

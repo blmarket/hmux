@@ -211,10 +211,11 @@ static tty_features: [&tty_feature; 22] = {
     ]
 };
 pub unsafe fn tty_parse_client_features(
-    mut c: *mut client,
+    c_value: &mut client,
     mut s: *const ::core::ffi::c_char,
     mut sep: *const ::core::ffi::c_char,
 ) {
+    let c: *mut client = c_value as *mut _;
     tty_parse_features(
         s,
         sep,
@@ -427,7 +428,8 @@ mod tests {
         }
     }
 }
-pub unsafe fn tty_default_features(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
+pub unsafe fn tty_default_features(c_value: &mut client, mut name: *const ::core::ffi::c_char) {
+    let c: *mut client = c_value as *mut _;
     static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",
@@ -483,7 +485,7 @@ pub unsafe fn tty_default_features(mut c: *mut client, mut name: *const ::core::
     {
         if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
             tty_parse_client_features(
-                c,
+                &mut *(c),
                 table[i as usize].features.as_ptr(),
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );

@@ -132,7 +132,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt_bytes = Vec::<u8>::new();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -163,7 +163,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         cdata.item = (*item).observer.clone();
     }
     if pane != 0 {
-        cdata.wp = window_pane_weak(wp);
+        cdata.wp = window_pane_weak(&*(wp));
     }
     cdata.state = Some(args_make_commands_prepare(
         self_0,
@@ -247,7 +247,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         );
     } else {
         status_prompt_set(
-            tc,
+            &(*(tc)).observer.upgrade().expect("live client"),
             target,
             prompt_ptr,
             input_ptr,
@@ -263,11 +263,12 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_command_prompt_callback(
-    mut c: *mut client,
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     cdata: &mut cmd_command_prompt_cdata,
     mut s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
+    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
     let item_owner = cdata.item.upgrade();
     if cdata.wait && item_owner.is_none() {
@@ -296,7 +297,7 @@ unsafe fn cmd_command_prompt_callback(
                         };
                         window_pane_update_prompt(&pane, prompt_ptr, input_ptr);
                     } else {
-                        status_prompt_update(c, prompt_ptr, input_ptr);
+                        status_prompt_update(&(*(c)).observer.upgrade().expect("live client"), prompt_ptr, input_ptr);
                     }
                     return PROMPT_CONTINUE;
                 }
@@ -322,7 +323,7 @@ unsafe fn cmd_command_prompt_callback(
                 ) {
                     Err(error) => {
                         cmdq_append(
-                            c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
+                            c_owner,
                             cmdq_get_error(
                                 error
                                     .as_ref()
@@ -334,7 +335,7 @@ unsafe fn cmd_command_prompt_callback(
                         new_item = cmdq_get_command(
                             &cmdlist, None,
                         );
-                        cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
+                        cmdq_append(c_owner, new_item);
                         drop(cmdlist);
                     }
                     Ok(cmdlist) => {
@@ -359,7 +360,7 @@ impl cmd_command_prompt_cdata {
     fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, key| unsafe {
             cmd_command_prompt_callback(
-                client.map_or(std::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                client,
                 &mut self,
                 text,
                 key,
@@ -456,7 +457,7 @@ mod tests {
             argv: Vec::new(),
         };
         assert_eq!(unsafe {
-            cmd_command_prompt_callback(std::ptr::null_mut(), &mut data, None, PROMPT_KEY_CLOSE)
+            cmd_command_prompt_callback(None, &mut data, None, PROMPT_KEY_CLOSE)
         }, PROMPT_CLOSE);
     }
 

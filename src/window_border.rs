@@ -37,10 +37,11 @@ use crate::src::window::{
 };
 
 unsafe fn window_set_fill_cell(
-    mut w: *mut window,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut inside: ::core::ffi::c_int,
     mut gc: *mut grid_cell,
 ) {
+    let mut w = w_owner.get();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -75,17 +76,17 @@ unsafe fn window_set_fill_cell(
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_NONE as usize] as u_char);
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        (*w).active_ptr(),
+        ((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     format_add(
         ft,
@@ -124,9 +125,10 @@ unsafe fn window_set_fill_cell(
     }
     screen_free(&mut s);
 }
-pub unsafe fn window_set_fill_cells(mut w: *mut window) {
-    window_set_fill_cell(w, 1 as ::core::ffi::c_int, &raw mut (*w).inside_cell);
-    window_set_fill_cell(w, 0 as ::core::ffi::c_int, &raw mut (*w).outside_cell);
+pub unsafe fn window_set_fill_cells(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
+    window_set_fill_cell(w_owner, 1 as ::core::ffi::c_int, &raw mut (*w).inside_cell);
+    window_set_fill_cell(w_owner, 0 as ::core::ffi::c_int, &raw mut (*w).outside_cell);
 }
 unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
     (*gc).data = utf8_copy(&(*fill).data);
@@ -144,10 +146,11 @@ unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_ce
     }
 }
 pub unsafe fn window_get_fill_cell(
-    mut w: *mut window,
+    w_value: &window,
     mut inside: ::core::ffi::c_int,
     mut gc: *mut grid_cell,
 ) {
+    let w: *mut window = w_value as *const _ as *mut _;
     if inside != 0 {
         window_copy_fill_cell(gc, &raw mut (*w).inside_cell);
     } else {
@@ -155,11 +158,12 @@ pub unsafe fn window_get_fill_cell(
     };
 }
 pub unsafe fn window_get_border_cell(
-    mut wp: *mut window_pane,
+    wp_value: Option<&window_pane>,
     mut pane_lines: pane_lines,
     mut cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
+    let wp: *mut window_pane = wp_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
     let mut idx: u_int = 0;
     match pane_lines as ::core::ffi::c_uint {
         4 => {
@@ -205,24 +209,27 @@ pub unsafe fn window_get_border_cell(
     };
 }
 pub unsafe fn window_pane_get_border_cell(
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
+    let mut wp = wp_owner.get();
     let mut pane_lines: pane_lines = window_pane_get_pane_lines(&*wp);
-    window_get_border_cell(wp, pane_lines, cell_type, gc);
+    window_get_border_cell((wp).as_ref(), pane_lines, cell_type, gc);
 }
 pub unsafe fn window_pane_get_border_style(
-    mut wp: *mut window_pane,
-    mut c: *mut client,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut gc: *mut grid_cell,
 ) {
-    let mut s: *mut session = (*c).session_ptr();
+    let mut wp = wp_owner.get();
+    let mut c = c_owner.get();
+    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
-    if wp == (*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).active_ptr() {
+    if wp == (*(*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         flag = &raw mut (*wp).active_border_gc_set;
         saved = &raw mut (*wp).active_border_gc;
         option = b"pane-active-border-style\0" as *const u8 as *const ::core::ffi::c_char;
@@ -232,7 +239,7 @@ pub unsafe fn window_pane_get_border_style(
         option = b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if *flag == 0 {
-        ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), c, s, (*s).curw_ptr(), wp);
+        ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), Some(c_owner), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*s).curw_ptr(), Some(wp_owner));
         style_apply(saved, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), option, ft);
         format_free(Box::from_raw(ft));
         *flag = 1 as ::core::ffi::c_int;
@@ -244,12 +251,14 @@ pub unsafe fn window_pane_get_border_style(
     );
 }
 pub unsafe fn window_make_pane_status(
-    mut wp: *mut window_pane,
-    mut c: *mut client,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut width: u_int,
     spans: &redraw_spans,
     mut span_index: usize,
 ) -> ::core::ffi::c_int {
+    let mut wp = wp_owner.get();
+    let mut c = c_owner.get();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -286,12 +295,12 @@ pub unsafe fn window_make_pane_status(
         return 0 as ::core::ffi::c_int;
     }
     ft = format_create(
-        c,
+        Some(c_owner),
         ::core::ptr::null_mut::<cmdq_item>(),
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         FORMAT_STATUS,
     );
-    format_defaults(ft, c, (*c).session_ptr(), (*(*c).session_ptr()).curw_ptr(), wp);
+    format_defaults(ft, Some(c_owner), ((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr(), Some(wp_owner));
     fmt = options_get_string(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,
@@ -301,12 +310,12 @@ pub unsafe fn window_make_pane_status(
     screen_init(&mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
     screen_write_start(&mut ctx, &raw mut (*wp).status_screen);
-    window_pane_get_border_style(wp, c, &raw mut gc);
+    window_pane_get_border_style(wp_owner, c_owner, &raw mut gc);
     pane_lines = window_pane_get_pane_lines(&*wp);
     i = 0 as u_int;
     while i < width {
         cell_type = redraw_get_status_border_cell_type(spans, &mut span_index, i);
-        window_get_border_cell(wp, pane_lines, cell_type, &mut gc);
+        window_get_border_cell((wp).as_ref(), pane_lines, cell_type, &mut gc);
         screen_write_cell(&mut ctx, &gc);
         i = i.wrapping_add(1);
     }

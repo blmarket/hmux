@@ -72,10 +72,8 @@ pub static cmd_source_file_entry: cmd_entry = {
     }
 };
 impl cmd_source_file_data {
-    fn client_ptr(&self) -> *mut client {
-        self.client
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+    fn client_handle(&self) -> Option<&std::rc::Rc<std::cell::UnsafeCell<client>>> {
+        self.client.as_ref()
     }
 
     fn decrement_depth(&mut self) {
@@ -138,14 +136,14 @@ unsafe fn cmd_source_file_complete_cb(
 }
 
 unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
-    let c = cdata.client_ptr();
+    let c = cdata.client_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if cfg_finished == 0 {
         // Startup completion does not decrement nesting depth in tmux.
         // Cancellation during an active read still decrements it.
         cdata.depth_active = false;
         return;
     }
-    if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_ptr().is_null() {
+    if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_handle().is_none() {
         (*c).retval = 1;
     }
     let Some(after_owner) = cdata.after.upgrade().or_else(|| cdata.item.upgrade()) else {

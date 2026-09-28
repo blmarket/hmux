@@ -269,9 +269,10 @@ pub unsafe fn environ_log(
     }
 }
 pub unsafe fn environ_for_session(
-    mut s: *mut session,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
     let mut env = environ_create();

@@ -491,12 +491,12 @@ pub unsafe fn colour_format_escape_for_client(
 /// call on this thread or thread exit. Do not free or concurrently access it.
 /// # Safety
 /// A non-null client and its open terminal must be readable for this call.
-pub unsafe fn colour_toescape(c: *mut client, colour: i32, bg: i32) -> *const libc::c_char {
+pub unsafe fn colour_toescape(c: Option<&client>, colour: i32, bg: i32) -> *const libc::c_char {
     thread_local! {
         static BUFFER: std::cell::RefCell<std::ffi::CString> =
             std::cell::RefCell::new(std::ffi::CString::default());
     }
-    let Some(text) = colour_format_escape_for_client(c.as_ref(), colour, bg != 0) else {
+    let Some(text) = colour_format_escape_for_client(c, colour, bg != 0) else {
         return std::ptr::null();
     };
     BUFFER.with(|buffer| {

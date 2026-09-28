@@ -86,17 +86,19 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
+        let mut mouse_session_owner = None;
         let mouse_pane_owner = cmd_mouse_pane(
             &raw mut (*event).m,
-            &raw mut s,
+            Some(&mut mouse_session_owner),
             ::core::ptr::null_mut::<*mut winlink>(),
         );
+        s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
         }
         pane_owner = mouse_pane_owner.expect("mouse pane was resolved");
-        if c.is_null() || (*c).session_ptr() != s {
+        if c.is_null() || (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s {
             return CMD_RETURN_NORMAL;
         }
     }

@@ -79,7 +79,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         idx: 0,
     };
     let mut tflag: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut src: *mut session = (*source).s_ptr();
+    let mut src: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut dst: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = (*source).wl_ptr();
     let mut idx: ::core::ffi::c_int = 0;
@@ -98,9 +98,9 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         {
             return CMD_RETURN_ERROR;
         }
-        session_renumber_windows(target.s_ptr());
+        session_renumber_windows(&(*(target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"));
         recalculate_sizes();
-        server_status_session(&*(target.s_ptr()));
+        server_status_session(&*(target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         return CMD_RETURN_NORMAL;
     }
     if cmd_find_target(
@@ -113,7 +113,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     {
         return CMD_RETURN_ERROR;
     }
-    dst = target.s_ptr();
+    dst = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     idx = target.idx;
     kflag = args_has(args, 'k' as i32 as u_char);
     dflag = args_has(args, 'd' as i32 as u_char);
@@ -121,22 +121,22 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
         if !target.wl_ptr().is_null() {
-            idx = winlink_shuffle_up(dst, target.wl_ptr(), before);
+            idx = winlink_shuffle_up(&(*(dst)).observer.upgrade().expect("live session"), target.wl_ptr(), before);
         } else {
-            idx = winlink_shuffle_up(dst, (*dst).curw_ptr(), before);
+            idx = winlink_shuffle_up(&(*(dst)).observer.upgrade().expect("live session"), (*dst).curw_ptr(), before);
         }
         if idx == -(1 as ::core::ffi::c_int) {
             return CMD_RETURN_ERROR;
         }
     }
     if let Err(cause) =
-        server_link_window(src, wl, dst, idx, kflag, (dflag == 0) as ::core::ffi::c_int)
+        server_link_window(&(*(src)).observer.upgrade().expect("live session"), wl, &(*(dst)).observer.upgrade().expect("live session"), idx, kflag, (dflag == 0) as ::core::ffi::c_int)
     {
         cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
         return CMD_RETURN_ERROR;
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_window_entry) {
-        server_unlink_window(src, wl);
+        server_unlink_window(&(*(src)).observer.upgrade().expect("live session"), wl);
     }
     if sflag == 0
         && options_get_number(
@@ -144,7 +144,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
-        session_renumber_windows(src);
+        session_renumber_windows(&(*src).observer.upgrade().expect("live session"));
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

@@ -224,11 +224,10 @@ pub struct window_pane {
 }
 
 impl window_pane {
-    /// Resolve the parent, retained by the caller or by explicit window cleanup.
-    /// The returned borrow is bounded by the current operation; it must not
-    /// be stored past a callback that can release or detach the window.
-    pub unsafe fn window_ptr(&self) -> *mut window {
-        self.window.upgrade().map_or(std::ptr::null_mut(), |owner| owner.get())
+    /// Retain the parent for the current operation. Release potentially final
+    /// owners through window_remove_ref, as with other window handles.
+    pub fn window_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
+        self.window.upgrade()
     }
 
     /// Resolve the displayed screen while the pane and selected mode are live.

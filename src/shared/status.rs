@@ -37,7 +37,7 @@ impl status_line {
 pub type status_prompt_input_cb = Option<
     Box<
         dyn FnMut(
-            Option<std::ptr::NonNull<client>>,
+            Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
             Option<&CStr>,
             prompt_key_result,
         ) -> prompt_result,

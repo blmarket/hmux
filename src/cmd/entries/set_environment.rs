@@ -68,7 +68,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     if args_has(args, 'g' as i32 as u_char) != 0 {
         env = global_environ.as_deref_mut().expect("environment");
         current_block = 224731115979188411;
-    } else if (*target).s_ptr().is_null() {
+    } else if (*target).session_handle().is_none() {
         tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if !tflag.is_null() {
             cmdq_error(item, |out| {
@@ -80,7 +80,7 @@ unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         }
         return CMD_RETURN_ERROR;
     } else {
-        env = (*(*target).s_ptr()).environ.as_deref_mut().expect("environment");
+        env = (*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).environ.as_deref_mut().expect("environment");
         current_block = 224731115979188411;
     }
     match current_block {

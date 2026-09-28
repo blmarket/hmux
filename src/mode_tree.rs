@@ -571,9 +571,9 @@ pub unsafe fn mode_tree_zoom(tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     if args_has(args, 'Z' as i32 as u_char) != 0 {
-        (*mtd).zoomed = (*(*wp).window_ptr()).flags & WINDOW_ZOOMED;
+        (*mtd).zoomed = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED;
         if (*mtd).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&*((*wp).window_ptr()));
+            server_redraw_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
         }
     } else {
         (*mtd).zoomed = -(1 as ::core::ffi::c_int);
@@ -718,7 +718,7 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
     if mtd.zoomed == 0 {
         if let Some(pane) = mtd.wp.upgrade() {
             let wp = &*pane.get();
-            server_unzoom_window(wp.window_ptr());
+            server_unzoom_window(&(*(wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
         }
     }
     mode_tree_clear_prompt(&owner);
@@ -833,7 +833,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -945,10 +945,10 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        wp,
+        (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     keylen = 0 as ::core::ffi::c_int;
     i = 0 as u_int;
@@ -1866,7 +1866,7 @@ unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut c
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut box_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1934,10 +1934,10 @@ unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut c
     );
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        mode_pane,
+        (mode_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     screen_write_cursormove(
         &mut *ctx,
@@ -2021,7 +2021,7 @@ pub unsafe fn mode_tree_key(
                 || (*m).b & MOUSE_MASK_DRAG as u_int != 0
                 || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
                 || cmd_mouse_at(
-                    mode_pane,
+                    &*(mode_pane),
                     m,
                     &raw mut x,
                     &raw mut y,
@@ -2128,7 +2128,7 @@ pub unsafe fn mode_tree_key(
         && !m.is_null()
     {
         if cmd_mouse_at(
-            mode_pane,
+            &*(mode_pane),
             m,
             &raw mut x,
             &raw mut y,
@@ -2411,7 +2411,7 @@ pub unsafe fn mode_tree_run_command(
     {
         if let Some(owner) = client_owner {
             cmd_parse_error_uppercase_first(&mut error);
-            status_message_set(owner.get(), -1, 1, 0, 0, |out| {
+            status_message_set((owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), -1, 1, 0, 0, |out| {
                 write_cstr(
                     out,
                     error

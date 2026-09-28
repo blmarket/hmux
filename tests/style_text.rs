@@ -113,7 +113,7 @@ fn legacy_escape_contract() {
             (-1, 0, Some("\x1b[39m")),
             (10, 0, None),
         ] {
-            let p = colour_toescape(std::ptr::null_mut(), value, bg);
+            let p = colour_toescape(None, value, bg);
             assert_eq!(
                 if p.is_null() {
                     None
@@ -139,7 +139,7 @@ fn owned_results_and_bounded_inputs() {
         unsafe {
             let _ = attributes_tostring(n);
             let _ = colour_tostring(COLOUR_FLAG_RGB | n);
-            let _ = colour_toescape(std::ptr::null_mut(), n, 0);
+            let _ = colour_toescape(None, n, 0);
         }
     }
     assert_eq!(attrs.to_bytes(), b"bright,dim");

@@ -237,8 +237,8 @@ unsafe fn sort_winlink_cmp(
     wlb: *mut winlink,
     sort_crit: &sort_criteria,
 ) -> Ordering {
-    let mut wa: *mut window = (*wla).window_ptr();
-    let mut wb: *mut window = (*wlb).window_ptr();
+    let mut wa: *mut window = (*wla).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wb: *mut window = (*wlb).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
@@ -514,9 +514,10 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winli
     links
 }
 pub unsafe fn sort_get_winlinks_session(
-    s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     sort_crit: *mut sort_criteria,
 ) -> Vec<*mut winlink> {
+    let mut s = s_owner.get();
     let mut l = Vec::new();
     let mut wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {

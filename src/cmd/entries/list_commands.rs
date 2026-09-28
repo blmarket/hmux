@@ -95,10 +95,10 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
+        None,
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     command = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if command.is_null() {

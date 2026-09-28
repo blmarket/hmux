@@ -90,7 +90,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
         links
     } else {
-        let links = sort_get_winlinks_session((*target).s_ptr(), &raw mut sort_crit);
+        let links = sort_get_winlinks_session(&(*((*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"), &raw mut sort_crit);
         if template.is_null() {
             template = b"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}\0"
                 as *const u8 as *const ::core::ffi::c_char;
@@ -114,7 +114,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (n) as u32),
         );
-        format_defaults(ft, c, s, wl, ::core::ptr::null_mut::<window_pane>());
+        format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, None);
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

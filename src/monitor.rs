@@ -11,7 +11,7 @@ use crate::src::session::{
     session_find_by_id, sessions_minmax,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::client::{client, client_rc_ptr, CLIENT_DEAD};
+use crate::src::shared::client::{client, client_handle, CLIENT_DEAD};
 use crate::src::shared::rc;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::event::EV_TIMEOUT;
@@ -68,37 +68,34 @@ unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>>
 }
 
 // Client and session lifetime guards outlive each format expansion and report.
-unsafe fn monitor_get_session(ms: *mut monitor_set, c: *mut client) -> Option<Rc<UnsafeCell<session>>> {
-    let s = if monitor_has_client(ms) {
-        if c.is_null() { return None; }
-        (*c).session_ptr()
-    } else {
-        let s = (*ms).session.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-        if s.is_null() {
-            sessions_minmax(&*std::ptr::addr_of!(sessions)).as_ref().map_or(std::ptr::null_mut(), rc::as_ptr)
-        } else if session_find_by_id((*s).id).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr) == s {
-            s
-        } else {
-            return None;
-        }
+unsafe fn monitor_get_session(ms: *mut monitor_set, c_owner: Option<&Rc<UnsafeCell<client>>>) -> Option<Rc<UnsafeCell<session>>> {
+    if monitor_has_client(ms) {
+        return (*c_owner?.get()).session.upgrade();
+    }
+    let Some(session) = (*ms).session.as_ref() else {
+        return sessions_minmax(&*std::ptr::addr_of!(sessions));
     };
-    if s.is_null() { None } else { (*s).observer.upgrade() }
+    let indexed = session_find_by_id((*session.get()).id)?;
+    Rc::ptr_eq(session, &indexed).then_some(indexed)
 }
 
 unsafe fn monitor_create_formats(
-    mut c: *mut client,
-    mut s: *mut session,
+    c_owner: Option<&Rc<UnsafeCell<client>>>,
+    s_owner: Option<&Rc<UnsafeCell<session>>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<UnsafeCell<window_pane>>>,
 ) -> *mut format_tree {
+    let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         0 as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );
-    format_defaults(ft, c, s, wl, wp);
+    format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     return ft;
 }
 
@@ -131,9 +128,9 @@ unsafe fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut monitor_item)
 unsafe fn monitor_report(
     mut ms: *mut monitor_set,
     mut me: *mut monitor_item,
-    mut s: *mut session,
+    s_owner: Option<&Rc<UnsafeCell<session>>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<UnsafeCell<window_pane>>>,
     value: &CStr,
     last: Option<&CStr>,
 ) {
@@ -157,9 +154,9 @@ unsafe fn monitor_report(
     (*me).fire_count = (*me).fire_count.wrapping_add(1);
     (*me).fire_time = current_time;
     change.c = (*ms).client.clone();
-    change.s = if s.is_null() { std::rc::Weak::new() } else { (*s).observer.clone() };
+    change.s = s_owner.map_or_else(std::rc::Weak::new, Rc::downgrade);
     change.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
-    change.wp = if wp.is_null() { std::rc::Weak::new() } else { (*wp).observer.clone() };
+    change.wp = wp_owner.map_or_else(std::rc::Weak::new, Rc::downgrade);
     // The callback may destroy the monitor set while it is running.
     let callback = (*ms).cb.clone();
     callback(&change);
@@ -167,9 +164,9 @@ unsafe fn monitor_report(
 unsafe fn monitor_check_value(
     mut ms: *mut monitor_set,
     mut me: *mut monitor_item,
-    mut s: *mut session,
+    s_owner: Option<&Rc<UnsafeCell<session>>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<UnsafeCell<window_pane>>>,
     value: &CStr,
     owned_last: *mut Option<CString>,
 ) {
@@ -182,9 +179,9 @@ unsafe fn monitor_check_value(
             monitor_report(
                 ms,
                 me,
-                s,
+                s_owner,
                 wl,
-                wp,
+                wp_owner,
                 value,
                 None,
             );
@@ -199,7 +196,7 @@ unsafe fn monitor_check_value(
     let old = (*owned_last).replace(next);
     let previous = old.as_ref().expect("monitor last value existed");
     if notify {
-        monitor_report(ms, me, s, wl, wp, value, Some(previous));
+        monitor_report(ms, me, s_owner, wl, wp_owner, value, Some(previous));
     }
 }
 unsafe fn monitor_check_session(
@@ -208,25 +205,24 @@ unsafe fn monitor_check_session(
     mut ft: *mut format_tree,
 ) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     monitor_check_value(
         ms,
         me,
-        s,
+        Some(&session_owner),
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
         &value,
         &raw mut (*me).last,
     );
@@ -237,12 +233,12 @@ unsafe fn monitor_check_session(
 }
 unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
@@ -270,11 +266,11 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         }
         return;
     }
-    w = (*wp).window_ptr();
-    wl = window_winlinks_first(w);
+    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if (*wl).session.ptr_eq(&(*s).observer) {
-            ft = monitor_create_formats(c, s, wl, wp);
+            ft = monitor_create_formats(client_owner.as_ref(), Some(&session_owner), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             let value = format_expand_cstring(ft, ((*me).format).as_ptr());
             format_free(Box::from_raw(ft));
             find.pane = (*wp).id;
@@ -286,9 +282,9 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
                 (*mp).idx = (*wl).idx as u_int;
                 monitor_panes_insert(&raw mut (*me).panes, mp);
             }
-            monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
+            monitor_check_value(ms, me, Some(&session_owner), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), &value, &raw mut (*mp).last);
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
     drop(session_owner);
     if let Some(client) = client_owner {
@@ -300,21 +296,21 @@ unsafe fn monitor_check_all_panes_one(
     mut me: *mut monitor_item,
     mut ft: *mut format_tree,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&Rc<UnsafeCell<window_pane>>>,
 ) {
+    let wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     let mut find: monitor_pane = monitor_pane {
         pane: 0,
@@ -334,7 +330,7 @@ unsafe fn monitor_check_all_panes_one(
         monitor_panes_insert(&raw mut (*me).panes, mp);
     }
     (*mp).generation = (*ms).generation;
-    monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
+    monitor_check_value(ms, me, Some(&session_owner), wl, wp_owner, &value, &raw mut (*mp).last);
     drop(session_owner);
     if let Some(client) = client_owner {
         drop(client);
@@ -357,12 +353,12 @@ unsafe fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_i
 }
 unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
@@ -392,10 +388,10 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         }
         return;
     }
-    wl = window_winlinks_first(w);
+    wl = window_winlinks_first((w).as_ref());
     while !wl.is_null() {
         if (*wl).session.ptr_eq(&(*s).observer) {
-            ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
+            ft = monitor_create_formats(client_owner.as_ref(), Some(&session_owner), wl, None);
             let value = format_expand_cstring(ft, ((*me).format).as_ptr());
             format_free(Box::from_raw(ft));
             find.window = (*w).id;
@@ -410,14 +406,14 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
             monitor_check_value(
                 ms,
                 me,
-                s,
+                Some(&session_owner),
                 wl,
-                ::core::ptr::null_mut::<window_pane>(),
+                None,
                 &value,
                 &raw mut (*mw).last,
             );
         }
-        wl = window_winlinks_next(w, wl);
+        wl = window_winlinks_next((w).as_ref(), wl);
     }
     if let Some(window) = window_owner {
         crate::src::window::window_remove_ref(window, c"monitor_check_window".as_ptr());
@@ -434,19 +430,18 @@ unsafe fn monitor_check_all_windows_one(
     mut wl: *mut winlink,
 ) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
-    let mut w: *mut window = (*wl).window_ptr();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
     let mut find: monitor_window = monitor_window {
         window: 0,
@@ -469,9 +464,9 @@ unsafe fn monitor_check_all_windows_one(
     monitor_check_value(
         ms,
         me,
-        s,
+        Some(&session_owner),
         wl,
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
         &value,
         &raw mut (*mw).last,
     );
@@ -497,26 +492,25 @@ unsafe fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u
 }
 unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = monitor_create_formats(
-        c,
-        s,
+        client_owner.as_ref(),
+        Some(&session_owner),
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     me = monitor_items_minmax(&(*ms).items);
     while !me.is_null() && {
@@ -558,12 +552,12 @@ unsafe fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
 }
 unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
@@ -581,9 +575,9 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     }
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = window_pane_first(((*wl).window_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
-            ft = monitor_create_formats(c, s, wl, wp);
+            ft = monitor_create_formats(client_owner.as_ref(), Some(&session_owner), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             me = monitor_items_minmax(&(*ms).items);
             while !me.is_null() && {
                 me1 = monitor_items_next(&*me);
@@ -592,7 +586,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
                 if !((*me).type_0 as ::core::ffi::c_uint
                     != MONITOR_ALL_PANES as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    monitor_check_all_panes_one(ms, me, ft, wl, wp);
+                    monitor_check_all_panes_one(ms, me, ft, wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                 }
                 me = me1;
             }
@@ -620,12 +614,12 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
 }
 unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
@@ -642,7 +636,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     }
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
+        ft = monitor_create_formats(client_owner.as_ref(), Some(&session_owner), wl, None);
         me = monitor_items_minmax(&(*ms).items);
         while !me.is_null() && {
             me1 = monitor_items_next(&*me);
@@ -677,7 +671,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
 }
 unsafe fn monitor_timer(ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     if monitor_has_client(ms) && c.is_null() {
         return;
     }
@@ -692,7 +686,7 @@ unsafe fn monitor_timer(ms: *mut monitor_set) {
     let mut have_all_windows: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     log_debug(format_args!("{}: timer fired", "monitor_timer"));
     event_add(&raw mut (*ms).timer, &raw mut tv);
-    let Some(session_owner) = monitor_get_session(ms, c) else {
+    let Some(session_owner) = monitor_get_session(ms, client_owner.as_ref()) else {
         if let Some(client) = client_owner {
             drop(client);
         }
@@ -739,16 +733,16 @@ unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
         generation: 0,
     }))
 }
-pub unsafe fn monitor_create_client(mut c: *mut client, cb: monitor_cb) -> *mut monitor_set {
+pub unsafe fn monitor_create_client(c_owner: Option<&Rc<UnsafeCell<client>>>, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
-    (*ms).client = if c.is_null() { std::rc::Weak::new() } else { (*c).observer.clone() };
+    (*ms).client = c_owner.map_or_else(std::rc::Weak::new, Rc::downgrade);
     return ms as *mut monitor_set;
 }
-pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mut monitor_set {
+pub unsafe fn monitor_create_session(s_owner: Option<&Rc<UnsafeCell<session>>>, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
-    (*ms).session = if s.is_null() { None } else { (*s).observer.upgrade() };
+    (*ms).session = s_owner.cloned();
     return ms;
 }
 unsafe fn monitor_clear(mut ms: *mut monitor_set) {
@@ -777,16 +771,16 @@ pub unsafe fn monitor_destroy(mut owner: Box<monitor_set>) {
 }
 
 pub unsafe fn monitor_create_client_owned(
-    c: *mut client,
+    c_owner: Option<&Rc<UnsafeCell<client>>>,
     cb: monitor_cb,
 ) -> Box<monitor_set> {
-    Box::from_raw(monitor_create_client(c, cb))
+    Box::from_raw(monitor_create_client(c_owner, cb))
 }
 pub unsafe fn monitor_create_session_owned(
-    s: *mut session,
+    s_owner: Option<&Rc<UnsafeCell<session>>>,
     cb: monitor_cb,
 ) -> Box<monitor_set> {
-    Box::from_raw(monitor_create_session(s, cb))
+    Box::from_raw(monitor_create_session(s_owner, cb))
 }
 pub struct ParsedMonitor {
     pub name: CString,
@@ -1251,7 +1245,7 @@ mod last_owner_tests {
                 let client = client::new();
                 let c = rc::as_ptr(&client);
                 let observer = Rc::downgrade(&client);
-                let set = monitor_create_client(c, Rc::new(|_| {}));
+                let set = monitor_create_client(Some(&client), Rc::new(|_| {}));
                 assert!(monitor_has_client(set));
 
                 // The client exists, but the missing session ends the scan early.
@@ -1294,9 +1288,9 @@ mod last_owner_tests {
             let owner = session::new();
             let session = rc::as_ptr(&owner);
             (*session).name = c"monitor-release-test".to_owned();
-            sessions_insert(&raw mut sessions, owner);
+            sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
             let observer = (*session).observer.clone();
-            let set = monitor_create_session(session, std::rc::Rc::new(|_| {}));
+            let set = monitor_create_session((session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), std::rc::Rc::new(|_| {}));
             let mut item = monitor_item::empty();
             item.id = u32::MAX;
 
@@ -1310,7 +1304,7 @@ mod last_owner_tests {
             event_loop();
             assert_eq!(observer.strong_count(), 2);
 
-            sessions_remove(&raw mut sessions, session);
+            sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*session).observer.upgrade().expect("indexed session"));
             monitor_destroy(Box::from_raw(set));
             assert_eq!(observer.strong_count(), 1);
             shutdown_runtime();
@@ -1337,7 +1331,7 @@ mod last_owner_tests {
             }));
             let callback_capture = capture.clone();
             let set = monitor_create_client(
-                ::core::ptr::null_mut(),
+                None,
                 crate::src::shared::monitor::monitor_callback(move |change| {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = change.value.to_bytes().to_vec();
@@ -1361,9 +1355,9 @@ mod last_owner_tests {
             monitor_check_value(
                 set,
                 item,
+                None,
                 ::core::ptr::null_mut(),
-                ::core::ptr::null_mut(),
-                ::core::ptr::null_mut(),
+                None,
                 &first,
                 &raw mut (*owner).last,
             );
@@ -1379,9 +1373,9 @@ mod last_owner_tests {
             monitor_check_value(
                 set,
                 item,
+                None,
                 ::core::ptr::null_mut(),
-                ::core::ptr::null_mut(),
-                ::core::ptr::null_mut(),
+                None,
                 &first,
                 &raw mut (*owner).last,
             );
@@ -1391,9 +1385,9 @@ mod last_owner_tests {
             monitor_check_value(
                 set,
                 item,
+                None,
                 ::core::ptr::null_mut(),
-                ::core::ptr::null_mut(),
-                ::core::ptr::null_mut(),
+                None,
                 &second,
                 &raw mut (*owner).last,
             );

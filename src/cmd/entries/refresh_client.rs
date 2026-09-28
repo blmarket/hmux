@@ -60,15 +60,16 @@ pub static cmd_refresh_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_refresh_client_update_subscription(
-    mut tc: *mut client,
+    tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut value: *const ::core::ffi::c_char,
 ) {
+    let mut tc = tc_owner.get();
     let Some(parsed) = monitor_parse_owned(CStr::from_ptr(value)) else {
-        control_remove_sub(tc, value);
+        control_remove_sub(tc_owner, value);
         return;
     };
     control_add_sub(
-        tc,
+        tc_owner,
         parsed.name.as_ptr(),
         parsed.type_0,
         parsed.id,
@@ -115,7 +116,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             (x) as u32,
             (y) as u32
         ));
-        control_set_window_size(tc, w, x, y);
+        control_set_window_size(&mut *(tc), w, x, y);
         (*tc).flags =
             ((*tc).flags as ::core::ffi::c_ulonglong | CLIENT_WINDOWSIZECHANGED) as uint64_t;
         recalculate_sizes_now(1 as ::core::ffi::c_int);
@@ -138,7 +139,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             ),
             (w) as u32
         ));
-        control_clear_window_size(tc, w);
+        control_clear_window_size(&mut *(tc), w);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
@@ -188,7 +189,8 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     (matched == 1).then_some((pane, suffix))
 }
 
-unsafe fn cmd_refresh_client_update_offset(tc: *mut client, value: *const ::core::ffi::c_char) {
+unsafe fn cmd_refresh_client_update_offset(tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, value: *const ::core::ffi::c_char) {
+    let mut tc = tc_owner.get();
     let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
@@ -198,10 +200,10 @@ unsafe fn cmd_refresh_client_update_offset(tc: *mut client, value: *const ::core
         return;
     }
     match action.to_bytes() {
-        b"on" => control_set_pane_on(tc, wp),
-        b"off" => control_set_pane_off(tc, wp),
-        b"continue" => control_continue_pane(tc, wp),
-        b"pause" => control_pause_pane(tc, wp),
+        b"on" => control_set_pane_on(tc_owner, &(*(wp)).observer.upgrade().expect("live window_pane")),
+        b"off" => control_set_pane_off(tc_owner, &(*(wp)).observer.upgrade().expect("live window_pane")),
+        b"continue" => control_continue_pane(tc_owner, &(*(wp)).observer.upgrade().expect("live window_pane")),
+        b"pause" => control_pause_pane(tc_owner, &(*(wp)).observer.upgrade().expect("live window_pane")),
         _ => {}
     }
 }
@@ -269,7 +271,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         if args_has(args, 'c' as i32 as u_char) != 0 {
             (*tc).pan_window = std::rc::Weak::new();
         } else {
-            w = (*(*(*tc).session_ptr()).curw_ptr()).window_ptr();
+            w = (*(*(*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if !(*tc).pan_window_is(&*w) {
                 (*tc).set_pan_window(&*w);
                 (*tc).pan_ox = (*tty).oox;
@@ -299,7 +301,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
                 }
             }
         }
-        tty_update_client_offset(tc);
+        tty_update_client_offset(&(*(tc)).observer.upgrade().expect("live client"));
         server_redraw_client(&mut *(tc));
         return CMD_RETURN_NORMAL;
     }
@@ -308,10 +310,10 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        server_client_set_flags(tc, args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+        server_client_set_flags(&(*(tc)).observer.upgrade().expect("live client"), args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     }
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        server_client_set_flags(tc, args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+        server_client_set_flags(&(*(tc)).observer.upgrade().expect("live client"), args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     }
     if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(tty, args_get(&*(args), 'r' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
@@ -319,14 +321,14 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     if args_has(args, 'A' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
             for av in args_flag_values(&*args, 'A' as i32 as u_char) {
-                cmd_refresh_client_update_offset(tc, av.string_ptr());
+                cmd_refresh_client_update_offset(&(*(tc)).observer.upgrade().expect("live client"), av.string_ptr());
             }
             return CMD_RETURN_NORMAL;
         }
     } else if args_has(args, 'B' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
             for av in args_flag_values(&*args, 'B' as i32 as u_char) {
-                cmd_refresh_client_update_subscription(tc, av.string_ptr());
+                cmd_refresh_client_update_subscription(&(*(tc)).observer.upgrade().expect("live client"), av.string_ptr());
             }
             return CMD_RETURN_NORMAL;
         }

@@ -137,7 +137,8 @@ static mut cmd_find_pane_table: [[*const ::core::ffi::c_char; 2]; 16] = [
         ::core::ptr::null::<::core::ffi::c_char>(),
     ],
 ];
-unsafe fn cmd_find_inside_pane(mut c: *mut client) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+unsafe fn cmd_find_inside_pane(c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut inside_pane_owner = None;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut envent: Option<&environ_entry> = None;
@@ -214,8 +215,8 @@ fn cmd_find_session_better(s: &session, than: Option<&session>, flags: ::core::f
 unsafe fn cmd_find_session_valid(s: &session) -> ::core::ffi::c_int {
     if session_alive(Some(s)) == 0
         || (*s).curw_ptr().is_null()
-        || (*(*s).curw_ptr()).window_ptr().is_null()
-        || (*(*(*s).curw_ptr()).window_ptr()).active_ptr().is_null()
+        || (*(*s).curw_ptr()).window_handle().is_none()
+        || (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().is_none()
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -268,15 +269,15 @@ unsafe fn cmd_find_best_winlink_with_window(mut fs: *mut cmd_find_state) -> ::co
     log_debug(format_args!(
         "{}: window is @{}",
         "cmd_find_best_winlink_with_window",
-        ((*(*fs).w_ptr()).id) as u32
+        ((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as u32
     ));
     wl = ::core::ptr::null_mut::<winlink>();
-    if !(*(*fs).s_ptr()).curw_ptr().is_null() && (*(*(*fs).s_ptr()).curw_ptr()).window_ptr() == (*fs).w_ptr() {
-        wl = (*(*fs).s_ptr()).curw_ptr();
+    if !(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr().is_null() && (*(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+        wl = (*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr();
     } else {
-        wl_loop = winlinks_minmax(&(*(*fs).s_ptr()).windows, RB_NEGINF);
+        wl_loop = winlinks_minmax(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, RB_NEGINF);
         while !wl_loop.is_null() {
-            if (*wl_loop).window_ptr() == (*fs).w_ptr() {
+            if (*wl_loop).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
                 wl = wl_loop;
                 break;
             } else {
@@ -322,14 +323,14 @@ unsafe fn cmd_find_get_session(
         log_cstr((session) as *const _)
     ));
     if *session as ::core::ffi::c_int == '$' as i32 {
-        (*fs).set_s(session_find_by_id_str(std::ffi::CStr::from_ptr(session)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr));
-        if (*fs).s_ptr().is_null() {
+        (*fs).set_s((session_find_by_id_str(std::ffi::CStr::from_ptr(session)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)).as_ref());
+        if (*fs).session_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
     }
-    (*fs).set_s(session_find(std::ffi::CStr::from_ptr(session)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr));
-    if !(*fs).s_ptr().is_null() {
+    (*fs).set_s((session_find(std::ffi::CStr::from_ptr(session)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)).as_ref());
+    if !(*fs).session_handle().is_none() {
         return 0 as ::core::ffi::c_int;
     }
     let matched_client_owner = cmd_find_client(
@@ -338,8 +339,8 @@ unsafe fn cmd_find_get_session(
         1 as ::core::ffi::c_int,
     );
     c = matched_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !c.is_null() && !(*c).session_ptr().is_null() {
-        (*fs).set_s((*c).session_ptr());
+    if !c.is_null() && !(*c).session_handle().is_none() {
+        (*fs).set_s(((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     if (*fs).flags & CMD_FIND_EXACT_SESSION != 0 {
@@ -364,7 +365,7 @@ unsafe fn cmd_find_get_session(
         s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     if !s.is_null() {
-        (*fs).set_s(s);
+        (*fs).set_s((s).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     s = ::core::ptr::null_mut::<session>();
@@ -386,7 +387,7 @@ unsafe fn cmd_find_get_session(
         s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     if !s.is_null() {
-        (*fs).set_s(s);
+        (*fs).set_s((s).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     return -(1 as ::core::ffi::c_int);
@@ -405,11 +406,11 @@ unsafe fn cmd_find_get_window(
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner = window_find_by_id_str(window);
         let result = (|| {
-            (*fs).set_w(window_owner.as_ref().map_or(
+            (*fs).set_w((window_owner.as_ref().map_or(
                 std::ptr::null_mut(),
                 crate::src::shared::rc::as_ptr,
-            ));
-            if (*fs).w_ptr().is_null() {
+            )).as_ref());
+            if (*fs).window_handle().is_none() {
                 return -(1 as ::core::ffi::c_int);
             }
             return cmd_find_best_session_with_window(fs);
@@ -424,8 +425,8 @@ unsafe fn cmd_find_get_window(
         return 0 as ::core::ffi::c_int;
     }
     if only == 0 && cmd_find_get_session(fs, window) == 0 as ::core::ffi::c_int {
-        (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
-        (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+        (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
+        (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         if !(*fs).flags & CMD_FIND_WINDOW_INDEX != 0 {
             (*fs).idx = (*(*fs).wl_ptr()).idx;
         }
@@ -449,16 +450,16 @@ unsafe fn cmd_find_get_window_with_session(
         log_cstr((window) as *const _)
     ));
     exact = (*fs).flags & CMD_FIND_EXACT_WINDOW;
-    (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
-    (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+    (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
+    (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner = window_find_by_id_str(window);
         let result = (|| {
-            (*fs).set_w(window_owner.as_ref().map_or(
+            (*fs).set_w((window_owner.as_ref().map_or(
                 std::ptr::null_mut(),
                 crate::src::shared::rc::as_ptr,
-            ));
-            if (*fs).w_ptr().is_null() || session_has(&*(*fs).s_ptr(), &*(*fs).w_ptr()) == 0 {
+            )).as_ref());
+            if (*fs).window_handle().is_none() || session_has(&*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) == 0 {
                 return -(1 as ::core::ffi::c_int);
             }
             return cmd_find_best_winlink_with_window(fs);
@@ -485,7 +486,7 @@ unsafe fn cmd_find_get_window_with_session(
         } else {
             n = 1 as ::core::ffi::c_int;
         }
-        s = (*fs).s_ptr();
+        s = (*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if (*fs).flags & CMD_FIND_WINDOW_INDEX != 0 {
             if *window.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '+' as i32
             {
@@ -502,13 +503,13 @@ unsafe fn cmd_find_get_window_with_session(
             return 0 as ::core::ffi::c_int;
         }
         if *window.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '+' as i32 {
-            (*fs).set_wl(winlink_next_by_number((*s).curw_ptr(), s, n));
+            (*fs).set_wl(winlink_next_by_number((*s).curw_ptr(), &(*(s)).observer.upgrade().expect("live session"), n));
         } else {
-            (*fs).set_wl(winlink_previous_by_number((*s).curw_ptr(), s, n));
+            (*fs).set_wl(winlink_previous_by_number((*s).curw_ptr(), &(*(s)).observer.upgrade().expect("live session"), n));
         }
         if !(*fs).wl_ptr().is_null() {
             (*fs).idx = (*(*fs).wl_ptr()).idx;
-            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -516,32 +517,32 @@ unsafe fn cmd_find_get_window_with_session(
         if strcmp(window, b"!\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).set_wl(crate::src::window::winlink_stack_first(&(*(*fs).s_ptr()).lastw));
+            (*fs).set_wl(crate::src::window::winlink_stack_first(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).lastw));
             if (*fs).wl_ptr().is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
             (*fs).idx = (*(*fs).wl_ptr()).idx;
-            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
             return 0 as ::core::ffi::c_int;
         } else if strcmp(window, b"^\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).set_wl(winlinks_minmax(&(*(*fs).s_ptr()).windows, RB_NEGINF));
+            (*fs).set_wl(winlinks_minmax(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, RB_NEGINF));
             if (*fs).wl_ptr().is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
             (*fs).idx = (*(*fs).wl_ptr()).idx;
-            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
             return 0 as ::core::ffi::c_int;
         } else if strcmp(window, b"$\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).set_wl(winlinks_minmax(&(*(*fs).s_ptr()).windows, RB_INF));
+            (*fs).set_wl(winlinks_minmax(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, RB_INF));
             if (*fs).wl_ptr().is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
             (*fs).idx = (*(*fs).wl_ptr()).idx;
-            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -555,10 +556,10 @@ unsafe fn cmd_find_get_window_with_session(
             &raw mut errstr,
         ) as ::core::ffi::c_int;
         if errstr.is_null() {
-            (*fs).set_wl(winlink_find_by_index(&raw mut (*(*fs).s_ptr()).windows, idx));
+            (*fs).set_wl(winlink_find_by_index(&raw mut (*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, idx));
             if !(*fs).wl_ptr().is_null() {
                 (*fs).idx = (*(*fs).wl_ptr()).idx;
-                (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+                (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                 return 0 as ::core::ffi::c_int;
             }
             if (*fs).flags & CMD_FIND_WINDOW_INDEX != 0 {
@@ -568,9 +569,9 @@ unsafe fn cmd_find_get_window_with_session(
         }
     }
     (*fs).set_wl(::core::ptr::null_mut::<winlink>());
-    wl = winlinks_minmax(&(*(*fs).s_ptr()).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strcmp(window, (*(*wl).window_ptr()).name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if strcmp(window, (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr()) == 0 as ::core::ffi::c_int {
             if !(*fs).wl_ptr().is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -580,16 +581,16 @@ unsafe fn cmd_find_get_window_with_session(
     }
     if !(*fs).wl_ptr().is_null() {
         (*fs).idx = (*(*fs).wl_ptr()).idx;
-        (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+        (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     if exact != 0 {
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wl(::core::ptr::null_mut::<winlink>());
-    wl = winlinks_minmax(&(*(*fs).s_ptr()).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strncmp(window, (*(*wl).window_ptr()).name.as_ptr(), strlen(window)) == 0 as ::core::ffi::c_int
+        if strncmp(window, (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(), strlen(window)) == 0 as ::core::ffi::c_int
         {
             if !(*fs).wl_ptr().is_null() {
                 return -(1 as ::core::ffi::c_int);
@@ -600,15 +601,15 @@ unsafe fn cmd_find_get_window_with_session(
     }
     if !(*fs).wl_ptr().is_null() {
         (*fs).idx = (*(*fs).wl_ptr()).idx;
-        (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+        (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     (*fs).set_wl(::core::ptr::null_mut::<winlink>());
-    wl = winlinks_minmax(&(*(*fs).s_ptr()).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows, RB_NEGINF);
     while !wl.is_null() {
         if fnmatch(
             window,
-            (*(*wl).window_ptr()).name.as_ptr(),
+            (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(),
             0 as ::core::ffi::c_int,
         ) == 0 as ::core::ffi::c_int
         {
@@ -621,7 +622,7 @@ unsafe fn cmd_find_get_window_with_session(
     }
     if !(*fs).wl_ptr().is_null() {
         (*fs).idx = (*(*fs).wl_ptr()).idx;
-        (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+        (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     return -(1 as ::core::ffi::c_int);
@@ -640,10 +641,10 @@ unsafe fn cmd_find_get_pane(
     if *pane as ::core::ffi::c_int == '%' as i32 {
         let pane_owner = window_pane_find_by_id_str(CStr::from_ptr(pane));
         (*fs).wp = pane_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
-        (*fs).set_w((*(*fs).wp_ptr()).window_ptr());
+        (*fs).set_w(((*(*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return cmd_find_best_session_with_window(fs);
     }
     (*fs).s = current.s.clone();
@@ -657,7 +658,7 @@ unsafe fn cmd_find_get_pane(
         && cmd_find_get_window(fs, pane, 0 as ::core::ffi::c_int, current)
             == 0 as ::core::ffi::c_int
     {
-        (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+        (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return 0 as ::core::ffi::c_int;
     }
     return -(1 as ::core::ffi::c_int);
@@ -674,15 +675,15 @@ unsafe fn cmd_find_get_pane_with_session(
     if *pane as ::core::ffi::c_int == '%' as i32 {
         let pane_owner = window_pane_find_by_id_str(CStr::from_ptr(pane));
         (*fs).wp = pane_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
-        (*fs).set_w((*(*fs).wp_ptr()).window_ptr());
+        (*fs).set_w(((*(*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         return cmd_find_best_winlink_with_window(fs);
     }
-    (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
+    (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
     (*fs).idx = (*(*fs).wl_ptr()).idx;
-    (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+    (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     return cmd_find_get_pane_with_window(fs, pane);
 }
 unsafe fn cmd_find_get_pane_with_window(
@@ -701,17 +702,17 @@ unsafe fn cmd_find_get_pane_with_window(
     if *pane as ::core::ffi::c_int == '%' as i32 {
         let pane_owner = window_pane_find_by_id_str(CStr::from_ptr(pane));
         (*fs).wp = pane_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
-        if (*(*fs).wp_ptr()).window_ptr() != (*fs).w_ptr() {
+        if (*(*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != (*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
     }
     if strcmp(pane, b"!\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        (*fs).set_wp(window_pane_stack_first(((*fs).w_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
-        if (*fs).wp_ptr().is_null() {
+        (*fs).set_wp((window_pane_stack_first(((*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
@@ -724,7 +725,7 @@ unsafe fn cmd_find_get_pane_with_window(
         let active = (*window_owner.get()).active.upgrade();
         let selected = window_pane_find_up(active.as_ref());
         (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
@@ -737,7 +738,7 @@ unsafe fn cmd_find_get_pane_with_window(
         let active = (*window_owner.get()).active.upgrade();
         let selected = window_pane_find_down(active.as_ref());
         (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
@@ -750,7 +751,7 @@ unsafe fn cmd_find_get_pane_with_window(
         let active = (*window_owner.get()).active.upgrade();
         let selected = window_pane_find_left(active.as_ref());
         (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
@@ -763,7 +764,7 @@ unsafe fn cmd_find_get_pane_with_window(
         let active = (*window_owner.get()).active.upgrade();
         let selected = window_pane_find_right(active.as_ref());
         (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).wp_ptr().is_null() {
+        if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
@@ -793,7 +794,7 @@ unsafe fn cmd_find_get_pane_with_window(
             window_pane_previous_by_number(window, active_owner.as_ref(), n)
         };
         (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if !(*fs).wp_ptr().is_null() {
+        if !(*fs).pane_handle().is_none() {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -807,14 +808,14 @@ unsafe fn cmd_find_get_pane_with_window(
         let window_owner = (*fs).w.upgrade().expect("target window");
         let selected = window_pane_at_index(&mut *window_owner.get(), idx as u_int);
         (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if !(*fs).wp_ptr().is_null() {
+        if !(*fs).pane_handle().is_none() {
             return 0 as ::core::ffi::c_int;
         }
     }
     let window_owner = (*fs).w.upgrade().expect("target window");
     let selected = window_find_string(&window_owner, CStr::from_ptr(pane));
     (*fs).wp = selected.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    if !(*fs).wp_ptr().is_null() {
+    if !(*fs).pane_handle().is_none() {
         return 0 as ::core::ffi::c_int;
     }
     return -(1 as ::core::ffi::c_int);
@@ -843,7 +844,7 @@ pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     };
     let s = crate::src::shared::rc::as_ptr(&s);
     let w = crate::src::shared::rc::as_ptr(&w);
-    if session_alive(s.as_ref()) == 0 || wl.window_ptr() != w {
+    if session_alive(s.as_ref()) == 0 || wl.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w {
         return 0;
     }
     // Identity matters: a replacement at the same index is a different target.
@@ -862,12 +863,12 @@ pub unsafe fn cmd_find_copy_state(mut dst: *mut cmd_find_state, src: *const cmd_
     (*dst).wp = source.wp;
 }
 unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mut cmd_find_state) {
-    if !(*fs).s_ptr().is_null() {
+    if !(*fs).session_handle().is_none() {
         log_debug(format_args!(
             "{}: s=${} {}",
             log_cstr((prefix) as *const _),
-            ((*(*fs).s_ptr()).id) as u32,
-            log_cstr((((*(*fs).s_ptr()).name).as_ptr().cast_mut()) as *const _)
+            ((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as u32,
+            log_cstr((((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name).as_ptr().cast_mut()) as *const _)
         ));
     } else {
         log_debug(format_args!("{}: s=none", log_cstr((prefix) as *const _)));
@@ -877,18 +878,18 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
             "{}: wl={} {} w=@{} {}",
             log_cstr((prefix) as *const _),
             ((*(*fs).wl_ptr()).idx) as u32,
-            ((*(*fs).wl_ptr()).window_ptr() == (*fs).w_ptr()) as ::core::ffi::c_int,
-            ((*(*fs).w_ptr()).id) as u32,
-            crate::src::log::log_bytes((*(*fs).w_ptr()).name.as_bytes())
+            ((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) as ::core::ffi::c_int,
+            ((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as u32,
+            crate::src::log::log_bytes((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_bytes())
         ));
     } else {
         log_debug(format_args!("{}: wl=none", log_cstr((prefix) as *const _)));
     }
-    if !(*fs).wp_ptr().is_null() {
+    if !(*fs).pane_handle().is_none() {
         log_debug(format_args!(
             "{}: wp=%{}",
             log_cstr((prefix) as *const _),
-            ((*(*fs).wp_ptr()).id) as u32
+            ((*(*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as u32
         ));
     } else {
         log_debug(format_args!("{}: wp=none", log_cstr((prefix) as *const _)));
@@ -905,14 +906,15 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
 }
 pub unsafe fn cmd_find_from_session(
     mut fs: *mut cmd_find_state,
-    mut s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut flags: ::core::ffi::c_int,
 ) {
+    let s = s_owner.get();
     cmd_find_clear_state(fs, flags);
-    (*fs).set_s(s);
-    (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
-    (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
-    (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+    (*fs).set_s((s).as_ref());
+    (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
+    (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+    (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_session\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -926,8 +928,8 @@ pub unsafe fn cmd_find_from_winlink(
     cmd_find_clear_state(fs, flags);
     (*fs).s = (*wl).session.clone();
     (*fs).set_wl(wl);
-    (*fs).set_w((*wl).window_ptr());
-    (*fs).set_wp((*(*wl).window_ptr()).active_ptr());
+    (*fs).set_w(((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+    (*fs).set_wp(((*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_winlink\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -935,18 +937,20 @@ pub unsafe fn cmd_find_from_winlink(
 }
 pub unsafe fn cmd_find_from_session_window(
     mut fs: *mut cmd_find_state,
-    mut s: *mut session,
-    mut w: *mut window,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let s = s_owner.get();
+    let w = w_owner.get();
     cmd_find_clear_state(fs, flags);
-    (*fs).set_s(s);
-    (*fs).set_w(w);
+    (*fs).set_s((s).as_ref());
+    (*fs).set_w((w).as_ref());
     if cmd_find_best_winlink_with_window(fs) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, flags);
         return -(1 as ::core::ffi::c_int);
     }
-    (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+    (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_session_window\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -955,11 +959,12 @@ pub unsafe fn cmd_find_from_session_window(
 }
 pub unsafe fn cmd_find_from_window(
     mut fs: *mut cmd_find_state,
-    mut w: *mut window,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let w = w_owner.get();
     cmd_find_clear_state(fs, flags);
-    (*fs).set_w(w);
+    (*fs).set_w((w).as_ref());
     if cmd_find_best_session_with_window(fs) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, flags);
         return -(1 as ::core::ffi::c_int);
@@ -968,7 +973,7 @@ pub unsafe fn cmd_find_from_window(
         cmd_find_clear_state(fs, flags);
         return -(1 as ::core::ffi::c_int);
     }
-    (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+    (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_window\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -978,15 +983,16 @@ pub unsafe fn cmd_find_from_window(
 pub unsafe fn cmd_find_from_winlink_pane(
     mut fs: *mut cmd_find_state,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut flags: ::core::ffi::c_int,
 ) {
+    let wp = wp_owner.get();
     cmd_find_clear_state(fs, flags);
     (*fs).s = (*wl).session.clone();
     (*fs).set_wl(wl);
     (*fs).idx = (*(*fs).wl_ptr()).idx;
-    (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
-    (*fs).set_wp(wp);
+    (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+    (*fs).set_wp((wp).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_winlink_pane\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -994,13 +1000,14 @@ pub unsafe fn cmd_find_from_winlink_pane(
 }
 pub unsafe fn cmd_find_from_pane(
     mut fs: *mut cmd_find_state,
-    mut wp: *mut window_pane,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    if cmd_find_from_window(fs, (*wp).window_ptr(), flags) != 0 as ::core::ffi::c_int {
+    let wp = wp_owner.get();
+    if cmd_find_from_window(fs, &(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), flags) != 0 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
     }
-    (*fs).set_wp(wp);
+    (*fs).set_wp((wp).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_pane\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -1014,14 +1021,14 @@ pub unsafe fn cmd_find_from_nothing(
     cmd_find_clear_state(fs, flags);
     let best_session_owner = cmd_find_best_session(None, flags);
     (*fs).s = best_session_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    if (*fs).s_ptr().is_null() {
+    if (*fs).session_handle().is_none() {
         cmd_find_clear_state(fs, flags);
         return -(1 as ::core::ffi::c_int);
     }
-    (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
+    (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
     (*fs).idx = (*(*fs).wl_ptr()).idx;
-    (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
-    (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+    (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+    (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_nothing\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -1041,17 +1048,19 @@ pub unsafe fn cmd_find_from_mouse(
     {
         let mut s = std::ptr::null_mut();
         let mut wl = std::ptr::null_mut();
-        mouse_pane_owner = cmd_mouse_pane(m, &raw mut s, &raw mut wl);
+        let mut mouse_session_owner = None;
+        mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
+        s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         let wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        (*fs).set_s(s);
+        (*fs).set_s((s).as_ref());
         (*fs).set_wl(wl);
-        (*fs).set_wp(wp);
+        (*fs).set_wp((wp).as_ref());
     }
-    if (*fs).wp_ptr().is_null() {
+    if (*fs).pane_handle().is_none() {
         cmd_find_clear_state(fs, flags);
         return -(1 as ::core::ffi::c_int);
     }
-    (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+    (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     cmd_find_log_state(
         b"cmd_find_from_mouse\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
@@ -1060,24 +1069,25 @@ pub unsafe fn cmd_find_from_mouse(
 }
 pub unsafe fn cmd_find_from_client(
     mut fs: *mut cmd_find_state,
-    mut c: *mut client,
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let inside_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if c.is_null() {
         return cmd_find_from_nothing(fs, flags);
     }
-    if !(*c).session_ptr().is_null() {
+    if !(*c).session_handle().is_none() {
         cmd_find_clear_state(fs, flags);
-        (*fs).set_wp((*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).active_ptr());
-        if (*fs).wp_ptr().is_null() {
-            cmd_find_from_session(fs, (*c).session_ptr(), flags);
+        (*fs).set_wp(((*(*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        if (*fs).pane_handle().is_none() {
+            cmd_find_from_session(fs, &(*((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"), flags);
             return 0 as ::core::ffi::c_int;
         }
-        (*fs).set_s((*c).session_ptr());
-        (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
-        (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+        (*fs).set_s(((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
+        (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         cmd_find_log_state(
             b"cmd_find_from_client\0" as *const u8 as *const ::core::ffi::c_char,
             fs,
@@ -1085,14 +1095,14 @@ pub unsafe fn cmd_find_from_client(
         return 0 as ::core::ffi::c_int;
     }
     cmd_find_clear_state(fs, flags);
-    inside_pane_owner = cmd_find_inside_pane(c);
+    inside_pane_owner = cmd_find_inside_pane(c_owner);
     wp = inside_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        (*fs).set_w((*wp).window_ptr());
+        (*fs).set_w(((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         if !(cmd_find_best_session_with_window(fs) != 0 as ::core::ffi::c_int) {
-            (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
-            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
-            (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+            (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
+            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+            (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
             cmd_find_log_state(
                 b"cmd_find_from_client\0" as *const u8 as *const ::core::ffi::c_char,
                 fs,
@@ -1239,7 +1249,7 @@ pub unsafe fn cmd_find_target(
         current_context = Some(queue_current);
         log_debug(format_args!("{}: current is from queue", "cmd_find_target"));
         current_block = 1836292691772056875;
-    } else if cmd_find_from_client(&raw mut current, queue_client_ptr, flags)
+    } else if cmd_find_from_client(&raw mut current, (queue_client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), flags)
         == 0 as ::core::ffi::c_int
     {
         current_context = Some(current);
@@ -1274,13 +1284,13 @@ pub unsafe fn cmd_find_target(
                 ) == 0 as ::core::ffi::c_int
             {
                 c = queue_client_ptr;
-                if c.is_null() || (*c).session_ptr().is_null() {
+                if c.is_null() || (*c).session_handle().is_none() {
                     cmdq_error(item, |out| out.write_all(b"no current client"));
                     current_block = 5193823237153215208;
                 } else {
-                    (*fs).set_wl((*(*c).session_ptr()).curw_ptr());
-                    (*fs).set_wp((*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).active_ptr());
-                    (*fs).set_w((*(*(*c).session_ptr()).curw_ptr()).window_ptr());
+                    (*fs).set_wl((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
+                    (*fs).set_wp(((*(*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+                    (*fs).set_w(((*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                     current_block = 15319680530019787978;
                 }
             } else if strcmp(target, b"=\0" as *const u8 as *const ::core::ffi::c_char)
@@ -1297,14 +1307,16 @@ pub unsafe fn cmd_find_target(
                         {
                             let mut s = std::ptr::null_mut();
                             let mut wl = std::ptr::null_mut();
-                            mouse_pane_owner = cmd_mouse_pane(m, &raw mut s, &raw mut wl);
+                            let mut mouse_session_owner = None;
+                            mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
+                            s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                             let wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-                            (*fs).set_s(s);
+                            (*fs).set_s((s).as_ref());
                             (*fs).set_wl(wl);
-                            (*fs).set_wp(wp);
+                            (*fs).set_wp((wp).as_ref());
                         }
-                        if !(*fs).wp_ptr().is_null() {
-                            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
+                        if !(*fs).pane_handle().is_none() {
+                            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                             current_block_56 = 7343950298149844727;
                         } else {
                             current_block_56 = 2308649987175926278;
@@ -1321,21 +1333,23 @@ pub unsafe fn cmd_find_target(
                     2308649987175926278 => {
                         {
                             let mut s = std::ptr::null_mut();
-                            let wl = cmd_mouse_window(m, &raw mut s);
-                            (*fs).set_s(s);
+                            let mut mouse_session_owner = None;
+                            let wl = cmd_mouse_window(m, Some(&mut mouse_session_owner));
+                            s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                            (*fs).set_s((s).as_ref());
                             (*fs).set_wl(wl);
                         }
-                        if (*fs).wl_ptr().is_null() && !(*fs).s_ptr().is_null() {
-                            (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
+                        if (*fs).wl_ptr().is_null() && !(*fs).session_handle().is_none() {
+                            (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
                         }
                         if !(*fs).wl_ptr().is_null() {
-                            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
-                            (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+                            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+                            (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                         }
                     }
                     _ => {}
                 }
-                if (*fs).wp_ptr().is_null() {
+                if (*fs).pane_handle().is_none() {
                     if !flags & CMD_FIND_QUIET != 0 {
                         cmdq_error(item, |out| out.write_all(b"no mouse target"));
                     }
@@ -1515,10 +1529,10 @@ pub unsafe fn cmd_find_target(
                             }
                             current_block = 5193823237153215208;
                         } else if window.is_null() && pane.is_null() {
-                            (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
+                            (*fs).set_wl((*(*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
                             (*fs).idx = -(1 as ::core::ffi::c_int);
-                            (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
-                            (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
+                            (*fs).set_w(((*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+                            (*fs).set_wp(((*(*fs).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                             current_block = 15319680530019787978;
                         } else if !window.is_null() && pane.is_null() {
                             if cmd_find_get_window_with_session(fs, window)
@@ -1527,7 +1541,7 @@ pub unsafe fn cmd_find_target(
                                 current_block = 2743676411188200708;
                             } else {
                                 if !(*fs).wl_ptr().is_null() {
-                                    (*fs).set_wp((*(*(*fs).wl_ptr()).window_ptr()).active_ptr());
+                                    (*fs).set_wp(((*(*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                                 }
                                 current_block = 15319680530019787978;
                             }
@@ -1565,7 +1579,7 @@ pub unsafe fn cmd_find_target(
                             current_block = 2743676411188200708;
                         } else {
                             if !(*fs).wl_ptr().is_null() {
-                                (*fs).set_wp((*(*(*fs).wl_ptr()).window_ptr()).active_ptr());
+                                (*fs).set_wp(((*(*(*fs).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
                             }
                             current_block = 15319680530019787978;
                         }
@@ -1660,17 +1674,17 @@ unsafe fn cmd_find_current_client(
         c_owner = cmdq_get_client(item);
         c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
-    if !c.is_null() && !(*c).session_ptr().is_null() {
+    if !c.is_null() && !(*c).session_handle().is_none() {
         return c_owner;
     }
     found = None;
     if !c.is_null() && {
-        inside_pane_owner = cmd_find_inside_pane(c);
+        inside_pane_owner = cmd_find_inside_pane((c).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         wp = inside_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         !wp.is_null()
     } {
         cmd_find_clear_state(&raw mut fs, CMD_FIND_QUIET);
-        fs.set_w((*wp).window_ptr());
+        fs.set_w(((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         if cmd_find_best_session_with_window(&raw mut fs) == 0 as ::core::ffi::c_int {
             if let Some(session_owner) = fs.s.upgrade() {
                 found = cmd_find_best_client(&*session_owner.get());
@@ -1707,7 +1721,7 @@ pub unsafe fn cmd_find_client(
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session_ptr().is_null() {
+        if !(*c).session_handle().is_none() {
             if strcmp(
                 copy_ptr,
                 ((*c).name)
@@ -1789,8 +1803,8 @@ mod target_observer_tests {
             let other_session = session::new();
             let first = client::new();
             let second = client::new();
-            (*first.get()).set_session(session_owner.get());
-            (*second.get()).set_session(other_session.get());
+            (*first.get()).set_session((session_owner.get()).as_ref());
+            (*second.get()).set_session((other_session.get()).as_ref());
             (*first.get()).activity_time.tv_sec = 10;
             (*second.get()).activity_time.tv_sec = 20;
             clients.push_back(first.clone());
@@ -1806,8 +1820,8 @@ mod target_observer_tests {
             let observer = Rc::downgrade(&second);
             let registry = std::mem::replace(&mut *std::ptr::addr_of_mut!(clients), saved);
             drop(registry);
-            (*first.get()).set_session(std::ptr::null_mut());
-            (*second.get()).set_session(std::ptr::null_mut());
+            (*first.get()).set_session(None);
+            (*second.get()).set_session(None);
             drop(first);
             drop(second);
             assert!(observer.upgrade().is_some());
@@ -1842,9 +1856,9 @@ mod target_observer_tests {
             let mut links = crate::src::shared::window::winlinks { storage: None };
             let link = winlink_add(&mut links, 7);
             let mut state = cmd_find_state::default();
-            state.set_s(rc::as_ptr(&session));
-            state.set_w(rc::as_ptr(&window));
-            state.set_wp(rc::as_ptr(&pane));
+            state.set_s((rc::as_ptr(&session)).as_ref());
+            state.set_w((rc::as_ptr(&window)).as_ref());
+            state.set_wp((rc::as_ptr(&pane)).as_ref());
             state.set_wl(link);
             assert_eq!(Rc::strong_count(&session), 1);
             assert_eq!(Rc::strong_count(&window), 1);
@@ -1854,9 +1868,9 @@ mod target_observer_tests {
             crate::src::window::window_remove_ref(window, c"test owner".as_ptr());
             drop(pane);
             winlink_remove(&mut links, link);
-            assert!(state.s_ptr().is_null());
-            assert!(state.w_ptr().is_null());
-            assert!(state.wp_ptr().is_null());
+            assert!(state.session_handle().is_none());
+            assert!(state.window_handle().is_none());
+            assert!(state.pane_handle().is_none());
             assert!(state.wl_ptr().is_null());
             assert_eq!(cmd_find_valid_state(&state), 0);
             assert_eq!(cmd_find_empty_state(&state), 0);
@@ -1882,12 +1896,12 @@ mod target_observer_tests {
                 idx: 17,
                 ..Default::default()
             };
-            source.set_s(rc::as_ptr(&session));
+            source.set_s((rc::as_ptr(&session)).as_ref());
             let mut destination = cmd_find_state {
                 flags: 22,
                 ..Default::default()
             };
-            destination.set_s(rc::as_ptr(&other));
+            destination.set_s((rc::as_ptr(&other)).as_ref());
             let old_count = Rc::weak_count(&other);
             let new_count = Rc::weak_count(&session);
             cmd_find_copy_state(&mut destination, &mut source);
@@ -1918,15 +1932,15 @@ mod target_observer_tests {
             let s = rc::as_ptr(&session_owner);
             let w = rc::as_ptr(&window_owner);
             let wp = rc::as_ptr(&pane_owner);
-            crate::src::session::sessions_insert(&raw mut sessions, session_owner.clone());
+            crate::src::session::sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), session_owner.clone());
             assert_eq!(session_alive(Some(&*session_owner.get())), 1);
             let links = &raw mut (*s).windows;
             let wl = winlink_add(links, 1);
             (*wl).session = (*s).observer.clone();
-            winlink_set_window(wl, w);
+            winlink_set_window(wl, &(*(w)).observer.upgrade().expect("live window"));
             (*wp).window = (*w).observer.clone();
             (*w).panes.push_back(Rc::downgrade(&pane_owner));
-            (*w).set_active(wp);
+            (*w).set_active((wp).as_ref());
             (*s).set_curw(wl);
             assert!(cmd_find_best_session(Some(&[]), 0).is_none());
             let candidates = vec![session_owner.clone()];
@@ -1937,7 +1951,7 @@ mod target_observer_tests {
             drop(selected);
             (*s).set_curw(std::ptr::null_mut());
             let mut state = cmd_find_state::default();
-            cmd_find_from_winlink_pane(&mut state, wl, wp, 0);
+            cmd_find_from_winlink_pane(&mut state, wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0);
             assert_eq!(cmd_find_valid_state(&state), 1);
             winlinks_reindex(links, wl, 3);
             assert_eq!(cmd_find_valid_state(&state), 1);
@@ -1945,24 +1959,24 @@ mod target_observer_tests {
             let panes = (*w).panes.storage.take();
             assert_eq!(cmd_find_valid_state(&state), 0);
             (*w).panes.storage = panes;
-            drop(crate::src::session::sessions_remove(&raw mut sessions, s));
+            drop(crate::src::session::sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")));
             assert!(state.s.upgrade().is_some());
             assert_eq!(session_alive(Some(&*session_owner.get())), 0);
             assert_eq!(cmd_find_valid_state(&state), 0);
-            crate::src::session::sessions_insert(&raw mut sessions, session_owner.clone());
+            crate::src::session::sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), session_owner.clone());
             assert_eq!(cmd_find_valid_state(&state), 1);
 
             winlink_remove(links, wl);
             let replacement = winlink_add(links, 3);
             (*replacement).session = (*s).observer.clone();
-            winlink_set_window(replacement, w);
+            winlink_set_window(replacement, &(*(w)).observer.upgrade().expect("live window"));
             assert_eq!(cmd_find_valid_state(&state), 0);
             state.set_wl(replacement);
             assert_eq!(cmd_find_valid_state(&state), 1);
             winlink_remove(links, replacement);
             (*w).panes.storage = None;
             (*wp).window = std::rc::Weak::new();
-            drop(crate::src::session::sessions_remove(&raw mut sessions, s));
+            drop(crate::src::session::sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")));
             *std::ptr::addr_of_mut!(sessions) = saved;
             crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
         }

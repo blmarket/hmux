@@ -64,9 +64,9 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.clone();
@@ -91,7 +91,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    if spawn_pane(&raw mut sc, &raw mut cause).is_null() {
+    if spawn_pane(&raw mut sc, &raw mut cause).is_none() {
         cmdq_error(item, |out| {
             out.write_all(b"respawn pane failed: ")?;
             write_cstr(
@@ -105,8 +105,8 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         return CMD_RETURN_ERROR;
     }
     (*wp).flags |= PANE_REDRAW;
-    server_redraw_window_borders(&*((*wp).window_ptr()));
-    server_status_window(&*((*wp).window_ptr()));
+    server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_status_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

@@ -72,7 +72,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut old_fd: ::core::ffi::c_int = 0;
@@ -92,7 +92,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         (*wp).pipe_event.free();
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
-        if window_pane_destroy_ready(wp) != 0 {
+        if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
             server_destroy_pane(&pane_owner, 1);
             return CMD_RETURN_NORMAL;
         }
@@ -131,7 +131,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    format_defaults(ft, tc, s, wl, wp);
+    format_defaults(ft, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     let cmd = format_expand_time_cstring(ft, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     format_free(Box::from_raw(ft));
     sigfillset(&raw mut set);
@@ -275,14 +275,14 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::Unsafe
     let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
         evbuffer_drain(&mut *(*event).input, available);
     });
-    if window_pane_destroy_ready(wp) != 0 {
+    if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(&pane_owner, 1);
     }
 }
 unsafe fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe empty", ((*wp).id) as u32));
-    if window_pane_destroy_ready(wp) != 0 {
+    if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(&pane_owner, 1);
     }
 }
@@ -292,7 +292,7 @@ unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::Unsaf
     (*wp).pipe_event.free();
     close((*wp).pipe_fd);
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
-    if window_pane_destroy_ready(wp) != 0 {
+    if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(&pane_owner, 1);
     }
 }

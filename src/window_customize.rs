@@ -175,7 +175,7 @@ enum CustomizeEnvironment {
 }
 
 impl CustomizeEnvironment {
-    unsafe fn session(s: *mut session) -> Self {
+    fn session(s: &session) -> Self {
         Self::Session((*s).observer.clone())
     }
 
@@ -419,10 +419,10 @@ unsafe fn window_customize_get_tree(
         0 | 1 => return ::core::ptr::null_mut::<options>(),
         2 => return global_options,
         3 => return global_s_options,
-        4 => return options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        4 => return options_owner_ptr(&mut (*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         5 => return global_w_options,
-        6 => return options_owner_ptr(&mut (*fs.w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
-        7 => return options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        6 => return options_owner_ptr(&mut (*fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
+        7 => return options_owner_ptr(&mut (*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         8 | 9 => return ::core::ptr::null_mut::<options>(),
         _ => {}
     }
@@ -434,8 +434,8 @@ unsafe fn window_customize_get_environment(
 ) -> Option<CustomizeEnvironment> {
     match scope {
         WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT => Some(CustomizeEnvironment::Global),
-        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.s_ptr().is_null() => {
-            Some(CustomizeEnvironment::session(fs.s_ptr()))
+        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.session_handle().is_none() => {
+            Some(CustomizeEnvironment::session(&*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))))
         }
         _ => None,
     }
@@ -454,7 +454,7 @@ unsafe fn window_customize_check_item(
         let mut source = data.fs.clone();
         cmd_find_copy_state(fs, &mut source);
     } else {
-        cmd_find_from_pane(fs, mode_pane_owner.get(), 0);
+        cmd_find_from_pane(fs, &mode_pane_owner, 0);
     }
     if item.type_0 == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT {
         return item.environ.as_ref()
@@ -477,12 +477,12 @@ unsafe fn window_customize_scope_text(
     let mut idx: u_int = 0;
     match scope as ::core::ffi::c_uint {
         7 => {
-            idx = window_pane_index(&*fs.wp_ptr()).expect("pane belongs to window ordering");
+            idx = window_pane_index(&*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).expect("pane belongs to window ordering");
             CString::new(format!("pane {idx}")).expect("pane index contains no NUL")
         }
         4 | 9 => {
             let mut bytes = b"session ".to_vec();
-            bytes.extend_from_slice((*fs.s_ptr()).name.as_bytes());
+            bytes.extend_from_slice((*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
         6 => {
@@ -1344,7 +1344,7 @@ unsafe fn window_customize_build_keys(
     drop(title);
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
+        None,
         &*fs,
     );
     format_add(
@@ -1660,11 +1660,11 @@ unsafe fn window_customize_build(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
-        cmd_find_from_pane(&raw mut fs, mode_pane, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, &(*(mode_pane)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
+        None,
         &fs,
     );
     format_add(
@@ -1704,7 +1704,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1719,9 +1719,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(&mut (*fs.w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         ft,
         filter,
         &raw mut fs,
@@ -1734,7 +1734,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
         global_s_options,
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_NONE,
         ::core::ptr::null_mut::<options>(),
         ft,
@@ -1749,9 +1749,9 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
         global_w_options,
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(&mut (*fs.w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         ft,
         filter,
         &raw mut fs,
@@ -1772,7 +1772,7 @@ unsafe fn window_customize_build(
         b"Session Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_ENVIRONMENT,
         WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-        CustomizeEnvironment::session(fs.s_ptr()),
+        CustomizeEnvironment::session(&*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))),
         ft,
         filter,
         &raw mut fs,
@@ -1780,7 +1780,7 @@ unsafe fn window_customize_build(
     format_free(Box::from_raw(ft));
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
+        None,
         &fs,
     );
     format_add(
@@ -2008,7 +2008,7 @@ unsafe fn window_customize_draw_option(
     }
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<client>(),
+        None,
         &fs,
     );
     if oe.is_null() || (*oe).text_ptr().is_null() {
@@ -3145,7 +3145,7 @@ unsafe fn window_customize_set_option_callback(
         1995505731522653903 => {
             window_customize_uppercase_cause(&mut cause);
             status_message_set(
-                c,
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -3350,7 +3350,7 @@ unsafe fn window_customize_add_option_callback(
     namelen = strcspn(s, b" \t\0" as *const u8 as *const ::core::ffi::c_char) as size_t;
     if namelen == 0 as size_t || *s.offset(namelen as isize) as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -3366,7 +3366,7 @@ unsafe fn window_customize_add_option_callback(
     }
     if *value as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -3388,7 +3388,7 @@ unsafe fn window_customize_add_option_callback(
             b"option\0" as *const u8 as *const ::core::ffi::c_char
         };
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -3491,7 +3491,7 @@ unsafe fn window_customize_add_environment_callback(
             || !strchr(s.offset(1 as ::core::ffi::c_int as isize), '=' as i32).is_null()
         {
             status_message_set(
-                c,
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -3508,7 +3508,7 @@ unsafe fn window_customize_add_environment_callback(
         value = strchr(s, '=' as i32);
         if value.is_null() || value == s {
             status_message_set(
-                c,
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -3974,7 +3974,7 @@ unsafe fn window_customize_set_array_key_callback(
         drop(value);
         window_customize_uppercase_cause(&mut cause);
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4189,7 +4189,7 @@ unsafe fn window_customize_set_command_callback(
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
             status_message_set(
-                c,
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -4349,7 +4349,7 @@ unsafe fn window_customize_add_key_callback(
     keylen = strcspn(s, b" \t\0" as *const u8 as *const ::core::ffi::c_char) as size_t;
     if keylen == 0 as size_t || *s.offset(keylen as isize) as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4366,7 +4366,7 @@ unsafe fn window_customize_add_key_callback(
     }
     if *command as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4383,7 +4383,7 @@ unsafe fn window_customize_add_key_callback(
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         status_message_set(
-            c,
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4404,7 +4404,7 @@ unsafe fn window_customize_add_key_callback(
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
             status_message_set(
-                c,
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -4687,7 +4687,7 @@ unsafe fn window_customize_add_current(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &raw mut (*data).fs);
     } else {
-        cmd_find_from_pane(&raw mut fs, mode_pane, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, &(*(mode_pane)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
     if name.as_ref() == c"Server Options" {
         window_customize_add_option(
@@ -4704,7 +4704,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4714,7 +4714,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4724,7 +4724,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4734,7 +4734,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4753,7 +4753,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-            CustomizeEnvironment::session(fs.s_ptr()),
+            CustomizeEnvironment::session(&*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))),
         );
         return 1 as ::core::ffi::c_int;
     }
@@ -5240,7 +5240,7 @@ mod environment_lifetime_tests {
                 .unwrap()
                 .set(b"NAME", 0, b"value")
                 .unwrap();
-                        let target = CustomizeEnvironment::session(session);
+                        let target = CustomizeEnvironment::session(&*(session));
             let mut row = window_customize_new_item();
             row.environ = Some(target.clone());
             let detached = window_customize_copy_item(&row);
@@ -5267,7 +5267,7 @@ mod environment_lifetime_tests {
             let owner = session::new();
             let session = rc::as_ptr(&owner);
             (*session).environ = Some(environ_create());
-                        let target = CustomizeEnvironment::session(session);
+                        let target = CustomizeEnvironment::session(&*(session));
             let mut guard = target.resolve().unwrap();
             guard
                 .get_mut()

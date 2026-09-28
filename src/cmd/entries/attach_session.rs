@@ -95,7 +95,7 @@ pub unsafe fn cmd_attach_session(
     if c.is_null() {
         return CMD_RETURN_NORMAL;
     }
-    if server_client_check_nested(c) != 0 {
+    if server_client_check_nested(&*(c)) != 0 {
         cmdq_error(item, |out| {
             out.write_all(b"sessions should be nested with care, unset $TMUX to force")
         });
@@ -116,16 +116,16 @@ pub unsafe fn cmd_attach_session(
     if cmd_find_target(&raw mut target, item, tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CMD_RETURN_ERROR;
     }
-    s = target.s_ptr();
+    s = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = target.wl_ptr();
-    wp = target.wp_ptr();
+    wp = target.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wl.is_null() {
         if !wp.is_null() {
-            window_set_active_pane((*wp).window_ptr(), wp, 1 as ::core::ffi::c_int);
+            window_set_active_pane(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
         }
-        session_set_current(s, wl);
+        session_set_current(&(*s).observer.upgrade().expect("live session"), wl);
         if !wp.is_null() {
-            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
         } else {
             cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl, 0 as ::core::ffi::c_int);
         }
@@ -133,11 +133,11 @@ pub unsafe fn cmd_attach_session(
     if !cflag.is_null() {
         session_set_cwd(
             &mut *s,
-            Some(format_single_cstring(item, cflag, c, s, wl, wp)),
+            Some(format_single_cstring(item, cflag, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref())),
         );
     }
     if !fflag.is_null() {
-        server_client_set_flags(c, fflag);
+        server_client_set_flags(&(*(c)).observer.upgrade().expect("live client"), fflag);
     }
     if rflag != 0 {
         if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
@@ -150,7 +150,7 @@ pub unsafe fn cmd_attach_session(
         (*c).flags |= (CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
     }
     (*c).last_session = (*c).session.clone();
-    if !(*c).session_ptr().is_null() {
+    if !(*c).session_handle().is_none() {
         if dflag != 0 || xflag != 0 {
             if xflag != 0 {
                 msgtype = MSG_DETACHKILL;
@@ -160,8 +160,8 @@ pub unsafe fn cmd_attach_session(
             let mut registry_c_loop_owner = clients.first();
             c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop).session_ptr() != s || c == c_loop) {
-                    server_client_detach(c_loop, msgtype);
+                if !((*c_loop).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || c == c_loop) {
+                    server_client_detach(&(*(c_loop)).observer.upgrade().expect("live client"), msgtype);
                 }
                 registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
                 c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -174,9 +174,9 @@ pub unsafe fn cmd_attach_session(
                 (*s).environ.as_deref_mut().expect("session environment"),
             );
         }
-        server_client_set_session(c, s);
+        server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         if !cmdq_get_flags(item) & CMDQ_STATE_REPEAT != 0 {
-            server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
+            server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
         }
     } else {
         if let Err(cause) = server_client_open(c_owner.as_ref().expect("terminal client")) {
@@ -195,8 +195,8 @@ pub unsafe fn cmd_attach_session(
             let mut registry_c_loop_owner = clients.first();
             c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop).session_ptr() != s || c == c_loop) {
-                    server_client_detach(c_loop, msgtype);
+                if !((*c_loop).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || c == c_loop) {
+                    server_client_detach(&(*(c_loop)).observer.upgrade().expect("live client"), msgtype);
                 }
                 registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
                 c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -209,8 +209,8 @@ pub unsafe fn cmd_attach_session(
                 (*s).environ.as_deref_mut().expect("session environment"),
             );
         }
-        server_client_set_session(c, s);
-        server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
+        server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
         if !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             proc_send(
                 (*c).peer,
@@ -222,12 +222,12 @@ pub unsafe fn cmd_attach_session(
         }
         events_fire_client(
             b"client-attached\0" as *const u8 as *const ::core::ffi::c_char,
-            c,
+            (*(c)).observer.upgrade().expect("live client"),
         );
         (*c).flags |= CLIENT_ATTACHED as uint64_t;
     }
     if cfg_finished != 0 {
-        cfg_show_causes(s);
+        cfg_show_causes((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
     return CMD_RETURN_NORMAL;
 }

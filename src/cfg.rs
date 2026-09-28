@@ -66,7 +66,7 @@ unsafe fn cfg_done() -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
     cfg_finished = 1 as ::core::ffi::c_int;
-    cfg_show_causes(::core::ptr::null_mut::<session>());
+    cfg_show_causes(None);
     if !cfg_item.is_null() {
         cmdq_continue(cfg_item);
     }
@@ -296,7 +296,7 @@ pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_notify_write(c, |out| {
+            control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
                 out.write_all(b"%config-error ")?;
                 write_cstr(out, cause.as_ptr())
             });
@@ -305,7 +305,8 @@ pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
         }
     });
 }
-pub unsafe fn cfg_show_causes(mut s: *mut session) {
+pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_c_owner = clients.first();
     let mut c: *mut client = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -315,15 +316,15 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
     }
     if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         cfg_drain_causes(|cause| {
-            control_notify_write(c, |out| {
+            control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
                 out.write_all(b"%config-error ")?;
                 write_cstr(out, cause.as_ptr())
             });
         });
     } else {
         if s.is_null() {
-            if !c.is_null() && !(*c).session_ptr().is_null() {
-                s = (*c).session_ptr();
+            if !c.is_null() && !(*c).session_handle().is_none() {
+                s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             } else {
                 let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
                 s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -332,7 +333,7 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
         if s.is_null() || (*s).attached == 0 as u_int {
             return;
         }
-        wp = (*(*(*s).curw_ptr()).window_ptr()).active_ptr();
+        wp = (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
         wme = (*wp).modes.active_ptr();
         if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {

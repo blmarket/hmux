@@ -1,4 +1,4 @@
-use crate::src::shared::client::client_rc_ptr;
+use crate::src::shared::client::client_handle;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
 // Private expression parser/evaluator.  The modifier parser, loops,
@@ -964,8 +964,8 @@ pub(super) unsafe fn format_loop_sessions(
         );
         let use_0 = if active.is_some()
             && !format_client.is_null()
-            && !(*format_client).session_ptr().is_null()
-            && (*s).id == (*(*format_client).session_ptr()).id
+            && !(*format_client).session_handle().is_none()
+            && (*s).id == (*(*format_client).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id
         {
             active.as_ref().unwrap().as_ptr()
         } else {
@@ -990,10 +990,10 @@ pub(super) unsafe fn format_loop_sessions(
         );
         format_defaults(
             nft,
-            format_client,
-            s,
+            (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             ::core::ptr::null_mut::<winlink>(),
-            ::core::ptr::null_mut::<window_pane>(),
+            None,
         );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
@@ -1026,7 +1026,7 @@ pub(super) unsafe fn format_window_name(
     let name = format_expand1_cstring(es, fmt);
     wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strcmp((*(*wl).window_ptr()).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if strcmp((*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return Some(c"1".to_owned());
         }
         wl = winlinks_next(&*wl);
@@ -1036,9 +1036,10 @@ pub(super) unsafe fn format_window_name(
 pub(super) unsafe fn format_add_window_neighbour(
     mut nft: *mut format_tree,
     mut wl: *mut winlink,
-    mut s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut prefix: *const ::core::ffi::c_char,
 ) {
+    let mut s = s_owner.get();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let prefix = CStr::from_ptr(prefix).to_bytes();
@@ -1050,7 +1051,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     format_add(nft, key.as_ptr(), |out| {
         write!(out, "{}", ((wl == (*s).curw_ptr()) as ::core::ffi::c_int) as i32)
     });
-    let o_root = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let o_root = options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
     o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
@@ -1116,12 +1117,12 @@ pub(super) unsafe fn format_loop_windows(
         return None;
     }
     let (all, active) = format_choose_loop(es, fmt);
-    let l = sort_get_winlinks_session(s, sc);
+    let l = sort_get_winlinks_session(&(*(s)).observer.upgrade().expect("live session"), sc);
     let n = ::core::ffi::c_int::try_from(l.len()).expect("too many winlinks in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
         wl = l[i as usize];
-        w = (*wl).window_ptr();
+        w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         format_log1(
             es,
             b"format_loop_windows\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1193,7 +1194,7 @@ pub(super) unsafe fn format_loop_windows(
             format_add_window_neighbour(
                 nft,
                 l[(i + 1 as ::core::ffi::c_int) as usize],
-                s,
+                &(*(s)).observer.upgrade().expect("live session"),
                 b"next\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
@@ -1201,11 +1202,11 @@ pub(super) unsafe fn format_loop_windows(
             format_add_window_neighbour(
                 nft,
                 l[(i - 1 as ::core::ffi::c_int) as usize],
-                s,
+                &(*(s)).observer.upgrade().expect("live session"),
                 b"prev\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        format_defaults(nft, format_client, s, wl, ::core::ptr::null_mut::<window_pane>());
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, None);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1276,7 +1277,7 @@ pub(super) unsafe fn format_loop_panes(
             b"format_loop_panes\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "pane loop: %{}", ((*wp).id) as u32),
         );
-        let use_0 = if active.is_some() && wp == (*format_window).active_ptr() {
+        let use_0 = if active.is_some() && wp == (*format_window).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
@@ -1303,7 +1304,7 @@ pub(super) unsafe fn format_loop_panes(
                 )
             },
         );
-        format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), wp);
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1453,7 +1454,7 @@ pub(super) unsafe fn format_loop_add_option(
         b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (i) as u32),
     );
-    format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), format_pane);
+    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1614,7 +1615,7 @@ pub(super) unsafe fn format_loop_add_array_item(
         b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (i) as u32),
     );
-    format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), format_pane);
+    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1761,8 +1762,8 @@ pub(super) unsafe fn format_loop_environ(
     } else if strcmp(flags, b"c\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
-        if !client_rc_ptr(&(*ft).client).is_null() {
-            env = (*client_rc_ptr(&(*ft).client)).environ.as_deref();
+        if !client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+            env = (*client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get())).environ.as_deref();
         }
     }
     let Some(env) = env else { return c"".to_owned(); };
@@ -1853,7 +1854,7 @@ pub(super) unsafe fn format_loop_environ(
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (i) as u32),
         );
-        format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), format_pane);
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1936,7 +1937,7 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        format_defaults(nft, c, format_session, (*ft).wl_ptr(), format_pane);
+        format_defaults(nft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -2243,12 +2244,14 @@ pub(super) unsafe fn format_replace_expression(
     }
     return None;
 }
-pub(super) unsafe fn format_cycle_callback(c: *mut client) {
+pub(super) unsafe fn format_cycle_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
     if (*c).message_string.is_none() && (*c).prompt.is_none() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
 }
-pub(super) unsafe fn format_cycle_start_timer(mut c: *mut client) {
+pub(super) unsafe fn format_cycle_start_timer(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -2261,7 +2264,14 @@ pub(super) unsafe fn format_cycle_start_timer(mut c: *mut client) {
             &raw mut (*c).cycle_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |_, _| unsafe { format_cycle_callback(c) },
+            {
+                let observer = std::rc::Rc::downgrade(c_owner);
+                move |_, _| unsafe {
+                    if let Some(owner) = observer.upgrade() {
+                        format_cycle_callback(&owner);
+                    }
+                }
+            },
         );
     }
     if event_pending(
@@ -2303,8 +2313,8 @@ pub(super) unsafe fn format_cycle(
         .start_time
         .wrapping_div(count.wrapping_mul(FORMAT_CYCLE_PERIOD as u_int) as uint64_t)
         .wrapping_rem(n as uint64_t) as u_int;
-    if n > 1 as u_int && !client_rc_ptr(&(*ft).client).is_null() {
-        format_cycle_start_timer(client_rc_ptr(&(*ft).client));
+    if n > 1 as u_int && !client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+        format_cycle_start_timer((*ft).client.as_ref().expect("format client"));
     }
     start = frames;
     i = 0 as u_int;
@@ -3631,12 +3641,12 @@ pub unsafe fn format_expand_cstring(
 pub(crate) unsafe fn format_single_cstring(
     mut item: *mut cmdq_item,
     mut fmt: *const ::core::ffi::c_char,
-    mut c: *mut client,
-    mut s: *mut session,
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> CString {
-    let ft = format_create_defaults(item, c, s, wl, wp);
+    let ft = format_create_defaults(item, c_owner, s_owner, wl, wp_owner);
     let expanded = format_expand_cstring(ft, fmt);
     format_free(Box::from_raw(ft));
     return expanded;
@@ -3644,10 +3654,10 @@ pub(crate) unsafe fn format_single_cstring(
 pub(crate) unsafe fn format_single_from_state_cstring(
     item: *mut cmdq_item,
     fmt: *const ::core::ffi::c_char,
-    c: *mut client,
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: *mut cmd_find_state,
 ) -> CString {
-    format_single_cstring(item, fmt, c, (*fs).s_ptr(), (*fs).wl_ptr(), (*fs).wp_ptr())
+    format_single_cstring(item, fmt, c_owner, (*fs).s.upgrade().as_ref(), (*fs).wl_ptr(), (*fs).wp.upgrade().as_ref())
 }
 pub(crate) unsafe fn format_single_from_target_cstring(
     item: *mut cmdq_item,
@@ -3655,7 +3665,7 @@ pub(crate) unsafe fn format_single_from_target_cstring(
 ) -> CString {
     let tc_owner = cmdq_get_target_client(item);
     let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    format_single_from_state_cstring(item, fmt, tc, crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
+    format_single_from_state_cstring(item, fmt, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
 }
 
 #[cfg(test)]
@@ -3721,7 +3731,7 @@ mod format_choose_tests {
     #[test]
     fn expanded_owners_outlive_their_inputs_and_tree() {
         unsafe {
-            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
             let input = CString::new(b"\xff:##:#,:#}:tail#".to_vec()).unwrap();
             let owned = format_expand_cstring(ft, input.as_ptr());
             let timed_owned = format_expand_time_cstring(ft, input.as_ptr());
@@ -3738,7 +3748,7 @@ mod format_choose_tests {
     #[test]
     fn owned_expansion_preserves_empty_and_limit_results() {
         unsafe {
-            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
             assert!(format_expand_cstring(ft, std::ptr::null())
                 .as_bytes()
                 .is_empty());
@@ -3776,7 +3786,7 @@ mod format_choose_tests {
     #[test]
     fn split_operands_preserve_escapes_nesting_and_bytes() {
         unsafe {
-            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
             let mut es: format_expand_state = Default::default();
             es.ft = ft;
             es.start_time = get_timer();
@@ -3817,6 +3827,31 @@ mod format_choose_tests {
 
             assert!(format_choose(&raw mut es, c"no delimiter".as_ptr()).is_none());
             format_free(Box::from_raw(ft));
+        }
+    }
+}
+
+#[cfg(test)]
+mod cycle_owner_tests {
+    use super::*;
+
+    #[test]
+    fn cycle_timer_observes_client_without_retaining_it() {
+        unsafe {
+            let owner = client::new();
+            let observer = std::rc::Rc::downgrade(&owner);
+            format_cycle_start_timer(&owner);
+            let callback = (*owner.get()).cycle_timer.callback.as_ref().unwrap().clone();
+            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
+            callback.borrow_mut()(-1, EV_TIMEOUT as _);
+            assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
+
+            // Cancel registration explicitly before releasing the client, but
+            // retain a callback to exercise a dispatch after its owner expires.
+            crate::src::reactor::event_del(&raw mut (*owner.get()).cycle_timer);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            callback.borrow_mut()(-1, EV_TIMEOUT as _);
         }
     }
 }

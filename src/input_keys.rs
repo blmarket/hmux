@@ -1011,7 +1011,7 @@ unsafe fn input_key_mouse(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     if (*m).ignore != 0 || (*s).mode & ALL_MOUSE_MODES == 0 as ::core::ffi::c_int {
         return;
     }
-    if cmd_mouse_at(wp, m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
+    if cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
         != 0 as ::core::ffi::c_int
     {
         return;

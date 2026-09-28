@@ -16,8 +16,8 @@ fn sorted_and_adjacent_results_survive_session_removal() {
         (*last.get()).name = c"z".to_owned();
         let first_weak = Rc::downgrade(&first);
         let last_weak = Rc::downgrade(&last);
-        sessions_insert(head, last.clone());
-        sessions_insert(head, first.clone());
+        sessions_insert(&mut *head, last.clone());
+        sessions_insert(&mut *head, first.clone());
         let criteria = sort_criteria { order: SORT_NAME, reversed: 0, order_seq: &[] };
         let sorted = sort_get_sessions(&criteria);
         assert!(Rc::ptr_eq(&sorted[0], &first));
@@ -26,13 +26,13 @@ fn sorted_and_adjacent_results_survive_session_removal() {
         let previous = session_previous_session(Some(&*first.get()), &criteria).unwrap();
         assert!(Rc::ptr_eq(&next, &first));
         assert!(Rc::ptr_eq(&previous, &last));
-        sessions_remove(head, &mut *first.get());
+        sessions_remove(&mut *head, &first);
         assert!(session_next_session(Some(&*first.get()), &criteria).is_none());
         assert!(Rc::ptr_eq(
             &session_previous_session(Some(&*last.get()), &criteria).unwrap(),
             &last,
         ));
-        sessions_remove(head, &mut *last.get());
+        sessions_remove(&mut *head, &last);
         drop(first);
         drop(last);
         assert_eq!((*sorted[0].get()).name.as_c_str(), c"a");

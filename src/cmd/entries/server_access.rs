@@ -85,10 +85,10 @@ unsafe fn cmd_server_access_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let arg = format_single_cstring(
         item,
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
-        c,
-        ::core::ptr::null_mut::<session>(),
+        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     if args_has(args, 'g' as i32 as u_char) != 0 {
         type_0 = b"group\0" as *const u8 as *const ::core::ffi::c_char;

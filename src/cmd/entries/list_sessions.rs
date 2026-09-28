@@ -98,10 +98,10 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         );
         format_defaults(
             ft,
-            c,
-            l[i as usize].get(),
+            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (l[i as usize].get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             ::core::ptr::null_mut::<winlink>(),
-            ::core::ptr::null_mut::<window_pane>(),
+            None,
         );
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);

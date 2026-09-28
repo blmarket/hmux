@@ -5,7 +5,7 @@ use std::ffi::{CStr, CString};
 #[test]
 fn modifier_key_survives_nested_expansion_and_failure_cleanup() {
     unsafe {
-        let tree = format_create(core::ptr::null_mut(), core::ptr::null_mut(), 0, 0);
+        let tree = format_create(None, core::ptr::null_mut(), 0, 0);
         for (expression, expected) in [
             (b"#{l:literal}\0".as_slice(), b"literal".as_slice()),
             (b"#{n;l:literal}\0", b"7"),

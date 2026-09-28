@@ -28,7 +28,7 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
             (true, 2, 3, 2, 3, 50),
             (false, 2, 3, 1, 4, 20),
         ] {
-            window.set_active(if active { pane as *mut window_pane } else { std::ptr::null_mut() });
+            window.set_active((if active { pane as *mut window_pane } else { std::ptr::null_mut() }).as_ref());
             pane.cached_active_gc = grid_cell {
                 fg: foreground,
                 bg: background,
@@ -38,7 +38,7 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
             };
             let cached = pane.cached_gc;
             let cached_active = pane.cached_active_gc;
-            let (cell, dim) = tty_default_colours(pane as *mut window_pane);
+            let (cell, dim) = tty_default_colours(&pane_owner);
             let expected = grid_cell {
                 fg: expected_fg,
                 bg: expected_bg,
@@ -49,7 +49,7 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
             assert!(grid_cells_equal(&pane.cached_gc, &cached));
             assert!(grid_cells_equal(&pane.cached_active_gc, &cached_active));
         }
-        window.set_active(std::ptr::null_mut());
+        window.set_active(None);
         pane.window = std::rc::Weak::new();
         hmux2::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
     }

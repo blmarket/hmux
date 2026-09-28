@@ -11,7 +11,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
 use crate::src::server_client::server_client_unref_owned;
-use crate::src::session::{session_add_ref, session_alive, session_remove_ref};
+use crate::src::session::{session_alive, session_remove_ref};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -26,7 +26,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
-    window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
+    window_has_pane, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
 use std::ffi::{CStr, CString};
@@ -181,7 +181,7 @@ pub unsafe fn event_payload_get_target(
         && session_alive(s.as_ref()) != 0
     {
         wl = winlink_find_by_index(&raw mut (*s).windows, t.idx);
-        if !wl.is_null() && (*wl).window_ptr() != w {
+        if !wl.is_null() && (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w {
             wl = ::core::ptr::null_mut::<winlink>();
         }
     }
@@ -198,14 +198,14 @@ pub unsafe fn event_payload_get_target(
     if cmd_find_valid_state(&*fs) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if !wl.is_null() && !wp.is_null() && window_has_pane(&*(*wl).window_ptr(), &t.wp) {
-        cmd_find_from_winlink_pane(fs, wl, wp, flags);
+    if !wl.is_null() && !wp.is_null() && window_has_pane(&*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &t.wp) {
+        cmd_find_from_winlink_pane(fs, wl, &(*(wp)).observer.upgrade().expect("live window_pane"), flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }
     if !wp.is_null()
-        && cmd_find_from_pane(fs, wp, flags) == 0 as ::core::ffi::c_int
+        && cmd_find_from_pane(fs, &(*(wp)).observer.upgrade().expect("live window_pane"), flags) == 0 as ::core::ffi::c_int
         && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
@@ -219,13 +219,13 @@ pub unsafe fn event_payload_get_target(
     if !s.is_null()
         && !w.is_null()
         && session_alive(s.as_ref()) != 0
-        && cmd_find_from_session_window(fs, s, w, flags) == 0 as ::core::ffi::c_int
+        && cmd_find_from_session_window(fs, &(*(s)).observer.upgrade().expect("live session"), &(*(w)).observer.upgrade().expect("live window"), flags) == 0 as ::core::ffi::c_int
         && cmd_find_valid_state(&*fs) != 0
     {
         return 1 as ::core::ffi::c_int;
     }
     if !s.is_null() && session_alive(s.as_ref()) != 0 {
-        cmd_find_from_session(fs, s, flags);
+        cmd_find_from_session(fs, &(*(s)).observer.upgrade().expect("live session"), flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -265,44 +265,36 @@ pub unsafe fn event_payload_set_uint(
 ) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Uint(value));
 }
-pub unsafe fn event_payload_set_client(ep: &mut event_payload, mut c: *mut client) {
-    let mut name: *const ::core::ffi::c_char =
-        b"client\0" as *const u8 as *const ::core::ffi::c_char;
-    let client = (*c).observer.upgrade().expect("live Rc client");
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Client(client));
+/// Transfer a retained client into the payload; payload cleanup releases it explicitly.
+pub unsafe fn event_payload_set_client(
+    ep: &mut event_payload,
+    owner: std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
+    event_payload_set_item(ep, c"client".as_ptr(), EventPayloadValue::Client(owner));
 }
+/// Transfer a retained session into the payload; payload cleanup releases it explicitly.
 pub unsafe fn event_payload_set_session(
     ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut s: *mut session,
+    name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<session>>,
 ) {
-    let session = session_add_ref(
-        s,
-        b"event_payload_set_session\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Session(session));
+    event_payload_set_item(ep, name, EventPayloadValue::Session(owner));
 }
+/// Transfer a retained window into the payload; payload cleanup releases it explicitly.
 pub unsafe fn event_payload_set_window(
     ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut w: *mut window,
+    name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<window>>,
 ) {
-    let window = window_add_ref(
-        w,
-        b"event_payload_set_window\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Window(window));
+    event_payload_set_item(ep, name, EventPayloadValue::Window(owner));
 }
+/// Transfer a retained window_pane into the payload; payload cleanup releases it explicitly.
 pub unsafe fn event_payload_set_pane(
     ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut wp: *mut window_pane,
+    name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    let pane = window_pane_add_ref(
-        wp,
-        b"event_payload_set_pane\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(pane));
+    event_payload_set_item(ep, name, EventPayloadValue::Pane(owner));
 }
 pub unsafe fn event_payload_set_identity(
     ep: &mut event_payload,
@@ -466,28 +458,28 @@ pub unsafe fn event_payload_log(
         )
     ));
 }
-pub unsafe fn event_payload_get_client(ep: &event_payload) -> *mut client {
+pub fn event_payload_get_client(ep: &event_payload) -> Option<&std::rc::Rc<std::cell::UnsafeCell<client>>> {
     match event_payload_find(ep, c"client").map(|item| &item.value) {
-        Some(EventPayloadValue::Client(value)) => crate::src::shared::rc::as_ptr(value),
-        _ => std::ptr::null_mut(),
+        Some(EventPayloadValue::Client(value)) => Some(value),
+        _ => None,
     }
 }
-pub unsafe fn event_payload_get_session(ep: &event_payload) -> *mut session {
+pub fn event_payload_get_session(ep: &event_payload) -> Option<&std::rc::Rc<std::cell::UnsafeCell<session>>> {
     match event_payload_find(ep, c"session").map(|item| &item.value) {
-        Some(EventPayloadValue::Session(value)) => crate::src::shared::rc::as_ptr(value),
-        _ => std::ptr::null_mut(),
+        Some(EventPayloadValue::Session(value)) => Some(value),
+        _ => None,
     }
 }
-pub unsafe fn event_payload_get_window(ep: &event_payload) -> *mut window {
+pub fn event_payload_get_window(ep: &event_payload) -> Option<&std::rc::Rc<std::cell::UnsafeCell<window>>> {
     match event_payload_find(ep, c"window").map(|item| &item.value) {
-        Some(EventPayloadValue::Window(value)) => crate::src::shared::rc::as_ptr(value),
-        _ => std::ptr::null_mut(),
+        Some(EventPayloadValue::Window(value)) => Some(value),
+        _ => None,
     }
 }
-pub unsafe fn event_payload_get_pane(ep: &event_payload) -> *mut window_pane {
+pub fn event_payload_get_pane(ep: &event_payload) -> Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     match event_payload_find(ep, c"pane").map(|item| &item.value) {
-        Some(EventPayloadValue::Pane(value)) => crate::src::shared::rc::as_ptr(value),
-        _ => std::ptr::null_mut(),
+        Some(EventPayloadValue::Pane(value)) => Some(value),
+        _ => None,
     }
 }
 pub unsafe fn event_payload_get_identity(
@@ -599,7 +591,7 @@ mod tests {
             let sink = events_add_sink(
                 c"window-closed",
                 events_callback(move |_, payload| {
-                    let window = event_payload_get_window(payload);
+                    let window = event_payload_get_window(payload).map_or(std::ptr::null_mut(), |owner| owner.get());
                     observed.borrow_mut().push((*window).id);
                     events_fire(c"payload-nested-cleanup".as_ptr(), event_payload_create());
                 }),
@@ -611,8 +603,8 @@ mod tests {
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };
-            event_payload_set_window(&mut payload, c"alpha".as_ptr(), first);
-            event_payload_set_window(&mut payload, c"beta".as_ptr(), second);
+            event_payload_set_window(&mut payload, c"alpha".as_ptr(), (*(first)).observer.upgrade().expect("live window"));
+            event_payload_set_window(&mut payload, c"beta".as_ptr(), (*(second)).observer.upgrade().expect("live window"));
             window_remove_ref(first_owner, c"test initial owner".as_ptr());
             window_remove_ref(second_owner, c"test initial owner".as_ptr());
             event_payload_set_int(&mut payload, c"alpha".as_ptr(), 7);
@@ -696,7 +688,7 @@ mod tests {
             let sink = events_add_sink(
                 c"window-closed",
                 events_callback(move |_, payload| {
-                    let id = (*event_payload_get_window(payload)).id;
+                    let id = (*event_payload_get_window(payload).map_or(std::ptr::null_mut(), |owner| owner.get())).id;
                     // Reentrant item cleanup still has the payload's target.
                     if id != 33 {
                         assert!(target_during_cleanup.upgrade().is_some());
@@ -711,8 +703,8 @@ mod tests {
                 ..Default::default()
             };
             event_payload_set_target(&mut payload, &fs);
-            event_payload_set_window(&mut payload, c"beta".as_ptr(), first);
-            event_payload_set_window(&mut payload, c"alpha".as_ptr(), second);
+            event_payload_set_window(&mut payload, c"beta".as_ptr(), (*(first)).observer.upgrade().expect("live window"));
+            event_payload_set_window(&mut payload, c"alpha".as_ptr(), (*(second)).observer.upgrade().expect("live window"));
             window_remove_ref(first_owner, c"test initial owner".as_ptr());
             window_remove_ref(second_owner, c"test initial owner".as_ptr());
             window_remove_ref(target_owner, c"test initial owner".as_ptr());
@@ -750,12 +742,12 @@ mod tests {
                         assert!(observer.upgrade().is_some());
                         observed
                             .borrow_mut()
-                            .push((*event_payload_get_window(payload)).id);
+                            .push((*event_payload_get_window(payload).map_or(std::ptr::null_mut(), |owner| owner.get())).id);
                     }),
                 ));
             }
             let mut payload = event_payload_create();
-            event_payload_set_window(&mut payload, c"window".as_ptr(), window);
+            event_payload_set_window(&mut payload, c"window".as_ptr(), (*(window)).observer.upgrade().expect("live window"));
             window_remove_ref(window_owner, c"test initial owner".as_ptr());
             events_fire(c"payload-owner-test".as_ptr(), payload);
 

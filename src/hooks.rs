@@ -1,4 +1,4 @@
-use crate::src::shared::client::client_rc_ptr;
+use crate::src::shared::client::client_handle;
 use crate::src::shared::rc;
 use crate::src::window::window_pane_upgrade;
 use std::cell::UnsafeCell;
@@ -141,10 +141,10 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     let client_owner = (*hd).client.upgrade();
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        client_rc_ptr(&client_owner),
-        fs.s_ptr(),
+        (client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        (fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         fs.wl_ptr(),
-        fs.wp_ptr(),
+        (fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     format_merge(ft, &raw mut *(*hd).formats);
     let expanded = format_expand_cstring(ft, value.as_ptr());
@@ -186,18 +186,18 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         oo = (*hd).oo;
         o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((*hd).name.as_ptr())).map_or(std::ptr::null_mut(), |entry| entry);
     } else {
-        if fs.s_ptr().is_null() {
+        if fs.session_handle().is_none() {
             oo = global_s_options;
         } else {
-            oo = options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+            oo = options_owner_ptr(&mut (*fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
         }
         o = options_get(oo, (*hd).name.as_ptr());
-        if o.is_null() && !fs.wp_ptr().is_null() {
-            oo = options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        if o.is_null() && !fs.pane_handle().is_none() {
+            oo = options_owner_ptr(&mut (*fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
             o = options_get(oo, (*hd).name.as_ptr());
         }
         if o.is_null() && !fs.wl_ptr().is_null() {
-            oo = options_owner_ptr(&mut (*(*fs.wl_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+            oo = options_owner_ptr(&mut (*(*fs.wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
             o = options_get(oo, (*hd).name.as_ptr());
         }
     }
@@ -291,7 +291,7 @@ unsafe fn hooks_insert_event(
         fs: cmd_find_state::default(),
         formats,
         oo,
-        client: if c.is_null() { Weak::new() } else { (*c).observer.clone() },
+        client: c.map(std::rc::Rc::downgrade).unwrap_or_default(),
         expand,
     };
     event_payload_get_target(ep, &mut hd.fs);
@@ -372,7 +372,7 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
         name: CStr::from_ptr(name),
         fs: cmd_find_state::default(),
         formats: format_create_owned(
-            std::ptr::null_mut(), std::ptr::null_mut(), 0, FORMAT_NOJOBS,
+            None, std::ptr::null_mut(), 0, FORMAT_NOJOBS,
         ),
         oo: std::ptr::null_mut(),
         client: (*item).client.clone(),
@@ -418,7 +418,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let mut link = change.wl.try_borrow_mut().ok();
     let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
     let client_owner = change.c.upgrade();
-    let c = client_rc_ptr(&client_owner);
+    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     let session_owner = change.s.upgrade();
     let s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let pane_owner = window_pane_upgrade(&change.wp);
@@ -438,14 +438,14 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         crate::src::shared::events::EventPayloadIdentity::HookMonitor(hm.addr()),
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
-    if !wl.is_null() && !wp.is_null() && (*wp).window_ptr() == (*wl).window_ptr() {
-        cmd_find_from_winlink_pane(&raw mut fs, wl, wp, 0 as ::core::ffi::c_int);
+    if !wl.is_null() && !wp.is_null() && (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+        cmd_find_from_winlink_pane(&raw mut fs, wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     } else if !wl.is_null() {
         cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
     } else if !wp.is_null() {
-        cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     } else if !s.is_null() {
-        cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
+        cmd_find_from_session(&raw mut fs, &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
     } else {
         cmd_find_copy_state(&raw mut fs, &raw mut (*hm).fs);
     }
@@ -468,13 +468,13 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         );
     }
     if !c.is_null() {
-        event_payload_set_client(&mut *ep, c);
+        event_payload_set_client(&mut *ep, (*(c)).observer.upgrade().expect("live client"));
     }
     if !s.is_null() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            s,
+            (*(s)).observer.upgrade().expect("live session"),
         );
     }
     if !wl.is_null() {
@@ -483,14 +483,14 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
                 event_payload_set_session(
                     &mut *ep,
                     b"session\0" as *const u8 as *const ::core::ffi::c_char,
-                    session_owner.get(),
+                    session_owner.clone(),
                 );
             }
         }
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wl).window_ptr(),
+            (*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
         event_payload_set_int(
             &mut *ep,
@@ -502,13 +502,13 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            wp,
+            (*(wp)).observer.upgrade().expect("live window_pane"),
         );
         if wl.is_null() {
             event_payload_set_window(
                 &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).window_ptr(),
+                (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
             );
         }
     }
@@ -527,8 +527,9 @@ pub unsafe fn hooks_monitor_add(
     mut format: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
     mut fs: *mut cmd_find_state,
-    mut s: *mut session,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
 ) {
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
     hooks_monitor_remove(oo, name);
@@ -557,7 +558,7 @@ pub unsafe fn hooks_monitor_add(
     hm = &raw mut *owner;
     cmd_find_copy_state(&raw mut (*hm).fs, fs);
     (*hm).set = Some(monitor_create_session_owned(
-        s,
+        s_owner,
         monitor_callback(move |change| unsafe { hooks_monitor_cb(change, hm) }),
     ));
     (*hm).sink = events_add_sink(
@@ -634,7 +635,7 @@ mod hooks_events_tests {
             let w = rc::as_ptr(&window_owner);
             let wl = winlink_add(&raw mut (*s).windows, 2);
             (*wl).session = (*s).observer.clone();
-            winlink_set_window(wl, w);
+            winlink_set_window(wl, &(*(w)).observer.upgrade().expect("live window"));
             let change = monitor_change {
                 name: c"test-monitor-unlink",
                 value: c"changed",

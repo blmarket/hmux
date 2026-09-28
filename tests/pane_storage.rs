@@ -18,15 +18,15 @@ fn removing_from_another_history_preserves_membership_and_cleanup() {
     source.push_front(Rc::downgrade(&owner));
     unsafe {
         (*pane).flags |= hmux2::src::shared::pane::PANE_VISITED;
-        window_pane_stack_remove(&mut destination, pane);
+        window_pane_stack_remove(&mut destination, Some(&owner));
         assert_ne!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
-        window_pane_stack_remove(&mut source, pane);
+        window_pane_stack_remove(&mut source, Some(&owner));
         assert!(source.is_empty());
         assert_eq!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
 
         // Cleanup must also make progress if an entry has lost its flag.
         source.push_front(Rc::downgrade(&owner));
-        window_pane_stack_remove(&mut source, pane);
+        window_pane_stack_remove(&mut source, Some(&owner));
         assert!(source.is_empty());
     }
 }

@@ -152,13 +152,13 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let fsp = if cmd_find_valid_state(&(*pi).fs) != 0 {
                 &raw mut (*pi).fs
             } else {
-                cmd_find_from_client(&raw mut fs, client_ptr, 0);
+                cmd_find_from_client(&raw mut fs, (client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0);
                 &raw mut fs
             };
             let item_owner = pi.item.upgrade();
             let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             let ft = format_create_with_client(client_owner.as_ref(), item, FORMAT_NONE, FORMAT_NOJOBS);
-            format_defaults(ft, client_ptr, (*fsp).s_ptr(), (*fsp).wl_ptr(), (*fsp).wp_ptr());
+            format_defaults(ft, (client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*fsp).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*fsp).wl_ptr(), ((*fsp).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(Box::from_raw(ft));
             take_parser_token(expanded)

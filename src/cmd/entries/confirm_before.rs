@@ -119,7 +119,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     };
     let inputcb = cdata.into_callback();
     status_prompt_set(
-        tc,
+        &(*(tc)).observer.upgrade().expect("live client"),
         target,
         new_prompt.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
@@ -135,10 +135,11 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_confirm_before_callback(
-    mut c: *mut client,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     cdata: &cmd_confirm_before_data,
     s: Option<&CStr>,
 ) -> prompt_result {
+    let mut c = c_owner.get();
     let item_owner = cdata.item.upgrade();
     let item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -165,7 +166,7 @@ unsafe fn cmd_confirm_before_callback(
     if !item.is_null() {
         if let Some(client) = cmdq_get_client(item) {
             let c = crate::src::shared::rc::as_ptr(&client);
-            if (*c).session_ptr().is_null() {
+            if (*c).session_handle().is_none() {
                 (*c).retval = retcode;
             }
         }
@@ -177,7 +178,7 @@ impl cmd_confirm_before_data {
     fn into_callback(self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, _key| unsafe {
             cmd_confirm_before_callback(
-                client.map_or(std::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                &(*(client.map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live client"),
                 &self,
                 text,
             )
@@ -200,7 +201,7 @@ mod tests {
         unsafe {
             for reject in [false, true] {
                 let client = client::new();
-                let pointer = std::ptr::NonNull::new(rc::as_ptr(&client));
+                let observer = Rc::downgrade(&client);
                 let item = cmdq_get_callback_owned(c"confirmation wait".as_ptr(), None);
                 (*item).flags = CMDQ_WAITING;
                 let cmdlist = cmd_list_new();
@@ -218,7 +219,10 @@ mod tests {
                 });
                 let mut callback = data.into_callback().unwrap();
                 owner.try_borrow_mut().unwrap().inputcb =
-                    Some(Box::new(move |text, key| callback(pointer, text, key)));
+                    Some(Box::new(move |text, key| {
+                        let client = observer.upgrade();
+                        callback(client.as_ref(), text, key)
+                    }));
                 if reject {
                     assert_eq!(prompt_key(&owner.downgrade(), b'n' as u64, &mut 0), PROMPT_KEY_CLOSE);
                     assert_eq!((*item).flags & CMDQ_WAITING, 0);
@@ -250,7 +254,7 @@ mod tests {
                 default_yes: 0,
             };
             cmdq_free_detached(item);
-            assert_eq!(cmd_confirm_before_callback(client.get(), &data, None), PROMPT_CLOSE);
+            assert_eq!(cmd_confirm_before_callback(&client, &data, None), PROMPT_CLOSE);
         }
     }
 }

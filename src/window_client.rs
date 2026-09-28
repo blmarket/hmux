@@ -376,7 +376,7 @@ unsafe fn window_client_build(
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
-        if !((*c).session_ptr().is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
+        if !((*c).session_handle().is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             window_client_add_item(&mut (*data).items, &clients_sorted[i as usize]);
         }
         i = i.wrapping_add(1);
@@ -391,10 +391,10 @@ unsafe fn window_client_build(
             let cp = format_single_cstring(
                 ::core::ptr::null_mut::<cmdq_item>(),
                 filter,
-                c,
-                ::core::ptr::null_mut::<session>(),
+                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                None,
                 ::core::ptr::null_mut::<winlink>(),
-                ::core::ptr::null_mut::<window_pane>(),
+                None,
             );
             if format_true(cp.as_ptr()) == 0 {
                 current_block_21 = 3512920355445576850;
@@ -409,10 +409,10 @@ unsafe fn window_client_build(
                 let text = format_single_cstring(
                     ::core::ptr::null_mut::<cmdq_item>(),
                     (*data).format.as_ptr(),
-                    c,
-                    ::core::ptr::null_mut::<session>(),
+                    (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                    None,
                     ::core::ptr::null_mut::<winlink>(),
-                    ::core::ptr::null_mut::<window_pane>(),
+                    None,
                 );
                 mode_tree_add(
                     &mut *(*data).tree_owner().get(),
@@ -437,7 +437,7 @@ unsafe fn window_client_draw_info(
 ) {
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut w: *mut window = (*(*(*c).session_ptr()).curw_ptr()).window_ptr();
+    let mut w: *mut window = (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -458,10 +458,10 @@ unsafe fn window_client_draw_info(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        c,
-        ::core::ptr::null_mut::<session>(),
+        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     if (*tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term)).flags & TERM_INVALIDMS != 0 {
         format_add(
@@ -541,7 +541,7 @@ unsafe fn window_client_draw(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
-    let mut session: *mut session = (*c).session_ptr();
+    let mut session: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -570,10 +570,10 @@ unsafe fn window_client_draw(
         window_client_draw_info(item, ctx, sx, sy);
         return;
     }
-    w = (*(*session).curw_ptr()).window_ptr();
-    wp = (*w).active_ptr();
+    w = (*(*session).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if (*data).hide_preview_this_pane != 0 && wp == mode_pane {
-        if !window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+        if !window_pane_stack_first(w.as_ref()).is_none() {
             wp = window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         } else {
             wp = ::core::ptr::null_mut::<window_pane>();
@@ -693,17 +693,17 @@ unsafe fn window_client_get_key(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut key: key_code = 0;
     ft = format_create(
-        ::core::ptr::null_mut::<client>(),
+        None,
         ::core::ptr::null_mut::<cmdq_item>(),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
     format_defaults(
         ft,
-        crate::src::shared::rc::as_ptr(item.client()),
-        ::core::ptr::null_mut::<session>(),
+        (crate::src::shared::rc::as_ptr(item.client())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        None,
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     format_add(
         ft,
@@ -876,14 +876,14 @@ unsafe fn window_client_do_detach(
         mode_tree_down(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
-        server_client_detach(crate::src::shared::rc::as_ptr(item.client()), MSG_DETACH);
+        server_client_detach(&(*(crate::src::shared::rc::as_ptr(item.client()))).observer.upgrade().expect("live client"), MSG_DETACH);
     } else if key == 'x' as i32 as key_code || key == 'X' as i32 as key_code {
         server_client_detach(
-            crate::src::shared::rc::as_ptr(item.client()),
+            &(*(crate::src::shared::rc::as_ptr(item.client()))).observer.upgrade().expect("live client"),
             MSG_DETACHKILL,
         );
     } else if key == 'z' as i32 as key_code || key == 'Z' as i32 as key_code {
-        server_client_suspend(crate::src::shared::rc::as_ptr(item.client()));
+        server_client_suspend(&(*(crate::src::shared::rc::as_ptr(item.client()))).observer.upgrade().expect("live client"));
     }
 }
 unsafe fn window_client_key(

@@ -1,4 +1,4 @@
-use crate::src::shared::client::client_rc_ptr;
+use crate::src::shared::client::client_handle;
 use crate::src::log::{log_cstr, log_pointer};
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
@@ -145,10 +145,10 @@ pub(super) unsafe fn format_job_get(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    if client_rc_ptr(&(*ft).client).is_null() {
+    if client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
         jobs = &raw mut format_jobs as *mut format_job_tree;
     } else {
-        jobs = &mut **(*client_rc_ptr(&(*ft).client)).jobs.get_or_insert_with(Default::default);
+        jobs = &mut **(*client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get())).jobs.get_or_insert_with(Default::default);
     }
     fj = format_job_find_or_insert(&mut *jobs, (*ft).client.as_ref(), (*ft).tag, CStr::from_ptr(cmd));
     format_copy_state(
@@ -181,7 +181,7 @@ pub(super) unsafe fn format_job_get(
             Some(expanded.as_c_str()),
             &Vec::new(),
             None,
-            ::core::ptr::null_mut::<session>(),
+            None,
             cwd.as_deref(),
             job_update_callback(move |job| unsafe { format_job_update(job, fj) }),
             Some(Box::new(move |completion| unsafe {
@@ -293,7 +293,8 @@ pub unsafe fn format_tidy_jobs() {
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-pub unsafe fn format_lost_client(mut c: *mut client) {
+pub unsafe fn format_lost_client(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut c = c_owner.get();
     let jobs = (*c).jobs.as_deref_mut().map(|jobs| jobs as *mut format_job_tree);
     if let Some(jobs) = jobs {
         // Keep the cache installed through job cancellation, as before.
@@ -391,9 +392,9 @@ mod tests {
             let cmd = CString::new("job").unwrap();
             let fj = format_job_find_or_insert(c.jobs.as_deref_mut().unwrap(), Some(&owner), 0, cmd.as_c_str());
             (*fj).last = time(std::ptr::null_mut()) + 3600;
-            format_lost_client(c);
+            format_lost_client(&(*(c)).observer.upgrade().expect("live client"));
             assert!(c.jobs.is_none());
-            format_lost_client(c);
+            format_lost_client(&(*(c)).observer.upgrade().expect("live client"));
         }
     }
 

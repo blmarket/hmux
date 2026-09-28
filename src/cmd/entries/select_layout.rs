@@ -104,15 +104,15 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let c_owner = cmdq_get_target_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_ptr();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut layoutname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut layout: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    server_unzoom_window(w);
+    server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
     next = (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_next_layout_entry)) as ::core::ffi::c_int;
     if args_has(args, 'n' as i32 as u_char) != 0 {
         next = 1 as ::core::ffi::c_int;
@@ -129,18 +129,18 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
     let new_layout = layout_dump_owned((*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), flags);
-    let mut oldlayout = window_replace_old_layout(w, new_layout);
+    let mut oldlayout = window_replace_old_layout(&(*(w)).observer.upgrade().expect("live window"), new_layout);
     let oldlayout_ptr = oldlayout
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr());
     if next != 0 || previous != 0 {
         if next != 0 {
-            layout_set_next(w);
+            layout_set_next(&(*(w)).observer.upgrade().expect("live window"));
         } else {
-            layout_set_previous(w);
+            layout_set_previous(&(*(w)).observer.upgrade().expect("live window"));
         }
     } else if args_has(args, 'E' as i32 as u_char) != 0 {
-        layout_spread_out(wp);
+        layout_spread_out(&(*(wp)).observer.upgrade().expect("live window_pane"));
     } else {
         if args_count(args) != 0 as u_int {
             layoutname = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -156,7 +156,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 layout = layout_set_lookup(layoutname);
             }
             if layout != -(1 as ::core::ffi::c_int) {
-                layout_set_select(w, layout as u_int);
+                layout_set_select(&(*(w)).observer.upgrade().expect("live window"), layout as u_int);
                 current_block = 16863505586472967431;
             } else {
                 current_block = 15125582407903384992;
@@ -168,7 +168,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             16863505586472967431 => {}
             _ => {
                 if !layoutname.is_null() {
-                    if layout_parse(w, layoutname, &raw mut cause) == -(1 as ::core::ffi::c_int) {
+                    if layout_parse(&(*(w)).observer.upgrade().expect("live window"), layoutname, &raw mut cause) == -(1 as ::core::ffi::c_int) {
                         cmdq_error(item, |out| {
                             write_cstr(
                                 out,
@@ -179,7 +179,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             out.write_all(b": ")?;
                             write_cstr(out, layoutname)
                         });
-                        drop(window_replace_old_layout(w, oldlayout.take()));
+                        drop(window_replace_old_layout(&(*(w)).observer.upgrade().expect("live window"), oldlayout.take()));
                         return CMD_RETURN_ERROR;
                     }
                 } else {
@@ -194,7 +194,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     server_redraw_window(&*(w));
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     return CMD_RETURN_NORMAL;
 }

@@ -122,7 +122,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut s: *mut session = (*target).s_ptr();
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;
@@ -143,44 +143,44 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     if next != 0 || previous != 0 || last != 0 {
         activity = args_has(args, 'a' as i32 as u_char);
         if next != 0 {
-            if session_next(s, activity) != 0 as ::core::ffi::c_int {
+            if session_next(&(*s).observer.upgrade().expect("live session"), activity) != 0 as ::core::ffi::c_int {
                 cmdq_error(item, |out| out.write_all(b"no next window"));
                 return CMD_RETURN_ERROR;
             }
         } else if previous != 0 {
-            if session_previous(s, activity) != 0 as ::core::ffi::c_int {
+            if session_previous(&(*s).observer.upgrade().expect("live session"), activity) != 0 as ::core::ffi::c_int {
                 cmdq_error(item, |out| out.write_all(b"no previous window"));
                 return CMD_RETURN_ERROR;
             }
-        } else if session_last(s) != 0 as ::core::ffi::c_int {
+        } else if session_last(&(*s).observer.upgrade().expect("live session")) != 0 as ::core::ffi::c_int {
             cmdq_error(item, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }
-        cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
+        cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
         server_redraw_session(&*(s));
-        cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| {
+        cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, &mut current.current_snapshot(), |out| {
             out.write_all(b"after-select-window")
         });
     } else {
         if args_has(args, 'T' as i32 as u_char) != 0 && wl == (*s).curw_ptr() {
-            if session_last(s) != 0 as ::core::ffi::c_int {
+            if session_last(&(*s).observer.upgrade().expect("live session")) != 0 as ::core::ffi::c_int {
                 cmdq_error(item, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
             }
-            if current.current.borrow().s_ptr() == s {
-                cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
+            if current.current.borrow().session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == s {
+                cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
             }
             server_redraw_session(&*(s));
-        } else if session_select(s, (*wl).idx) == 0 as ::core::ffi::c_int {
-            cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
+        } else if session_select(&(*s).observer.upgrade().expect("live session"), (*wl).idx) == 0 as ::core::ffi::c_int {
+            cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
             server_redraw_session(&*(s));
         }
-        cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| {
+        cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, &mut current.current_snapshot(), |out| {
             out.write_all(b"after-select-window")
         });
     }
-    if !c.is_null() && !(*c).session_ptr().is_null() {
-        (*(*(*s).curw_ptr()).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+    if !c.is_null() && !(*c).session_handle().is_none() {
+        (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

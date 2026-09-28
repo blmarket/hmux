@@ -22,7 +22,7 @@ use std::ffi::CStr;
 #[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: &'static CStr,
-    pub arrange: Option<fn(&mut window)>,
+    pub arrange: Option<fn(&std::rc::Rc<std::cell::UnsafeCell<window>>)>,
 }
 static layout_sets: [C2RustUnnamed_35; 7] = {
     [
@@ -86,7 +86,8 @@ pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core:
     }
     return matched;
 }
-pub unsafe fn layout_set_select(mut w: *mut window, mut layout: u_int) -> u_int {
+pub unsafe fn layout_set_select(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut layout: u_int) -> u_int {
+    let mut w = w_owner.get();
     if layout as usize
         > (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
@@ -99,12 +100,13 @@ pub unsafe fn layout_set_select(mut w: *mut window, mut layout: u_int) -> u_int 
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(&mut *w);
+            .expect("non-null function pointer")(w_owner);
     }
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
 }
-pub unsafe fn layout_set_next(mut w: *mut window) -> u_int {
+pub unsafe fn layout_set_next(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> u_int {
+    let mut w = w_owner.get();
     let mut layout: u_int = 0;
     if (*w).lastlayout == -(1 as ::core::ffi::c_int) {
         layout = 0 as u_int;
@@ -121,12 +123,13 @@ pub unsafe fn layout_set_next(mut w: *mut window) -> u_int {
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(&mut *w);
+            .expect("non-null function pointer")(w_owner);
     }
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
 }
-pub unsafe fn layout_set_previous(mut w: *mut window) -> u_int {
+pub unsafe fn layout_set_previous(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> u_int {
+    let mut w = w_owner.get();
     let mut layout: u_int = 0;
     if (*w).lastlayout == -(1 as ::core::ffi::c_int) {
         layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
@@ -145,29 +148,30 @@ pub unsafe fn layout_set_previous(mut w: *mut window) -> u_int {
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(&mut *w);
+            .expect("non-null function pointer")(w_owner);
     }
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
 }
-unsafe fn layout_set_first_tiled(mut w: *mut window) -> *mut window_pane {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
+unsafe fn layout_set_first_tiled(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    let mut cursor = window_pane_first(Some(&*w_owner.get()));
+    while let Some(pane) = cursor {
+        let wp = pane.get();
         if !(*wp).layout_cell.is_null()
             && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) != 0
         {
-            return wp;
+            return Some(pane);
         }
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp));
     }
-    return ::core::ptr::null_mut::<window_pane>();
+    None
 }
 unsafe fn layout_set_link_floating(
-    mut w: *mut window,
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     mut lcroot: *mut layout_cell,
     leaves: &mut Vec<Box<layout_cell>>,
 ) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -180,7 +184,8 @@ unsafe fn layout_set_link_floating(
     }
 }
 
-unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
+unsafe fn layout_set_even(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut type_0: layout_type) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -237,17 +242,17 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
         }
         wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    layout_spread_cell(w, lcroot);
+    layout_spread_cell(w_owner, lcroot);
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
     layout_print_cell(
         (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_even\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
     window_resize(
-        w,
+        &(*(w)).observer.upgrade().expect("live window"),
         (*lcroot).g.sx,
         (*lcroot).g.sy,
         -(1 as ::core::ffi::c_int),
@@ -255,38 +260,39 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
 }
-unsafe fn layout_set_even_h(mut w: *mut window) {
-    layout_set_even(w, LAYOUT_LEFTRIGHT);
+unsafe fn layout_set_even_h(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    layout_set_even(w_owner, LAYOUT_LEFTRIGHT);
 }
-unsafe fn layout_set_even_v(mut w: *mut window) {
-    layout_set_even(w, LAYOUT_TOPBOTTOM);
+unsafe fn layout_set_even_v(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    layout_set_even(w_owner, LAYOUT_TOPBOTTOM);
 }
-fn layout_set_even_h_callback(w: &mut window) {
-    unsafe { layout_set_even_h(w as *mut window) };
+fn layout_set_even_h_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_even_h(w) };
 }
-fn layout_set_even_v_callback(w: &mut window) {
-    unsafe { layout_set_even_v(w as *mut window) };
+fn layout_set_even_v_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_even_v(w) };
 }
-fn layout_set_main_h_callback(w: &mut window) {
-    unsafe { layout_set_main_h(w as *mut window) };
+fn layout_set_main_h_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_main_h(w) };
 }
-fn layout_set_main_h_mirrored_callback(w: &mut window) {
-    unsafe { layout_set_main_h_mirrored(w as *mut window) };
+fn layout_set_main_h_mirrored_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_main_h_mirrored(w) };
 }
-fn layout_set_main_v_callback(w: &mut window) {
-    unsafe { layout_set_main_v(w as *mut window) };
+fn layout_set_main_v_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_main_v(w) };
 }
-fn layout_set_main_v_mirrored_callback(w: &mut window) {
-    unsafe { layout_set_main_v_mirrored(w as *mut window) };
+fn layout_set_main_v_mirrored_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_main_v_mirrored(w) };
 }
-fn layout_set_tiled_callback(w: &mut window) {
-    unsafe { layout_set_tiled(w as *mut window) };
+fn layout_set_tiled_callback(w: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    unsafe { layout_set_tiled(w) };
 }
-unsafe fn layout_set_main_h(mut w: *mut window) {
+unsafe fn layout_set_main_h(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -365,7 +371,8 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, LAYOUT_TOPBOTTOM);
-    wpmain = layout_set_first_tiled(w);
+    let main_pane_owner = layout_set_first_tiled(w_owner);
+    wpmain = main_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lcmain = (*wpmain).layout_cell as *mut layout_cell;
     (*lcmain).parent = lcroot;
     layout_set_size(
@@ -390,7 +397,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        layout_set_link_floating(w, lcroot, &mut leaves);
+        layout_set_link_floating(w_owner, lcroot, &mut leaves);
     } else {
         let mut lcother_owner = layout_create_cell();
         lcother = &mut *lcother_owner;
@@ -421,18 +428,18 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
             }
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        layout_spread_cell(w, lcother);
+        layout_spread_cell(w_owner, lcother);
     }
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
     layout_print_cell(
         (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_h\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
     window_resize(
-        w,
+        &(*(w)).observer.upgrade().expect("live window"),
         (*lcroot).g.sx,
         (*lcroot).g.sy,
         -(1 as ::core::ffi::c_int),
@@ -440,11 +447,12 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
 }
-unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
+unsafe fn layout_set_main_h_mirrored(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -523,7 +531,8 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, LAYOUT_TOPBOTTOM);
-    wpmain = layout_set_first_tiled(w);
+    let main_pane_owner = layout_set_first_tiled(w_owner);
+    wpmain = main_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lcmain = (*wpmain).layout_cell as *mut layout_cell;
     (*lcmain).parent = lcroot;
     layout_set_size(
@@ -548,7 +557,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        layout_set_link_floating(w, lcroot, &mut leaves);
+        layout_set_link_floating(w_owner, lcroot, &mut leaves);
     } else {
         let mut lcother_owner = layout_create_cell();
         lcother = &mut *lcother_owner;
@@ -579,18 +588,18 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
             }
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        layout_spread_cell(w, lcother);
+        layout_spread_cell(w_owner, lcother);
     }
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
     layout_print_cell(
         (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_h_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
     window_resize(
-        w,
+        &(*(w)).observer.upgrade().expect("live window"),
         (*lcroot).g.sx,
         (*lcroot).g.sy,
         -(1 as ::core::ffi::c_int),
@@ -598,11 +607,12 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
 }
-unsafe fn layout_set_main_v(mut w: *mut window) {
+unsafe fn layout_set_main_v(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -681,7 +691,8 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, LAYOUT_LEFTRIGHT);
-    wpmain = layout_set_first_tiled(w);
+    let main_pane_owner = layout_set_first_tiled(w_owner);
+    wpmain = main_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lcmain = (*wpmain).layout_cell as *mut layout_cell;
     (*lcmain).parent = lcroot;
     layout_set_size(
@@ -706,7 +717,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        layout_set_link_floating(w, lcroot, &mut leaves);
+        layout_set_link_floating(w_owner, lcroot, &mut leaves);
     } else {
         let mut lcother_owner = layout_create_cell();
         lcother = &mut *lcother_owner;
@@ -737,18 +748,18 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
             }
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        layout_spread_cell(w, lcother);
+        layout_spread_cell(w_owner, lcother);
     }
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
     layout_print_cell(
         (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_v\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
     window_resize(
-        w,
+        &(*(w)).observer.upgrade().expect("live window"),
         (*lcroot).g.sx,
         (*lcroot).g.sy,
         -(1 as ::core::ffi::c_int),
@@ -756,11 +767,12 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
 }
-unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
+unsafe fn layout_set_main_v_mirrored(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -839,7 +851,8 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, LAYOUT_LEFTRIGHT);
-    wpmain = layout_set_first_tiled(w);
+    let main_pane_owner = layout_set_first_tiled(w_owner);
+    wpmain = main_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lcmain = (*wpmain).layout_cell as *mut layout_cell;
     (*lcmain).parent = lcroot;
     layout_set_size(
@@ -864,7 +877,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        layout_set_link_floating(w, lcroot, &mut leaves);
+        layout_set_link_floating(w_owner, lcroot, &mut leaves);
     } else {
         let mut lcother_owner = layout_create_cell();
         lcother = &mut *lcother_owner;
@@ -895,18 +908,18 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
             }
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        layout_spread_cell(w, lcother);
+        layout_spread_cell(w_owner, lcother);
     }
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
     layout_print_cell(
         (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_main_v_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
     window_resize(
-        w,
+        &(*(w)).observer.upgrade().expect("live window"),
         (*lcroot).g.sx,
         (*lcroot).g.sy,
         -(1 as ::core::ffi::c_int),
@@ -914,11 +927,12 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
 }
-unsafe fn layout_set_tiled(mut w: *mut window) {
+unsafe fn layout_set_tiled(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut w = w_owner.get();
     let mut oo: *mut options = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -1061,7 +1075,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
             if !((*w).sx <= used) {
                 lcchild = layout_cells_last(&*lcrow);
                 layout_resize_adjust(
-                    w,
+                    w_owner,
                     lcchild,
                     LAYOUT_LEFTRIGHT,
                     (*w).sx.wrapping_sub(used) as ::core::ffi::c_int,
@@ -1077,23 +1091,23 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
     if (*w).sy > used {
         lcrow = layout_cells_last(&*lcroot);
         layout_resize_adjust(
-            w,
+            w_owner,
             lcrow,
             LAYOUT_TOPBOTTOM,
             (*w).sy.wrapping_sub(used) as ::core::ffi::c_int,
         );
     }
-    layout_set_link_floating(w, lcroot, &mut leaves);
+    layout_set_link_floating(w_owner, lcroot, &mut leaves);
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
-    layout_fix_offsets(w);
-    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    layout_fix_offsets(w_owner);
+    layout_fix_panes(w_owner, None);
     layout_print_cell(
         (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
         b"layout_set_tiled\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
     window_resize(
-        w,
+        &(*(w)).observer.upgrade().expect("live window"),
         (*lcroot).g.sx,
         (*lcroot).g.sy,
         -(1 as ::core::ffi::c_int),
@@ -1101,7 +1115,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
     );
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        w,
+        (*(w)).observer.upgrade().expect("live window"),
     );
     server_redraw_window(&*(w));
 }

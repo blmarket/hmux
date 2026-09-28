@@ -111,9 +111,9 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     if cmd_find_target(&raw mut target, item, tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CMD_RETURN_ERROR;
     }
-    s = target.s_ptr();
+    s = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = target.wl_ptr();
-    wp = target.wp_ptr();
+    wp = target.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if args_has(args, 'r' as i32 as u_char) != 0 {
         if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
             uid = proc_get_peer_uid((*c).peer);
@@ -151,14 +151,14 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        adjacent_session_owner = session_next_session((*tc).session_ptr().as_ref(), &sort_crit);
+        adjacent_session_owner = session_next_session((*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref(), &sort_crit);
         s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        adjacent_session_owner = session_previous_session((*tc).session_ptr().as_ref(), &sort_crit);
+        adjacent_session_owner = session_previous_session((*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref(), &sort_crit);
         s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find previous session"));
@@ -178,25 +178,25 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         if cmdq_get_client(item).is_none() {
             return CMD_RETURN_NORMAL;
         }
-        if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window_ptr()).active_ptr() {
-            w = (*wl).window_ptr();
+        if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+            w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
                 visible = window_pane_is_visible(&*wp);
             }
-            if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
+            if visible == 0 && window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, Zflag) != 0 {
                 server_redraw_window(&*(w));
             }
-            window_redraw_active_switch(w, wp);
-            window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-            if visible == 0 && window_pop_zoom(w) != 0 {
+            window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
+            if visible == 0 && window_pop_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0 {
                 server_redraw_window(&*(w));
             }
         }
         if !wl.is_null() {
-            session_set_current(s, wl);
-            cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
+            session_set_current(&(*s).observer.upgrade().expect("live session"), wl);
+            cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
         }
     }
     if args_has(args, 'E' as i32 as u_char) == 0 {
@@ -206,9 +206,9 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*s).environ.as_deref_mut().expect("session environment"),
         );
     }
-    server_client_set_session(tc, s);
+    server_client_set_session(&(*(tc)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     if !cmdq_get_flags(item) & CMDQ_STATE_REPEAT != 0 {
-        server_client_set_key_table(tc, ::core::ptr::null::<::core::ffi::c_char>());
+        server_client_set_key_table(&(*(tc)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
     }
     return CMD_RETURN_NORMAL;
 }

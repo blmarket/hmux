@@ -55,7 +55,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         let mut xoff: u_int = 0;
         let mut yoff: u_int = 0;
         window_push_zoom(
-            w,
+            &(*(w)).observer.upgrade().expect("live window"),
             0 as ::core::ffi::c_int,
             args_has(args, 'Z' as i32 as u_char),
         );
@@ -93,7 +93,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*wp).xoff = xoff as ::core::ffi::c_int;
             (*wp).yoff = yoff as ::core::ffi::c_int;
             window_pane_resize(&cursor, sx, sy);
-            window_pane_previous(((*w).active_ptr()).as_ref())
+            window_pane_previous(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref())
                 .or_else(|| window_pane_last(Some(&*w)))
         } else {
             let moved_owner = window_pane_first(Some(&*w)).expect("rotation window has panes");
@@ -129,14 +129,14 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*wp).xoff = xoff as ::core::ffi::c_int;
             (*wp).yoff = yoff as ::core::ffi::c_int;
             window_pane_resize(&cursor, sx, sy);
-            window_pane_next(((*w).active_ptr()).as_ref())
+            window_pane_next(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref())
                 .or_else(|| window_pane_first(Some(&*w)))
         }.expect("rotation window has an active candidate");
         let wp = selected_pane.get();
-        window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
-        window_pop_zoom(w);
-        redraw_invalidate_scene(w);
+        window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
+        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
+        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
+        redraw_invalidate_scene(&mut *(w));
         server_redraw_window(&*(w));
         return CMD_RETURN_NORMAL;
     })();

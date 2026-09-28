@@ -199,19 +199,14 @@ pub struct client {
 }
 
 impl client {
-    /// Legacy pointer view. Callers must retain the session or keep it indexed
-    /// throughout use; this upgrade is only a liveness check.
-    pub fn session_ptr(&self) -> *mut session {
-        self.session
-            .upgrade()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
+    /// Retain the attached session for the current operation.
+    pub fn session_handle(&self) -> Option<Rc<UnsafeCell<session>>> {
+        self.session.upgrade()
     }
 
     /// The caller supplies a live Rc-backed session.
-    pub unsafe fn set_session(&mut self, session: *mut session) {
-        self.session = session
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, |session| session.observer.clone());
+    pub fn set_session(&mut self, session: Option<&session>) {
+        self.session = session.map_or_else(std::rc::Weak::new, |session| session.observer.clone());
     }
 
     pub fn pan_window_is(&self, window: &super::window::window) -> bool {
@@ -394,19 +389,14 @@ pub type overlay_mode_cb =
 pub type overlay_check_cb =
     Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> visible_ranges>>;
 
-/// Retain a live client; a null pointer represents an absent client.
-///
-/// # Safety
-/// A non-null pointer must identify a live Rc-owned client.
-pub unsafe fn client_retain(ptr: *mut client) -> Option<Rc<UnsafeCell<client>>> {
-    if ptr.is_null() {
-        return None;
-    }
-    Some((*ptr).observer.upgrade().expect("live Rc client"))
+/// Retain an optional live, Rc-owned client.
+/// Panics if a supplied client is not backed by a live Rc allocation.
+pub fn client_retain(value: Option<&client>) -> Option<Rc<UnsafeCell<client>>> {
+    value.map(|client| client.observer.upgrade().expect("live Rc client"))
 }
 
-pub fn client_rc_ptr(owner: &Option<Rc<UnsafeCell<client>>>) -> *mut client {
-    owner.as_ref().map_or(std::ptr::null_mut(), super::rc::as_ptr)
+pub fn client_handle(owner: &Option<Rc<UnsafeCell<client>>>) -> Option<&Rc<UnsafeCell<client>>> {
+    owner.as_ref()
 }
 
 #[cfg(test)]
@@ -420,13 +410,13 @@ mod retained_client_tests {
         let session = super::super::session::session::new();
         let observer = Rc::downgrade(&session);
         unsafe {
-            client.set_session(session.get());
+            client.set_session((session.get()).as_ref());
         }
-        assert_eq!(client.session_ptr(), session.get());
+        assert_eq!(client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), session.get());
         assert_eq!(Rc::strong_count(&session), 1);
         drop(session);
         assert!(observer.upgrade().is_none());
-        assert!(client.session_ptr().is_null());
+        assert!(client.session_handle().is_none());
     }
 
     #[test]
@@ -465,7 +455,7 @@ mod retained_client_tests {
                 let initial = client::new();
                 let ptr = rc::as_ptr(&initial);
                 let observer = (*ptr).observer.clone();
-                let owner = client_retain(ptr).unwrap();
+                let owner = client_retain((ptr).as_ref()).unwrap();
                 drop(initial);
                 assert_eq!(rc::as_ptr(&owner), ptr);
                 server_client_unref_owned(owner);
@@ -478,7 +468,7 @@ mod retained_client_tests {
                 assert_eq!(observer.strong_count(), 0);
                 reactor::shutdown_runtime();
             }
-            assert!(client_retain(std::ptr::null_mut()).is_none());
+            assert!(client_retain(None).is_none());
         }
     }
 }

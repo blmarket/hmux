@@ -65,7 +65,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
-            (*(*wl).window_ptr()).flags &= !WINDOW_ALERTFLAGS;
+            (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags &= !WINDOW_ALERTFLAGS;
             (*wl).flags &= !WINLINK_ALERTFLAGS;
             wl = winlinks_next(&*wl);
         }
@@ -80,7 +80,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             let sloop = session_owner.get();
             server_destroy_session(&session_owner);
             session_destroy(
-                sloop,
+                &session_owner,
                 1 as ::core::ffi::c_int,
                 b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -88,7 +88,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     } else {
         server_destroy_session(&source);
         session_destroy(
-            s,
+            &source,
             1 as ::core::ffi::c_int,
             b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
         );
@@ -99,17 +99,17 @@ unsafe fn cmd_kill_session_all(
     mut item: *mut cmdq_item,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s_ptr();
+    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sloop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
         if !(sloop == s) {
-            if !(cmd_kill_session_filter(item, sloop, filter) == 0) {
+            if !(cmd_kill_session_filter(item, &(*(sloop)).observer.upgrade().expect("live session"), filter) == 0) {
                 server_destroy_session(sloop_owner.as_ref().expect("registered session"));
                 session_destroy(
-                    sloop,
+                    sloop_owner.as_ref().expect("registered session"),
                     1 as ::core::ffi::c_int,
                     b"cmd_kill_session_all\0" as *const u8 as *const ::core::ffi::c_char,
                 );
@@ -122,9 +122,10 @@ unsafe fn cmd_kill_session_all(
 }
 unsafe fn cmd_kill_session_filter(
     mut item: *mut cmdq_item,
-    mut s: *mut session,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let mut s = s_owner.get();
     let queue_client = cmdq_get_client(item);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -139,10 +140,10 @@ unsafe fn cmd_kill_session_filter(
     );
     format_defaults(
         ft,
-        ::core::ptr::null_mut::<client>(),
-        s,
+        None,
+        Some(s_owner),
         ::core::ptr::null_mut::<winlink>(),
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
     );
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());

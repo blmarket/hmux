@@ -245,67 +245,31 @@ pub struct cmd_find_state {
 }
 
 impl cmd_find_state {
-    /// Borrow a live target address for the translated, single-threaded callers.
-    ///
-    /// # Safety
-    /// The caller must keep the model alive throughout use of the returned pointer
-    /// and must re-resolve targets after callbacks that can destroy them.
-    pub unsafe fn s_ptr(&self) -> *mut session {
-        if self.s.strong_count() == 0 {
-            std::ptr::null_mut()
-        } else {
-            self.s.as_ptr().cast_mut().cast()
-        }
+    /// Retain the target allocation; callbacks may still invalidate it logically.
+    pub fn session_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+        self.s.upgrade()
     }
 
-    /// # Safety
-    /// A nonnull pointer must refer to a live, shared model allocation.
-    pub unsafe fn set_s(&mut self, ptr: *mut session) {
-        self.s = ptr
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    pub fn set_s(&mut self, value: Option<&session>) {
+        self.s = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
     }
 
-    /// Borrow a live target address for the translated, single-threaded callers.
-    ///
-    /// # Safety
-    /// The caller must keep the model alive throughout use of the returned pointer
-    /// and must re-resolve targets after callbacks that can destroy them.
-    pub unsafe fn w_ptr(&self) -> *mut window {
-        if self.w.strong_count() == 0 {
-            std::ptr::null_mut()
-        } else {
-            self.w.as_ptr().cast_mut().cast()
-        }
+    /// Retain the target allocation; callbacks may still invalidate it logically.
+    pub fn window_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
+        self.w.upgrade()
     }
 
-    /// # Safety
-    /// A nonnull pointer must refer to a live, shared model allocation.
-    pub unsafe fn set_w(&mut self, ptr: *mut window) {
-        self.w = ptr
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    pub fn set_w(&mut self, value: Option<&window>) {
+        self.w = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
     }
 
-    /// Borrow a live target address for the translated, single-threaded callers.
-    ///
-    /// # Safety
-    /// The caller must keep the model alive throughout use of the returned pointer
-    /// and must re-resolve targets after callbacks that can destroy them.
-    pub unsafe fn wp_ptr(&self) -> *mut window_pane {
-        if self.wp.strong_count() == 0 {
-            std::ptr::null_mut()
-        } else {
-            self.wp.as_ptr().cast_mut().cast()
-        }
+    /// Retain the target allocation; callbacks may still invalidate it logically.
+    pub fn pane_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+        self.wp.upgrade()
     }
 
-    /// # Safety
-    /// A nonnull pointer must refer to a live, shared model allocation.
-    pub unsafe fn set_wp(&mut self, ptr: *mut window_pane) {
-        self.wp = ptr
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    pub fn set_wp(&mut self, value: Option<&window_pane>) {
+        self.wp = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
     }
 
     /// # Safety
