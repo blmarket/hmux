@@ -117,8 +117,9 @@ unsafe fn file_set_cmdq_wait(
 ) {
     let owner = &mut *file_owner.get();
     assert!(!item.is_null());
-    assert!(owner.wait_item.is_null());
-    owner.wait_item = item;
+    assert!(!owner.wait_active);
+    owner.wait_item = (*item).observer.clone();
+    owner.wait_active = true;
     owner.wait_client = (!Weak::ptr_eq(&(*item).client, &Weak::new()))
         .then(|| (*item).client.clone());
     owner.cancel_data = cancel_cb;
@@ -129,11 +130,13 @@ unsafe fn file_set_cmdq_wait(
 /// The scheduled terminal event still owns and frees the file itself.
 pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_file>>) {
     let owner = &mut *file_owner.get();
-    if owner.wait_item.is_null() {
+    if !owner.wait_active {
         return;
     }
-    cmdq_clear_wait_file(&mut *owner.wait_item, &owner.observer);
-    owner.wait_item = std::ptr::null_mut();
+    owner.wait_active = false;
+    if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
+        cmdq_clear_wait_file(&mut *item.get(), &owner.observer);
+    }
     owner.wait_client = None;
     owner.cb = None;
     let cancel_cb = owner.cancel_data.take();
@@ -199,11 +202,12 @@ unsafe fn file_destroy(cf: &mut client_file) {
     cf.path = Default::default();
 }
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
-    let (client_owner, wait_client) = {
+    let (client_owner, wait_client, expired_wait) = {
         let file = &*owner.get();
-        (file.c.clone(), file.wait_client.as_ref().map(Weak::upgrade))
+        (file.c.clone(), file.wait_client.as_ref().map(Weak::upgrade),
+            file.wait_active && file.wait_item.upgrade().is_none())
     };
-    let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
+    let dead = expired_wait || client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
             (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
         }));
@@ -211,9 +215,11 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         file_cancel_cmdq_wait(owner);
     } else {
         let owner = &mut *owner.get();
-        if !owner.wait_item.is_null() {
-            cmdq_clear_wait_file(&mut *owner.wait_item, &owner.observer);
-            owner.wait_item = std::ptr::null_mut();
+        if owner.wait_active {
+            owner.wait_active = false;
+            if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
+                cmdq_clear_wait_file(&mut *item.get(), &owner.observer);
+            }
             owner.wait_client = None;
             owner.cancel_data = None;
         }
@@ -1453,23 +1459,43 @@ mod file_index_ownership_tests {
 #[cfg(test)]
 mod completion_cancellation_tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use crate::src::reactor::event_loop;
 
     #[test]
     fn command_wait_distinguishes_unspecified_and_expired_clients() {
         unsafe {
             let file = client_file::new();
-            let mut item = cmdq_item::empty();
-            file_set_cmdq_wait(&file, &mut item, None);
+            let item = cmdq_get_callback_owned(c"file wait test".as_ptr(), None);
+            file_set_cmdq_wait(&file, item, None);
             assert!((&*file.get()).wait_client.is_none());
             file_cancel_cmdq_wait(&file);
 
             let client = client::new();
-            item.client = Rc::downgrade(&client);
+            (*item).client = Rc::downgrade(&client);
             drop(client);
-            file_set_cmdq_wait(&file, &mut item, None);
+            file_set_cmdq_wait(&file, item, None);
             assert!((&*file.get()).wait_client.as_ref().unwrap().upgrade().is_none());
             file_cancel_cmdq_wait(&file);
+            cmdq_free_detached(item);
+        }
+    }
+
+    #[test]
+    fn expired_command_wait_cancels_its_terminal_callback() {
+        unsafe {
+            let file = client_file::new();
+            let item = cmdq_get_callback_owned(c"file wait test".as_ptr(), None);
+            let cancelled = Rc::new(std::cell::Cell::new(false));
+            let signal = Rc::clone(&cancelled);
+            file_set_cmdq_wait(&file, item, Some(Box::new(move || signal.set(true))));
+            (*file.get()).cb = Some(Box::new(|_| panic!("expired command callback ran")));
+            cmdq_free_detached(item);
+
+            file_fire_done_cb(&file);
+            assert!(cancelled.get());
+            assert!(!(*file.get()).wait_active);
+            assert!((*file.get()).cb.is_none());
         }
     }
 

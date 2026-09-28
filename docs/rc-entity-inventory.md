@@ -2559,3 +2559,11 @@ count is 46.
 format expansion keep an upgrade for their synchronous work; source parsing
 without a command uses an empty observer. The prepared-command test now uses
 an owned queue item. The raw-field count is 45.
+
+## Implemented weak file command wait item
+
+`client_file.wait_item` now observes its queue item weakly. A separate active
+flag distinguishes a registered wait whose item expired from a file with no
+command wait. Cancellation clears the queue link when live, while terminal
+dispatch cancels a callback whose item expired. Pane input and file wait tests
+use production detached queue items. The raw-field count is 44.

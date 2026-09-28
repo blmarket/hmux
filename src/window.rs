@@ -4573,29 +4573,31 @@ mod pane_prompt_data_tests {
 #[cfg(test)]
 mod pane_input_owner_tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use crate::src::file::{file_fire_done, file_fire_read};
     use crate::src::reactor::{evbuffer_add, event_loop, shutdown_runtime};
     use crate::src::shared::command::CMDQ_WAITING;
     use crate::src::shared::rc;
 
     unsafe fn waiting_input(
-        item: &mut cmdq_item,
+        item: *mut cmdq_item,
         client: &Rc<UnsafeCell<client>>,
     ) -> Rc<UnsafeCell<client_file>> {
         let mut data = Box::new(window_pane_input_data {
-            item: NonNull::from(&mut *item),
+            item: NonNull::new(item).expect("test queue item"),
             client: Some(Rc::clone(client)),
             wp: u_int::MAX,
             file: Weak::new(),
         });
         let owner = client_file::new();
         let file = rc::as_ptr(&owner);
-        (*file).wait_item = item;
+        (*file).wait_item = (*item).observer.clone();
+        (*file).wait_active = true;
         (*file).wait_client = Some(Rc::downgrade(client));
         data.file = (*file).observer.clone();
         (*file).cb = data.into_callback();
-        item.wait_file = Some((*file).observer.clone());
-        item.flags = CMDQ_WAITING;
+        (*item).wait_file = Some((*file).observer.clone());
+        (*item).flags = CMDQ_WAITING;
         owner
     }
 
@@ -4604,8 +4606,8 @@ mod pane_input_owner_tests {
         unsafe {
             let client = client::new();
             let client_observer = Rc::downgrade(&client);
-            let mut item = cmdq_item::empty();
-            let owner = waiting_input(&mut item, &client);
+            let item = cmdq_get_callback_owned(c"pane input test".as_ptr(), None);
+            let owner = waiting_input(item, &client);
             let file = rc::as_ptr(&owner);
             let file_observer = (*file).observer.clone();
             // Cancellation was already requested. Further progress must drain
@@ -4616,7 +4618,7 @@ mod pane_input_owner_tests {
 
             file_fire_read(&owner);
             assert_eq!(evbuffer_get_length(&(*file).buffer), 0);
-            assert_ne!(item.flags & CMDQ_WAITING, 0);
+            assert_ne!((*item).flags & CMDQ_WAITING, 0);
             assert!((*file).cb.is_some());
             assert_eq!(
                 (*file).observer.strong_count(),
@@ -4634,10 +4636,11 @@ mod pane_input_owner_tests {
             assert!((*file).cb.is_some());
             drop(owner);
             event_loop();
-            assert_eq!(item.flags & CMDQ_WAITING, 0);
-            assert!(item.wait_file.is_none());
+            assert_eq!((*item).flags & CMDQ_WAITING, 0);
+            assert!((*item).wait_file.is_none());
             assert!(file_observer.upgrade().is_none());
             assert!(client_observer.upgrade().is_none());
+            cmdq_free_detached(item);
             shutdown_runtime();
         }
     }
@@ -4652,14 +4655,14 @@ mod pane_input_owner_tests {
                 // Control clients cannot read stdin. Opening schedules a terminal
                 // error callback after the initializer has installed its box.
                 (*client).flags = CLIENT_CONTROL as u64;
-                let mut item = cmdq_item::empty();
-                item.client = Rc::downgrade(&owner);
-                item.flags = CMDQ_WAITING;
+                let item = cmdq_get_callback_owned(c"pane input test".as_ptr(), None);
+                (*item).client = Rc::downgrade(&owner);
+                (*item).flags = CMDQ_WAITING;
                 let mut pane = window_pane::empty();
                 pane.flags = PANE_EMPTY;
                 pane.id = u_int::MAX;
-                assert_eq!(window_pane_start_input(&mut pane, &mut item), Ok(0));
-                let file_owner = item.wait_file.as_ref().unwrap().upgrade().unwrap();
+                assert_eq!(window_pane_start_input(&mut pane, item), Ok(0));
+                let file_owner = (*item).wait_file.as_ref().unwrap().upgrade().unwrap();
                 let file = rc::as_ptr(&file_owner);
                 assert!(!file.is_null());
                 assert!((*file).cb.is_some());
@@ -4671,12 +4674,13 @@ mod pane_input_owner_tests {
                 }
                 drop(file_owner);
                 event_loop();
-                assert!(item.wait_file.is_none());
+                assert!((*item).wait_file.is_none());
                 if !cancel {
-                    assert_eq!(item.flags & CMDQ_WAITING, 0);
+                    assert_eq!((*item).flags & CMDQ_WAITING, 0);
                 }
                 assert!(file_observer.upgrade().is_none());
                 assert!(observer.upgrade().is_none());
+                cmdq_free_detached(item);
                 shutdown_runtime();
             }
         }
@@ -4691,8 +4695,8 @@ mod pane_input_owner_tests {
                 if dead {
                     (*client.get()).flags |= CLIENT_DEAD as u64;
                 }
-                let mut item = cmdq_item::empty();
-                let owner = waiting_input(&mut item, &client);
+                let item = cmdq_get_callback_owned(c"pane input test".as_ptr(), None);
+                let owner = waiting_input(item, &client);
             let file = rc::as_ptr(&owner);
                 let file_observer = (*file).observer.clone();
                 (*file).error = libc::EBADF;
@@ -4701,10 +4705,11 @@ mod pane_input_owner_tests {
                 file_fire_done(&owner);
                 drop(owner);
                 event_loop();
-                assert_eq!(item.flags & CMDQ_WAITING != 0, dead);
-                assert!(item.wait_file.is_none());
+                assert_eq!((*item).flags & CMDQ_WAITING != 0, dead);
+                assert!((*item).wait_file.is_none());
                 assert!(file_observer.upgrade().is_none());
                 assert!(client_observer.upgrade().is_none());
+                cmdq_free_detached(item);
                 shutdown_runtime();
             }
         }
