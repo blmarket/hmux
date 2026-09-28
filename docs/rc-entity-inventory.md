@@ -1506,3 +1506,16 @@ filtering and removal, and its filter helper borrows the current pane owner.
 `cargo test --workspace` and `git diff --check` passed. Parent-window access,
 kill-all target identity, session/winlink locals and lower-level teardown APIs
 still use raw projections and remain pending.
+
+## Implemented owning window-kill dispatch
+
+`server_kill_window` consumes an Rc window owner instead of recovering ownership
+from a raw argument. Its existing `window_remove_ref` release and close-notification
+ordering remain intact. WindowOwner exposes a borrowed Rc handle for callers to
+clone; command/tree callers use stored owners, and join-pane upgrades its source
+find-state observer. Pane teardown upgrades the remaining raw parent relationship
+at the call boundary.
+
+`cargo test --workspace` and `git diff --check` passed. Window-kill internals,
+parent-window fields, command traversal and other raw model projections remain
+pending.

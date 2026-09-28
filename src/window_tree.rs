@@ -1995,14 +1995,14 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
             let window_owner = match target.winlink.try_borrow_mut() {
                 Ok(link) => link.window_owner.as_ref().map(|owner| {
                     crate::src::shared::window::WindowOwner::adopt(
-                        owner.0.as_ref().expect("live window owner").clone(),
+                        owner.as_rc().clone(),
                     )
                 }),
                 Err(refbox::BorrowError::Dropped) => None,
                 Err(refbox::BorrowError::Borrowed) => panic!("tree target winlink already borrowed"),
             };
             if let Some(window_owner) = window_owner {
-                server_kill_window(window_owner.as_ptr(), 0);
+                server_kill_window(window_owner.as_rc().clone(), 0);
             }
         }
         WINDOW_TREE_PANE => {

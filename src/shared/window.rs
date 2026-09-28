@@ -297,6 +297,10 @@ impl WindowOwner {
     pub fn as_ptr(&self) -> *mut window {
         super::rc::as_ptr(self.0.as_ref().expect("live window owner"))
     }
+
+    pub fn as_rc(&self) -> &std::rc::Rc<std::cell::UnsafeCell<window>> {
+        self.0.as_ref().expect("live window owner")
+    }
 }
 
 impl Drop for WindowOwner {

@@ -301,7 +301,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
     let wp = pane_owner.get();
     let mut w: *mut window = (*wp).window as *mut window;
     if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
-        server_kill_window(w, 1 as ::core::ffi::c_int);
+        server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
         recalculate_sizes();
     } else {
         window_push_zoom(w, 0 as ::core::ffi::c_int, (*wp).flags & PANE_FLOATOVERZOOM);
@@ -312,13 +312,10 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
         server_redraw_window(w);
     };
 }
-pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::c_int) {
+pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window>>, mut renumber: ::core::ffi::c_int) {
+    let w = owner.get();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let owner = window_add_ref(
-        w,
-        b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
-    );
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
@@ -578,7 +575,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
     layout_close_pane(wp);
     window_remove_pane(w, wp);
     if window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
-        server_kill_window(w, 1 as ::core::ffi::c_int);
+        server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
     } else {
         window_pop_zoom(w);
         server_redraw_window(w);
