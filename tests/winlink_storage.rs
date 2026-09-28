@@ -26,7 +26,7 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         assert!(weak.is_alive());
         let mut probe: winlink = Default::default();
         probe.idx = 42;
-        probe.entry.owner = None;
+        probe.entry.owner = refbox::Weak::new();
         assert_eq!(winlinks_find(&*head, &probe), existing);
         assert_eq!(winlinks_nfind(&*head, &probe), existing);
         probe.idx = 8;

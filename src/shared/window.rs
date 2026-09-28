@@ -62,9 +62,7 @@ pub struct winlink {
 #[derive(Default)]
 #[repr(C)]
 pub struct winlink_entry {
-    pub owner: Option<
-        refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
-    >,
+    pub owner: refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
 }
 
 #[derive(Default)]
@@ -135,7 +133,7 @@ pub type WindowIndex = std::collections::BTreeMap<
 #[repr(C)]
 pub struct window_entry {
     /// Weak traversal handle into the index; cleared when this window is removed.
-    pub owner: Option<refbox::Weak<WindowIndex>>,
+    pub owner: refbox::Weak<WindowIndex>,
 }
 
 /// Address identity only: never used to recover or dereference a model pointer.

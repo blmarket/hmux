@@ -277,7 +277,7 @@ pub enum PaneScreenSource {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>>,
+    pub owner: refbox::Weak<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>,
 }
 
 /// Ordered mode stack owned by a pane. Weak handles observe stable entries

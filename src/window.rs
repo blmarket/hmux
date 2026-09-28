@@ -197,7 +197,7 @@ pub unsafe fn windows_insert(
         return Some(crate::src::shared::window::WindowOwner::adopt(existing));
     }
     map.insert((*elm).id, Rc::downgrade(window));
-    (*elm).entry.owner = Some(observer);
+    (*elm).entry.owner = observer;
     None
 }
 
@@ -223,7 +223,7 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
         map.remove(&(*elm).id);
         map.is_empty()
     };
-    (*elm).entry.owner = None;
+    (*elm).entry.owner = refbox::Weak::new();
     if empty {
         (*head).storage = None;
     }
@@ -241,7 +241,7 @@ pub fn windows_minmax(head: &windows) -> Option<crate::src::shared::window::Wind
 }
 
 pub fn windows_next(elm: &window) -> Option<crate::src::shared::window::WindowOwner> {
-    let owner = elm.entry.owner.as_ref()?;
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return None,
@@ -297,9 +297,7 @@ pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> *mut w
     })
 }
 pub unsafe fn winlinks_next(elm: &winlink) -> *mut winlink {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -313,9 +311,7 @@ pub unsafe fn winlinks_next(elm: &winlink) -> *mut winlink {
         })
 }
 pub unsafe fn winlinks_prev(elm: &winlink) -> *mut winlink {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -410,7 +406,7 @@ pub unsafe fn window_pane_tree_insert(
     match map.entry(node.id) {
         std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            node.tree_entry.owner = Some(observer);
+            node.tree_entry.owner = observer;
             entry.insert(pane);
             None
         }
@@ -428,7 +424,7 @@ pub fn window_pane_tree_remove(
         }
         (map.remove(&pane.id).expect("matching pane"), map.is_empty())
     };
-    pane.tree_entry.owner = None;
+    pane.tree_entry.owner = refbox::Weak::new();
     if empty {
         head.storage = None;
     }
@@ -440,7 +436,7 @@ pub fn window_pane_tree_minmax(head: &window_pane_tree) -> Option<Rc<std::cell::
     map.first_key_value().map(|(_, owner)| owner.clone())
 }
 pub fn window_pane_tree_next(pane: &window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let index = pane.tree_entry.owner.as_ref()?;
+    let index = &pane.tree_entry.owner;
     let map = match index.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return None,
@@ -690,7 +686,7 @@ pub unsafe fn winlink_find_by_index(
         session: std::rc::Weak::new(),
         window_owner: None,
         flags: 0,
-        entry: winlink_entry { owner: None },
+        entry: winlink_entry { owner: refbox::Weak::new() },
     };
     if idx < 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad index"));
@@ -758,7 +754,7 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
         session: std::rc::Weak::new(),
         window_owner: None,
         flags: 0,
-        entry: winlink_entry { owner: None },
+        entry: winlink_entry { owner: refbox::Weak::new() },
     });
     wl = owner.as_ptr() as *mut winlink;
     (*wl).observer = owner.downgrade();
@@ -775,7 +771,7 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
             unreachable!("winlink index was checked above")
         }
     }
-    (*wl).entry.owner = Some(observer);
+    (*wl).entry.owner = observer;
     return wl;
 }
 // Keep the field published through the close notification. Its callback can
@@ -823,7 +819,7 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
             "removed winlink must belong to this index"
         );
         let owner = map.remove(&idx).expect("winlink must have an owner");
-        (*wl).entry.owner = None;
+        (*wl).entry.owner = refbox::Weak::new();
         (owner, map.is_empty())
     };
     if empty {
@@ -868,11 +864,7 @@ pub unsafe fn winlink_previous_by_number(
 /// Borrow the owner through the existing window index. The raw pointer remains
 /// a compatibility view; neither it nor its address is a separate ownership key.
 unsafe fn winlink_weak(wl: *mut winlink) -> refbox::Weak<winlink> {
-    let owner = (*wl)
-        .entry
-        .owner
-        .as_ref()
-        .expect("visited winlink index must be alive");
+    let owner = &(*wl).entry.owner;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
@@ -1092,7 +1084,7 @@ pub unsafe fn window_create(
         b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     (*w).winlinks.storage = None;
-    (*w).entry.owner = None;
+    (*w).entry.owner = refbox::Weak::new();
     let fresh0 = next_window_id;
     next_window_id = next_window_id.wrapping_add(1);
     (*w).id = fresh0;
@@ -1154,7 +1146,7 @@ unsafe fn window_destroy(mut w: *mut window) {
     // The final Rc owner is already being dropped. Restore the layout links,
     // but do not resize dying panes: their events would retain this window.
     window_unzoom_internal(w, 0, false);
-    if (*w).entry.owner.is_some() {
+    if !(*w).entry.owner.is_empty() {
         windows_remove(&raw mut windows, w);
     }
     drop((*w).layout_root.take());
@@ -4390,7 +4382,7 @@ mod collection_index_tests {
             assert!(winlink_add(&mut head, 1).is_null());
             winlinks_reindex(&mut head, second, 2);
 
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
+            let index_observer = (*first).entry.owner.clone();
             let node_observer = winlink_weak(first);
             let mut moved = head;
             assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
@@ -4437,16 +4429,16 @@ mod collection_index_tests {
 
             assert!(window_pane_tree_insert(&mut head, first_owner.clone()).is_none());
             assert!(window_pane_tree_insert(&mut head, second_owner.clone()).is_none());
-            let index_observer = (*first).tree_entry.owner.as_ref().unwrap().clone();
+            let index_observer = (*first).tree_entry.owner.clone();
             assert!(Rc::ptr_eq(&window_pane_tree_insert(&mut head, duplicate_owner.clone()).unwrap(), &first_owner));
-            assert!((*duplicate).tree_entry.owner.is_none());
+            assert!((*duplicate).tree_entry.owner.is_empty());
             assert!(window_pane_tree_remove(&mut other, &mut *first).is_none());
-            assert!((*first).tree_entry.owner.is_some());
+            assert!(!(*first).tree_entry.owner.is_empty());
 
             let mut moved = head;
             assert!(Rc::ptr_eq(&window_pane_tree_next(&*first).unwrap(), &second_owner));
             assert_eq!(crate::src::shared::rc::as_ptr(&window_pane_tree_remove(&mut moved, &mut *first).unwrap()), first);
-            assert!((*first).tree_entry.owner.is_none());
+            assert!((*first).tree_entry.owner.is_empty());
             assert!(window_pane_tree_next(&*first).is_none());
             assert_eq!(crate::src::shared::rc::as_ptr(&window_pane_tree_remove(&mut moved, &mut *second).unwrap()), second);
 

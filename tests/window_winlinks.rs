@@ -27,8 +27,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
             window::new();
         let first_window = hmux2::src::shared::rc::as_ptr(&first_owner);
         let second_window = hmux2::src::shared::rc::as_ptr(&second_owner);
-        (*first_window).entry.owner = None;
-        (*second_window).entry.owner = None;
+        (*first_window).entry.owner = refbox::Weak::new();
+        (*second_window).entry.owner = refbox::Weak::new();
         // These synthetic windows retain one external reference so moving the
         // test links never destroys a window before the assertions finish.
 

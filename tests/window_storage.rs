@@ -29,7 +29,7 @@ fn global_index_observes_windows_and_lookups_retain_them() {
             windows_insert(head, &duplicate).unwrap().as_ptr(),
             first.get()
         );
-        assert!((*duplicate.get()).entry.owner.is_none());
+        assert!((*duplicate.get()).entry.owner.is_empty());
         assert!(windows_remove(head, duplicate.get()).is_null());
         drop(duplicate);
 
