@@ -736,7 +736,7 @@ unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> :
     if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
         server_client_set_exit_message(&mut *c, Some(CString::new("too far behind").unwrap()));
         (*c).flags |= CLIENT_EXIT as uint64_t;
-        control_discard(c);
+        control_discard(&mut *c);
     }
     (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_CONTROL_DISCARD) as uint64_t;
     return 1 as ::core::ffi::c_int;
@@ -933,7 +933,7 @@ unsafe fn control_check_age(
         }
         server_client_set_exit_message(&mut *c, Some(CString::new("too far behind").unwrap()));
         (*c).flags |= CLIENT_EXIT as uint64_t;
-        control_discard(c);
+        control_discard(&mut *c);
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -1100,10 +1100,10 @@ unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
         }
     }
 }
-pub unsafe fn control_all_done(mut c: *mut client) -> ::core::ffi::c_int {
+pub unsafe fn control_all_done(c: &client) -> ::core::ffi::c_int {
     let cs = (*c)
         .control_state
-        .as_deref_mut()
+        .as_deref()
         .expect("control client state");
     if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
@@ -1619,7 +1619,7 @@ pub unsafe fn control_ready(mut c: *mut client) {
         EV_READ as ::core::ffi::c_short,
     );
 }
-pub unsafe fn control_discard(c: *mut client) {
+pub unsafe fn control_discard(c: &mut client) {
     let cs = (*c)
         .control_state
         .as_deref_mut()
@@ -1634,7 +1634,7 @@ pub unsafe fn control_discard(c: *mut client) {
     bufferevent_disable(cs.read_event, EV_READ as ::core::ffi::c_short);
 }
 
-pub unsafe fn control_discard_all(mut c: *mut client) {
+pub unsafe fn control_discard_all(c: &mut client) {
     control_discard(c);
     let cs = (*c)
         .control_state

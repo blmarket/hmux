@@ -3427,7 +3427,7 @@ pub unsafe fn server_client_loop() {
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
         let c = client_owner.get();
-        server_client_check_exit(c, 0 as ::core::ffi::c_int);
+        server_client_check_exit(&client_owner, 0 as ::core::ffi::c_int);
         if !(*c).session.is_null() && !(*(*c).session).curw.is_null() {
             server_client_check_modes(&client_owner);
             server_client_check_redraw(&client_owner);
@@ -4054,7 +4054,7 @@ unsafe fn server_client_click_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<cl
     }
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
-unsafe fn server_client_start_exit_timer(mut c: *mut client) {
+unsafe fn server_client_start_exit_timer(c: &mut client) {
     let mut tv: timeval = timeval {
         tv_sec: 10 as __time_t,
         tv_usec: 0,
@@ -4096,11 +4096,11 @@ unsafe fn server_client_exit_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<cli
                     as *const _
             )
         ));
-        server_client_check_exit(c, 1 as ::core::ffi::c_int);
+        server_client_check_exit(owner, 1 as ::core::ffi::c_int);
     }
 }
-unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c_int) {
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
+unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, force: ::core::ffi::c_int) {
+    let c = client_owner.get();
     let mut name: *const ::core::ffi::c_char = ((*c).exit_session)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -4112,11 +4112,11 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
     }
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         if force != 0 {
-            control_discard_all(c);
+            control_discard_all(&mut *c);
         } else {
-            control_discard(c);
-            if control_all_done(c) == 0 {
-                server_client_start_exit_timer(c);
+            control_discard(&mut *c);
+            if control_all_done(&*c) == 0 {
+                server_client_start_exit_timer(&mut *c);
                 return;
             }
         }
@@ -4124,9 +4124,9 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
     if force == 0 {
         let mut next_file = client_files_minmax(&(*c).files);
         while let Some(file) = next_file {
-            cf = crate::src::shared::rc::as_ptr(&file);
+            let cf = &*file.get();
             if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
-                server_client_start_exit_timer(c);
+                server_client_start_exit_timer(&mut *c);
                 return;
             }
             next_file = client_files_next(&*cf);
@@ -4134,7 +4134,7 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;
     event_del(&raw mut (*c).exit_timer);
-    server_client_start_exit_timer(c);
+    server_client_start_exit_timer(&mut *c);
     match (*c).exit_type as ::core::ffi::c_uint {
         0 => {
             let mut data = Vec::from((*c).retval.to_ne_bytes());

@@ -1847,3 +1847,14 @@ remaining raw session/current-window/active-pane relationship reads to acquisiti
 
 `cargo test --workspace` and `git diff --check` passed. Raw relationship fields and
 legacy format-defaults/terminal API projections remain pending.
+
+## Implemented retained client exit checks
+
+Client exit checks now accept the existing Rc from the maintenance loop or exit
+timer callback. Timer setup and control discard operations take mutable client
+borrows; control-output completion takes a shared borrow and reads control state
+without requesting mutable access. Pending-file traversal borrows each client_file
+from its retained handle instead of maintaining a raw client_file local.
+
+`cargo test --workspace` and `git diff --check` passed. Client-loss dispatch and
+remaining control/transport internals still use raw projections and remain pending.
