@@ -1,6 +1,5 @@
 use hmux2::src::shared::command::cmd_list;
 use std::ffi::{CStr, CString};
-use std::ptr;
 use std::rc::Rc;
 
 use hmux2::src::arguments::{
@@ -10,7 +9,7 @@ use hmux2::src::arguments::{
     ArgumentValueError,
 };
 use hmux2::src::cmd::queue::{
-    cmdq_free_detached, cmdq_get_callback1, cmdq_get_name,
+    cmdq_free_detached, cmdq_get_callback_owned, cmdq_get_name,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::ffi::libc::snprintf;
@@ -122,7 +121,7 @@ fn percentage_helper_preserves_literal_and_computed_bounds() {
 fn callback_queue_name_keeps_non_utf8_label_and_item_pointer() {
     unsafe {
         let label = CString::new(b"raw\xff".as_slice()).unwrap();
-        let item = cmdq_get_callback1(label.as_ptr(), None, ptr::null_mut());
+        let item = cmdq_get_callback_owned(label.as_ptr(), None);
         assert!(!item.is_null());
 
         let mut expected = [0_i8; 128];

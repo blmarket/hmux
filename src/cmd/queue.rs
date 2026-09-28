@@ -803,18 +803,6 @@ pub unsafe fn cmdq_get_callback_owned(
     return item;
 }
 
-/// Compatibility adapter for callers that still provide an ABI callback.
-pub unsafe fn cmdq_get_callback1(
-    name: *const ::core::ffi::c_char,
-    cb: Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>,
-    data: *mut ::core::ffi::c_void,
-) -> *mut cmdq_item {
-    let callback = cb.map(|callback| {
-        Box::new(move |item: std::ptr::NonNull<cmdq_item>| unsafe { callback(item.as_ptr(), data) })
-            as Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>
-    });
-    cmdq_get_callback_owned(name, callback)
-}
 pub unsafe fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
     let error = CStr::from_ptr(error).to_owned();
     cmdq_get_callback_owned(
