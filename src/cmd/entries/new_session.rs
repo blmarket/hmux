@@ -283,7 +283,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     if groupwith.is_null() {
                         sg = session_group_find(group);
                     } else {
-                        sg = session_group_contains(groupwith);
+                        sg = session_group_contains((groupwith).as_ref());
                     }
                     if !sg.is_null() {
                         prefix = Some((*sg).name.clone());

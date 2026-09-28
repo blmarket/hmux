@@ -51,8 +51,8 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut wl_dst: *mut winlink = (*target).wl_ptr();
     let mut w_src: *mut window = ::core::ptr::null_mut::<window>();
     let mut w_dst: *mut window = ::core::ptr::null_mut::<window>();
-    sg_src = session_group_contains(src);
-    sg_dst = session_group_contains(dst);
+    sg_src = session_group_contains((src).as_ref());
+    sg_dst = session_group_contains((dst).as_ref());
     if src != dst && !sg_src.is_null() && !sg_dst.is_null() && sg_src == sg_dst {
         cmdq_error(item, |out| {
             out.write_all(b"can't move window, sessions are grouped")
@@ -81,10 +81,10 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
     }
     session_group_synchronize_from(src);
-    server_redraw_session_group(src);
+    server_redraw_session_group(&*(src));
     if src != dst {
         session_group_synchronize_from(dst);
-        server_redraw_session_group(dst);
+        server_redraw_session_group(&*(dst));
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

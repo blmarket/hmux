@@ -2262,3 +2262,15 @@ window borrows. No new Rc-managed type or persistent owner is introduced.
 `cargo test --workspace` and `git diff --check` passed. Raw parent/session
 relationships at callers and remaining group traversal APIs still require
 migration.
+
+## Implemented session borrows for group lookup and redraw
+
+Session group lookup takes an optional shared session borrow and compares member
+Weak identities, removing casts from weak session pointers. Missing sessions
+still produce no group. Group full/status redraw accepts a session borrow and
+borrows retained members for updates. All lookup and redraw callers are adapted.
+Group storage remains its existing non-Rc representation; no new Rc-managed type
+or persistent owner is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Raw session acquisition at
+legacy callers and broader model relationships remain pending.

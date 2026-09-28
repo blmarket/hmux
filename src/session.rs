@@ -575,7 +575,7 @@ pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
 }
 pub unsafe fn session_is_linked(mut s: *mut session, mut w: *mut window) -> ::core::ffi::c_int {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
+    sg = session_group_contains((s).as_ref());
     if !sg.is_null() {
         return ((*w).observer.strong_count() != session_group_count(sg) as usize)
             as ::core::ffi::c_int;
@@ -751,11 +751,12 @@ pub unsafe fn session_set_current(mut s: *mut session, mut wl: *mut winlink) -> 
     session_fire_window_changed(s, wl, old);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn session_group_contains(mut target: *mut session) -> *mut session_group {
+pub unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
+    let Some(target) = target else { return std::ptr::null_mut(); };
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
     while !sg.is_null() {
-        if (*sg).members.iter().any(|member| member.as_ptr().cast::<session>() == target) {
+        if (*sg).members.iter().any(|member| member.ptr_eq(&target.observer)) {
             return sg;
         }
         sg = session_groups_next(&*sg);
@@ -820,7 +821,7 @@ unsafe fn session_group_fire(
 }
 pub unsafe fn session_group_add(sg: *mut session_group, owner: &Rc<UnsafeCell<session>>) {
     let s = owner.get();
-    if session_group_contains(s).is_null() {
+    if session_group_contains((s).as_ref()).is_null() {
         (*sg).members.push(Rc::downgrade(owner));
         session_group_fire(
             b"session-added-to-group\0" as *const u8 as *const ::core::ffi::c_char,
@@ -831,7 +832,7 @@ pub unsafe fn session_group_add(sg: *mut session_group, owner: &Rc<UnsafeCell<se
 }
 unsafe fn session_group_remove(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
+    sg = session_group_contains((s).as_ref());
     if sg.is_null() {
         return;
     }
@@ -868,7 +869,7 @@ pub unsafe fn session_group_attached_count(mut sg: *mut session_group) -> u_int 
 }
 pub unsafe fn session_group_synchronize_to(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
+    sg = session_group_contains((s).as_ref());
     if sg.is_null() {
         return;
     }
@@ -879,7 +880,7 @@ pub unsafe fn session_group_synchronize_to(mut s: *mut session) {
 }
 pub unsafe fn session_group_synchronize_from(mut target: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(target);
+    sg = session_group_contains((target).as_ref());
     if sg.is_null() {
         return;
     }

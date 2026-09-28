@@ -245,9 +245,9 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     } else {
         if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).curw {
             cmd_find_from_winlink(&mut *current.current.borrow_mut(), new_wl, 0 as ::core::ffi::c_int);
-            server_redraw_session_group(s);
+            server_redraw_session_group(&*(s));
         } else {
-            server_status_session_group(s);
+            server_status_session_group(&*(s));
         }
         if args_has(args, 'P' as i32 as u_char) != 0 {
             template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());

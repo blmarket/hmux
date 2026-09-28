@@ -262,9 +262,9 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if src_s != dst_s {
             server_redraw_session(&*(dst_s));
         }
-        server_status_session_group(src_s);
+        server_status_session_group(&*(src_s));
         if src_s != dst_s {
-            server_status_session_group(dst_s);
+            server_status_session_group(&*(dst_s));
         }
     }
     if args_has(args, 'P' as i32 as u_char) != 0 {

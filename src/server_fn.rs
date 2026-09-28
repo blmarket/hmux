@@ -143,18 +143,17 @@ pub unsafe fn server_redraw_session(session: &session) {
         }
     }
 }
-pub unsafe fn server_redraw_session_group(mut s: *mut session) {
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
-    if sg.is_null() {
-        server_redraw_session(&*(s));
+pub unsafe fn server_redraw_session_group(session: &session) {
+    let group = session_group_contains(Some(session));
+    if group.is_null() {
+        server_redraw_session(session);
     } else {
-        for session_owner in crate::src::session::session_group_members(sg) {
-            let s = session_owner.get();
-            server_redraw_session(&*(s));
+        for owner in crate::src::session::session_group_members(group) {
+            server_redraw_session(&*owner.get());
         }
-    };
+    }
 }
+
 pub unsafe fn server_status_session(session: &session) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
@@ -167,18 +166,17 @@ pub unsafe fn server_status_session(session: &session) {
         }
     }
 }
-pub unsafe fn server_status_session_group(mut s: *mut session) {
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
-    if sg.is_null() {
-        server_status_session(&*(s));
+pub unsafe fn server_status_session_group(session: &session) {
+    let group = session_group_contains(Some(session));
+    if group.is_null() {
+        server_status_session(session);
     } else {
-        for session_owner in crate::src::session::session_group_members(sg) {
-            let s = session_owner.get();
-            server_status_session(&*(s));
+        for owner in crate::src::session::session_group_members(group) {
+            server_status_session(&*owner.get());
         }
-    };
+    }
 }
+
 pub unsafe fn server_redraw_window(window: &window) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
@@ -333,7 +331,7 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
                     server_destroy_session_group(s);
                     break;
                 } else {
-                    server_redraw_session_group(s);
+                    server_redraw_session_group(&*(s));
                 }
             }
             if renumber != 0 && session_alive(s.as_ref()) != 0 {
@@ -356,7 +354,7 @@ pub unsafe fn server_renumber_session(mut s: *mut session) {
         b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        sg = session_group_contains(s);
+        sg = session_group_contains((s).as_ref());
         if !sg.is_null() {
             for session_owner in crate::src::session::session_group_members(sg) {
             let s = session_owner.get();
@@ -388,8 +386,8 @@ pub unsafe fn server_link_window(
     let mut dstwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut srcsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut dstsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    srcsg = session_group_contains(src);
-    dstsg = session_group_contains(dst);
+    srcsg = session_group_contains((src).as_ref());
+    dstsg = session_group_contains((dst).as_ref());
     if src != dst && !srcsg.is_null() && !dstsg.is_null() && srcsg == dstsg {
         return Err(c"sessions are grouped".to_owned());
     }
@@ -430,14 +428,14 @@ pub unsafe fn server_link_window(
     if selectflag != 0 {
         session_select(dst, (*dstwl).idx);
     }
-    server_redraw_session_group(dst);
+    server_redraw_session_group(&*(dst));
     Ok(())
 }
 pub unsafe fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {
     if session_detach(s, wl) != 0 {
         server_destroy_session_group(s);
     } else {
-        server_redraw_session_group(s);
+        server_redraw_session_group(&*(s));
     };
 }
 pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut notify: ::core::ffi::c_int) {
@@ -586,7 +584,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
 unsafe fn server_destroy_session_group(mut s: *mut session) {
     let source = (*s).observer.upgrade().expect("live session group source");
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
+    sg = session_group_contains((s).as_ref());
     if sg.is_null() {
         server_destroy_session(&source);
         session_destroy(
@@ -706,7 +704,7 @@ pub unsafe fn server_check_unattached() {
                     current_block_4 = 6116987625208566775;
                     match current_block_4 {
                         11000743977270914936 => {
-                            sg = session_group_contains(s);
+                            sg = session_group_contains((s).as_ref());
                             if !sg.is_null() && session_group_count(sg) == 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
@@ -714,7 +712,7 @@ pub unsafe fn server_check_unattached() {
                             }
                         }
                         6116987625208566775 => {
-                            sg = session_group_contains(s);
+                            sg = session_group_contains((s).as_ref());
                             if sg.is_null() || session_group_count(sg) <= 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
@@ -740,7 +738,7 @@ pub unsafe fn server_check_unattached() {
                     current_block_4 = 11000743977270914936;
                     match current_block_4 {
                         11000743977270914936 => {
-                            sg = session_group_contains(s);
+                            sg = session_group_contains((s).as_ref());
                             if !sg.is_null() && session_group_count(sg) == 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
@@ -748,7 +746,7 @@ pub unsafe fn server_check_unattached() {
                             }
                         }
                         6116987625208566775 => {
-                            sg = session_group_contains(s);
+                            sg = session_group_contains((s).as_ref());
                             if sg.is_null() || session_group_count(sg) <= 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
@@ -774,7 +772,7 @@ pub unsafe fn server_check_unattached() {
                     current_block_4 = 13109137661213826276;
                     match current_block_4 {
                         11000743977270914936 => {
-                            sg = session_group_contains(s);
+                            sg = session_group_contains((s).as_ref());
                             if !sg.is_null() && session_group_count(sg) == 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
@@ -782,7 +780,7 @@ pub unsafe fn server_check_unattached() {
                             }
                         }
                         6116987625208566775 => {
-                            sg = session_group_contains(s);
+                            sg = session_group_contains((s).as_ref());
                             if sg.is_null() || session_group_count(sg) <= 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {

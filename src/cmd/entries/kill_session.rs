@@ -73,7 +73,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_session_all(item, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
-        sg = session_group_contains(s);
+        sg = session_group_contains((s).as_ref());
         !sg.is_null()
     } {
         for session_owner in crate::src::session::session_group_members(sg) {

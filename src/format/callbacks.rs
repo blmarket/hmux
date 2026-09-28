@@ -674,7 +674,7 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
     if s.is_null() {
         return None;
     }
-    sg = session_group_contains(s);
+    sg = session_group_contains((s).as_ref());
     if sg.is_null() {
         return None;
     }
@@ -701,7 +701,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     if s.is_null() {
         return None;
     }
-    sg = session_group_contains(s);
+    sg = session_group_contains((s).as_ref());
     if sg.is_null() {
         return None;
     }
@@ -2678,7 +2678,7 @@ unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_contains(format_session);
+        sg = session_group_contains((format_session).as_ref());
         !sg.is_null()
     } {
         return Some((*sg).name.clone());
@@ -2690,7 +2690,7 @@ unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<C
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_contains(format_session);
+        sg = session_group_contains((format_session).as_ref());
         !sg.is_null()
     } {
         return Some(
@@ -2705,7 +2705,7 @@ unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Opt
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_contains(format_session);
+        sg = session_group_contains((format_session).as_ref());
         !sg.is_null()
     } {
         if session_group_attached_count(sg) > 1 as u_int {
@@ -2720,7 +2720,7 @@ unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CStri
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_contains(format_session);
+        sg = session_group_contains((format_session).as_ref());
         !sg.is_null()
     } {
         return Some(
@@ -2734,7 +2734,7 @@ unsafe fn format_cb_session_grouped(mut ft: *mut format_tree) -> Option<CString>
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        if !session_group_contains(format_session).is_null() {
+        if !session_group_contains((format_session).as_ref()).is_null() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -3033,7 +3033,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
-        if session_group_contains(s).is_null() {
+        if session_group_contains((s).as_ref()).is_null() {
             if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
                 n = n.wrapping_add(1);
             }
