@@ -1383,3 +1383,16 @@ synchronous arguments borrow existing ownership without adding persistent links.
 `cargo test --workspace` and `git diff --check` passed. Target resolution still
 uses raw output parameters, and preview/formatting internals and winlink access
 remain pending.
+
+## Implemented typed tree-mode target results
+
+Tree-mode target resolution returns `WindowTreeTarget` with optional owning Rc
+session/pane handles and a weak winlink identity. It no longer writes raw model
+pointers through output parameters or returns a separate ownership tuple. All
+eleven callers retain the result while using the resolved models. Missing or
+mismatched pane targets return an empty result; session/window targets preserve
+their session/link when no active pane exists.
+
+`cargo test --workspace` and `git diff --check` passed. Callers still derive local
+raw projections for legacy operations; winlink/window internals and those caller
+bodies remain pending.
