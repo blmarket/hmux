@@ -737,22 +737,9 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
 }
 unsafe fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = format_pane;
-    let mut n: u_int = 0 as u_int;
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut value = None;
-    if wp.is_null() {
-        return None;
-    }
-    wme = (*wp).modes.active_ptr();
-    while !wme.is_null() {
-        n = n.wrapping_add(1);
-        wme = crate::src::window::window_pane_mode_next(wme);
-    }
-    value =
-        Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
-    return value;
+    let pane = &*format_pane_owner?.get();
+    let count = pane.modes.storage.as_ref().map_or(0, |storage| storage.entries.len());
+    Some(CString::new(format!("{count}")).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
