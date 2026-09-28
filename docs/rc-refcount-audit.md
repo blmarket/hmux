@@ -85,15 +85,17 @@ parameters; those paths require the separate call-site review.
 | `cmdq_get_state_owned` results | Scoped queue-state guards. | Baseline command handlers borrow the state attached to their current queue item. Current callers hold the returned `Rc` only within the executing handler to keep `current` snapshots and formats valid if nested queue work changes the item; no result is stored in another long-lived holder. The item's own `state` clone remains the retained reference described above. |
 | Event payload model values and targets | Retained `Rc` with explicit release. | Baseline `src/events_payload.rs` adds the matching client/session/window/pane reference in each `event_payload_set_*` and `event_payload_set_target`, then releases it in `event_payload_free_value` or `event_payload_free_target`. Current code retains each model and uses the corresponding release function on item or target cleanup. |
 
-These baseline comparisons verify the listed ownership transitions. They do
-not finish the review of every creation site.
+## Completion check
 
-## Remaining audit
+The stored model owners, container owners, derived and manual clones, callback
+captures, and weak upgrades that enter lasting holders have been compared with
+the baseline ownership transitions above. Unmatched retained holders were
+changed to weak identities or scoped guards. Operation-local clones and upgrades
+remain where they protect a borrowed model during synchronous work; they release
+on ordinary scope exit. Rust-only callback and event allocations have separate
+ownership lifetimes and do not represent tmux model reference increments.
 
-- Review stored strong model holders in command queues, prepared commands,
-  clients, file records, prompts, mode payloads, and callback captures. Trace each
-  clone or upgrade to its final release and compare it with the intended tmux
-  ownership transition. Convert unmatched lasting holders to `Weak` or a bounded
-  borrow while preserving scoped guards for access.
-- Review ordinary `Rc` clones in code paths that transfer ownership into those
-  holders; distinguish a new reference from a temporary guard or moved owner.
+`cargo test --workspace --quiet` and the raw-pointer field audit both pass. A
+source search finds no stored `Option<Weak<T>>` handles in `src/`. The latter
+search also covers the weak aliases used by model fields; borrowed optional weak
+parameters and optional containers remain separate contracts.
