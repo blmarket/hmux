@@ -2531,3 +2531,10 @@ Prompt input and Drop retain an upgrade while continuing the queue. An expired
 wait closes the prompt; a separate flag preserves background command insertion.
 The existing close-path test now uses a production detached queue item, and a
 regression covers an expired wait. The raw-field count is 49.
+
+## Implemented weak popup wait item
+
+`popup_data.item` now observes its waiting queue item weakly. Published overlay
+teardown upgrades and retains the item through result reporting and queue
+continuation. An unpublished or expired overlay does not resume an item. Popup
+tests now use production detached queue item owners. The raw-field count is 48.

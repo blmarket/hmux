@@ -73,7 +73,7 @@ use std::rc::Weak;
 pub struct popup_data {
     published: bool,
     pub c: Option<Rc<UnsafeCell<client>>>,
-    pub item: *mut cmdq_item,
+    pub item: Weak<UnsafeCell<cmdq_item>>,
     pub flags: ::core::ffi::c_int,
     pub title: Option<std::ffi::CString>,
     pub style: Option<std::ffi::CString>,
@@ -238,13 +238,15 @@ impl Drop for popup_data {
         unsafe {
             // Startup failure does not resume the command: popup_display's
             // caller handles that error. Published overlays resume once.
-            if self.published && !self.item.is_null() {
-                let c_owner = cmdq_get_client(self.item);
-                let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-                if !c.is_null() && (*c).session_ptr().is_null() {
-                    (*c).retval = self.status;
+            if self.published {
+                if let Some(item) = self.item.upgrade() {
+                    let c_owner = cmdq_get_client(item.get());
+                    let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+                    if !c.is_null() && (*c).session_ptr().is_null() {
+                        (*c).retval = self.status;
+                    }
+                    cmdq_continue(item.get());
                 }
-                cmdq_continue(self.item);
             }
             if let Some(client) = self.c.take() {
                 server_client_unref_owned(client);
@@ -1101,7 +1103,7 @@ pub unsafe fn popup_display(
     let handle = owner.handle();
     let popup = handle.upgrade().expect("new popup");
     let pd = popup.as_ptr();
-    (*pd).item = item;
+    (*pd).item = if item.is_null() { Weak::new() } else { (*item).observer.clone() };
     (*pd).flags = flags;
     (*pd).c = client_retain(c);
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
@@ -1251,6 +1253,7 @@ mod tests {
         server_client_overlay_mode, server_client_overlay_resize,
     };
     use crate::src::shared::command::CMDQ_WAITING;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
 
     fn owner() -> PopupOwner {
         let mut data = Box::new(popup_data::empty());
@@ -1261,10 +1264,10 @@ mod tests {
     #[test]
     fn owner_close_invalidates_observers_and_defers_cleanup_until_dispatch_finishes() {
         unsafe {
-            let mut item = Box::new(cmdq_item::empty());
-            item.flags = CMDQ_WAITING;
+            let item = cmdq_get_callback_owned(c"popup test".as_ptr(), None);
+            (*item).flags = CMDQ_WAITING;
             let mut data = Box::new(popup_data::empty());
-            data.item = &mut *item;
+            data.item = (*item).observer.clone();
             data.published = true;
             let original = Box::as_mut_ptr(&mut data);
             let owner = PopupOwner::new(data);
@@ -1273,26 +1276,43 @@ mod tests {
             assert_eq!(guard.as_ptr(), original);
             drop(owner);
             assert!(handle.upgrade().is_none());
-            assert_eq!(item.flags & CMDQ_WAITING, CMDQ_WAITING);
+            assert_eq!((*item).flags & CMDQ_WAITING, CMDQ_WAITING);
             (*guard.as_ptr()).status = 7;
             assert_eq!((*guard.as_ptr()).status, 7);
             drop(guard);
-            assert_eq!(item.flags & CMDQ_WAITING, 0);
+            assert_eq!((*item).flags & CMDQ_WAITING, 0);
             assert!(!handle.0.is_alive());
+            cmdq_free_detached(item);
         }
     }
 
     #[test]
     fn unpublished_startup_drop_does_not_resume_the_callers_command() {
-        let mut item = Box::new(cmdq_item::empty());
-        item.flags = CMDQ_WAITING;
+        let item = unsafe { cmdq_get_callback_owned(c"popup test".as_ptr(), None) };
+        unsafe { (*item).flags = CMDQ_WAITING };
         let mut data = Box::new(popup_data::empty());
-        data.item = &mut *item;
+        data.item = unsafe { (*item).observer.clone() };
         let owner = PopupOwner::new(data);
         let handle = owner.handle();
         drop(owner);
-        assert_eq!(item.flags & CMDQ_WAITING, CMDQ_WAITING);
+        assert_eq!(unsafe { (*item).flags & CMDQ_WAITING }, CMDQ_WAITING);
         assert!(!handle.0.is_alive());
+        unsafe { cmdq_free_detached(item) };
+    }
+
+    #[test]
+    fn published_popup_skips_an_expired_wait() {
+        unsafe {
+            let item = cmdq_get_callback_owned(c"popup test".as_ptr(), None);
+            let observer = (*item).observer.clone();
+            let mut data = Box::new(popup_data::empty());
+            data.item = observer.clone();
+            data.published = true;
+            let owner = PopupOwner::new(data);
+            cmdq_free_detached(item);
+            assert!(observer.upgrade().is_none());
+            drop(owner);
+        }
     }
 
     #[test]
@@ -1410,12 +1430,12 @@ mod tests {
             let client_owner = client::new();
             let c = rc::as_ptr(&client_owner);
             let client_observer = (*c).observer.clone();
-            let mut item = Box::new(cmdq_item::empty());
-            item.client = (*c).observer.clone();
-            item.flags = CMDQ_WAITING;
+            let item = cmdq_get_callback_owned(c"popup test".as_ptr(), None);
+            (*item).client = (*c).observer.clone();
+            (*item).flags = CMDQ_WAITING;
             let mut data = Box::new(popup_data::empty());
             data.c = client_retain(c);
-            data.item = &mut *item;
+            data.item = (*item).observer.clone();
             data.flags = POPUP_CLOSEEXIT;
             data.published = true;
             let owner = PopupOwner::new(data);
@@ -1431,9 +1451,10 @@ mod tests {
                 &handle.upgrade().unwrap(),
             );
             assert_eq!((*c).retval, 42);
-            assert_eq!(item.flags & CMDQ_WAITING, 0);
+            assert_eq!((*item).flags & CMDQ_WAITING, 0);
             assert!(!handle.0.is_alive());
             assert!((*c).overlay_data.is_none());
+            cmdq_free_detached(item);
             drop(client_owner);
             assert!(client_observer.upgrade().is_some());
             crate::src::reactor::shutdown_runtime();
