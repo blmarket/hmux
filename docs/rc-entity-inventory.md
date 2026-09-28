@@ -2327,3 +2327,11 @@ cleanup. The control-stop cleanup test also replaced its raw client address with
 a weak client observer; its Drop assertion upgrades while the caller retains the
 client. All three focused tests pass. The restored raw-field TSV now reconciles
 with the current scanner; 85 in-scope raw fields remain.
+
+## Implemented owned copy-mode word separators
+
+Copy mode now stores selected word separators as `Option<CString>`. The mode
+snapshots the option when word selection starts, so later cursor movement reads
+its own stable string even if the option entry is replaced. A focused regression
+replaces that option and verifies the stored selection still reads the original
+bytes. The field inventory now counts 84 remaining in-scope raw fields.

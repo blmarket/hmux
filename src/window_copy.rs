@@ -115,7 +115,7 @@ pub struct window_copy_mode_data {
     pub selflag: C2RustUnnamed_43,
     pub recentre_state: C2RustUnnamed_42,
     pub recentre_line: u_int,
-    pub separators: *const ::core::ffi::c_char,
+    pub separators: Option<CString>,
     pub dx: u_int,
     pub dy: u_int,
     pub selrx: u_int,
@@ -203,7 +203,7 @@ impl Default for window_copy_mode_data {
             selflag: SEL_CHAR,
             recentre_state: RECENTRE_TOP,
             recentre_line: 0,
-            separators: std::ptr::null(),
+            separators: None,
             dx: 0,
             dy: 0,
             selrx: 0,
@@ -243,6 +243,42 @@ fn window_copy_searchstr(data: &window_copy_mode_data) -> *const ::core::ffi::c_
     data.searchstr
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr())
+}
+
+fn window_copy_separators(data: &window_copy_mode_data) -> *const ::core::ffi::c_char {
+    data.separators
+        .as_ref()
+        .map_or(::core::ptr::null(), |value| value.as_ptr())
+}
+
+unsafe fn window_copy_snapshot_separators(so: *mut options) -> Option<CString> {
+    let separators = options_get_string(so, c"word-separators".as_ptr());
+    (!separators.is_null()).then(|| CStr::from_ptr(separators).to_owned())
+}
+
+#[cfg(test)]
+mod separator_snapshot_tests {
+    use super::*;
+    use crate::src::options::{options_create_owned, options_default, options_set_string};
+    use crate::src::options_table::options_table;
+
+    #[test]
+    fn selected_word_separators_survive_option_replacement() {
+        unsafe {
+            let mut options = options_create_owned(std::ptr::null_mut());
+            let so = &mut *options as *mut options;
+            let definition = options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"word-separators"))
+                .unwrap();
+            options_default(so, definition);
+            options_set_string(so, c"word-separators".as_ptr(), 0, |out| out.write_all(b"original"));
+            let mut data = window_copy_mode_data::default();
+            data.separators = window_copy_snapshot_separators(so);
+            options_set_string(so, c"word-separators".as_ptr(), 0, |out| out.write_all(b"replacement"));
+            assert_eq!(CStr::from_ptr(window_copy_separators(&data)), c"original");
+        }
+    }
 }
 pub type C2RustUnnamed_42 = ::core::ffi::c_uint;
 pub const RECENTRE_BOTTOM: C2RustUnnamed_42 = 2;
@@ -2633,10 +2669,7 @@ unsafe fn window_copy_cmd_selection_mode(
         || strcasecmp(s, b"w\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
     {
-        (*data).separators = options_get_string(
-            so,
-            b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        (*data).separators = window_copy_snapshot_separators(so);
         (*data).selflag = SEL_WORD;
     } else if strcasecmp(s, b"line\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
@@ -3008,11 +3041,8 @@ unsafe fn window_copy_cmd_select_word(
         .hsize
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);
-    (*data).separators = options_get_string(
-        so,
-        b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    window_copy_cursor_previous_word(wme, (*data).separators, 0 as ::core::ffi::c_int);
+    (*data).separators = window_copy_snapshot_separators(so);
+    window_copy_cursor_previous_word(wme, window_copy_separators(&*data), 0 as ::core::ffi::c_int);
     px = (*data).cx;
     py = (*data).backing().grid()
         .hsize
@@ -3034,7 +3064,7 @@ unsafe fn window_copy_cmd_select_word(
     if px >= window_copy_find_length(wme, py)
         || window_copy_in_set(wme, nextx, nexty, WHITESPACE.as_ptr()) == 0
     {
-        window_copy_cursor_next_word_end(wme, (*data).separators, 1 as ::core::ffi::c_int);
+        window_copy_cursor_next_word_end(wme, window_copy_separators(&*data), 1 as ::core::ffi::c_int);
     } else {
         window_copy_update_cursor(wme, px, (*data).cy);
         if window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int) != 0
@@ -7540,7 +7570,7 @@ unsafe fn window_copy_synchronize_cursor_end(
                 if (*data).dy > yy || (*data).dy == yy && (*data).dx > xx {
                     window_copy_cursor_previous_word_pos(
                         wme,
-                        (*data).separators,
+                        window_copy_separators(&*data),
                         &raw mut xx,
                         &raw mut yy,
                     );
@@ -7558,7 +7588,7 @@ unsafe fn window_copy_synchronize_cursor_end(
                     {
                         window_copy_cursor_next_word_end_pos(
                             wme,
-                            (*data).separators,
+                            window_copy_separators(&*data),
                             &raw mut xx,
                             &raw mut yy,
                         );
@@ -9444,11 +9474,11 @@ pub unsafe fn window_copy_start_drag(client_owner: Option<&std::rc::Rc<std::cell
     }
     match (*data).selflag as ::core::ffi::c_uint {
         1 => {
-            if !(*data).separators.is_null() {
+            if (*data).separators.is_some() {
                 window_copy_update_cursor(wme, x, y);
                 window_copy_cursor_previous_word_pos(
                     wme,
-                    (*data).separators,
+                    window_copy_separators(&*data),
                     &raw mut x,
                     &raw mut y,
                 );

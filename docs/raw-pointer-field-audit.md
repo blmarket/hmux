@@ -10,14 +10,14 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **85 raw fields in
+fields and their lifecycle decisions. The current scanner finds **84 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-108 explicitly record a migration, 46 have since ceased to declare a raw pointer
+109 explicitly record a migration, 46 have since ceased to declare a raw pointer
 and need their final representation documented individually, and nine record
-removal. The remaining 85 comprise 5 candidates, 32 needing an access or teardown
+removal. The remaining 84 comprise 5 candidates, 31 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 85 fields have audit dispositions. Candidate and design entries
+The remaining 84 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -216,7 +216,7 @@ Seven focused tests pass under Valgrind: three find-state regressions, three
 window-link lifecycle tests, and monitor dispatch that unlinks its own target.
 There are no memory-access errors or definite/indirect leaks; the processes retain
 the existing 48-byte possibly-lost Rust test-harness allocation. The inventory
-coverage check now reports **85** remaining in-scope fields and **72** exclusions.
+coverage check now reports **84** remaining in-scope fields and **72** exclusions.
 
 ## Validation
 
@@ -238,7 +238,7 @@ definite/indirect leaks.
 The panes-mode session follow-up passes both session guard/lifetime tests under
 Valgrind with no memory-access errors or definite/indirect leaks.
 The updated inventory coverage check passes
-for all **85** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
+for all **84** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -270,13 +270,13 @@ pointers.
 ## Review status
 
 The earlier conclusion that all eligible fields had been migrated is superseded.
-The current inventory has 5 candidate fields, 32 design-dependent fields, and
+The current inventory has 5 candidate fields, 31 design-dependent fields, and
 48 retained raw fields. No candidate has been counted as migrated merely because
 its proposed type exists. The 46 `Resolved` historical rows need final
 field-by-field disposition notes before their migrations can be claimed from this
 inventory alone.
 
-The scanner verifies all 85 remaining declarations, including pending candidates,
+The scanner verifies all 84 remaining declarations, including pending candidates,
 against the TSV and checks the 72 explicit exclusions. It does not prove that a
 candidate implementation is safe. Follow-up work must verify the producer's real
 owner, guard lifetime, null/expiration behavior, reentrant invalidation, identity
