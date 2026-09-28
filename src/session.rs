@@ -10,7 +10,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::{gettimeofday, memcpy, strcmp};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_collect_history;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
+use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_free, options_get_number};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::resize::recalculate_sizes;
@@ -351,7 +351,7 @@ pub unsafe fn session_create(
     sessions_insert(&raw mut sessions, Rc::clone(&owner));
     log_debug(format_args!(
         "new session {} ${}",
-        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        log_bytes((*s).name.as_bytes()),
         ((*s).id) as u32
     ));
     if gettimeofday(&raw mut (*s).creation_time, NULL) != 0 as ::core::ffi::c_int {
@@ -366,7 +366,7 @@ pub unsafe fn session_add_ref(s: *mut session, from: *const ::core::ffi::c_char)
     log_debug(format_args!(
         "{}: {} {}, now {}",
         "session_add_ref",
-        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        log_bytes((*s).name.as_bytes()),
         log_cstr((from) as *const _),
         (*s).observer.strong_count() as ::core::ffi::c_int
     ));
@@ -376,15 +376,15 @@ pub unsafe fn session_add_ref(s: *mut session, from: *const ::core::ffi::c_char)
 pub unsafe fn session_remove_ref(s: Rc<UnsafeCell<session>>, from: &CStr) {
     log_debug(format_args!(
         "release session {} ({})",
-        log_cstr((*s.get()).name.as_ptr()),
-        log_cstr(from.as_ptr())
+        log_bytes((*s.get()).name.as_bytes()),
+        log_bytes(from.to_bytes())
     ));
     crate::src::shared::rc::release_later(s);
 }
 unsafe fn session_free(s: *mut session) {
     log_debug(format_args!(
         "session {} freed",
-        log_cstr(((*s).name.as_ptr()) as *const _)
+        log_bytes((*s).name.as_bytes())
     ));
     drop((*s).environ.take());
     drop((*s).options.take());
@@ -398,7 +398,7 @@ pub unsafe fn session_destroy(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     log_debug(format_args!(
         "session {} destroyed ({})",
-        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        log_bytes((*s).name.as_bytes()),
         log_cstr((from) as *const _)
     ));
     // This field also marks explicit session teardown. An expired observer
@@ -443,7 +443,7 @@ unsafe fn session_lock_timer(owner: &Rc<UnsafeCell<session>>) {
     }
     log_debug(format_args!(
         "session {} locked, activity time {}",
-        log_cstr(session.name.as_ptr()),
+        log_bytes(session.name.as_bytes()),
         session.activity_time.tv_sec as ::core::ffi::c_longlong
     ));
     server_lock_session(owner);
@@ -458,7 +458,7 @@ pub unsafe fn session_update_activity(session: &mut session, from: Option<timeva
     log_debug(format_args!(
         "session ${} {} activity {}.{:06}",
         session.id,
-        log_cstr(session.name.as_ptr()),
+        log_bytes(session.name.as_bytes()),
         session.activity_time.tv_sec as ::core::ffi::c_longlong,
         session.activity_time.tv_usec as ::core::ffi::c_int
     ));

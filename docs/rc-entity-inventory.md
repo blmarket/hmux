@@ -2710,3 +2710,10 @@ resolve through a weak pane owner. Other active writes hold a bounded
 clears it, including in persistent input parsers. The borrow remains an unsafe
 caller obligation rather than a compiler-checked lifetime. The raw-field count
 is 32.
+
+## Borrowed session log strings
+
+Session names and typed release reasons now pass their owned `CString`/`CStr`
+bytes directly to the deferred log formatter. The formatter borrows those
+bytes through the synchronous logging call, preserving escaping without a raw
+C-string holder for these sites. Raw logger callers elsewhere remain.
