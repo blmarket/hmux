@@ -2694,3 +2694,10 @@ that link for ordinary access. Final window destruction uses a scoped parent
 lookup so mode and pane cleanup can still reach the window after its strong
 count reaches zero. A regression exercises that final cleanup path. The
 raw-field count is 33.
+
+## Screen write target lifetime
+
+`screen_write_stop` now clears `screen_write_ctx.s` after flushing and releasing
+the write item. The long-lived input parser therefore does not retain a screen
+address between parse calls. The active write target still needs a typed
+representation, so the raw-field count remains 33.

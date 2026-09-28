@@ -462,6 +462,7 @@ pub unsafe fn screen_write_stop(ctx: &mut screen_write_ctx) {
     screen_write_collect_end(ctx);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_stop");
     screen_write_free_citem(ctx.item.take().expect("active screen write context"));
+    ctx.s = std::ptr::null_mut();
 }
 pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     let mut s: *mut screen = ctx.s;
