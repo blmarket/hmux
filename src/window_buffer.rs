@@ -213,11 +213,10 @@ fn window_buffer_clear_items(items: &mut Vec<refbox::RefBox<window_buffer_itemda
     items.clear();
 }
 unsafe fn window_buffer_build(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_buffer_modedata,
     mut sort_crit: *mut sort_criteria,
     mut filter: *const ::core::ffi::c_char,
 ) {
-    let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -356,11 +355,10 @@ unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, ica
     )
 }
 unsafe fn window_buffer_menu(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_buffer_modedata,
     c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut key: key_code,
 ) {
-    let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -380,11 +378,10 @@ unsafe fn window_buffer_menu(
     );
 }
 unsafe fn window_buffer_get_key(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -501,7 +498,7 @@ unsafe fn window_buffer_init(
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             window_buffer_build(
-                data_handle.as_ptr().cast(),
+                data_handle.as_ptr(),
                 sort as *mut sort_criteria,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
             );
@@ -516,12 +513,12 @@ unsafe fn window_buffer_init(
             window_buffer_search(&item, search, icase)
         })),
         Some(Box::new(move |client, key| {
-            window_buffer_menu(data_handle.as_ptr().cast(), client, key)
+            window_buffer_menu(data_handle.as_ptr(), client, key)
         })),
         None,
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_buffer().expect("buffer row payload");
-            window_buffer_get_key(data_handle.as_ptr().cast(), &item, line)
+            window_buffer_get_key(data_handle.as_ptr(), &item, line)
         })),
         None,
         Some(window_buffer_sort),

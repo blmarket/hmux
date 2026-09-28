@@ -365,11 +365,10 @@ mod tests {
     }
 }
 unsafe fn window_client_build(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_client_modedata,
     mut sort_crit: *mut sort_criteria,
     mut filter: *const ::core::ffi::c_char,
 ) {
-    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let mut i: u_int = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     (*data).items.clear();
@@ -531,13 +530,12 @@ unsafe fn window_client_draw_info(
     format_free(ft);
 }
 unsafe fn window_client_draw(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_client_modedata,
     item: &window_client_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -665,11 +663,10 @@ unsafe fn window_client_draw(
     );
 }
 unsafe fn window_client_menu(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_client_modedata,
     c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut key: key_code,
 ) {
-    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -689,11 +686,10 @@ unsafe fn window_client_menu(
     );
 }
 unsafe fn window_client_get_key(
-    mut modedata: *mut ::core::ffi::c_void,
+    data: *mut window_client_modedata,
     item: &window_client_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut key: key_code = 0;
     ft = format_create(
@@ -803,7 +799,7 @@ unsafe fn window_client_init(
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             window_client_build(
-                data_handle.as_ptr().cast(),
+                data_handle.as_ptr(),
                 sort as *mut sort_criteria,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
             );
@@ -811,16 +807,16 @@ unsafe fn window_client_init(
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
             let item = itemdata.as_client().expect("client row payload");
-            window_client_draw(data_handle.as_ptr().cast(), &item, ctx, sx, sy)
+            window_client_draw(data_handle.as_ptr(), &item, ctx, sx, sy)
         })),
         None,
         Some(Box::new(move |client, key| {
-            window_client_menu(data_handle.as_ptr().cast(), client, key)
+            window_client_menu(data_handle.as_ptr(), client, key)
         })),
         None,
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_client().expect("client row payload");
-            window_client_get_key(data_handle.as_ptr().cast(), &item, line)
+            window_client_get_key(data_handle.as_ptr(), &item, line)
         })),
         None,
         Some(window_client_sort),
