@@ -30,3 +30,4 @@ refbox = { package = "hmux-refbox", path = "hmux-refbox" }
 
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }
+quote = "1"

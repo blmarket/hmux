@@ -1,6 +1,7 @@
 //! Inventory in-scope stored raw pointers, excluding foreign ABI/resource fields,
 //! callback signatures and src/compat. Exclusions are recorded in the audit TSV.
 //! Run with `cargo run --quiet --example raw_pointer_fields`.
+use quote::ToTokens;
 use std::{fs, path::Path};
 use syn::visit::{self, Visit};
 
@@ -23,6 +24,7 @@ struct Fields<'a> {
     path: &'a Path,
     owner: String,
     rows: &'a mut Vec<String>,
+    types: &'a mut std::collections::BTreeMap<String, String>,
 }
 impl<'ast> Visit<'ast> for Fields<'_> {
     fn visit_item_struct(&mut self, item: &'ast syn::ItemStruct) {
@@ -55,20 +57,26 @@ impl Fields<'_> {
         }
     }
     fn field(&mut self, field: &syn::Field, index: usize) {
+        let name = field
+            .ident
+            .as_ref()
+            .map_or_else(|| index.to_string(), ToString::to_string);
+        let key = format!("{}\t{}\t{}", self.path.display(), self.owner, name);
+        self.types
+            .insert(key.clone(), field.ty.to_token_stream().to_string());
         let mut pointers = Pointers::default();
         pointers.visit_type(&field.ty);
         if pointers.0 {
-            let name = field
-                .ident
-                .as_ref()
-                .map_or_else(|| index.to_string(), ToString::to_string);
-            self.rows
-                .push(format!("{}\t{}\t{}", self.path.display(), self.owner, name));
+            self.rows.push(key);
         }
     }
 }
 
-fn scan(path: &Path, rows: &mut Vec<String>) {
+fn scan(
+    path: &Path,
+    rows: &mut Vec<String>,
+    types: &mut std::collections::BTreeMap<String, String>,
+) {
     if path == Path::new("src/compat") {
         return;
     }
@@ -79,7 +87,7 @@ fn scan(path: &Path, rows: &mut Vec<String>) {
             .collect();
         entries.sort();
         for entry in entries {
-            scan(&entry, rows);
+            scan(&entry, rows, types);
         }
     } else if path.extension().is_some_and(|ext| ext == "rs") {
         let source = fs::read_to_string(path).unwrap();
@@ -89,6 +97,7 @@ fn scan(path: &Path, rows: &mut Vec<String>) {
                 path,
                 owner: String::new(),
                 rows,
+                types,
             },
             &parsed,
         );
@@ -97,6 +106,7 @@ fn scan(path: &Path, rows: &mut Vec<String>) {
 
 fn main() {
     let mut rows = Vec::new();
+    let mut types = std::collections::BTreeMap::new();
     for root in [
         "src",
         "hmux-buffer",
@@ -105,7 +115,7 @@ fn main() {
         "tests",
         "examples",
     ] {
-        scan(Path::new(root), &mut rows);
+        scan(Path::new(root), &mut rows, &mut types);
     }
     let audit = fs::read_to_string("docs/raw-pointer-fields.tsv").unwrap();
     let mut expected = std::collections::BTreeSet::new();
@@ -124,7 +134,16 @@ fn main() {
             expected.insert(key);
         }
     }
-    if std::env::args().any(|arg| arg == "--check") {
+    if std::env::args().any(|arg| arg == "--show-types") {
+        for line in audit.lines().skip(1) {
+            let fields: Vec<_> = line.split('\t').collect();
+            let key = fields[..3].join("\t");
+            println!(
+                "{key}\t{}",
+                types.get(&key).map_or("<removed>", String::as_str)
+            );
+        }
+    } else if std::env::args().any(|arg| arg == "--check") {
         let actual: std::collections::BTreeSet<_> = rows.into_iter().collect();
         let missing: Vec<_> = actual.difference(&expected).collect();
         let stale: Vec<_> = expected.difference(&actual).collect();

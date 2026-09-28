@@ -219,6 +219,7 @@ dependencies = [
  "hmux-refbox",
  "hmux-rt",
  "libc",
+ "quote",
  "syn",
 ]
 

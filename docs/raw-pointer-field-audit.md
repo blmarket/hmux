@@ -12,8 +12,7 @@ The three supporting workspace crates contain no such fields.
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
 fields and their lifecycle decisions. The current scanner finds **82 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-111 explicitly record a migration, 46 have since ceased to declare a raw pointer
-and need their final representation documented individually, and nine record
+156 explicitly record a migration and ten record
 removal. The remaining 82 comprise 5 candidates, 29 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
@@ -31,6 +30,7 @@ Reproduce the remaining inventory and check coverage:
 ```sh
 cargo run --quiet --example raw_pointer_fields
 cargo run --quiet --example raw_pointer_fields -- --check
+cargo run --quiet --example raw_pointer_fields -- --show-types
 ```
 
 The scanner uses `syn`, so it distinguishes fields from local variables,
@@ -40,6 +40,10 @@ data fields were found in the reviewed sources. The coverage check requires a
 disposition for every raw field and rejects stale skipped or excluded entries.
 Default output omits excluded fields. The TSV keeps exclusions and deleted-field
 records so the original inventory remains traceable.
+The type view prints each tracked field's current declared type or `<removed>`;
+it was used to reconcile 45 previously generic `Resolved` rows and to identify
+the removed redraw client field. Their owning, weak, or borrowed classifications
+are now recorded individually in the TSV.
 
 ## Ownership rules used
 
@@ -272,9 +276,8 @@ pointers.
 The earlier conclusion that all eligible fields had been migrated is superseded.
 The current inventory has 5 candidate fields, 29 design-dependent fields, and
 48 retained raw fields. No candidate has been counted as migrated merely because
-its proposed type exists. The 46 `Resolved` historical rows need final
-field-by-field disposition notes before their migrations can be claimed from this
-inventory alone.
+its proposed type exists. All previously generic `Resolved` historical rows now
+name their current representation or removal.
 
 The scanner verifies all 82 remaining declarations, including pending candidates,
 against the TSV and checks the 72 explicit exclusions. It does not prove that a
