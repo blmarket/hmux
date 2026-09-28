@@ -4483,7 +4483,7 @@ mod pane_prompt_data_tests {
         })
     }
 
-    fn attach(data: WindowPanePromptOwner) -> crate::src::shared::prompt::PromptOwner {
+    fn attach(data: WindowPanePromptOwner) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
         let pr = refbox::RefBox::new(prompt {
             flags: PROMPT_SINGLE,
             buffer: utf8_fromcstr_vec(c""),

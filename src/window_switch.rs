@@ -65,7 +65,7 @@ pub struct window_switch_modedata {
     pub command: CString,
     pub type_0: window_switch_type,
     pub filter: CString,
-    pub prompt: Option<PromptOwner>,
+    pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     pub prompt_cx: u_int,
     // Match indices are rebuilt whenever the owned row list changes.
     item_list: Vec<Box<window_switch_itemdata>>,

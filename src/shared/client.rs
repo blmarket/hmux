@@ -14,7 +14,6 @@ use super::format::format_job_tree;
 use super::key::{key_code, key_event, key_table};
 use super::mouse::mouse_event;
 use super::process::tmuxpeer;
-use super::prompt::PromptOwner;
 use super::redraw::redraw_scene;
 use super::screen::screen;
 use super::session::session;
@@ -177,7 +176,7 @@ pub struct client {
     pub message_ignore_styles: ::core::ffi::c_int,
     pub message_string: Option<std::ffi::CString>,
     pub message_timer: event,
-    pub prompt: Option<PromptOwner>,
+    pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     /// Attached session identity; the session index owns the Rc allocation.
     pub session: std::rc::Weak<UnsafeCell<session>>,
     /// Previous session observer; this link never keeps a session alive.

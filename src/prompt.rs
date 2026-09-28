@@ -184,8 +184,8 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&mut
     ))
     .to_owned();
 }
-pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> PromptOwner {
-    let owner = PromptOwner::new(prompt::default());
+pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+    let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
     let ft = if let Some(fs) = pd.fs {
         // Copy the selected target, matching cmd_find_copy_state rather than
@@ -250,14 +250,14 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> PromptOwner {
     drop(pr);
     owner
 }
-fn prompt_borrow_live(owner: &PromptWeak) -> Option<refbox::Borrow<'_, prompt>> {
+fn prompt_borrow_live(owner: &refbox::Weak<crate::src::shared::prompt::prompt>) -> Option<refbox::Borrow<'_, prompt>> {
     match owner.try_borrow_mut() {
         Ok(prompt) => Some(prompt),
         Err(refbox::BorrowError::Dropped) => None,
         Err(refbox::BorrowError::Borrowed) => panic!("prompt already borrowed"),
     }
 }
-pub fn prompt_free(owner: &PromptWeak) {
+pub fn prompt_free(owner: &refbox::Weak<crate::src::shared::prompt::prompt>) {
     let callback = {
         let Some(mut pr) = prompt_borrow_live(owner) else {
             return;
@@ -308,7 +308,7 @@ impl PromptCallbackResult {
 }
 
 fn prompt_fire_callback(
-    owner: &PromptWeak,
+    owner: &refbox::Weak<crate::src::shared::prompt::prompt>,
     text: Option<&CStr>,
     kind: prompt_key_result,
     redraw: Option<&mut ::core::ffi::c_int>,
@@ -356,7 +356,7 @@ fn prompt_fire_callback(
     PromptCallbackResult::Continue
 }
 
-pub fn prompt_incremental_start(owner: &PromptWeak) {
+pub fn prompt_incremental_start(owner: &refbox::Weak<crate::src::shared::prompt::prompt>) {
     let callback_input = {
         let Some(pr) = prompt_borrow_live(owner) else {
             return;
@@ -1280,14 +1280,14 @@ fn prompt_backward_word(pr: &prompt, separators: &CStr) -> usize {
     index
 }
 fn prompt_done(
-    pr: &PromptWeak,
+    pr: &refbox::Weak<crate::src::shared::prompt::prompt>,
     text: Option<&CStr>,
     redraw: &mut ::core::ffi::c_int,
 ) -> PromptCallbackResult {
     prompt_fire_callback(pr, text, PROMPT_KEY_CLOSE, Some(redraw))
 }
 unsafe fn prompt_done_with_history(
-    pr: &PromptWeak,
+    pr: &refbox::Weak<crate::src::shared::prompt::prompt>,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
     let (input, kind) = {
@@ -1299,7 +1299,7 @@ unsafe fn prompt_done_with_history(
     }
     prompt_done(pr, Some(&input), redraw).key_result()
 }
-fn prompt_check_move(owner: &PromptWeak, key: key_code) -> prompt_key_result {
+fn prompt_check_move(owner: &refbox::Weak<crate::src::shared::prompt::prompt>, key: key_code) -> prompt_key_result {
     let input = {
         let pr = owner.try_borrow_mut().expect("live unborrowed prompt");
         if pr.flags & PROMPT_INCREMENTAL == 0 {
@@ -1497,7 +1497,7 @@ unsafe fn prompt_append_key(pr: &mut prompt, key: key_code) -> bool {
 }
 
 pub unsafe fn prompt_key(
-    pr: &PromptWeak,
+    pr: &refbox::Weak<crate::src::shared::prompt::prompt>,
     mut key: key_code,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
@@ -1744,7 +1744,7 @@ mod prompt_buffer_tests {
         })
     }
 
-    fn make_prompt_owner(input: &CStr, index: usize) -> PromptOwner {
+    fn make_prompt_owner(input: &CStr, index: usize) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
         refbox::RefBox::new(prompt {
             buffer: utf8_fromcstr_vec(input),
             index,
@@ -2261,7 +2261,7 @@ mod prompt_buffer_tests {
             (0, 27, PROMPT_KEY_CLOSE),
         ] {
             let events = Rc::new(RefCell::new(Vec::new()));
-            let slot = Rc::new(RefCell::new(None::<PromptOwner>));
+            let slot = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::prompt::prompt>>));
             let prompt = make_prompt_owner(c"", 0);
             let observer = prompt.downgrade();
             prompt.try_borrow_mut().unwrap().flags = flags;
@@ -2298,7 +2298,7 @@ mod prompt_buffer_tests {
 
     #[test]
     fn cleanup_callback_can_drop_the_only_owner() {
-        let slot = Rc::new(RefCell::new(None::<PromptOwner>));
+        let slot = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::prompt::prompt>>));
         let prompt = make_prompt_owner(c"", 0);
         let observer = prompt.downgrade();
         let callback_slot = slot.clone();
@@ -2314,7 +2314,7 @@ mod prompt_buffer_tests {
     #[test]
     fn callbacks_replace_owners_without_retaining_closed_prompts() {
         let events = Rc::new(RefCell::new(Vec::new()));
-        let owner = Rc::new(RefCell::new(None::<PromptOwner>));
+        let owner = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::prompt::prompt>>));
         let pr = make_prompt_owner(c"", 0);
         pr.try_borrow_mut().unwrap().flags = PROMPT_SINGLE;
         let weak = pr.downgrade();

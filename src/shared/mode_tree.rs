@@ -5,7 +5,7 @@ use super::client::client;
 use super::key::key_code;
 use super::menu::menu_item;
 use super::pane::window_pane;
-use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result, PromptOwner};
+use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
@@ -51,7 +51,7 @@ pub struct mode_tree_data {
     pub offset: u_int,
     pub current: u_int,
     pub screen: screen,
-    pub prompt: Option<PromptOwner>,
+    pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     pub prompt_data: ModeTreePromptWeak,
     pub prompt_cx: u_int,
     pub prompt_top: ::core::ffi::c_int,
