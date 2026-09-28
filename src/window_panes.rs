@@ -1519,9 +1519,15 @@ unsafe fn window_panes_draw_pane(
     }
     window_panes_draw_number(data, ctx, wp, pane, x, y, sx, sy);
 }
+unsafe fn window_panes_data(wme: *mut window_mode_entry) -> *mut window_panes_modedata {
+    (*wme)
+        .boxed_data_ptr::<window_panes_modedata>()
+        .expect("panes mode payload")
+}
+
 unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     let mut source_session_owner = None;
-    let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
+    let mut data: *mut window_panes_modedata = window_panes_data(wme);
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -1678,7 +1684,7 @@ unsafe fn window_panes_init(
             }
         };
     }
-    data = Box::into_raw(Box::new(window_panes_modedata {
+    let owner = Box::new(std::cell::UnsafeCell::new(window_panes_modedata {
         wp: Weak::new(),
         session: Weak::new(),
         source_session: 0,
@@ -1692,7 +1698,8 @@ unsafe fn window_panes_init(
         zoomed: 0,
         areas: Vec::new(),
     }));
-    (*wme).data = data as *mut ::core::ffi::c_void;
+    data = owner.get();
+    (*wme).boxed_data = Some(owner);
     (*data).wp = window_pane_weak(wp);
     (*data).session = (*s).observer.clone();
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
@@ -1743,14 +1750,14 @@ unsafe fn window_panes_init(
     return &raw mut (*data).screen;
 }
 unsafe fn window_panes_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).data.cast::<window_panes_modedata>();
-    if data.is_null() { std::ptr::null_mut() } else { &raw mut (*data).screen }
+    let data = (*wme).boxed_data_ptr::<window_panes_modedata>();
+    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
 unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
+    let mut data: *mut window_panes_modedata = window_panes_data(wme);
     let mut w: *mut window = (*mode_pane).window as *mut window;
     event_del(&raw mut (*data).timer);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
@@ -1765,10 +1772,10 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
         screen_free(&mut *preview);
     }
     screen_free(&mut (*data).screen);
-    drop(Box::from_raw(data));
+    drop((*wme).boxed_data.take());
 }
 unsafe fn window_panes_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
+    let mut data: *mut window_panes_modedata = window_panes_data(wme);
     screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     window_panes_draw_screen(wme);
 }
@@ -1864,7 +1871,7 @@ unsafe fn window_panes_get_target(
 ) -> Option<Rc<UnsafeCell<window_pane>>> {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
+    let mut data: *mut window_panes_modedata = window_panes_data(wme);
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*data).ignore_keys != 0 {
@@ -1907,7 +1914,7 @@ unsafe fn window_panes_key(
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut target: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
+    let mut data: *mut window_panes_modedata = window_panes_data(wme);
     if key == '\u{1b}' as i32 as key_code || key == 'q' as i32 as key_code {
         window_pane_reset_mode(&mode_pane_owner);
         return;

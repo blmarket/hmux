@@ -2643,3 +2643,10 @@ payloads still use `window_mode_entry.data`, so the raw-field count remains 35.
 callbacks access the stable Box allocation through a checked typed lookup;
 mode cleanup releases the Box after prompt and screen teardown. The shared
 raw payload field remains for other modes, so the raw-field count is 35.
+
+## Panes mode payload ownership
+
+`window_panes_modedata` now lives in the mode entry's typed boxed slot.
+Callbacks resolve its stable allocation through the typed owner, and cleanup
+drops it after cancelling the timer and freeing preview and display screens.
+Other modes still use the raw payload field; the raw-field count remains 35.
