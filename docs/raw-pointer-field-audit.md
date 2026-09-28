@@ -13,7 +13,7 @@ supporting workspace crates contain no such fields.
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
 fields and their lifecycle decisions. The current scanner finds **32 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-200 explicitly record a migration and sixteen record
+199 explicitly record a migration and seventeen record
 removal. The remaining 32 are retained raw under their current contracts.
 
 The remaining 32 fields have audit dispositions.
@@ -206,7 +206,7 @@ Nine more raw fields now have typed representations:
 | `monitor_change.wl` | `refbox::Weak<winlink>`. Consumers hold scoped borrows; hook payload construction completes and releases its borrow before event dispatch. |
 | `window_copy_cmd_state.s` | `Option<&UnsafeCell<session>>`, borrowed from an operation-local Rc. An outer dispatch function releases the Rc through `session_remove_ref` even when the inner operation returns early. |
 | `window_copy_cmd_state.wl` | `refbox::Weak<winlink>` for the optional command target. |
-| `WindowWinlinksStorage.ordered`, `.positions` | Ordered weak winlinks and `HashMap<WinlinkIdentity, usize>`. Identity keys contain addresses only and cannot be dereferenced. The ordered weak handles prevent address reuse while the keys remain indexed. |
+| Window winlink association storage | `InefficientList<refbox::Weak<winlink>>` wraps a private vector. First, iteration, successor, membership, append, removal and emptiness are its only operations. Successor and removal scan by pointer identity without dereferencing the pointer; removal preserves order. The position map and its identity wrapper were removed. |
 
 Find states are `Clone`, not `Copy`. Clearing uses assignment, selected-target
 copying preserves destination flags/current, and tree/customization modes clone

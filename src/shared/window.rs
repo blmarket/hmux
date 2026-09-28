@@ -135,29 +135,11 @@ pub struct window_entry {
     pub owner: refbox::Weak<WindowIndex>,
 }
 
-/// Address identity only: never used to recover or dereference a model pointer.
-/// The ordered weak handles keep their control blocks allocated, preventing
-/// address reuse until the corresponding identity is removed from the index.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct WinlinkIdentity(usize);
-
-impl WinlinkIdentity {
-    pub(crate) fn of(link: *const winlink) -> Self {
-        Self(link.addr())
-    }
-}
-
-#[derive(Default)]
-pub struct WindowWinlinksStorage {
-    pub(crate) ordered: Vec<refbox::Weak<winlink>>,
-    pub(crate) positions: std::collections::HashMap<WinlinkIdentity, usize>,
-}
-
 #[derive(Default)]
 #[repr(C)]
 pub struct window_winlinks {
     /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
-    pub storage: Option<Box<WindowWinlinksStorage>>,
+    pub storage: Option<Box<super::inefficient_list::InefficientList<refbox::Weak<winlink>>>>,
 }
 
 #[repr(C)]

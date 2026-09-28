@@ -71,7 +71,6 @@ use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
-use crate::src::shared::window::WinlinkIdentity;
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -333,7 +332,7 @@ pub unsafe fn window_winlinks_first(w: *mut window) -> *mut winlink {
     (*w).winlinks
         .storage
         .as_deref()
-        .and_then(|links| links.ordered.first())
+        .and_then(|links| links.first())
         .filter(|link| link.is_alive())
         .map_or(std::ptr::null_mut(), |link| link.as_ptr().cast_mut())
 }
@@ -349,9 +348,7 @@ pub unsafe fn window_winlinks_next(w: *mut window, wl: *mut winlink) -> *mut win
         return std::ptr::null_mut();
     };
     links
-        .positions
-        .get(&WinlinkIdentity::of(wl))
-        .and_then(|&position| links.ordered.get(position + 1))
+        .next_after(|link| link.as_ptr() == wl.cast_const())
         .filter(|link| link.is_alive())
         .map_or(std::ptr::null_mut(), |link| link.as_ptr().cast_mut())
 }
@@ -361,12 +358,10 @@ pub unsafe fn window_winlinks_append(w: *mut window, wl: *mut winlink) {
     assert!(!w.is_null() && !wl.is_null());
     let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
     assert!(
-        !links.positions.contains_key(&WinlinkIdentity::of(wl)),
+        !links.contains(&(*wl).observer),
         "winlink is already present in this window"
     );
-    let position = links.ordered.len();
-    links.ordered.push((*wl).observer.clone());
-    links.positions.insert(WinlinkIdentity::of(wl), position);
+    links.push_back((*wl).observer.clone());
 }
 
 /// Remove a non-owning winlink handle from its window's association order.
@@ -377,15 +372,10 @@ pub unsafe fn window_winlinks_remove(w: *mut window, wl: *mut winlink) {
         .storage
         .as_mut()
         .expect("window winlink collection must be alive");
-    let position = links
-        .positions
-        .remove(&WinlinkIdentity::of(wl))
+    links
+        .remove_first(|link| link.as_ptr() == wl.cast_const())
         .expect("winlink must belong to its window");
-    links.ordered.remove(position);
-    for (position, link) in links.ordered.iter().enumerate().skip(position) {
-        links.positions.insert(WinlinkIdentity::of(link.as_ptr()), position);
-    }
-    if links.ordered.is_empty() {
+    if links.is_empty() {
         (*w).winlinks.storage = None;
     }
 }

@@ -557,7 +557,7 @@ pub unsafe fn session_detach(mut s: *mut session, mut wl: *mut winlink) -> ::cor
 pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
     if s.observer.strong_count() == 0 { return 0; }
     let Some(links) = w.winlinks.storage.as_deref() else { return 0; };
-    for observer in &links.ordered {
+    for observer in links.iter() {
         let link = match observer.try_borrow_mut() {
             Ok(link) => link,
             Err(refbox::BorrowError::Dropped) => continue,

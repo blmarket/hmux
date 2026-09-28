@@ -87,6 +87,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         winlink_set_window(second, second_window);
         assert_eq!(window_indices(first_window)[..2], [12, 18]);
         assert_eq!(window_indices(second_window), [30]);
+        assert!(window_winlinks_next(first_window, second).is_null());
+        assert_eq!(window_winlinks_next(first_window, first), third);
         winlink_set_window(second, first_window);
         assert_eq!(window_indices(first_window).last(), Some(&30));
 
@@ -95,6 +97,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         }
         assert!(window_winlinks_first(first_window).is_null());
         assert!(window_winlinks_first(second_window).is_null());
+        assert!((*first_window).winlinks.storage.is_none());
+        assert!((*second_window).winlinks.storage.is_none());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
     }
 }
