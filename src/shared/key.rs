@@ -1441,6 +1441,24 @@ mod tests {
         assert_eq!(KEYC_MOUSE_LOCATION_PANE, 0);
         assert_eq!(KEYC_MOUSE_LOCATION_NOWHERE, 20);
     }
+
+    #[test]
+    fn key_event_expired_explicit_client_does_not_use_fallback() {
+        let fallback = unsafe { client::new() };
+        let explicit = unsafe { client::new() };
+        let mut event = key_event::new(1, mouse_event::default(), None);
+        let resolved = event.resolve_client(|| Some(fallback.clone())).unwrap();
+        assert!(std::rc::Rc::ptr_eq(&resolved, &fallback));
+        drop(resolved);
+
+        event.client = std::rc::Rc::downgrade(&explicit);
+        let resolved = event.resolve_client(|| Some(fallback.clone())).unwrap();
+        assert!(std::rc::Rc::ptr_eq(&resolved, &explicit));
+        drop(resolved);
+        drop(explicit);
+
+        assert!(event.resolve_client(|| Some(fallback.clone())).is_none());
+    }
 }
 
 pub const KEY_BINDING_REPEAT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -1452,8 +1470,8 @@ pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 #[repr(C)]
 pub struct key_event {
     /// Explicit dispatch target, observed without extending its lifetime.
-    /// None uses the queue client; an expired explicit target must not fall back.
-    pub client: Option<std::rc::Weak<std::cell::UnsafeCell<client>>>,
+    /// An empty handle uses the queue client; an expired explicit target must not fall back.
+    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub key: key_code,
     pub m: mouse_event,
     pub bytes: Option<Vec<u8>>,
@@ -1462,7 +1480,7 @@ pub struct key_event {
 impl key_event {
     pub fn new(key: key_code, m: mouse_event, bytes: Option<Vec<u8>>) -> Box<Self> {
         Box::new(Self {
-            client: None,
+            client: std::rc::Weak::new(),
             key,
             m,
             bytes,
@@ -1475,9 +1493,10 @@ impl key_event {
         &self,
         fallback: impl FnOnce() -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
     ) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
-        match self.client.as_ref() {
-            Some(observer) => observer.upgrade(),
-            None => fallback(),
+        if std::rc::Weak::ptr_eq(&self.client, &std::rc::Weak::new()) {
+            fallback()
+        } else {
+            self.client.upgrade()
         }
     }
 

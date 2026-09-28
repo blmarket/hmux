@@ -185,7 +185,7 @@ scope fix is checked with queue-state, mode teardown and session-group tests.
 
 ## Implemented key-event and latest-client observers
 
-`key_event.client` is now `Option<Weak<UnsafeCell<client>>>`. Absence selects the
+`key_event.client` is now `Weak<UnsafeCell<client>>`. An empty handle selects the
 queue client; an expired explicit target skips dispatch rather than redirecting
 input. Metadata snapshots clone the weak observer. `resolve_client` upgrades to an
 owner retained through dispatch. `QueuedKeyEvent` continues to own and defer-release
@@ -2743,3 +2743,7 @@ The monitor set's optional client remains distinct because `None` selects a
 global monitor, while an expired explicit client must not select that path.
 The callback's optional pane remains distinct because control subscriptions
 check whether an explicitly selected pane expired.
+
+`key_event.client` now uses an empty `Weak` for no explicit dispatch target.
+`Weak::ptr_eq` distinguishes that sentinel from an expired explicit target,
+preserving the rule that expiry never redirects input to the queue client.

@@ -49,7 +49,7 @@ fn event_snapshots_observe_clients_and_never_redirect_expired_targets() {
         let fallback = client::new();
         let mut event = key_event::new(1, Default::default(), None);
         assert!(Rc::ptr_eq(&event.resolve_client(|| Some(fallback.clone())).unwrap(), &fallback));
-        event.client = Some(Rc::downgrade(&explicit));
+        event.client = Rc::downgrade(&explicit);
         let snapshot = event.metadata_snapshot();
         assert_eq!(Rc::strong_count(&explicit), 1, "snapshots are observers");
         let resolved = snapshot.resolve_client(|| panic!("explicit target must win")).unwrap();
@@ -62,7 +62,7 @@ fn event_snapshots_observe_clients_and_never_redirect_expired_targets() {
         drop(resolved);
         assert!(window.latest.upgrade().is_none());
         assert!(snapshot.resolve_client(|| panic!("expired target must not fall back")).is_none());
-        assert!(window.latest.ptr_eq(snapshot.client.as_ref().unwrap()));
+        assert!(window.latest.ptr_eq(&snapshot.client));
         drop(fallback);
     }
 }

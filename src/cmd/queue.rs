@@ -238,7 +238,7 @@ pub unsafe fn cmdq_new_state(
 ) -> std::rc::Rc<cmdq_state> {
     let snapshot = if event.is_null() {
         key_event {
-            client: None,
+            client: std::rc::Weak::new(),
             key: KEYC_NONE as key_code,
             m: Default::default(),
             bytes: None,

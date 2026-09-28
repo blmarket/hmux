@@ -549,7 +549,7 @@ pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<c
     }
     let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
     let mut saved_event = key_event {
-        client: None,
+        client: std::rc::Weak::new(),
         key: md.key,
         m: md.m,
         bytes: None,
@@ -720,7 +720,7 @@ mod tests {
 
     fn event(key: key_code) -> key_event {
         key_event {
-            client: None,
+            client: std::rc::Weak::new(),
             key,
             m: mouse_event::default(),
             bytes: None,

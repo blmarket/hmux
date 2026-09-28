@@ -3356,7 +3356,7 @@ unsafe fn server_client_handle_key0(
     let client_owner = if after.is_null() {
         None
     } else {
-        (*event).client = Some(std::rc::Rc::downgrade(owner));
+        (*event).client = std::rc::Rc::downgrade(owner);
         Some(owner.clone())
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
@@ -5536,7 +5536,7 @@ mod key_event_owner_tests {
             );
 
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
-            queued.client = Some(std::rc::Rc::downgrade(&owner));
+            queued.client = std::rc::Rc::downgrade(&owner);
             drop(QueuedKeyEvent(queued, Some(owner.clone())));
             assert_eq!(std::rc::Rc::strong_count(&owner), 2);
             crate::src::reactor::event_loop();
