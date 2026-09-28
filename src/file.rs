@@ -113,18 +113,18 @@ fn file_set_path(cf: &mut client_file, path: CString) {
 }
 
 unsafe fn file_set_cmdq_wait(
-    cf: *mut client_file,
+    file_owner: &Rc<UnsafeCell<client_file>>,
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
-    let owner = &mut *cf;
+    let owner = &mut *file_owner.get();
     assert!(!item.is_null());
     assert!(owner.wait_item.is_null());
     owner.wait_item = item;
     owner.wait_client = (!Weak::ptr_eq(&(*item).client, &Weak::new()))
         .then(|| (*item).client.clone());
     owner.cancel_data = cancel_cb;
-    cmdq_set_wait_file(&mut *item, cf);
+    cmdq_set_wait_file(&mut *item, file_owner);
 }
 
 /// Stop a file-backed command wait without delivering its file callback.
@@ -135,7 +135,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_fil
     if owner.wait_item.is_null() {
         return;
     }
-    cmdq_clear_wait_file(&mut *owner.wait_item, cf);
+    cmdq_clear_wait_file(&mut *owner.wait_item, &owner.observer);
     owner.wait_item = std::ptr::null_mut();
     owner.wait_client = None;
     (*cf).cb = None;
@@ -216,7 +216,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     } else {
         let owner = &mut *cf;
         if !owner.wait_item.is_null() {
-            cmdq_clear_wait_file(&mut *owner.wait_item, cf);
+            cmdq_clear_wait_file(&mut *owner.wait_item, &owner.observer);
             owner.wait_item = std::ptr::null_mut();
             owner.wait_client = None;
             owner.cancel_data = None;
@@ -443,7 +443,7 @@ unsafe fn file_write_impl(
         transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
         cf = rc::as_ptr(&transfer_owner);
         if let Some((item, cancel_cb)) = wait {
-            file_set_cmdq_wait(cf, item, cancel_cb);
+            file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
         }
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
@@ -460,7 +460,7 @@ unsafe fn file_write_impl(
         transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
         cf = rc::as_ptr(&transfer_owner);
         if let Some((item, cancel_cb)) = wait {
-            file_set_cmdq_wait(cf, item, cancel_cb);
+            file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
         }
         file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
@@ -550,7 +550,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait(
     cb: client_file_cb,
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
-) -> *mut client_file {
+) {
     file_read_with_cmdq_wait_init(c, path, |_| cb, item, cancel_cb)
 }
 
@@ -562,10 +562,8 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     callback: impl FnOnce(std::rc::Weak<std::cell::UnsafeCell<client_file>>) -> client_file_cb,
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
-) -> *mut client_file {
-    let transfer_owner;
+) {
     let mut current_block: u64;
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let fresh1 = file_next_stream;
     file_next_stream = file_next_stream + 1;
@@ -574,10 +572,10 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     let mut file_owner: Option<CFile> = None;
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
-    transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, None);
-    cf = rc::as_ptr(&transfer_owner);
-    file_set_cmdq_wait(cf, item, cancel_cb);
-    (*cf).cb = callback((*cf).observer.clone());
+    let transfer_owner = file_create_with_client(c, stream as ::core::ffi::c_int, None);
+    let cf = transfer_owner.get();
+    file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
+    (*cf).cb = callback(Rc::downgrade(&transfer_owner));
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
@@ -680,7 +678,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                 {
                     (*cf).error = EINVAL;
                 } else {
-                    return cf;
+                    return;
                 }
             }
         }
@@ -688,7 +686,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     }
     drop(file_owner);
     file_fire_done(&transfer_owner);
-    return ::core::ptr::null_mut::<client_file>();
+
 }
 pub unsafe fn file_cancel(cf: &mut client_file) {
     let mut msg: msg_read_cancel = msg_read_cancel { stream: 0 };
@@ -1447,14 +1445,14 @@ mod completion_cancellation_tests {
             let file = client_file::new();
             let cf = rc::as_ptr(&file);
             let mut item = cmdq_item::empty();
-            file_set_cmdq_wait(cf, &mut item, None);
+            file_set_cmdq_wait(&file, &mut item, None);
             assert!((*cf).wait_client.is_none());
             file_cancel_cmdq_wait(&file);
 
             let client = client::new();
             item.client = Rc::downgrade(&client);
             drop(client);
-            file_set_cmdq_wait(cf, &mut item, None);
+            file_set_cmdq_wait(&file, &mut item, None);
             assert!((*cf).wait_client.as_ref().unwrap().upgrade().is_none());
             file_cancel_cmdq_wait(&file);
         }

@@ -1943,3 +1943,16 @@ callbacks observe it without creating a reference cycle.
 `cargo test --workspace` and `git diff --check` passed. Raw peer descriptors are
 outside the refcounted model migration; client-backed transfer creation and other
 internal model projections remain pending.
+
+## Implemented typed file-wait publication and clearing
+
+Read startup no longer returns an unused raw file pointer. Transfer ownership
+stays with the index or scheduled terminal event, while callback initialization
+receives a Weak derived from the creation owner. Wait setup takes the retained
+file handle; queue publication safely downgrades it. Clearing compares weak
+identities and does not cast allocation pointers. Cancellation and terminal
+completion preserve the existing wait-cleanup order.
+
+`cargo test --workspace` and `git diff --check` passed, including file-backed wait
+and cancellation coverage. Raw client inputs to transfer creation and remaining
+internal file projections remain pending.

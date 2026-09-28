@@ -101,20 +101,20 @@ unsafe fn cmdq_cancel_unfired_data(item: &mut cmdq_item) {
 
 /// The file remains live until its terminal event, including when a local
 /// file operation schedules immediate completion. The queue item only borrows
-/// it while the command is waiting.
-pub(crate) unsafe fn cmdq_set_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
-    assert!(!cf.is_null());
-    assert!(
-        item.wait_file.is_none(),
-        "queue item already owns a file wait"
-    );
-    item.wait_file = Some((*cf).observer.clone());
+/// it through a weak handle while the command is waiting.
+pub(crate) fn cmdq_set_wait_file(
+    item: &mut cmdq_item,
+    file: &std::rc::Rc<std::cell::UnsafeCell<client_file>>,
+) {
+    assert!(item.wait_file.is_none(), "queue item already has a file wait");
+    item.wait_file = Some(std::rc::Rc::downgrade(file));
 }
 
-pub(crate) fn cmdq_clear_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
-    if item.wait_file.as_ref().is_some_and(|file| {
-        std::ptr::eq(file.as_ptr().cast::<client_file>(), cf)
-    }) {
+pub(crate) fn cmdq_clear_wait_file(
+    item: &mut cmdq_item,
+    file: &std::rc::Weak<std::cell::UnsafeCell<client_file>>,
+) {
+    if item.wait_file.as_ref().is_some_and(|waiting| waiting.ptr_eq(file)) {
         item.wait_file = None;
     }
 }
