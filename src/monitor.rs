@@ -140,8 +140,8 @@ unsafe fn monitor_report(
         name: &name,
         value,
         last,
-        c: None,
-        s: None,
+        c: std::rc::Weak::new(),
+        s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         wp: None,
     };
@@ -153,8 +153,8 @@ unsafe fn monitor_report(
     ));
     (*me).fire_count = (*me).fire_count.wrapping_add(1);
     (*me).fire_time = current_time;
-    change.c = (*ms).client.clone();
-    change.s = (!s.is_null()).then(|| (*s).observer.clone());
+    change.c = (*ms).client.clone().unwrap_or_default();
+    change.s = if s.is_null() { std::rc::Weak::new() } else { (*s).observer.clone() };
     change.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
     change.wp = (!wp.is_null()).then(|| (*wp).observer.clone());
     // The callback may destroy the monitor set while it is running.

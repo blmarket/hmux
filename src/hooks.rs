@@ -417,9 +417,9 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let mut link = change.wl.try_borrow_mut().ok();
     let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
-    let client_owner = change.c.as_ref().and_then(std::rc::Weak::upgrade);
+    let client_owner = change.c.upgrade();
     let c = client_rc_ptr(&client_owner);
-    let session_owner = change.s.as_ref().and_then(Weak::upgrade);
+    let session_owner = change.s.upgrade();
     let s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let pane_owner = change.wp.as_ref().and_then(|pane| window_pane_upgrade(pane));
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
@@ -643,8 +643,8 @@ mod hooks_events_tests {
                 name: c"test-monitor-unlink",
                 value: c"changed",
                 last: None,
-                c: None,
-                s: Some(Rc::downgrade(&session_owner)),
+                c: Weak::new(),
+                s: Rc::downgrade(&session_owner),
                 wl: (*wl).observer.clone(),
                 wp: None,
             };

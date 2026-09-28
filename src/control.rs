@@ -1527,13 +1527,13 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
     }
 }
 unsafe fn control_sub_change(change: &monitor_change) {
-    let Some(client_owner) = change.c.as_ref().and_then(std::rc::Weak::upgrade) else { return };
+    let Some(client_owner) = change.c.upgrade() else { return };
     let c = crate::src::shared::rc::as_ptr(&client_owner);
     if (*c).flags & crate::src::shared::client::CLIENT_DEAD as uint64_t != 0 {
         server_client_unref_owned(client_owner);
         return;
     }
-    let Some(session_owner) = change.s.as_ref().and_then(std::rc::Weak::upgrade) else {
+    let Some(session_owner) = change.s.upgrade() else {
         server_client_unref_owned(client_owner);
         return;
     };

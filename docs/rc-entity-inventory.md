@@ -2734,3 +2734,12 @@ address extracted from a temporary owner.
 Command queue diagnostics now borrow the `CString` bytes of queue labels,
 printed commands, and errors. The generated queue labels are temporary owners;
 their borrowed bytes remain live through the synchronous log call.
+
+## Monitor callback weak handles
+
+`monitor_change.c` and `.s` now store plain `Weak` handles. Their consumers only
+upgrade them; an empty handle and an expired handle both mean no live model.
+The monitor set's optional client remains distinct because `None` selects a
+global monitor, while an expired explicit client must not select that path.
+The callback's optional pane remains distinct because control subscriptions
+check whether an explicitly selected pane expired.
