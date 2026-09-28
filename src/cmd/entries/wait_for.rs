@@ -8,7 +8,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create, format_expand_cstring, format_free, format_true};
+use crate::src::format::{format_create_with_client, format_expand_cstring, format_free, format_true};
 use crate::src::hooks::hooks_valid_event_name;
 use crate::src::log::{log_cstr, log_debug, log_pointer};
 use crate::src::shared::abi::*;
@@ -278,7 +278,6 @@ unsafe fn cmd_wait_for_event_cb(
     wei: *mut wait_event_item,
 ) {
     let queue_client = cmdq_get_client((*wei).item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let ep = &*payload;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -286,8 +285,8 @@ unsafe fn cmd_wait_for_event_cb(
         cmd_wait_for_event_print(wei, ep);
     }
     if !(*wei).filter.is_none() {
-        ft = format_create(
-            queue_client_ptr,
+        ft = format_create_with_client(
+            queue_client.as_ref(),
             (*wei).item,
             FORMAT_NONE,
             FORMAT_NOJOBS,

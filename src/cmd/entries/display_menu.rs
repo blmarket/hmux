@@ -147,7 +147,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
 ) -> ::core::ffi::c_int {
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut s: *mut session = (*tc).session;
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();
@@ -537,7 +538,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
     mut h: u_int,
 ) -> ::core::ffi::c_int {
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut s: *mut session = (*tc).session;
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut window: *mut window = (*target).w_ptr();
@@ -917,7 +919,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
 unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let tc_owner = cmdq_get_target_client(item);
     let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
@@ -1150,10 +1153,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                                     .expect("formatted cwd was set")
                                     .as_ptr();
                             } else {
-                                default_cwd = Some(
-                                    std::ffi::CStr::from_ptr(server_client_get_cwd(tc, s))
-                                        .to_owned(),
-                                );
+                                default_cwd = server_client_get_cwd(tc.as_ref(), s.as_ref());
                                 cwd = default_cwd
                                     .as_ref()
                                     .expect("default cwd was copied")

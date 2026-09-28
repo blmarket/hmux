@@ -3,7 +3,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_target};
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target_client,
+    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_flags, cmdq_get_target_client,
 };
 use crate::src::environ::environ_update;
 use crate::src::ffi::libc::{getuid, strcmp, strcspn};
@@ -13,7 +13,7 @@ use crate::src::proc::proc_get_peer_uid;
 use crate::src::server_client::{server_client_set_key_table, server_client_set_session};
 use crate::src::server_fn::server_redraw_window;
 use crate::src::session::{
-    session_alive, session_next_session, session_previous_session, session_set_current,
+    session_next_session, session_previous_session, session_set_current,
 };
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
@@ -63,7 +63,7 @@ pub static cmd_switch_client_entry: cmd_entry = {
 };
 unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -82,6 +82,8 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let last_session_owner;
+    let adjacent_session_owner;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -150,23 +152,25 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        s = session_next_session((*tc).session, &raw mut sort_crit);
+        adjacent_session_owner = session_next_session((*tc).session.as_ref(), &sort_crit);
+        s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        s = session_previous_session((*tc).session, &raw mut sort_crit);
+        adjacent_session_owner = session_previous_session((*tc).session.as_ref(), &sort_crit);
+        s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find previous session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
-        if !(*tc).last_session.is_null() && session_alive((*tc).last_session) != 0 {
-            s = (*tc).last_session;
-        } else {
-            s = ::core::ptr::null_mut::<session>();
-        }
+        last_session_owner = crate::src::session::sessions_resolve(
+            &*std::ptr::addr_of!(crate::src::session::sessions),
+            &(*tc).last_session,
+        );
+        s = last_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find last session"));
             return CMD_RETURN_ERROR;
@@ -177,7 +181,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window_ptr()).active {
             w = (*wl).window_ptr();
-            if !(*w).modal.is_null() && wp != (*w).modal {
+            if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
                 visible = window_pane_is_visible(wp);
@@ -193,7 +197,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         if !wl.is_null() {
             session_set_current(s, wl);
-            cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
+            cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
         }
     }
     if args_has(args, 'E' as i32 as u_char) == 0 {

@@ -32,7 +32,7 @@ mod tests {
     #[test]
     fn borrowed_payloads_copy_to_owners_without_retaining_input_storage() {
         let text = CString::new(b"borrowed\xff".as_slice()).unwrap();
-        let commands = Rc::new(UnsafeCell::new(cmd_list {
+        let commands = Rc::new(std::cell::RefCell::new(cmd_list {
             group: 0,
             list: Vec::new(),
         }));
@@ -89,9 +89,9 @@ impl args {
 pub enum ArgsPayload<'a> {
     None,
     String(CString),
-    Command(Rc<UnsafeCell<cmd_list>>),
+    Command(Rc<std::cell::RefCell<cmd_list>>),
     BorrowedString(&'a CStr),
-    BorrowedCommand(&'a Rc<UnsafeCell<cmd_list>>),
+    BorrowedCommand(&'a Rc<std::cell::RefCell<cmd_list>>),
 }
 
 /// Parser inputs can borrow payloads; stored arguments contain owned copies.
@@ -118,7 +118,7 @@ impl<'a> ArgumentValue<'a> {
         Self::new(ArgsPayload::String(value))
     }
 
-    pub fn commands(value: Rc<UnsafeCell<cmd_list>>) -> Self {
+    pub fn commands(value: Rc<std::cell::RefCell<cmd_list>>) -> Self {
         Self::new(ArgsPayload::Command(value))
     }
 
@@ -126,7 +126,7 @@ impl<'a> ArgumentValue<'a> {
         Self::new(ArgsPayload::BorrowedString(value))
     }
 
-    pub fn borrowed_commands(value: &'a Rc<UnsafeCell<cmd_list>>) -> Self {
+    pub fn borrowed_commands(value: &'a Rc<std::cell::RefCell<cmd_list>>) -> Self {
         Self::new(ArgsPayload::BorrowedCommand(value))
     }
 
@@ -146,7 +146,7 @@ impl<'a> ArgumentValue<'a> {
         }
     }
 
-    pub fn as_commands(&self) -> Option<&Rc<UnsafeCell<cmd_list>>> {
+    pub fn as_commands(&self) -> Option<&Rc<std::cell::RefCell<cmd_list>>> {
         match &self.payload {
             ArgsPayload::Command(value) => Some(value),
             ArgsPayload::BorrowedCommand(value) => Some(value),
@@ -225,7 +225,7 @@ pub struct args_parse {
 
 /// Box-owned prepared command; retained model references have typed owners.
 pub struct args_command_state {
-    pub cmdlist: Option<Rc<UnsafeCell<cmd_list>>>,
+    pub cmdlist: Option<Rc<std::cell::RefCell<cmd_list>>>,
     pub(crate) client: Option<Rc<UnsafeCell<client>>>,
     pub cmd: Option<std::ffi::CString>,
     pub pi: cmd_parse_input,

@@ -84,7 +84,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     src_w = (*(*source).wl_ptr()).window_ptr();
     src_wp = (*source).wp_ptr();
     src_idx = (*(*source).wl_ptr()).idx;
-    if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
+    if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
@@ -97,7 +97,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         server_redraw_window(dst_w);
     }
     if args_has(args, 'D' as i32 as u_char) != 0 {
-        if window_pane_is_floating(dst_wp) != 0 {
+        if window_pane_is_floating(&*dst_wp) != 0 {
             cmdq_error(item, |out| {
                 out.write_all(b"cannot swap down on floating pane")
             });
@@ -111,7 +111,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             src_wp = cmd_swap_pane_next_tiled_pane(src_wp);
         }
     } else if args_has(args, 'U' as i32 as u_char) != 0 {
-        if window_pane_is_floating(dst_wp) != 0 {
+        if window_pane_is_floating(&*dst_wp) != 0 {
             cmdq_error(item, |out| {
                 out.write_all(b"cannot swap up on floating pane")
             });
@@ -141,9 +141,9 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_pane_z_swap_order(dst_w, dst_wp, src_w, src_wp);
         src_lc = (*src_wp).layout_cell as *mut layout_cell;
         dst_lc = (*dst_wp).layout_cell as *mut layout_cell;
-        (*src_lc).wp = dst_wp;
+        (*src_lc).wp = (*dst_wp).observer.clone();
         (*dst_wp).layout_cell = src_lc as *mut layout_cell;
-        (*dst_lc).wp = src_wp;
+        (*dst_lc).wp = (*src_wp).observer.clone();
         (*src_wp).layout_cell = dst_lc as *mut layout_cell;
         (*src_wp).window = dst_w as *mut window;
         options_set_parent(options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*dst_w).options).map_or(std::ptr::null_mut(), |options| options));

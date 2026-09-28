@@ -37,8 +37,9 @@ pub struct spawn_context {
     pub item: *mut cmdq_item,
     pub s: *mut session,
     pub wl: *mut winlink,
-    pub tc: *mut client,
-    pub wp0: *mut window_pane,
+    /// Retain the target client for the duration of this spawn operation.
+    pub tc: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    pub wp0: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     pub lc: *mut layout_cell,
     pub name: *const ::core::ffi::c_char,
     pub argv: Vec<std::ffi::CString>,

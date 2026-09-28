@@ -19,7 +19,8 @@ unsafe fn window_indices(w: *mut window) -> Vec<i32> {
 #[test]
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
-        let mut owner = Box::new(session::empty());
+        let session_owner = session::new();
+        let owner = &mut *session_owner.get();
         let first_owner =
             window::new();
         let second_owner =
@@ -36,7 +37,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         let third = winlink_add(&raw mut owner.windows, 18);
         let initial = [first, second, third];
         for link in initial {
-            (*link).session = &mut *owner;
+            (*link).session = std::rc::Rc::downgrade(&session_owner);
             winlink_set_window(link, first_window);
         }
         assert_eq!(window_indices(first_window), [12, 3, 18]);
@@ -65,7 +66,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         let mut added = vec![first, second, third];
         for idx in 100..228 {
             let link = winlink_add(&raw mut owner.windows, idx);
-            (*link).session = &mut *owner;
+            (*link).session = std::rc::Rc::downgrade(&session_owner);
             winlink_set_window(link, first_window);
             added.push(link);
         }
@@ -162,5 +163,29 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         events_remove_sink(sink);
         window_remove_ref(retained.borrow_mut().take().unwrap(), c"close observer".as_ptr());
         assert!(weak.upgrade().is_none());
+    }
+}
+
+#[test]
+fn session_membership_uses_allocation_identity_and_tolerates_expired_back_references() {
+    use hmux2::src::session::session_has;
+    use hmux2::src::shared::window::winlinks;
+    use std::rc::Rc;
+    unsafe {
+        let first = session::new();
+        let other = session::new();
+        let window_owner = window::new();
+        let mut links = winlinks { storage: None };
+        let link = winlink_add(&mut links, 0);
+        (*link).session = Rc::downgrade(&first);
+        winlink_set_window(link, window_owner.get());
+        assert_eq!(session_has(&*first.get(), &*window_owner.get()), 1);
+        assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
+        let observer = Rc::downgrade(&first);
+        drop(first);
+        assert!(observer.upgrade().is_none());
+        assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
+        winlink_remove(&mut links, link);
+        assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
     }
 }

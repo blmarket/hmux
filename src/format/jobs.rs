@@ -68,8 +68,8 @@ pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
     ));
     t = time(::core::ptr::null_mut::<time_t>());
     if (*fj).status != 0 && (*fj).last != t {
-        if !(*fj).client.is_null() {
-            server_status_client((*fj).client);
+        if let Some(client) = (*fj).client.upgrade() {
+            server_status_client(client.get());
         }
         (*fj).last = t;
     }
@@ -110,8 +110,8 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
         format_job_set_out(&mut *fj, output);
     }
     if (*fj).status != 0 {
-        if !(*fj).client.is_null() {
-            server_status_client((*fj).client);
+        if let Some(client) = (*fj).client.upgrade() {
+            server_status_client(client.get());
         }
         (*fj).status = 0 as ::core::ffi::c_int;
     }
@@ -150,7 +150,7 @@ pub(super) unsafe fn format_job_get(
     } else {
         jobs = &mut **(*client_rc_ptr(&(*ft).client)).jobs.get_or_insert_with(Default::default);
     }
-    fj = format_job_find_or_insert(&mut *jobs, client_rc_ptr(&(*ft).client), (*ft).tag, CStr::from_ptr(cmd));
+    fj = format_job_find_or_insert(&mut *jobs, (*ft).client.as_ref(), (*ft).tag, CStr::from_ptr(cmd));
     format_copy_state(
         &raw mut next,
         es,
@@ -176,15 +176,13 @@ pub(super) unsafe fn format_job_get(
         job_free((*fj).job);
     }
     if force != 0 || (*fj).job.is_null() && (*fj).last != t {
+        let cwd = server_client_get_cwd((*ft).client.as_ref().map(|owner| &*owner.get()), None);
         (*fj).job = job_run(
             Some(expanded.as_c_str()),
             &Vec::new(),
             None,
             ::core::ptr::null_mut::<session>(),
-            {
-                let cwd = server_client_get_cwd(client_rc_ptr(&(*ft).client), ::core::ptr::null_mut::<session>());
-                (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
-            },
+            cwd.as_deref(),
             job_update_callback(move |job| unsafe { format_job_update(job, fj) }),
             Some(Box::new(move |completion| unsafe {
                 format_job_complete(completion, fj)
@@ -220,7 +218,7 @@ pub(super) unsafe fn format_job_get(
 // Do not retain a map borrow across format expansion or process callbacks.
 unsafe fn format_job_find_or_insert(
     jobs: &mut format_job_tree,
-    client: *mut client,
+    client: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     tag: u_int,
     cmd: &CStr,
 ) -> *mut format_job {
@@ -228,7 +226,7 @@ unsafe fn format_job_find_or_insert(
     &mut **jobs.entries.entry(key).or_insert_with(|| {
         let command = cmd.to_owned();
         let node = format_job {
-            client,
+            client: client.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
             tag,
             cmd: command.clone(),
             expanded: Default::default(),
@@ -284,13 +282,15 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
 pub unsafe fn format_tidy_jobs() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     format_job_tidy(&raw mut format_jobs, 0 as ::core::ffi::c_int);
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         let jobs = (*c).jobs.as_deref_mut().map(|jobs| jobs as *mut format_job_tree);
         if let Some(jobs) = jobs {
             format_job_tidy(jobs, 0);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn format_lost_client(mut c: *mut client) {
@@ -309,37 +309,58 @@ mod tests {
     use std::ptr::null_mut;
 
     #[test]
+    fn completion_skips_expired_client_without_retaining_it() {
+        unsafe {
+            let client = client::new();
+            let mut cache = format_job_tree::default();
+            let job = format_job_find_or_insert(&mut cache, Some(&client), 0, c"expired-client");
+            assert_eq!(std::rc::Rc::strong_count(&client), 1);
+            (*job).status = 1;
+            drop(client);
+            assert!((*job).client.upgrade().is_none());
+            format_job_complete(JobCompletion {
+                status: crate::src::shared::job::JobExitStatus::Exited(0),
+                output: b"completed\n".to_vec(),
+            }, job);
+            assert_eq!((*job).out.as_deref(), Some(c"completed"));
+            assert_eq!((*job).status, 0);
+            format_job_tidy_at(&mut cache, 1, 0);
+            assert!(cache.entries.is_empty());
+        }
+    }
+
+    #[test]
     fn cache_preserves_identity_and_c_comparator_order() {
         unsafe {
             let mut cache = format_job_tree::default();
             let mut other = format_job_tree::default();
             let command = CString::new(b"cmd\xff".to_vec()).unwrap();
-            let original = format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_c_str());
+            let original = format_job_find_or_insert(&mut cache, None, 7, command.as_c_str());
             (*original).updated = 42;
             let duplicate = CString::new(command.as_bytes()).unwrap();
             assert_eq!(
                 original,
-                format_job_find_or_insert(&mut cache, null_mut(), 7, duplicate.as_c_str())
+                format_job_find_or_insert(&mut cache, None, 7, duplicate.as_c_str())
             );
             assert_ne!(
                 original,
-                format_job_find_or_insert(&mut other, null_mut(), 7, duplicate.as_c_str())
+                format_job_find_or_insert(&mut other, None, 7, duplicate.as_c_str())
             );
             assert_ne!(
                 original,
-                format_job_find_or_insert(&mut cache, null_mut(), 8, duplicate.as_c_str())
+                format_job_find_or_insert(&mut cache, None, 8, duplicate.as_c_str())
             );
 
             // Force tree growth with unsigned tags and non-UTF-8 command bytes.
             for tag in [0, 7, 8, u_int::MAX] {
                 for byte in 1..=255u8 {
                     let cmd = CString::new(vec![byte]).unwrap();
-                    format_job_find_or_insert(&mut cache, null_mut(), tag, cmd.as_c_str());
+                    format_job_find_or_insert(&mut cache, None, tag, cmd.as_c_str());
                 }
             }
             assert_eq!(
                 original,
-                format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_c_str())
+                format_job_find_or_insert(&mut cache, None, 7, command.as_c_str())
             );
             assert_eq!((*original).updated, 42);
             let jobs: Vec<_> = cache.entries.values().map(Box::as_ref).collect();
@@ -364,15 +385,15 @@ mod tests {
     #[test]
     fn client_teardown_releases_the_rust_cache() {
         unsafe {
-            let mut c: client = client::empty();
+            let owner = client::new();
+            let c = &mut *owner.get();
             c.jobs = Some(Box::default());
             let cmd = CString::new("job").unwrap();
-            let client = &raw mut c;
-            let fj = format_job_find_or_insert(c.jobs.as_deref_mut().unwrap(), client, 0, cmd.as_c_str());
+            let fj = format_job_find_or_insert(c.jobs.as_deref_mut().unwrap(), Some(&owner), 0, cmd.as_c_str());
             (*fj).last = time(std::ptr::null_mut()) + 3600;
-            format_lost_client(&mut c);
+            format_lost_client(c);
             assert!(c.jobs.is_none());
-            format_lost_client(&mut c);
+            format_lost_client(c);
         }
     }
 
@@ -388,7 +409,7 @@ mod tests {
                 .enumerate()
             {
                 let cmd = CString::new(format!("job-{index}")).unwrap();
-                let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_c_str());
+                let fj = format_job_find_or_insert(&mut cache, None, 0, cmd.as_c_str());
                 (*fj).last = last;
                 format_job_set_expanded(&mut *fj, cmd.clone());
                 format_job_set_out(&mut *fj, cmd.clone());
@@ -421,7 +442,7 @@ mod tests {
         unsafe {
             let mut cache = format_job_tree::default();
             let cmd = CString::new(b"printf '\xff'".to_vec()).unwrap();
-            let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_c_str());
+            let fj = format_job_find_or_insert(&mut cache, None, 1, cmd.as_c_str());
             format_job_set_out_from_line(&mut *fj, b"first\0ignored");
             assert_eq!(
                 CStr::from_ptr(
@@ -455,7 +476,7 @@ mod tests {
             );
             assert_eq!(
                 fj,
-                format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_c_str())
+                format_job_find_or_insert(&mut cache, None, 1, cmd.as_c_str())
             );
             format_job_tidy_at(&mut cache, 1, 0);
             assert!(cache.entries.is_empty());

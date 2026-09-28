@@ -52,8 +52,8 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: ::core::ptr::null_mut::<session>(),
         wl: ::core::ptr::null_mut::<winlink>(),
-        tc: ::core::ptr::null_mut::<client>(),
-        wp0: ::core::ptr::null_mut::<window_pane>(),
+        tc: None,
+        wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
@@ -71,7 +71,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     sc.item = item;
     sc.s = s;
     sc.wl = wl;
-    sc.tc = tc;
+    sc.tc = tc_owner.clone();
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());

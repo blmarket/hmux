@@ -180,6 +180,7 @@ unsafe fn window_switch_add_window(
 ) {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+    let Some(session_owner) = (*wl).session.upgrade() else { return; };
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -189,13 +190,13 @@ unsafe fn window_switch_add_window(
     format_defaults(
         ft,
         ::core::ptr::null_mut::<client>(),
-        (*wl).session,
+        session_owner.get(),
         wl,
         ::core::ptr::null_mut::<window_pane>(),
     );
     item = window_switch_add_item(data);
     (*item).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
-    (*item).session = (*(*wl).session).id as ::core::ffi::c_int;
+    (*item).session = (*session_owner.get()).id as ::core::ffi::c_int;
     (*item).winlink = (*wl).idx;
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
@@ -245,11 +246,11 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     (*data).item_list.clear();
     match (*data).type_0 as ::core::ffi::c_uint {
         0 => {
-            let sl = sort_get_sessions(&raw mut sort_crit);
+            let sl = sort_get_sessions(&sort_crit);
             let ns = u_int::try_from(sl.len()).expect("too many sessions for window switch");
             i = 0 as u_int;
             while i < ns {
-                window_switch_add_session(data, sl[i as usize], &raw mut order);
+                window_switch_add_session(data, sl[i as usize].get(), &raw mut order);
                 i = i.wrapping_add(1);
             }
         }
@@ -295,7 +296,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,

@@ -118,7 +118,7 @@ unsafe fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> 
         0 => Cow::Borrowed(CStr::from_bytes_with_nul_unchecked(b"\0")),
         1 => Cow::Borrowed(value.as_string().expect("string argument")),
         2 => Cow::Owned(cmd_list_print_cstring(
-            &*rc::as_ptr(value.as_commands().expect("command argument")),
+            &value.as_commands().expect("command argument").borrow(),
             0,
         )),
         _ => fatalx(|out| out.write_all(b"unexpected argument type")),
@@ -139,7 +139,7 @@ fn args_push_positional_owned(args: &mut args, value: args_value) {
 }
 
 /// Append a positional command list and transfer its reference into `args`.
-pub fn args_push_positional_commands(args: &mut args, cmdlist: Rc<UnsafeCell<cmd_list>>) {
+pub fn args_push_positional_commands(args: &mut args, cmdlist: Rc<std::cell::RefCell<cmd_list>>) {
     args_push_positional_owned(args, args_value::commands(cmdlist));
 }
 
@@ -337,7 +337,7 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             args_value::string(expanded)
         }
         2 => args_value::commands(cmd_list_copy(
-            &*rc::as_ptr(from.as_commands().expect("command argument")),
+            &from.as_commands().expect("command argument").borrow(),
             argv,
         )),
         0 | _ => args_value::empty(),
@@ -376,7 +376,7 @@ pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
             }
             2 => {
                 let printed = cmd_list_print_cstring(
-                    &*rc::as_ptr(value.as_commands().expect("command argument")),
+                    &value.as_commands().expect("command argument").borrow(),
                     0 as ::core::ffi::c_int,
                 );
                 argv.push(printed);
@@ -393,7 +393,7 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     match value.type_0() as ::core::ffi::c_uint {
         2 => {
             let expanded = cmd_list_print_cstring(
-                &*rc::as_ptr(value.as_commands().expect("command argument")),
+                &value.as_commands().expect("command argument").borrow(),
                 0,
             );
             buf.extend_from_slice(b"{ ");
@@ -560,7 +560,7 @@ pub unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c
 pub fn args_set_owned_commands(
     args: &mut args,
     flag: u_char,
-    cmdlist: Rc<UnsafeCell<cmd_list>>,
+    cmdlist: Rc<std::cell::RefCell<cmd_list>>,
     flags: ::core::ffi::c_int,
 ) {
     args_set_value(args, flag, Some(args_value::commands(cmdlist)), flags);
@@ -683,7 +683,6 @@ mod ownership_tests {
             let commands = crate::src::cmd::cmd_list_new();
             let observer = std::rc::Rc::downgrade(&commands);
             let mut source = Box::new(args::empty());
-            let commands_ptr = rc::as_ptr(&commands);
             args_push_positional_commands(&mut source, commands);
             let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
             command.args = Some(source);
@@ -699,11 +698,11 @@ mod ownership_tests {
                 b""
             );
             let returned = args_make_commands(&mut state, &Vec::new()).unwrap();
-            assert_eq!(rc::as_ptr(&returned), commands_ptr);
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(&returned), &observer));
             assert_eq!(observer.strong_count(), 2);
             drop(state);
             assert_eq!(observer.strong_count(), 1);
-            assert!(cmd_list_print_cstring(&*rc::as_ptr(&returned), 0)
+            assert!(cmd_list_print_cstring(&returned.borrow(), 0)
                 .as_bytes()
                 .is_empty());
             drop(returned);
@@ -741,7 +740,7 @@ mod ownership_tests {
                     assert!(source.upgrade().is_none());
                 }
                 assert_eq!(
-                    cmd_list_print_cstring(&*rc::as_ptr(&commands), 0).as_bytes(),
+                    cmd_list_print_cstring(&commands.borrow(), 0).as_bytes(),
                     b"display-message -p expanded"
                 );
                 let item = cmdq_get_command(&commands, None);
@@ -921,7 +920,7 @@ pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
         ARGS_COMMANDS => {
             if value.cached.is_none() {
                 let printed = unsafe {
-                    cmd_list_print_cstring(&*value.as_commands().expect("command argument").get(), 0)
+                    cmd_list_print_cstring(&value.as_commands().expect("command argument").borrow(), 0)
                 };
                 value.cached = Some(printed);
             }
@@ -935,7 +934,7 @@ pub unsafe fn args_make_commands_now(
     item: *mut cmdq_item,
     idx: u_int,
     expand: ::core::ffi::c_int,
-) -> Option<Rc<UnsafeCell<cmd_list>>> {
+) -> Option<Rc<std::cell::RefCell<cmd_list>>> {
     let mut state = args_make_commands_prepare(self_0, item, idx, std::ptr::null(), 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
@@ -963,7 +962,6 @@ pub unsafe fn args_make_commands_prepare(
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1008,27 +1006,21 @@ pub unsafe fn args_make_commands_prepare(
         state.file = Some(file.to_owned());
         state.pi.file = state.file.clone();
     }
-    state.pi.c = tc;
-    if !state.pi.c.is_null() {
-        state.client = Some(
-            (*state.pi.c).observer
-                .upgrade()
-                .expect("live command client"),
-        );
-    }
+    state.pi.c = tc_owner.as_ref().map_or_else(std::rc::Weak::new, Rc::downgrade);
+    state.client = tc_owner;
     cmd_find_copy_state(&raw mut state.pi.fs, target);
     return state;
 }
 pub unsafe fn args_make_commands(
     state: &mut args_command_state,
     argv: &Vec<CString>,
-) -> Result<Rc<UnsafeCell<cmd_list>>, Option<CString>> {
+) -> Result<Rc<std::cell::RefCell<cmd_list>>, Option<CString>> {
     let mut i: ::core::ffi::c_int = 0;
     if let Some(commands) = state.cmdlist.as_ref() {
         if argv.is_empty() {
             return Ok(Rc::clone(commands));
         }
-        return Ok(cmd_list_copy(&*rc::as_ptr(commands), argv));
+        return Ok(cmd_list_copy(&commands.borrow(), argv));
     }
     let mut cmd = state.cmd.as_ref().expect("prepared command text").clone();
     log_debug(format_args!(
@@ -1078,7 +1070,8 @@ impl Drop for args_command_state {
 
 pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command_state) -> CString {
     if let Some(commands) = state.cmdlist.as_ref() {
-        let Some(first) = cmd_list_first(&*rc::as_ptr(commands)) else {
+        let commands = commands.borrow();
+        let Some(first) = cmd_list_first(&commands) else {
             return CString::new(Vec::new()).expect("empty command name has no NUL");
         };
         return (*first.entry).name.to_owned();

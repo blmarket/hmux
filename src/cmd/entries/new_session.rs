@@ -3,7 +3,7 @@ use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target,
+    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_flags, cmdq_get_target,
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
@@ -115,13 +115,14 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
     let mut groupwith: *mut session = ::core::ptr::null_mut::<session>();
+    let mut groupwith_owner = None;
     let mut env: Option<Box<environ>> = None;
     let mut oo: Option<Box<options>> = None;
     let mut tio: termios = termios {
@@ -160,8 +161,8 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: ::core::ptr::null_mut::<session>(),
         wl: ::core::ptr::null_mut::<winlink>(),
-        tc: ::core::ptr::null_mut::<client>(),
-        wp0: ::core::ptr::null_mut::<window_pane>(),
+        tc: None,
+        wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
@@ -277,7 +278,8 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             } else {
                 group = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                 if !group.is_null() {
-                    groupwith = (*target).s_ptr();
+                    groupwith_owner = (*target).s.upgrade();
+                    groupwith = groupwith_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                     if groupwith.is_null() {
                         sg = session_group_find(group);
                     } else {
@@ -334,7 +336,8 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                 .as_ptr();
                         } else {
                             // session_create copies this borrowed cwd into session.
-                            cwd = server_client_get_cwd(c, ::core::ptr::null_mut::<session>());
+                            formatted_cwd = server_client_get_cwd(c.as_ref(), None);
+                            cwd = formatted_cwd.as_ref().map_or(std::ptr::null(), |value| value.as_ptr());
                         }
                         if detached == 0
                             && already_attached == 0
@@ -564,7 +567,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         sc.item = item;
                                                         sc.s = s;
                                                         if detached == 0 {
-                                                            sc.tc = c;
+                                                            sc.tc = c_owner.clone();
                                                         }
                                                         sc.name = wname;
                                                         argv_owner = args_to_vector(&*args);
@@ -605,7 +608,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                                 .cast_mut(),
                                                                         );
                                                                         session_group_add(
-                                                                            sg, groupwith,
+                                                                            sg, groupwith_owner.as_ref().expect("retained group session"),
                                                                         );
                                                                     } else {
                                                                         sg = session_group_new(
@@ -613,7 +616,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                         );
                                                                     }
                                                                 }
-                                                                session_group_add(sg, s);
+                                                                session_group_add(sg, &session_owner);
                                                                 session_group_synchronize_to(s);
                                                                 session_select(
                                                                     s,
@@ -654,8 +657,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                         );
                                                                     }
                                                                 } else if !(*c).session.is_null() {
-                                                                    (*c).last_session =
-                                                                        (*c).session;
+                                                                    (*c).last_session = (*c).session.as_ref().map_or_else(std::rc::Weak::new, |session| session.observer.clone());
                                                                 }
                                                                 server_client_set_session(c, s);
                                                                 if !cmdq_get_flags(item)
@@ -702,7 +704,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 == 0
                                                             {
                                                                 cmd_find_from_session(
-                                                                    current,
+                                                                    &mut *current.current.borrow_mut(),
                                                                     s,
                                                                     0 as ::core::ffi::c_int,
                                                                 );

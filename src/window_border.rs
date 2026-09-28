@@ -44,7 +44,7 @@ unsafe fn window_set_fill_cell(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -168,7 +168,7 @@ pub unsafe fn window_get_border_cell(
                 utf8_set(&mut gc.data, CELL_BORDERS[CELL_NONE as usize] as u_char);
             } else {
                 gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                if !wp.is_null() && window_pane_index(wp).map(|value| { idx = value; }).is_some() {
+                if !wp.is_null() && window_pane_index(&*wp).map(|value| { idx = value; }).is_some() {
                     utf8_set(
                         &mut gc.data,
                         ('0' as i32 as u_int).wrapping_add(idx.wrapping_rem(10 as u_int)) as u_char,
@@ -268,7 +268,7 @@ pub unsafe fn window_make_pane_status(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sle: *mut style_line_entry = &raw mut (*wp).border_status_line;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,

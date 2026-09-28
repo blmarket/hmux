@@ -53,7 +53,7 @@ pub struct winlink {
     /// Observe this allocation independently of its current index/key.
     pub(crate) observer: refbox::Weak<winlink>,
     pub idx: ::core::ffi::c_int,
-    pub session: *mut session,
+    pub session: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub window_owner: Option<WindowOwner>,
     pub flags: ::core::ffi::c_int,
     pub entry: winlink_entry,
@@ -74,7 +74,8 @@ pub struct window {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window>>,
     pub id: u_int,
-    pub latest: *mut ::core::ffi::c_void,
+    /// Nonowning identity of the client last active in this window.
+    pub latest: std::rc::Weak<std::cell::UnsafeCell<super::client::client>>,
     pub name: std::ffi::CString,
     pub name_event: event,
     pub name_time: timeval,
@@ -83,9 +84,12 @@ pub struct window {
     pub activity_time: timeval,
     pub creation_time: timeval,
     pub active: *mut window_pane,
-    pub modal: *mut window_pane,
-    pub modal_last: *mut window_pane,
-    pub was_zoomed: *mut window_pane,
+    /// Current modal pane is observed; the pane index owns its lifetime.
+    pub modal: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    /// Pane to restore after modal dismissal; does not own that pane.
+    pub modal_last: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    /// Saved zoom target observes its pane without extending its lifetime.
+    pub was_zoomed: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub last_panes: window_pane_history,
     pub z_index: window_panes,
     pub panes: window_panes,
@@ -120,11 +124,17 @@ pub struct window {
     pub entry: window_entry,
 }
 
+/// The global index observes windows; winlinks and callbacks own them.
+pub type WindowIndex = std::collections::BTreeMap<
+    u_int,
+    std::rc::Weak<std::cell::UnsafeCell<window>>,
+>;
+
 #[derive(Default)]
 #[repr(C)]
 pub struct window_entry {
     /// Weak traversal handle into the index; cleared when this window is removed.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window>>>,
+    pub owner: Option<refbox::Weak<WindowIndex>>,
 }
 
 /// Address identity only: never used to recover or dereference a model pointer.
@@ -238,7 +248,7 @@ pub struct winlink_stack {
 #[repr(C)]
 pub struct windows {
     /// The head owns the index; window records remain externally owned.
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window>>>,
+    pub storage: Option<refbox::RefBox<WindowIndex>>,
 }
 
 impl window {

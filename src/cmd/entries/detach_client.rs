@@ -100,7 +100,8 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         if s.is_null() {
             return CMD_RETURN_NORMAL;
         }
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if (*loop_0).session == s {
                 if !cmd.is_null() {
@@ -109,12 +110,14 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     server_client_detach(loop_0, msgtype);
                 }
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         return CMD_RETURN_STOP;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if !(*loop_0).session.is_null() && loop_0 != tc {
                 if !cmd.is_null() {
@@ -123,7 +126,8 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     server_client_detach(loop_0, msgtype);
                 }
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         return CMD_RETURN_NORMAL;
     }

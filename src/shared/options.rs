@@ -92,7 +92,7 @@ pub struct options_entry {
     pub fire_time: time_t,
 }
 
-pub struct OptionCommand(pub Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>);
+pub struct OptionCommand(pub Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>);
 
 /// The stored value owns its payload. Accessors expose borrowed pointers to
 /// callers only while the containing option record remains alive.
@@ -120,7 +120,7 @@ impl options_value {
         }
     }
 
-    pub fn commands(&self) -> Option<&std::rc::Rc<std::cell::UnsafeCell<cmd_list>>> {
+    pub fn commands(&self) -> Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>> {
         match self {
             Self::Command(value) => value.0.as_ref(),
             Self::Empty => None,

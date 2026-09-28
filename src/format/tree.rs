@@ -101,11 +101,12 @@ pub unsafe fn format_merge(ft: *mut format_tree, from: *mut format_tree) {
         format_add_value(ft, &key, value);
     }
 }
-pub unsafe fn format_get_pane(mut ft: *mut format_tree) -> *mut window_pane {
-    return (*ft).wp;
+pub fn format_get_pane(ft: &format_tree) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    ft.wp.upgrade()
 }
 pub(super) unsafe fn format_create_add_item(mut ft: *mut format_tree, mut item: *mut cmdq_item) {
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
     cmdq_merge_formats(item, ft);
     memcpy(
@@ -116,14 +117,14 @@ pub(super) unsafe fn format_create_add_item(mut ft: *mut format_tree, mut item: 
 }
 /// Construct the sole owner; callers may project pointers for legacy readers.
 unsafe fn format_create_box(
-    c: *mut client,
+    c: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
     item: *mut cmdq_item,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {
     let mut owner = Box::new(format_tree::default());
     let ft = &raw mut *owner;
-    (*ft).client = crate::src::shared::client::client_retain(c);
+    (*ft).client = c;
     (*ft).item = item;
     (*ft).tag = tag as u_int;
     (*ft).flags = flags;
@@ -139,7 +140,23 @@ pub unsafe fn format_create(
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> *mut format_tree {
-    Box::into_raw(format_create_box(c, item, tag, flags))
+    Box::into_raw(format_create_box(
+        crate::src::shared::client::client_retain(c), item, tag, flags,
+    ))
+}
+
+/// Construct a format tree retaining the supplied client handle.
+/// Clone the handle before merging command-item formats.
+///
+/// # Safety
+/// A non-null `item` must point to a live command-queue item.
+pub unsafe fn format_create_with_client(
+    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    item: *mut cmdq_item,
+    tag: ::core::ffi::c_int,
+    flags: ::core::ffi::c_int,
+) -> *mut format_tree {
+    Box::into_raw(format_create_box(c.cloned(), item, tag, flags))
 }
 
 pub unsafe fn format_create_owned(
@@ -148,7 +165,11 @@ pub unsafe fn format_create_owned(
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> FormatTreeOwner {
-    FormatTreeOwner { tree: Some(format_create_box(c, item, tag, flags)) }
+    FormatTreeOwner {
+        tree: Some(format_create_box(
+            crate::src::shared::client::client_retain(c), item, tag, flags,
+        )),
+    }
 }
 
 unsafe fn format_clear(ft: *mut format_tree) {
@@ -279,6 +300,35 @@ mod tests {
 
     unsafe fn tree() -> *mut format_tree {
         format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0)
+    }
+
+    #[test]
+    fn typed_client_survives_source_drop_and_releases_after_tree_cleanup() {
+        unsafe {
+            for cancel in [false, true] {
+                let owner = client::new();
+                let observer = Rc::downgrade(&owner);
+                let ft = format_create_with_client(Some(&owner), std::ptr::null_mut(), 17, 0);
+                assert!(Rc::ptr_eq((*ft).client.as_ref().unwrap(), &owner));
+                assert_eq!((*ft).tag, 17);
+                drop(owner);
+                assert!(observer.upgrade().is_some());
+
+                format_free(ft);
+                assert!(observer.upgrade().is_some());
+                if cancel {
+                    crate::src::reactor::shutdown_runtime();
+                } else {
+                    crate::src::reactor::event_loop();
+                }
+                assert!(observer.upgrade().is_none());
+                crate::src::reactor::shutdown_runtime();
+            }
+
+            let ft = format_create_with_client(None, std::ptr::null_mut(), 0, 0);
+            assert!((*ft).client.is_none());
+            format_free(ft);
+        }
     }
 
     unsafe fn text_value(ft: *mut format_tree, key: &CStr) -> Option<CString> {

@@ -63,7 +63,7 @@ fn sort_buffer_cmp(pa: &paste_buffer, pb: &paste_buffer, sort_crit: &sort_criter
         order
     }
 }
-unsafe fn sort_client_cmp(ca: *mut client, cb: *mut client, sort_crit: &sort_criteria) -> Ordering {
+unsafe fn sort_client_cmp(ca: &client, cb: &client, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         4 => {
@@ -131,8 +131,8 @@ unsafe fn sort_client_cmp(ca: *mut client, cb: *mut client, sort_crit: &sort_cri
     return sort_ordering(result, sort_crit.reversed);
 }
 unsafe fn sort_session_cmp(
-    sa: *mut session,
-    sb: *mut session,
+    sa: &session,
+    sb: &session,
     sort_crit: &sort_criteria,
 ) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -191,8 +191,8 @@ unsafe fn sort_session_cmp(
     return sort_ordering(result, sort_crit.reversed);
 }
 unsafe fn sort_pane_cmp(
-    a: *mut window_pane,
-    b: *mut window_pane,
+    a: &window_pane,
+    b: &window_pane,
     sort_crit: &sort_criteria,
 ) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -456,48 +456,42 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     });
     buffers
 }
-pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client> {
+pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<std::rc::Rc<std::cell::UnsafeCell<client>>> {
     let mut clients_sorted = Vec::new();
-    let mut c = clients.first();
-    while !c.is_null() {
-        if !((*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !(!(*c).flags & CLIENT_ATTACHED as uint64_t != 0) {
-                clients_sorted.push(c);
-            }
+    let mut current = clients.first();
+    while let Some(owner) = current {
+        current = clients.next(&owner);
+        let client = &*owner.get();
+        if client.flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0
+            && client.flags & CLIENT_ATTACHED as uint64_t != 0
+        {
+            clients_sorted.push(owner);
         }
-        c = clients.next(c);
     }
     sort_by_criteria(&mut clients_sorted, &*sort_crit, |a, b, criteria| unsafe {
-        sort_client_cmp(*a, *b, criteria)
+        sort_client_cmp(&*a.get(), &*b.get(), criteria)
     });
     clients_sorted
 }
-pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut session> {
-    let mut l = Vec::new();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
-    let mut s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
-        l.push(s);
-        s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+pub unsafe fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+    let mut sessions_sorted = Vec::new();
+    let mut current = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    while let Some(owner) = current {
+        current = sessions_next(&*owner.get());
+        sessions_sorted.push(owner);
     }
-    sort_by_criteria(&mut l, &*sort_crit, |a, b, criteria| unsafe {
-        sort_session_cmp(*a, *b, criteria)
+    sort_by_criteria(&mut sessions_sorted, sort_crit, |a, b, criteria| unsafe {
+        sort_session_cmp(&*a.get(), &*b.get(), criteria)
     });
-    l
+    sessions_sorted
 }
 pub unsafe fn sort_get_panes_window(
-    w: *mut window,
-    sort_crit: *mut sort_criteria,
-) -> Vec<*mut window_pane> {
-    let mut panes = Vec::new();
-    let mut wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        panes.push(wp);
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
-    sort_by_criteria(&mut panes, &*sort_crit, |a, b, criteria| unsafe {
-        sort_pane_cmp(*a, *b, criteria)
+    w: &window,
+    sort_crit: &sort_criteria,
+) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    let mut panes = w.panes.snapshot();
+    sort_by_criteria(&mut panes, sort_crit, |a, b, criteria| unsafe {
+        sort_pane_cmp(&*a.get(), &*b.get(), criteria)
     });
     panes
 }
@@ -535,13 +529,13 @@ pub unsafe fn sort_get_winlinks_session(
     l
 }
 pub unsafe fn sort_get_key_bindings<'a>(
-    tables: &'a [std::rc::Rc<std::cell::UnsafeCell<key_table>>],
+    tables: &'a [std::cell::Ref<'_, key_table>],
     sort_crit: &sort_criteria,
 ) -> Vec<&'a key_binding> {
     let mut bindings: Vec<_> = tables
         .iter()
         .flat_map(|table| {
-            (&*crate::src::shared::rc::as_ptr(table))
+            table
                 .key_bindings
                 .iter()
         })

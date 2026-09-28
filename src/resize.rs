@@ -106,7 +106,8 @@ pub unsafe fn resize_window(
     if sy > WINDOW_MAXIMUM as u_int {
         sy = WINDOW_MAXIMUM as u_int;
     }
-    zwp = window_zoomed_pane(w);
+    let zoomed_owner = window_zoomed_pane(&*w);
+    zwp = zoomed_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !zwp.is_null() {
         window_unzoom(w, 1 as ::core::ffi::c_int);
     }
@@ -127,7 +128,7 @@ pub unsafe fn resize_window(
         ((*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sx) as u32,
         ((*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sy) as u32
     ));
-    if !zwp.is_null() && window_has_pane(w, zwp) != 0 {
+    if !zwp.is_null() && window_has_pane(&*w, &(*zwp).observer) {
         window_zoom(zwp);
     }
     tty_update_window_offset(w);
@@ -148,7 +149,8 @@ unsafe fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
         return 1 as ::core::ffi::c_int;
     }
     if (*c).flags & CLIENT_IGNORESIZE as uint64_t != 0 {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if !(*loop_0).session.is_null() {
                 if !((*loop_0).flags & CLIENT_NOSIZEFLAGS as uint64_t != 0) {
@@ -157,7 +159,8 @@ unsafe fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
                     }
                 }
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -171,15 +174,17 @@ unsafe fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
 unsafe fn clients_with_window(mut w: *mut window) -> u_int {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0 as u_int;
-    loop_0 = clients.first();
+    let mut registry_loop_0_owner = clients.first();
+    loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        if !(ignore_client_size(loop_0) != 0 || session_has((*loop_0).session, w) == 0) {
+        if !(ignore_client_size(loop_0) != 0 || session_has(&*(*loop_0).session, &*w) == 0) {
             n = n.wrapping_add(1);
             if n > 1 as u_int {
                 break;
             }
         }
-        loop_0 = clients.next(loop_0);
+        registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return n;
 }
@@ -219,7 +224,8 @@ unsafe fn clients_calculate_size(
         n = clients_with_window(w);
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if loop_0 != c && ignore_client_size(loop_0) != 0 {
                 log_debug(format_args!(
@@ -245,7 +251,7 @@ unsafe fn clients_calculate_size(
                 ));
             } else if type_0 == WINDOW_SIZE_LATEST
                 && n > 1 as u_int
-                && loop_0 != (*w).latest as *mut client
+                && !(*w).latest.ptr_eq(&(*loop_0).observer)
             {
                 log_debug(format_args!(
                     "{}: {} is not latest",
@@ -300,7 +306,8 @@ unsafe fn clients_calculate_size(
                     (*sy) as u32
                 ));
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if *sx != UINT_MAX && *sy != UINT_MAX {
             log_debug(format_args!(
@@ -317,7 +324,8 @@ unsafe fn clients_calculate_size(
         }
     }
     if !w.is_null() {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if !(loop_0 != c && ignore_client_size(loop_0) != 0) {
                 if !(loop_0 != c && skip_client(&*loop_0)) {
@@ -355,7 +363,8 @@ unsafe fn clients_calculate_size(
                     }
                 }
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if *sx != UINT_MAX && *sy != UINT_MAX {
@@ -435,7 +444,7 @@ pub unsafe fn default_window_size(
             c,
             w,
             |candidate| unsafe {
-                (!w.is_null() && session_has(candidate.session, w) == 0)
+                (!w.is_null() && session_has(&*candidate.session, &*w) == 0)
                     || (w.is_null() && candidate.session != s)
             },
             sx,
@@ -523,7 +532,7 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
             if current != 0 {
                 (*(*session).curw).window_ptr() != w
             } else {
-                session_has(session, w) == 0
+                session_has(&*session, &*w) == 0
             }
         },
         &raw mut sx,
@@ -586,7 +595,8 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         s_owner = sessions_next(&*s);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         s = (*c).session;
         if !s.is_null() && (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0 {
@@ -599,11 +609,13 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
                 (*c).flags &= !CLIENT_STATUSOFF as uint64_t;
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows));
-    while !w.is_null() {
+    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    while let Some(window_owner) = window_cursor.take() {
+        w = window_owner.as_ptr();
         recalculate_size(w, now);
-        w = windows_next(&*w);
+        window_cursor = windows_next(&*w);
     }
 }

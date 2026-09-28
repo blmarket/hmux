@@ -155,8 +155,8 @@ unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
     let full_path = if path.first() == Some(&b'/') {
         path
     } else {
-        let cwd = CStr::from_ptr(server_client_get_cwd(c, std::ptr::null_mut())).to_bytes();
-        [cwd, b"/", path.as_slice()].concat()
+        let cwd = server_client_get_cwd(c.as_ref(), None).expect("client working directory");
+        [cwd.as_bytes(), b"/", path.as_slice()].concat()
     };
     CString::new(full_path).expect("C string path fragments contain no NUL")
 }

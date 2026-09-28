@@ -436,37 +436,37 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     }
     CString::new(buf).expect("command print contains no interior NUL")
 }
-pub unsafe fn cmd_list_new() -> std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+pub unsafe fn cmd_list_new() -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let group = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
-    std::rc::Rc::new(std::cell::UnsafeCell::new(cmd_list {
+    std::rc::Rc::new(std::cell::RefCell::new(cmd_list {
         group,
         ..cmd_list::default()
     }))
 }
-pub unsafe fn cmd_list_append(cmdlist: *mut cmd_list, mut command: Box<cmd>) {
-    command.group = (*cmdlist).group;
-    (*cmdlist).list.push(command);
+pub fn cmd_list_append(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, mut command: Box<cmd>) {
+    let mut cmdlist = cmdlist.borrow_mut();
+    command.group = cmdlist.group;
+    cmdlist.list.push(command);
 }
-pub unsafe fn cmd_list_append_all(cmdlist: *mut cmd_list, from: *mut cmd_list) {
-    if cmdlist == from {
-        return;
-    }
-    let group = (*cmdlist).group;
-    for command in &mut (*from).list {
-        command.group = group;
-    }
-    (*cmdlist).list.append(&mut (*from).list);
+pub fn cmd_list_append_all(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, from: &std::rc::Rc<std::cell::RefCell<cmd_list>>) {
+    if std::rc::Rc::ptr_eq(cmdlist, from) { return; }
+    let mut cmdlist = cmdlist.borrow_mut();
+    let mut from = from.borrow_mut();
+    let group = cmdlist.group;
+    for command in &mut from.list { command.group = group; }
+    cmdlist.list.append(&mut from.list);
 }
-pub unsafe fn cmd_list_move(cmdlist: *mut cmd_list, from: *mut cmd_list) {
-    if cmdlist != from {
-        (*cmdlist).list.append(&mut (*from).list);
+pub unsafe fn cmd_list_move(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, from: &std::rc::Rc<std::cell::RefCell<cmd_list>>) {
+    let mut destination = cmdlist.borrow_mut();
+    if !std::rc::Rc::ptr_eq(cmdlist, from) {
+        destination.list.append(&mut from.borrow_mut().list);
     }
     let group = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
-    (*cmdlist).group = group;
+    destination.group = group;
 }
-pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(format_args!(
@@ -475,18 +475,18 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc:
         log_bytes(s.as_bytes())
     ));
     let owner = cmd_list_new();
-    let new_cmdlist = crate::src::shared::rc::as_ptr(&owner);
+
     for cmd in &cmdlist.list {
         if (*cmd).group != group {
             let fresh7 = cmd_list_next_group;
             cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
-            (*new_cmdlist).group = fresh7;
+            owner.borrow_mut().group = fresh7;
             group = (*cmd).group;
         }
         let new_cmd = cmd_copy(cmd, argv);
-        cmd_list_append(new_cmdlist, new_cmd);
+        cmd_list_append(&owner, new_cmd);
     }
-    let s = cmd_list_print_cstring(&*new_cmdlist, 0);
+    let s = cmd_list_print_cstring(&owner.borrow(), 0);
     log_debug(format_args!(
         "{}: {}",
         "cmd_list_copy",
@@ -522,18 +522,18 @@ pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: ::core::ffi::c_int) -> C
 pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<&cmd> {
     cmdlist.list.first().map(Box::as_ref)
 }
-pub unsafe fn cmd_list_all_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
+pub unsafe fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
-    for cmd in &(*cmdlist).list {
+    for cmd in &cmdlist.list {
         if !(*cmd).entry.flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_list_any_have(mut cmdlist: *mut cmd_list) -> ::core::ffi::c_int {
+pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
-    for cmd in &(*cmdlist).list {
+    for cmd in &cmdlist.list {
         if (*cmd).entry.flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -606,7 +606,11 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut sessio
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = (*s).curw;
     } else {
-        w = window_find_by_id((*m).w as u_int);
+        let window_owner = window_find_by_id((*m).w as u_int);
+        w = window_owner.as_ref().map_or(
+            std::ptr::null_mut(),
+            crate::src::shared::window::WindowOwner::as_ptr,
+        );
         if w.is_null() {
             return ::core::ptr::null_mut::<winlink>();
         }
@@ -621,31 +625,34 @@ pub unsafe fn cmd_mouse_pane(
     mut m: *mut mouse_event,
     mut sp: *mut *mut session,
     mut wlp: *mut *mut winlink,
-) -> *mut window_pane {
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     wl = cmd_mouse_window(m, sp);
     if wl.is_null() {
-        return ::core::ptr::null_mut::<window_pane>();
+        return None;
     }
+    let pane_owner;
     if (*m).wp == -(1 as ::core::ffi::c_int) {
-        wp = (*(*wl).window_ptr()).active;
+        pane_owner = (*(*wl).window_ptr()).active.as_ref().and_then(|pane| pane.observer.upgrade());
+        wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
-        wp = window_pane_find_by_id((*m).wp as u_int);
+        pane_owner = window_pane_find_by_id((*m).wp as u_int);
+        wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
-            return ::core::ptr::null_mut::<window_pane>();
+            return None;
         }
-        if window_has_pane((*wl).window_ptr(), wp) == 0 {
-            return ::core::ptr::null_mut::<window_pane>();
+        if !window_has_pane(&*(*wl).window_ptr(), &(*wp).observer) {
+            return None;
         }
     }
-    if !(*(*wl).window_ptr()).modal.is_null() && wp != (*(*wl).window_ptr()).modal {
-        return ::core::ptr::null_mut::<window_pane>();
+    if (*(*wl).window_ptr()).modal.upgrade().is_some() && !pane_owner.as_ref().is_some_and(|owner| (*(*wl).window_ptr()).modal.ptr_eq(&std::rc::Rc::downgrade(owner))) {
+        return None;
     }
     if !wlp.is_null() {
         *wlp = wl;
     }
-    return wp;
+    return pane_owner;
 }
 pub unsafe fn cmd_template_replace(template: &CStr, s: &CStr, idx: ::core::ffi::c_int) -> CString {
     cmd_template_replace_cstring(template, s, idx)

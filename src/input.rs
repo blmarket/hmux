@@ -116,10 +116,10 @@ impl input_ctx {
     // stable address; no foreign consumer depends on the translated C layout.
     fn new() -> Self {
         Self {
-            wp: ::core::ptr::null_mut(),
+            wp: std::rc::Weak::new(),
             event: ::core::ptr::null_mut(),
             ctx: screen_write_ctx {
-                wp: ::core::ptr::null_mut(),
+                wp: std::rc::Weak::new(),
                 s: ::core::ptr::null_mut(),
                 flags: 0,
                 init_ctx_cb: None,
@@ -128,7 +128,7 @@ impl input_ctx {
                 bg: 0,
             },
             palette: ::core::ptr::null_mut(),
-            c: ::core::ptr::null_mut(),
+            c: std::rc::Weak::new(),
             cell: Default::default(),
             old_cell: Default::default(),
             old_cx: 0,
@@ -179,10 +179,10 @@ mod input_buffer_ownership_tests {
     fn dropping_the_input_owner_cancels_registered_timers() {
         unsafe {
             let mut owner = input_init(
+                None,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                None,
             );
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             for timer in [&mut owner.ground_timer, &mut owner.request_timer] {
@@ -195,6 +195,43 @@ mod input_buffer_ownership_tests {
             // addresses. Dropping that field must cancel both registrations.
             let slot = Some(owner);
             drop(slot);
+            crate::src::reactor::event_loop();
+            assert_eq!(calls.get(), 0);
+            assert_eq!(std::rc::Rc::strong_count(&calls), 1);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn input_observes_pane_and_can_outlive_its_allocation() {
+        unsafe {
+            let pane = window_pane::new();
+            let context = input_init(Some(&pane), std::ptr::null_mut(), std::ptr::null_mut(), None);
+            assert_eq!(std::rc::Rc::strong_count(&pane), 1);
+            assert!(context.wp.ptr_eq(&std::rc::Rc::downgrade(&pane)));
+            drop(pane);
+            assert!(context.wp.upgrade().is_none());
+            drop(context);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn final_pane_release_cancels_sync_without_upgrading_input_observer() {
+        unsafe {
+            let pane = window_pane::new();
+            let pointer = pane.get();
+            (*pointer).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            (*pointer).base.mode |= MODE_SYNC;
+            (*pointer).ictx = Some(input_init(Some(&pane), std::ptr::null_mut(), std::ptr::null_mut(), None));
+            let observed = std::rc::Rc::downgrade(&pane);
+            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+            let callback_calls = calls.clone();
+            event_set(&mut (*pointer).sync_timer, -1, 0, move |_, _| callback_calls.set(callback_calls.get() + 1));
+            let timeout = timeval { tv_sec: 0, tv_usec: 0 };
+            assert_eq!(event_add(&mut (*pointer).sync_timer, &timeout), 0);
+            drop(pane);
+            assert!(observed.upgrade().is_none());
             crate::src::reactor::event_loop();
             assert_eq!(calls.get(), 0);
             assert_eq!(std::rc::Rc::strong_count(&calls), 1);
@@ -262,7 +299,7 @@ mod input_buffer_ownership_tests {
 impl input_request {
     fn new() -> Box<Self> {
         Box::new(Self {
-            c: ::core::ptr::null_mut(),
+            c: std::rc::Weak::new(),
             ictx: ::core::ptr::null_mut(),
             type_0: INPUT_REQUEST_PALETTE,
             t: 0,
@@ -277,8 +314,8 @@ unsafe fn input_ctx_requests<'a>(ictx: *mut input_ctx) -> &'a mut VecDeque<Box<i
     &mut (*ictx).requests
 }
 
-unsafe fn input_client_requests<'a>(c: *mut client) -> &'a mut Vec<*mut input_request> {
-    &mut (*c).input_requests
+fn input_client_requests(c: &mut client) -> &mut Vec<*mut input_request> {
+    &mut c.input_requests
 }
 
 unsafe fn input_ctx_request_handles(ictx: *mut input_ctx) -> Vec<*mut input_request> {
@@ -289,7 +326,7 @@ unsafe fn input_ctx_request_handles(ictx: *mut input_ctx) -> Vec<*mut input_requ
 }
 
 pub(crate) unsafe fn input_client_has_requests(c: *mut client) -> bool {
-    !input_client_requests(c).is_empty()
+    !input_client_requests(&mut *c).is_empty()
 }
 
 #[cfg(test)]
@@ -297,20 +334,66 @@ mod input_request_ownership_tests {
     use super::*;
 
     #[test]
+    fn input_request_cleanup_handles_live_and_expired_client_observers() {
+        unsafe {
+            for expired in [false, true] {
+                let client = client::new();
+                let observer = std::rc::Rc::downgrade(&client);
+                let mut context = Box::new(input_ctx::new());
+                context.c = observer.clone();
+                let mut request = input_request::new();
+                request.c = observer.clone();
+                request.ictx = &mut *context;
+                input_client_requests(&mut *client.get()).push(&mut *request);
+                context.requests.push_back(request);
+                context.request_count = 1;
+                assert_eq!(std::rc::Rc::strong_count(&client), 1);
+                if expired {
+                    drop(client);
+                    assert!(observer.upgrade().is_none());
+                    drop(context);
+                } else {
+                    drop(context);
+                    assert!((*client.get()).input_requests.is_empty());
+                    assert_eq!(std::rc::Rc::strong_count(&client), 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cancelling_detaches_client_index_without_upgrading_request_observers() {
+        unsafe {
+            let mut client = client::empty();
+            let mut context = Box::new(input_ctx::new());
+            let mut request = input_request::new();
+            request.ictx = &mut *context;
+            input_client_requests(&mut client).push(&mut *request);
+            context.requests.push_back(request);
+            context.request_count = 1;
+            input_cancel_requests(&mut client);
+            assert!(client.input_requests.is_empty());
+            assert!(context.requests.is_empty());
+            assert_eq!(context.request_count, 0);
+        }
+    }
+
+    #[test]
     fn queued_reply_survives_earlier_request_removal() {
         unsafe {
             let ictx = Box::into_raw(Box::new(input_ctx::new()));
 
-            let mut c: client = client::empty();
+            let client_owner = client::new();
+            let c = client_owner.get();
 
             // Seed one pending nonqueue request without starting a timer.
             let mut pending_owner = input_request::new();
             let pending = &mut *pending_owner as *mut input_request;
             (*pending).ictx = ictx;
-            (*pending).c = &mut c;
+            (*pending).c = std::rc::Rc::downgrade(&client_owner);
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
             input_ctx_requests(ictx).push_back(pending_owner);
-            input_client_requests(&mut c).push(pending);
+            input_client_requests(&mut *c).push(pending);
             (*ictx).request_count = 1;
 
             input_reply(ictx, 1, |out| {
@@ -326,7 +409,7 @@ mod input_request_ownership_tests {
 
             input_free_request(pending);
             assert_eq!(input_ctx_request_handles(ictx), vec![queued]);
-            assert_eq!(input_client_requests(&mut c), &[]);
+            assert_eq!(input_client_requests(&mut *c), &[]);
             assert_eq!(
                 (*queued).data.as_ref().unwrap().to_bytes(),
                 b"reply:\xff\xfe"
@@ -343,24 +426,25 @@ mod input_request_ownership_tests {
         unsafe {
             let ictx = Box::into_raw(Box::new(input_ctx::new()));
 
-            let mut c: client = client::empty();
+            let client_owner = client::new();
+            let c = client_owner.get();
 
             let mut pending_owner = input_request::new();
             let pending = &mut *pending_owner as *mut input_request;
             (*pending).ictx = ictx;
-            (*pending).c = &mut c;
+            (*pending).c = std::rc::Rc::downgrade(&client_owner);
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
             (*pending).idx = 7;
             input_ctx_requests(ictx).push_back(pending_owner);
-            input_client_requests(&mut c).push(pending);
+            input_client_requests(&mut *c).push(pending);
             (*ictx).request_count = 1;
 
             input_reply(ictx, 1, |out| out.write_all(b"queued"));
             let mut reply = input_request_palette_data { idx: 7, c: -1 };
-            input_request_reply(&mut c, INPUT_REQUEST_PALETTE, (&raw mut reply).cast());
+            input_request_reply(c, INPUT_REQUEST_PALETTE, (&raw mut reply).cast());
 
             assert!(input_ctx_requests(ictx).is_empty());
-            assert!(input_client_requests(&mut c).is_empty());
+            assert!(input_client_requests(&mut *c).is_empty());
             assert_eq!((*ictx).request_count, 0);
             drop(Box::from_raw(ictx));
         }
@@ -382,23 +466,24 @@ mod input_request_ownership_tests {
         unsafe {
             let ictx = Box::into_raw(Box::new(input_ctx::new()));
 
-            let mut c: client = client::empty();
+            let client_owner = client::new();
+            let c = client_owner.get();
 
             for type_0 in [INPUT_REQUEST_PALETTE, INPUT_REQUEST_CLIPBOARD] {
                 let mut owner = input_request::new();
                 let ir = &mut *owner as *mut input_request;
                 (*ir).ictx = ictx;
-                (*ir).c = &mut c;
+                (*ir).c = std::rc::Rc::downgrade(&client_owner);
                 (*ir).type_0 = type_0;
                 input_ctx_requests(ictx).push_back(owner);
-                input_client_requests(&mut c).push(ir);
+                input_client_requests(&mut *c).push(ir);
                 (*ictx).request_count += 1;
             }
 
-            assert!(input_client_has_requests(&mut c));
-            input_cancel_requests(&mut c);
+            assert!(input_client_has_requests(c));
+            input_cancel_requests(&mut *c);
 
-            assert!(!input_client_has_requests(&mut c));
+            assert!(!input_client_has_requests(c));
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
             drop(Box::from_raw(ictx));
@@ -2196,17 +2281,17 @@ unsafe fn input_restore_state(mut ictx: *mut input_ctx) {
     );
 }
 pub unsafe fn input_init(
-    mut wp: *mut window_pane,
+    wp: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut bev: *mut bufferevent,
     mut palette: *mut colour_palette,
-    mut c: *mut client,
+    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
 ) -> Box<input_ctx> {
     let mut owner = Box::new(input_ctx::new());
     let ictx = &raw mut *owner;
-    (*ictx).wp = wp;
+    (*ictx).wp = wp.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     (*ictx).event = bev;
     (*ictx).palette = palette;
-    (*ictx).c = c;
+    (*ictx).c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     event_set(
         &raw mut (*ictx).ground_timer,
         -(1 as ::core::ffi::c_int),
@@ -2243,17 +2328,21 @@ impl Drop for input_ctx {
             }
             event_del(&raw mut (*ictx).request_timer);
             event_del(&raw mut (*ictx).ground_timer);
-            screen_write_stop_sync((*ictx).wp);
+            if let Some(pane) = self.wp.upgrade() {
+                screen_write_stop_sync(pane.get());
+            }
         }
     }
 }
 pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let mut wp: *mut window_pane = input_pane;
     input_reset_cell(ictx);
     if clear != 0 && !wp.is_null() {
         if (*wp).modes.active.is_null() {
-            screen_write_start_pane(&mut *sctx, wp, &raw mut (*wp).base);
+            screen_write_start_pane(&mut *sctx, input_pane_owner.as_ref().expect("live input pane"), &raw mut (*wp).base);
         } else {
             screen_write_start(&mut *sctx, &raw mut (*wp).base);
         }
@@ -2352,7 +2441,7 @@ pub unsafe fn input_parse_buffer(
         (*wp).flags |= PANE_UNSEENCHANGES;
     }
     if (*wp).modes.active.is_null() {
-        screen_write_start_pane(&mut *sctx, wp, &raw mut (*wp).base);
+        screen_write_start_pane(&mut *sctx, &(*wp).observer.upgrade().expect("live screen-write pane"), &raw mut (*wp).base);
     } else {
         screen_write_start(&mut *sctx, &raw mut (*wp).base);
     }
@@ -2590,8 +2679,10 @@ unsafe fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let mut wp: *mut window_pane = input_pane;
     let mut s: *mut screen = (*sctx).s;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -2795,6 +2886,8 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).s;
     let mut entry: *const input_table_entry = ::core::ptr::null::<input_table_entry>();
@@ -3177,8 +3270,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                             2 as ::core::ffi::c_int
                         };
                     } else {
-                        if !(*ictx).wp.is_null() {
-                            oo = options_owner_ptr(&mut (*(*ictx).wp).options).map_or(std::ptr::null_mut(), |options| options);
+                        if !input_pane.is_null() {
+                            oo = options_owner_ptr(&mut (*input_pane).options).map_or(std::ptr::null_mut(), |options| options);
                         } else {
                             oo = global_w_options;
                         }
@@ -3599,6 +3692,8 @@ unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
     }
 }
 unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
@@ -3663,8 +3758,8 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
             }
             2031 => {
                 screen_write_mode_clear(&mut *sctx, MODE_THEME_UPDATES);
-                if !(*ictx).wp.is_null() {
-                    (*(*ictx).wp).flags &= !PANE_THEMECHANGED;
+                if !input_pane.is_null() {
+                    (*input_pane).flags &= !PANE_THEMECHANGED;
                 }
             }
             _ => {
@@ -3703,6 +3798,8 @@ unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
     }
 }
 unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
@@ -3773,13 +3870,13 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
             }
             2031 => {
                 screen_write_mode_set(&mut *sctx, MODE_THEME_UPDATES);
-                if !(*ictx).wp.is_null() {
-                    (*(*ictx).wp).last_theme = window_pane_get_theme((*ictx).wp);
-                    (*(*ictx).wp).flags &= !PANE_THEMECHANGED;
+                if !input_pane.is_null() {
+                    (*input_pane).last_theme = window_pane_get_theme(input_pane);
+                    (*input_pane).flags &= !PANE_THEMECHANGED;
                 }
             }
             2026 => {
-                screen_write_start_sync((*ictx).wp);
+                screen_write_start_sync(input_pane);
             }
             _ => {
                 log_debug(format_args!(
@@ -3794,9 +3891,11 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
 }
 unsafe fn input_csi_dispatch_sm_graphics() {}
 unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).s;
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let mut wp: *mut window_pane = input_pane;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut x: u_int = (*s).grid().sx;
     let mut y: u_int = (*s).grid().sy;
@@ -4422,7 +4521,9 @@ unsafe fn input_enter_dcs(mut ictx: *mut input_ctx) {
     (*ictx).flags &= !INPUT_LAST;
 }
 unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
@@ -4504,7 +4605,9 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     };
 }
 unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
@@ -4570,8 +4673,10 @@ unsafe fn input_enter_osc(mut ictx: *mut input_ctx) {
     (*ictx).flags &= !INPUT_LAST;
 }
 unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let mut wp: *mut window_pane = input_pane;
     let mut p: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut option: u_int = 0;
     if (*ictx).flags & INPUT_DISCARD != 0 {
@@ -4688,8 +4793,10 @@ unsafe fn input_enter_apc(mut ictx: *mut input_ctx) {
     (*ictx).flags &= !INPUT_LAST;
 }
 unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let mut wp: *mut window_pane = input_pane;
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return;
     }
@@ -4721,7 +4828,9 @@ unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
     (*ictx).flags &= !INPUT_LAST;
 }
 unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if wp.is_null() {
@@ -4731,7 +4840,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         return;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*(*ictx).wp).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*input_pane).options).map_or(std::ptr::null_mut(), |options| options),
         b"allow-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
@@ -5023,10 +5132,12 @@ unsafe fn input_set_progress_bar(
     mut state: progress_bar_state,
     mut p: ::core::ffi::c_int,
 ) {
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     screen_set_progress_bar(&mut *(*ictx).ctx.s, state, p);
-    if !(*ictx).wp.is_null() {
-        server_redraw_window_borders((*(*ictx).wp).window as *mut window);
-        server_status_window((*(*ictx).wp).window as *mut window);
+    if !input_pane.is_null() {
+        server_redraw_window_borders((*input_pane).window as *mut window);
+        server_status_window((*input_pane).window as *mut window);
     }
 }
 unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5097,7 +5208,9 @@ unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
     log_debug(format_args!("bad OSC 9;4 {}", log_cstr((p) as *const _)));
 }
 unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -5150,7 +5263,9 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     }
 }
 unsafe fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     if *p as ::core::ffi::c_int != '\0' as i32 {
         return;
     }
@@ -5163,7 +5278,9 @@ unsafe fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     }
 }
 unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut c: ::core::ffi::c_int = 0;
     if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         if wp.is_null() {
@@ -5194,7 +5311,9 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     }
 }
 unsafe fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     if *p as ::core::ffi::c_int != '\0' as i32 {
         return;
     }
@@ -5207,7 +5326,9 @@ unsafe fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     }
 }
 unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut c: ::core::ffi::c_int = 0;
     if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         if !wp.is_null() {
@@ -5384,7 +5505,9 @@ unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::
     events_fire(name, ep);
 }
 unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut s: *mut screen = (*ictx).ctx.s;
     let mut gd: *mut grid = (*s).grid_mut();
     let mut line: u_int = (*s).cy.wrapping_add((*gd).hsize);
@@ -5585,9 +5708,11 @@ unsafe fn input_osc_52_parse(
     Some(out)
 }
 unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -5601,13 +5726,11 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     };
     let clip = std::ffi::CStr::from_bytes_until_nul(&clip).expect("terminated clipboard selectors");
     if wp.is_null() {
-        if (*ictx).c.is_null() {
-            return;
-        }
-        tty_set_selection(&raw mut (*(*ictx).c).tty, clip, &out);
+        let Some(client) = (*ictx).c.upgrade() else { return; };
+        tty_set_selection(&raw mut (*client.get()).tty, clip, &out);
         paste_add_owned(None, out.into_boxed_slice());
     } else {
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, input_pane_owner.as_ref().expect("live input pane"), ::core::ptr::null_mut::<screen>());
         screen_write_setselection(&mut ctx, clip, &out);
         screen_write_stop(&mut ctx);
         events_fire_pane(
@@ -5779,8 +5902,8 @@ unsafe fn input_make_request(
 }
 unsafe fn input_free_request(mut ir: *mut input_request) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
-    if !(*ir).c.is_null() {
-        let c_requests = input_client_requests((*ir).c);
+    if let Some(client) = (*ir).c.upgrade() {
+        let c_requests = input_client_requests(&mut *client.get());
         let index = c_requests
             .iter()
             .position(|request| *request == ir)
@@ -5800,7 +5923,9 @@ unsafe fn input_add_request(
     mut type_0: input_request_type,
     mut idx: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
@@ -5810,10 +5935,11 @@ unsafe fn input_add_request(
         return -(1 as ::core::ffi::c_int);
     }
     w = (*wp).window as *mut window;
-    loop_0 = clients.first();
+    let mut registry_loop_0_owner = clients.first();
+    loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0) {
+            if !((*loop_0).session.is_null() || session_has(&*(*loop_0).session, &*w) == 0) {
                 if !(!(*loop_0).tty.flags & TTY_STARTED != 0) {
                     if c.is_null() {
                         c = loop_0;
@@ -5830,16 +5956,17 @@ unsafe fn input_add_request(
                 }
             }
         }
-        loop_0 = clients.next(loop_0);
+        registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if c.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
     ir = input_make_request(ictx, type_0);
-    (*ir).c = c;
+    (*ir).c = (*c).observer.clone();
     (*ir).idx = idx;
     (*ir).end = (*ictx).input_end;
-    input_client_requests(c).push(ir);
+    input_client_requests(&mut *c).push(ir);
     match type_0 as ::core::ffi::c_uint {
         0 => {
             xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", idx as i32));
@@ -5916,7 +6043,7 @@ pub unsafe fn input_request_reply(
     let mut found: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut pd: *mut input_request_palette_data = data as *mut input_request_palette_data;
     let mut complete: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    for ir in input_client_requests(c).clone() {
+    for ir in input_client_requests(&mut *c).clone() {
         if (*ir).type_0 as ::core::ffi::c_uint != type_0 as ::core::ffi::c_uint {
             input_free_request(ir);
         } else if type_0 as ::core::ffi::c_uint
@@ -5980,13 +6107,18 @@ pub unsafe fn input_request_reply(
         input_free_request(ir);
     }
 }
-pub unsafe fn input_cancel_requests(mut c: *mut client) {
-    for ir in input_client_requests(c).clone() {
+pub unsafe fn input_cancel_requests(c: &mut client) {
+    // Detach the whole index first: cleanup may run after the last strong
+    // client reference is gone, when request observers cannot upgrade.
+    for ir in std::mem::take(input_client_requests(&mut *c)) {
+        (*ir).c = std::rc::Weak::new();
         input_free_request(ir);
     }
 }
 unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
-    let mut wp: *mut window_pane = (*ictx).wp;
+    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
+    let mut wp: *mut window_pane = input_pane;
     if !wp.is_null() {
         (*wp).last_theme = window_pane_get_theme(wp);
         (*wp).flags &= !PANE_THEMECHANGED;

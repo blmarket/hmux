@@ -359,12 +359,9 @@ unsafe fn window_client_build(
     let clients_sorted = sort_get_clients(sort_crit);
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
-        let c = clients_sorted[i as usize];
+        let c = clients_sorted[i as usize].get();
         if !((*c).session.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            let client_owner = (*c).observer
-                .upgrade()
-                .expect("live sorted client");
-            window_client_add_item(&mut (*data).items, &client_owner);
+            window_client_add_item(&mut (*data).items, &clients_sorted[i as usize]);
         }
         i = i.wrapping_add(1);
     }

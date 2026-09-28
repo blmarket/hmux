@@ -133,12 +133,14 @@ pub unsafe fn server_status_client(mut c: *mut client) {
 }
 pub unsafe fn server_redraw_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if (*c).session == s {
             server_redraw_client(c);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_redraw_session_group(mut s: *mut session) {
@@ -147,19 +149,22 @@ pub unsafe fn server_redraw_session_group(mut s: *mut session) {
     if sg.is_null() {
         server_redraw_session(s);
     } else {
-        for s in crate::src::session::session_group_members(sg) {
+        for session_owner in crate::src::session::session_group_members(sg) {
+            let s = session_owner.get();
             server_redraw_session(s);
         }
     };
 }
 pub unsafe fn server_status_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if (*c).session == s {
             server_status_client(c);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_status_session_group(mut s: *mut session) {
@@ -168,14 +173,16 @@ pub unsafe fn server_status_session_group(mut s: *mut session) {
     if sg.is_null() {
         server_status_session(s);
     } else {
-        for s in crate::src::session::session_group_members(sg) {
+        for session_owner in crate::src::session::session_group_members(sg) {
+            let s = session_owner.get();
             server_status_session(s);
         }
     };
 }
 pub unsafe fn server_redraw_window(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -183,12 +190,14 @@ pub unsafe fn server_redraw_window(mut w: *mut window) {
         {
             server_redraw_client(c);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_redraw_window_menu(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -196,12 +205,14 @@ pub unsafe fn server_redraw_window_menu(mut w: *mut window) {
         {
             (*c).flags |= CLIENT_REDRAWMENU as uint64_t;
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -209,7 +220,8 @@ pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
         {
             (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_status_window(mut w: *mut window) {
@@ -217,7 +229,7 @@ pub unsafe fn server_status_window(mut w: *mut window) {
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
-        if session_has(s, w) != 0 {
+        if session_has(&*s, &*w) != 0 {
             server_status_session(s);
         }
         s_owner = sessions_next(&*s);
@@ -226,22 +238,26 @@ pub unsafe fn server_status_window(mut w: *mut window) {
 }
 pub unsafe fn server_lock() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null() {
             server_lock_client(c);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_lock_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if (*c).session == s {
             server_lock_client(c);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_lock_client(mut c: *mut client) {
@@ -307,7 +323,7 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
     while !s.is_null() {
         // Destroying a group may remove both s and its next session.
         let name = sessions_key(&*s);
-        if !(session_has(s, w) == 0) {
+        if !(session_has(&*s, &*w) == 0) {
             server_unzoom_window(w);
             loop {
                 wl = winlink_find_by_window(&raw mut (*s).windows, w);
@@ -321,7 +337,7 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
                     server_redraw_session_group(s);
                 }
             }
-            if renumber != 0 && session_alive(s) != 0 {
+            if renumber != 0 && session_alive(s.as_ref()) != 0 {
                 server_renumber_session(s);
             }
         }
@@ -343,7 +359,8 @@ pub unsafe fn server_renumber_session(mut s: *mut session) {
     {
         sg = session_group_contains(s);
         if !sg.is_null() {
-            for s in crate::src::session::session_group_members(sg) {
+            for session_owner in crate::src::session::session_group_members(sg) {
+            let s = session_owner.get();
                 session_renumber_windows(s);
             }
         } else {
@@ -427,7 +444,7 @@ pub unsafe fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {
 pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::ffi::c_int) {
     let mut w: *mut window = (*wp).window as *mut window;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -512,7 +529,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
                 b"remain-on-exit-format\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if *s as ::core::ffi::c_int != '\0' as i32 {
-                screen_write_start_pane(&mut ctx, wp, &raw mut (*wp).base);
+                screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), &raw mut (*wp).base);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,
@@ -567,18 +584,20 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
     };
 }
 unsafe fn server_destroy_session_group(mut s: *mut session) {
+    let source = (*s).observer.upgrade().expect("live session group source");
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
-        server_destroy_session(s);
+        server_destroy_session(&source);
         session_destroy(
             s,
             1 as ::core::ffi::c_int,
             b"server_destroy_session_group\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else {
-        for s in crate::src::session::session_group_members(sg) {
-            server_destroy_session(s);
+        for session_owner in crate::src::session::session_group_members(sg) {
+            let s = session_owner.get();
+            server_destroy_session(&session_owner);
             session_destroy(
                 s,
                 1 as ::core::ffi::c_int,
@@ -588,21 +607,21 @@ unsafe fn server_destroy_session_group(mut s: *mut session) {
     };
 }
 unsafe fn server_find_session(
-    s: *mut session,
+    head: &crate::src::shared::session::sessions,
+    excluded: &session,
     mut choose: impl FnMut(&session, Option<&session>) -> bool,
-) -> *mut session {
-    let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_out: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
-    s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s_loop.is_null() {
-        if s_loop != s && choose(&*s_loop, (!s_out.is_null()).then(|| &*s_out)) {
-            s_out = s_loop;
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+    let mut selected: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut current = sessions_minmax(head);
+    while let Some(owner) = current {
+        current = sessions_next(&*owner.get());
+        if !std::rc::Rc::downgrade(&owner).ptr_eq(&excluded.observer)
+            && choose(&*owner.get(), selected.as_ref().map(|owner| &*owner.get()))
+        {
+            selected = Some(owner);
         }
-        s_loop_owner = sessions_next(&*s_loop);
-        s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
-    return s_out;
+    selected
 }
 fn server_newer_session(s_loop: &session, s_out: Option<&session>) -> bool {
     let Some(s_out) = s_out else {
@@ -620,11 +639,9 @@ fn server_newer_detached_session(s_loop: &session, s_out: Option<&session>) -> b
     }
     return server_newer_session(s_loop, s_out);
 }
-pub unsafe fn server_destroy_session(mut s: *mut session) {
+pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+    let s = source.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s_new: *mut session = ::core::ptr::null_mut::<session>();
-    let mut cs_new: *mut session = ::core::ptr::null_mut::<session>();
-    let mut use_s: *mut session = ::core::ptr::null_mut::<session>();
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_NAME,
         reversed: 0,
@@ -635,41 +652,39 @@ pub unsafe fn server_destroy_session(mut s: *mut session) {
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"detach-on-destroy\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    if detach_on_destroy == 0 as ::core::ffi::c_int {
-        s_new = server_find_session(s, server_newer_session);
-    } else if detach_on_destroy == 2 as ::core::ffi::c_int {
-        s_new = server_find_session(s, server_newer_detached_session);
-    } else if detach_on_destroy == 3 as ::core::ffi::c_int {
-        s_new = session_previous_session(s, &raw mut sort_crit);
-    } else if detach_on_destroy == 4 as ::core::ffi::c_int {
-        s_new = session_next_session(s, &raw mut sort_crit);
+    let head = &*std::ptr::addr_of!(sessions);
+    let mut replacement = match detach_on_destroy {
+        0 => server_find_session(head, &*s, server_newer_session),
+        2 => server_find_session(head, &*s, server_newer_detached_session),
+        3 => session_previous_session(Some(&*s), &sort_crit),
+        4 => session_next_session(Some(&*s), &sort_crit),
+        _ => None,
+    };
+    if replacement.as_ref().is_some_and(|owner| std::rc::Rc::ptr_eq(owner, source)) {
+        replacement = None;
     }
-    if s_new == s {
-        s_new = ::core::ptr::null_mut::<session>();
-    }
-    if s_new.is_null()
-        && (detach_on_destroy == 1 as ::core::ffi::c_int
-            || detach_on_destroy == 2 as ::core::ffi::c_int)
-    {
-        cs_new = server_find_session(s, server_newer_session);
-    }
-    c = clients.first();
+    let fallback = if replacement.is_none() && matches!(detach_on_destroy, 1 | 2) {
+        server_find_session(head, &*s, server_newer_session)
+    } else {
+        None
+    };
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !((*c).session != s) {
-            use_s = s_new;
-            if use_s.is_null()
-                && (*c).flags as ::core::ffi::c_ulonglong & CLIENT_NO_DETACH_ON_DESTROY != 0
-            {
-                use_s = cs_new;
-            }
+            let target = replacement.as_ref().or_else(|| {
+                ((*c).flags & CLIENT_NO_DETACH_ON_DESTROY != 0)
+                    .then_some(fallback.as_ref()).flatten()
+            });
             (*c).session = ::core::ptr::null_mut::<session>();
-            (*c).last_session = ::core::ptr::null_mut::<session>();
-            server_client_set_session(c, use_s);
-            if use_s.is_null() {
+            (*c).last_session = std::rc::Weak::new();
+            server_client_set_session(c, target.map_or(std::ptr::null_mut(), |owner| owner.get()));
+            if target.is_none() {
                 (*c).flags |= CLIENT_EXIT as uint64_t;
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     recalculate_sizes();
 }
@@ -711,7 +726,7 @@ pub unsafe fn server_check_unattached() {
                     match current_block_4 {
                         16668937799742929182 => {}
                         _ => {
-                            server_destroy_session(s);
+                            server_destroy_session(s_owner.as_ref().expect("registered session"));
                             session_destroy(
                                 s,
                                 1 as ::core::ffi::c_int,
@@ -745,7 +760,7 @@ pub unsafe fn server_check_unattached() {
                     match current_block_4 {
                         16668937799742929182 => {}
                         _ => {
-                            server_destroy_session(s);
+                            server_destroy_session(s_owner.as_ref().expect("registered session"));
                             session_destroy(
                                 s,
                                 1 as ::core::ffi::c_int,
@@ -779,7 +794,7 @@ pub unsafe fn server_check_unattached() {
                     match current_block_4 {
                         16668937799742929182 => {}
                         _ => {
-                            server_destroy_session(s);
+                            server_destroy_session(s_owner.as_ref().expect("registered session"));
                             session_destroy(
                                 s,
                                 1 as ::core::ffi::c_int,
@@ -798,5 +813,46 @@ pub unsafe fn server_check_unattached() {
 pub unsafe fn server_unzoom_window(mut w: *mut window) {
     if window_unzoom(w, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
         server_redraw_window(w);
+    }
+}
+
+#[cfg(test)]
+mod session_selection_tests {
+    use super::*;
+    use crate::src::session::{sessions_insert, sessions_remove};
+    use std::rc::Rc;
+
+    #[test]
+    fn replacement_selection_retains_winner_and_excludes_source() {
+        unsafe {
+            let mut head = crate::src::shared::session::sessions { storage: None };
+            let source = session::new();
+            let detached = session::new();
+            let attached = session::new();
+            for (owner, name, activity) in [
+                (&source, c"source", 30),
+                (&detached, c"detached", 10),
+                (&attached, c"attached", 20),
+            ] {
+                (*owner.get()).name = name.to_owned();
+                (*owner.get()).activity_time.tv_sec = activity;
+                sessions_insert(&mut head, owner.clone());
+            }
+            (*attached.get()).attached = 1;
+            let selected = server_find_session(&head, &*source.get(), server_newer_session).unwrap();
+            assert!(Rc::ptr_eq(&selected, &attached));
+            let detached_selected = server_find_session(&head, &*source.get(), server_newer_detached_session).unwrap();
+            assert!(Rc::ptr_eq(&detached_selected, &detached));
+            let observer = Rc::downgrade(&attached);
+            sessions_remove(&mut head, &mut *attached.get());
+            drop(attached);
+            assert!(observer.upgrade().is_some());
+            assert_eq!((*selected.get()).name.as_c_str(), c"attached");
+            drop(selected);
+            assert!(observer.upgrade().is_none());
+            sessions_remove(&mut head, &mut *detached.get());
+            assert!(server_find_session(&head, &*source.get(), server_newer_session).is_none());
+            sessions_remove(&mut head, &mut *source.get());
+        }
     }
 }

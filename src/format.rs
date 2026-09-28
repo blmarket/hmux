@@ -170,7 +170,7 @@ mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_cstr, format_add_tv, format_create, format_create_owned, format_owner_ptr, format_each, format_free,
+    format_add, format_add_cstr, format_add_tv, format_create, format_create_with_client, format_create_owned, format_owner_ptr, format_each, format_free,
     format_get_pane, format_log_debug, format_merge,
 };
 mod jobs;
@@ -352,11 +352,10 @@ pub unsafe fn format_create_defaults(
     mut wp: *mut window_pane,
 ) -> *mut format_tree {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if !item.is_null() {
-        ft = format_create(
-            queue_client_ptr,
+        ft = format_create_with_client(
+            queue_client.as_ref(),
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
@@ -473,29 +472,29 @@ pub unsafe fn format_defaults(
     }
 }
 unsafe fn format_defaults_session(mut ft: *mut format_tree, mut s: *mut session) {
-    (*ft).s = s;
+    (*ft).s = (*s).observer.clone();
 }
 unsafe fn format_defaults_client(mut ft: *mut format_tree, mut c: *mut client) {
-    if (*ft).s.is_null() {
-        (*ft).s = (*c).session;
+    if (*ft).s.upgrade().is_none() {
+        (*ft).s = (*c).session.as_ref().map_or_else(std::rc::Weak::new, |session| session.observer.clone());
     }
-    (*ft).c = c;
+    (*ft).c = (*c).observer.clone();
 }
 pub unsafe fn format_defaults_window(mut ft: *mut format_tree, mut w: *mut window) {
-    (*ft).w = w;
+    (*ft).w = w.as_ref().map_or_else(std::rc::Weak::new, |window| window.observer.clone());
 }
 unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: *mut winlink) {
-    if (*ft).w.is_null() {
+    if (*ft).w.upgrade().is_none() {
         format_defaults_window(ft, (*wl).window_ptr());
     }
     (*ft).wl = wl;
 }
 pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, mut wp: *mut window_pane) {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    if (*ft).w.is_null() {
+    if (*ft).w.upgrade().is_none() {
         format_defaults_window(ft, (*wp).window as *mut window);
     }
-    (*ft).wp = wp;
+    (*ft).wp = (*wp).observer.clone();
     wme = (*wp).modes.active;
     if !wme.is_null() && (*(*wme).mode).formats.is_some() {
         (*(*wme).mode).formats.expect("non-null function pointer")(wme, ft);

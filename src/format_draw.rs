@@ -287,7 +287,7 @@ unsafe fn format_draw_left(
     let mut width_after: u_int = 0;
     let mut width_abs_centre: u_int = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -447,7 +447,7 @@ unsafe fn format_draw_centre(
     let mut width_after: u_int = 0;
     let mut width_abs_centre: u_int = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -600,7 +600,7 @@ unsafe fn format_draw_right(
     let mut width_after: u_int = 0;
     let mut width_abs_centre: u_int = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -934,7 +934,7 @@ pub unsafe fn format_draw(
     let hl = (*os).hyperlinks.clone();
     let mut ctx: [screen_write_ctx; 8] = [const {
         screen_write_ctx {
-            wp: ::core::ptr::null_mut::<window_pane>(),
+            wp: std::rc::Weak::new(),
             s: ::core::ptr::null_mut::<screen>(),
             flags: 0,
             init_ctx_cb: None,

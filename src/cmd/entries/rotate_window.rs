@@ -1,7 +1,7 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
-use crate::src::cmd::queue::{cmdq_get_current, cmdq_get_target};
+use crate::src::cmd::queue::{cmdq_get_state_owned, cmdq_get_target};
 use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
@@ -44,7 +44,7 @@ pub static cmd_rotate_window_entry: cmd_entry = {
 };
 unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
@@ -77,7 +77,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             }
             (*wp).layout_cell = (*wp2).layout_cell;
             if !(*wp).layout_cell.is_null() {
-                (*(*wp).layout_cell).wp = wp;
+                (*(*wp).layout_cell).wp = (*wp).observer.clone();
             }
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
@@ -86,7 +86,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
-            (*(*wp).layout_cell).wp = wp;
+            (*(*wp).layout_cell).wp = (*wp).observer.clone();
         }
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
@@ -112,7 +112,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             }
             (*wp).layout_cell = (*wp2).layout_cell;
             if !(*wp).layout_cell.is_null() {
-                (*(*wp).layout_cell).wp = wp;
+                (*(*wp).layout_cell).wp = (*wp).observer.clone();
             }
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
@@ -121,7 +121,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
-            (*(*wp).layout_cell).wp = wp;
+            (*(*wp).layout_cell).wp = (*wp).observer.clone();
         }
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
@@ -132,7 +132,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
     }
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-    cmd_find_from_winlink_pane(current, wl, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
     window_pop_zoom(w);
     redraw_invalidate_scene(w);
     server_redraw_window(w);

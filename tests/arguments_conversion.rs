@@ -1,6 +1,4 @@
 use hmux2::src::shared::command::cmd_list;
-use hmux2::src::shared::rc;
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::rc::Rc;
@@ -30,7 +28,7 @@ fn borrowed_string_value(value: &CStr) -> ArgumentValue<'_> {
     ArgumentValue::borrowed_string(value)
 }
 
-fn borrowed_commands_value(cmdlist: &Rc<UnsafeCell<cmd_list>>) -> ArgumentValue<'_> {
+fn borrowed_commands_value(cmdlist: &Rc<std::cell::RefCell<cmd_list>>) -> ArgumentValue<'_> {
     ArgumentValue::borrowed_commands(cmdlist)
 }
 
@@ -176,7 +174,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         );
 
         let value = args_first_value(&*args, b'c').unwrap();
-        let rendered = cmd_list_print(&*rc::as_ptr(value.as_commands().unwrap()), 0);
+        let rendered = cmd_list_print(&value.as_commands().unwrap().borrow(), 0);
         assert_eq!(rendered.as_bytes(), b"");
         drop(args);
 

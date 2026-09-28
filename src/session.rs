@@ -251,18 +251,20 @@ pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
-pub unsafe fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
-    let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
-    s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s_loop.is_null() {
-        if s_loop == s {
-            return 1 as ::core::ffi::c_int;
-        }
-        s_loop_owner = sessions_next(&*s_loop);
-        s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    }
-    return 0 as ::core::ffi::c_int;
+/// Resolve an observer only while its session remains in this index.
+/// A removed session can still be retained by queued events or other owners.
+pub fn sessions_resolve(
+    head: &sessions,
+    observer: &std::rc::Weak<UnsafeCell<session>>,
+) -> Option<Rc<UnsafeCell<session>>> {
+    let owner = observer.upgrade()?;
+    let index = head.storage.as_ref()?;
+    let map = index.try_borrow_mut().expect("session index already borrowed");
+    map.values().any(|candidate| Rc::ptr_eq(candidate, &owner)).then_some(owner)
+}
+
+pub unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
+    s.is_some_and(|s| sessions_resolve(&*std::ptr::addr_of!(sessions), &s.observer).is_some()) as ::core::ffi::c_int
 }
 pub unsafe fn session_find(name: &CStr) -> Option<Rc<UnsafeCell<session>>> {
     let index = (*std::ptr::addr_of!(sessions)).storage.as_ref()?;
@@ -488,64 +490,31 @@ pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeva
     }
 }
 pub unsafe fn session_next_session(
-    mut s: *mut session,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut session {
-    let mut i: u_int = 0;
-    if sessions.storage.is_none() || session_alive(s) == 0 {
-        return ::core::ptr::null_mut::<session>();
-    }
-    let l = sort_get_sessions(sort_crit);
-    let n = u_int::try_from(l.len()).expect("too many sessions to switch");
-    i = 0 as u_int;
-    while i < n {
-        if l[i as usize] == s {
-            break;
-        }
-        i = i.wrapping_add(1);
-    }
-    if i == n {
-        fatalx(|out| {
-            out.write_all(b"session ")?;
-            write_cstr(out, ((*s).name).as_ptr().cast_mut())?;
-            out.write_all(b" not found in sorted list")
-        });
-    }
-    i = i.wrapping_add(1);
-    if i == n {
-        i = 0 as u_int;
-    }
-    return l[i as usize];
+    s: Option<&session>,
+    sort_crit: &sort_criteria,
+) -> Option<Rc<UnsafeCell<session>>> {
+    session_adjacent(s, sort_crit, false)
 }
 pub unsafe fn session_previous_session(
-    mut s: *mut session,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut session {
-    let mut i: u_int = 0;
-    if sessions.storage.is_none() || session_alive(s) == 0 {
-        return ::core::ptr::null_mut::<session>();
-    }
-    let l = sort_get_sessions(sort_crit);
-    let n = u_int::try_from(l.len()).expect("too many sessions to switch");
-    i = 0 as u_int;
-    while i < n {
-        if l[i as usize] == s {
-            break;
-        }
-        i = i.wrapping_add(1);
-    }
-    if i == n {
-        fatalx(|out| {
-            out.write_all(b"session ")?;
-            write_cstr(out, ((*s).name).as_ptr().cast_mut())?;
-            out.write_all(b" not found in sorted list")
-        });
-    }
-    if i == 0 as u_int {
-        i = n;
-    }
-    i = i.wrapping_sub(1);
-    return l[i as usize];
+    s: Option<&session>,
+    sort_crit: &sort_criteria,
+) -> Option<Rc<UnsafeCell<session>>> {
+    session_adjacent(s, sort_crit, true)
+}
+unsafe fn session_adjacent(
+    s: Option<&session>,
+    sort_crit: &sort_criteria,
+    previous: bool,
+) -> Option<Rc<UnsafeCell<session>>> {
+    let s = s?;
+    let sorted = sort_get_sessions(sort_crit);
+    let index = sorted.iter().position(|owner| Rc::downgrade(owner).ptr_eq(&s.observer))?;
+    let selected = if previous {
+        if index == 0 { sorted.len() - 1 } else { index - 1 }
+    } else {
+        (index + 1) % sorted.len()
+    };
+    Some(sorted[selected].clone())
 }
 pub unsafe fn session_attach(
     mut s: *mut session,
@@ -558,7 +527,7 @@ pub unsafe fn session_attach(
         return Err(std::ffi::CString::new(format!("index in use: {idx}"))
             .expect("numeric diagnostic contains no NUL"));
     }
-    (*wl).session = s;
+    (*wl).session = (*s).observer.clone();
     winlink_set_window(wl, w);
     events_fire_winlink(
         b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -589,16 +558,20 @@ pub unsafe fn session_detach(mut s: *mut session, mut wl: *mut winlink) -> ::cor
     session_group_synchronize_from(s);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn session_has(mut s: *mut session, mut w: *mut window) -> ::core::ffi::c_int {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = window_winlinks_first(w);
-    while !wl.is_null() {
-        if (*wl).session == s {
-            return 1 as ::core::ffi::c_int;
+pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
+    if s.observer.strong_count() == 0 { return 0; }
+    let Some(links) = w.winlinks.storage.as_deref() else { return 0; };
+    for observer in &links.ordered {
+        let link = match observer.try_borrow_mut() {
+            Ok(link) => link,
+            Err(refbox::BorrowError::Dropped) => continue,
+            Err(refbox::BorrowError::Borrowed) => panic!("winlink already borrowed during session membership check"),
+        };
+        if link.session.ptr_eq(&s.observer) {
+            return 1;
         }
-        wl = window_winlinks_next(w, wl);
     }
-    return 0 as ::core::ffi::c_int;
+    0
 }
 pub unsafe fn session_is_linked(mut s: *mut session, mut w: *mut window) -> ::core::ffi::c_int {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
@@ -782,7 +755,7 @@ pub unsafe fn session_group_contains(mut target: *mut session) -> *mut session_g
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
     while !sg.is_null() {
-        if (*sg).members.contains(&target) {
+        if (*sg).members.iter().any(|member| member.as_ptr().cast::<session>() == target) {
             return sg;
         }
         sg = session_groups_next(&*sg);
@@ -824,7 +797,7 @@ unsafe fn session_group_fire(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    if session_alive(s) != 0 {
+    if session_alive(s.as_ref()) != 0 {
         cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
         event_payload_set_target(&mut *ep, &fs);
     }
@@ -845,9 +818,10 @@ unsafe fn session_group_fire(
     );
     events_fire(name, ep);
 }
-pub unsafe fn session_group_add(mut sg: *mut session_group, mut s: *mut session) {
+pub unsafe fn session_group_add(sg: *mut session_group, owner: &Rc<UnsafeCell<session>>) {
+    let s = owner.get();
     if session_group_contains(s).is_null() {
-        (*sg).members.push(s);
+        (*sg).members.push(Rc::downgrade(owner));
         session_group_fire(
             b"session-added-to-group\0" as *const u8 as *const ::core::ffi::c_char,
             sg,
@@ -869,28 +843,28 @@ unsafe fn session_group_remove(mut s: *mut session) {
     let members = &mut (*sg).members;
     let index = members
         .iter()
-        .position(|member| *member == s)
+        .position(|member| member.as_ptr().cast::<session>() == s)
         .expect("session group membership disappeared");
     members.remove(index);
     if members.is_empty() {
         assert!(session_groups_remove(&raw mut session_groups, sg));
     }
 }
-/// Returns the group's members in their preserved insertion order.
-pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<*mut session> {
+/// Retain live members in insertion order for the entire caller operation.
+/// Callbacks may remove membership or destroy the group while this snapshot exists.
+pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<Rc<UnsafeCell<session>>> {
     if sg.is_null() {
         return Vec::new();
     }
-    (*sg).members.clone()
+    (*sg).members.iter().filter_map(std::rc::Weak::upgrade).collect()
 }
 pub unsafe fn session_group_count(mut sg: *mut session_group) -> u_int {
-    return u_int::try_from((*sg).members.len()).expect("session group has too many members");
+    return u_int::try_from((*sg).members.iter().filter(|member| member.strong_count() != 0).count()).expect("session group has too many members");
 }
 pub unsafe fn session_group_attached_count(mut sg: *mut session_group) -> u_int {
-    (*sg)
-        .members
+    session_group_members(sg)
         .iter()
-        .fold(0, |count, member| count.wrapping_add((**member).attached))
+        .fold(0, |count, member| count.wrapping_add((*member.get()).attached))
 }
 pub unsafe fn session_group_synchronize_to(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
@@ -898,14 +872,9 @@ pub unsafe fn session_group_synchronize_to(mut s: *mut session) {
     if sg.is_null() {
         return;
     }
-    let target = (*sg)
-        .members
-        .iter()
-        .copied()
-        .find(|target| *target != s)
-        .unwrap_or(std::ptr::null_mut());
-    if !target.is_null() {
-        session_group_synchronize1(target, s);
+    let target = session_group_members(sg).into_iter().find(|target| target.get() != s);
+    if let Some(target) = target {
+        session_group_synchronize1(target.get(), s);
     }
 }
 pub unsafe fn session_group_synchronize_from(mut target: *mut session) {
@@ -914,9 +883,9 @@ pub unsafe fn session_group_synchronize_from(mut target: *mut session) {
     if sg.is_null() {
         return;
     }
-    for s in session_group_members(sg) {
-        if s != target {
-            session_group_synchronize1(target, s);
+    for owner in session_group_members(sg) {
+        if owner.get() != target {
+            session_group_synchronize1(target, owner.get());
         }
     }
 }
@@ -941,7 +910,7 @@ unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut sessi
     wl = winlinks_minmax(&*ww, RB_NEGINF);
     while !wl.is_null() {
         wl2 = winlink_add(&raw mut (*s).windows, (*wl).idx);
-        (*wl2).session = s;
+        (*wl2).session = (*s).observer.clone();
         winlink_set_window(wl2, (*wl).window_ptr());
         events_fire_winlink(
             b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -998,7 +967,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
     wl = winlinks_minmax(&old_wins, RB_NEGINF);
     while !wl.is_null() {
         wl_new = winlink_add(&raw mut (*s).windows, new_idx);
-        (*wl_new).session = s;
+        (*wl_new).session = (*s).observer.clone();
         winlink_set_window(wl_new, (*wl).window_ptr());
         (*wl_new).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
         if wl == marked_pane.wl_ptr() {

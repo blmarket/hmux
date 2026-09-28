@@ -4,7 +4,7 @@ use crate::src::cmd::find::{
     cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
 };
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_current, cmdq_get_target, cmdq_insert_hook, cmdq_print,
+    cmdq_error, cmdq_get_state_owned, cmdq_get_target, cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
@@ -96,7 +96,8 @@ pub static cmd_last_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !((*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
             if (*(*(*c).session).curw).window_ptr() == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
@@ -105,12 +106,13 @@ unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
                 if (*(*(*c).session).curw).window_ptr() == w {
                     (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
                 }
-                if session_has((*c).session, w) != 0 {
+                if session_has(&*(*c).session, &*w) != 0 {
                     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
                 }
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn cmd_select_pane_marked_pane(
@@ -219,7 +221,7 @@ unsafe fn cmd_select_pane_marked_pane(
         server_redraw_window_borders((*mwp).window as *mut window);
         server_status_window((*mwp).window as *mut window);
     }
-    if window_pane_is_floating(wp) != 0 {
+    if window_pane_is_floating(&*wp) != 0 {
         window_redraw_active_switch((*wp).window as *mut window, wp);
         window_set_active_pane((*wp).window as *mut window, wp, 1 as ::core::ffi::c_int);
     }
@@ -228,7 +230,7 @@ unsafe fn cmd_select_pane_marked_pane(
 unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let entry = cmd_get_entry(&*self_0);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -270,7 +272,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             server_redraw_window_borders((*lastwp).window as *mut window);
             server_status_window((*lastwp).window as *mut window);
         } else {
-            if !(*w).modal.is_null() && lastwp != (*w).modal {
+            if (*w).modal.upgrade().is_some() && !lastwp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
                 visible = window_pane_is_visible(lastwp);
@@ -280,7 +282,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             }
             window_redraw_active_switch(w, lastwp);
             if window_set_active_pane(w, lastwp, 1 as ::core::ffi::c_int) != 0 {
-                cmd_find_from_winlink(current, wl, 0 as ::core::ffi::c_int);
+                cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl, 0 as ::core::ffi::c_int);
                 cmd_select_pane_redraw(w);
             }
             if visible == 0 && window_pop_zoom(w) != 0 {
@@ -327,21 +329,27 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         });
         return CMD_RETURN_NORMAL;
     }
+    let direction_source = wp.as_ref().and_then(|pane| pane.observer.upgrade());
+    let selected_pane_owner;
     if args_has(args, 'L' as i32 as u_char) != 0 {
         window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
-        wp = window_pane_find_left(wp);
+        selected_pane_owner = window_pane_find_left(direction_source.as_ref());
+        wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pop_zoom(w);
     } else if args_has(args, 'R' as i32 as u_char) != 0 {
         window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
-        wp = window_pane_find_right(wp);
+        selected_pane_owner = window_pane_find_right(direction_source.as_ref());
+        wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pop_zoom(w);
     } else if args_has(args, 'U' as i32 as u_char) != 0 {
         window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
-        wp = window_pane_find_up(wp);
+        selected_pane_owner = window_pane_find_up(direction_source.as_ref());
+        wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pop_zoom(w);
     } else if args_has(args, 'D' as i32 as u_char) != 0 {
         window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
-        wp = window_pane_find_down(wp);
+        selected_pane_owner = window_pane_find_down(direction_source.as_ref());
+        wp = selected_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pop_zoom(w);
     }
     if wp.is_null() {
@@ -392,7 +400,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if wp == (*w).active {
         return CMD_RETURN_NORMAL;
     }
-    if !(*w).modal.is_null() && wp != (*w).modal {
+    if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         visible = 1 as ::core::ffi::c_int;
     } else {
         visible = window_pane_is_visible(wp);
@@ -402,9 +410,9 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     window_redraw_active_switch(w, wp);
     if window_set_active_pane(w, wp, 1 as ::core::ffi::c_int) != 0 {
-        cmd_find_from_winlink_pane(current, wl, wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
     }
-    cmdq_insert_hook(s, item, current, |out| out.write_all(b"after-select-pane"));
+    cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
     cmd_select_pane_redraw(w);
     if visible == 0 && window_pop_zoom(w) != 0 {
         server_redraw_window(w);

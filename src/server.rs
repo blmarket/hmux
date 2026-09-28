@@ -365,12 +365,14 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     current_time = time(::core::ptr::null_mut::<time_t>());
     loop {
         items = cmdq_next(::core::ptr::null_mut::<client>());
-        c = clients.first();
+        let mut registry_c_owner = clients.first();
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !c.is_null() {
             if (*c).flags & CLIENT_IDENTIFIED as uint64_t != 0 {
                 items = items.wrapping_add(cmdq_next(c));
             }
-            c = clients.next(c);
+            registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if !(items != 0 as u_int) {
             break;
@@ -394,15 +396,17 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null() {
             return 0 as ::core::ffi::c_int;
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     cmd_wait_for_flush();
-    if !clients.first().is_null() {
+    if clients.first().is_some() {
         return 0 as ::core::ffi::c_int;
     }
     if job_still_running() != 0 {
@@ -413,11 +417,14 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
 unsafe fn server_send_exit() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut c1: *mut client = ::core::ptr::null_mut::<client>();
+    let mut registry_c1_owner;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     cmd_wait_for_flush();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() && {
-        c1 = clients.next(c);
+        registry_c1_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c1 = registry_c1_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         1 as ::core::ffi::c_int != 0
     } {
         if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
@@ -427,6 +434,7 @@ unsafe fn server_send_exit() {
             (*c).exit_type = CLIENT_EXIT_SHUTDOWN;
         }
         (*c).session = ::core::ptr::null_mut::<session>();
+        registry_c_owner = registry_c1_owner.take();
         c = c1;
     }
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
@@ -640,13 +648,11 @@ unsafe fn server_child_signal() {
 }
 unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut w1: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    w = windows_minmax(&*std::ptr::addr_of!(windows));
-    while !w.is_null() && {
-        w1 = windows_next(&*w);
-        1 as ::core::ffi::c_int != 0
-    } {
+    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    while let Some(window_owner) = window_cursor.take() {
+        w = window_owner.as_ptr();
+        window_cursor = windows_next(&*w);
         wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).pid == pid {
@@ -664,7 +670,6 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
-        w = w1;
     }
     job_check_died(pid, status);
 }
@@ -676,8 +681,9 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     {
         return;
     }
-    w = windows_minmax(&*std::ptr::addr_of!(windows));
-    while !w.is_null() {
+    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    while let Some(window_owner) = window_cursor.take() {
+        w = window_owner.as_ptr();
         wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).pid == pid {
@@ -687,7 +693,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
             }
             wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        w = windows_next(&*w);
+        window_cursor = windows_next(&*w);
     }
     job_check_died(pid, status);
 }

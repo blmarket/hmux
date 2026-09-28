@@ -3,7 +3,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_flags};
 use crate::src::compat::imsg::*;
 use crate::src::environ::environ_update;
 use crate::src::events::events_fire_client;
@@ -69,7 +69,7 @@ pub unsafe fn cmd_attach_session(
     mut Eflag: ::core::ffi::c_int,
     mut fflag: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -126,9 +126,9 @@ pub unsafe fn cmd_attach_session(
         }
         session_set_current(s, wl);
         if !wp.is_null() {
-            cmd_find_from_winlink_pane(current, wl, wp, 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
         } else {
-            cmd_find_from_winlink(current, wl, 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl, 0 as ::core::ffi::c_int);
         }
     }
     if !cflag.is_null() {
@@ -150,7 +150,7 @@ pub unsafe fn cmd_attach_session(
         }
         (*c).flags |= (CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
     }
-    (*c).last_session = (*c).session;
+    (*c).last_session = (*c).session.as_ref().map_or_else(std::rc::Weak::new, |session| session.observer.clone());
     if !(*c).session.is_null() {
         if dflag != 0 || xflag != 0 {
             if xflag != 0 {
@@ -158,12 +158,14 @@ pub unsafe fn cmd_attach_session(
             } else {
                 msgtype = MSG_DETACH;
             }
-            c_loop = clients.first();
+            let mut registry_c_loop_owner = clients.first();
+            c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
                 if !((*c_loop).session != s || c == c_loop) {
                     server_client_detach(c_loop, msgtype);
                 }
-                c_loop = clients.next(c_loop);
+                registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
+                c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if Eflag == 0 {
@@ -191,12 +193,14 @@ pub unsafe fn cmd_attach_session(
             } else {
                 msgtype = MSG_DETACH;
             }
-            c_loop = clients.first();
+            let mut registry_c_loop_owner = clients.first();
+            c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
                 if !((*c_loop).session != s || c == c_loop) {
                     server_client_detach(c_loop, msgtype);
                 }
-                c_loop = clients.next(c_loop);
+                registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
+                c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if Eflag == 0 {

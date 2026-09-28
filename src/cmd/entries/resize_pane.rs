@@ -136,7 +136,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 return CMD_RETURN_ERROR;
             }
         };
-        if window_pane_is_floating(wp) != 0 {
+        if window_pane_is_floating(&*wp) != 0 {
             if let Err(cause) = layout_resize_floating_pane_to(wp, LAYOUT_LEFTRIGHT, x as u_int) {
                 cmdq_error(item, |out| {
                     out.write_all(b"size ")?;
@@ -182,7 +182,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             }
             _ => {}
         }
-        if window_pane_is_floating(wp) != 0 {
+        if window_pane_is_floating(&*wp) != 0 {
             if let Err(cause) = layout_resize_floating_pane_to(wp, LAYOUT_TOPBOTTOM, y as u_int) {
                 cmdq_error(item, |out| {
                     out.write_all(b"size ")?;
@@ -227,7 +227,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             {
                 type_0 = LAYOUT_LEFTRIGHT;
             }
-            if window_pane_is_floating(wp) != 0 {
+            if window_pane_is_floating(&*wp) != 0 {
                 if flag as ::core::ffi::c_int == 'L' as i32
                     || flag as ::core::ffi::c_int == 'U' as i32
                 {
@@ -264,8 +264,10 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
+    let mouse_pane_owner;
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
@@ -275,15 +277,16 @@ unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }
-    wp = cmd_mouse_pane(
+    mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*event).m,
         &raw mut s,
         ::core::ptr::null_mut::<*mut winlink>(),
     );
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() || c.is_null() || (*c).session != s {
         return CMD_RETURN_NORMAL;
     }
-    if window_pane_is_floating(wp) == 0 {
+    if window_pane_is_floating(&*wp) == 0 {
         let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
         (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
             cmd_resize_pane_mouse_resize_tiled(drag_client.as_ptr(), m as *mut mouse_event)
@@ -301,6 +304,7 @@ unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_resize_pane_mouse_resize_move_floating(mut c: *mut client, mut m: *mut mouse_event) {
+    let mouse_pane_owner;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -318,7 +322,8 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(mut c: *mut client, mut m: 
     let mut new_xoff: ::core::ffi::c_int = 0;
     let mut new_yoff: ::core::ffi::c_int = 0;
     let mut resizes: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    wp = cmd_mouse_pane(m, ::core::ptr::null_mut::<*mut session>(), &raw mut wl);
+    mouse_pane_owner = cmd_mouse_pane(m, ::core::ptr::null_mut::<*mut session>(), &raw mut wl);
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         (*c).tty.mouse_drag_update = None;
         return;

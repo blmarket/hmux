@@ -584,7 +584,7 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -696,7 +696,8 @@ unsafe fn window_buffer_edit_close_cb(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wp = window_pane_find_by_id(ed.wp_id);
+    let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
+    wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
@@ -733,7 +734,8 @@ unsafe fn window_buffer_edit_close_cb(
         buf.truncate(len);
         paste_replace_owned(&pb, buf.into_boxed_slice());
     }
-    wp = window_pane_find_by_id(ed.wp_id);
+    let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
+    wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {

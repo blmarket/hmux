@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{
     sigfillset, sigprocmask, socketpair, strerror,
 };
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create, format_defaults, format_expand_time_cstring, format_free};
+use crate::src::format::{format_create_with_client, format_defaults, format_expand_time_cstring, format_free};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
@@ -66,7 +66,6 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
@@ -125,8 +124,8 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         });
         return CMD_RETURN_ERROR;
     }
-    ft = format_create(
-        queue_client_ptr,
+    ft = format_create_with_client(
+        queue_client.as_ref(),
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

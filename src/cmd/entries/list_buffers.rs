@@ -3,7 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_create, format_defaults_paste_buffer, format_expand_cstring, format_free, format_true,
+    format_create_with_client, format_defaults_paste_buffer, format_expand_cstring, format_free, format_true,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -48,7 +48,6 @@ pub static cmd_list_buffers_entry: cmd_entry = {
 };
 unsafe fn cmd_list_buffers_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -75,8 +74,8 @@ unsafe fn cmd_list_buffers_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     let buffers = sort_get_buffers(&sort_crit);
     for pb in buffers {
-        ft = format_create(
-            queue_client_ptr,
+        ft = format_create_with_client(
+            queue_client.as_ref(),
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,

@@ -149,10 +149,10 @@ pub struct cmdq_item {
     pub number: u_int,
     pub time: time_t,
     pub flags: ::core::ffi::c_int,
-    pub state: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>>,
+    pub state: Option<std::rc::Rc<cmdq_state>>,
     pub source: cmd_find_state,
     pub target: cmd_find_state,
-    pub cmdlist: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
+    pub cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     pub cmd: *mut cmd,
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
@@ -367,9 +367,16 @@ pub struct cmd_entry {
 /// Queue items and callers share ownership through ordinary Rc handles.
 pub struct cmdq_state {
     pub flags: ::core::ffi::c_int,
-    pub formats: Option<super::format::FormatTreeOwner>,
+    pub formats: std::cell::RefCell<Option<super::format::FormatTreeOwner>>,
     pub event: key_event,
-    pub current: cmd_find_state,
+    pub current: std::cell::RefCell<cmd_find_state>,
+}
+
+impl cmdq_state {
+    /// Copy the weak target handles and release the borrow before callbacks run.
+    pub fn current_snapshot(&self) -> cmd_find_state {
+        self.current.borrow().clone()
+    }
 }
 
 pub type cmdq_cb = Option<Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>>;
@@ -389,7 +396,8 @@ pub struct cmd_parse_input {
     pub file: Option<::std::ffi::CString>,
     pub line: u_int,
     pub item: *mut cmdq_item,
-    pub c: *mut client,
+    /// Parser context observes the client; prepared commands own it separately.
+    pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub fs: cmd_find_state,
 }
 
@@ -403,12 +411,12 @@ impl cmd_parse_input {
 
 pub struct cmd_parse_result {
     pub status: cmd_parse_status,
-    pub cmdlist: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
+    pub cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     pub error: Option<CString>,
 }
 
 impl cmd_parse_result {
-    pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>> {
+    pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<std::cell::RefCell<cmd_list>>> {
         self.cmdlist.take()
     }
 

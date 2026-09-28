@@ -170,7 +170,7 @@ pub struct client {
     pub exit_msgtype: msgtype,
     pub exit_session: Option<std::ffi::CString>,
     pub exit_message: Option<std::ffi::CString>,
-    pub keytable: Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>>,
+    pub keytable: Option<std::rc::Rc<std::cell::RefCell<key_table>>>,
     pub last_key: key_code,
     pub paste_time: time_t,
     pub message_ignore_keys: ::core::ffi::c_int,
@@ -179,7 +179,8 @@ pub struct client {
     pub message_timer: event,
     pub prompt: Option<PromptOwner>,
     pub session: *mut session,
-    pub last_session: *mut session,
+    /// Previous session observer; this link never keeps a session alive.
+    pub last_session: std::rc::Weak<UnsafeCell<session>>,
     pub theme_colours: [::core::ffi::c_int; 10],
     pub pan_window: *mut ::core::ffi::c_void,
     pub pan_ox: u_int,

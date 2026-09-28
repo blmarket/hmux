@@ -2,7 +2,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has, args_percentage_and_expand_result};
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event, cmdq_get_source, cmdq_get_target,
+    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_event, cmdq_get_source, cmdq_get_target,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
@@ -268,7 +268,7 @@ unsafe fn cmd_join_pane_place(
         window_pane_z_remove(w, wp);
         owp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !owp.is_null() {
-            if window_pane_is_floating(owp) == 0 {
+            if window_pane_is_floating(&*owp) == 0 {
                 break;
             }
             owp = window_pane_z_next(owp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -294,7 +294,7 @@ unsafe fn cmd_join_pane_place(
     ) == 0 as ::core::ffi::c_int
     {
         owp = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if !owp.is_null() && window_pane_is_floating(owp) != 0 {
+        if !owp.is_null() && window_pane_is_floating(&*owp) != 0 {
             window_pane_z_remove(w, wp);
             window_pane_z_insert_after(w, owp, wp);
         }
@@ -310,7 +310,7 @@ unsafe fn cmd_join_pane_place(
         } else {
             owp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !owp.is_null() {
-                if window_pane_is_floating(owp) == 0 {
+                if window_pane_is_floating(&*owp) == 0 {
                     break;
                 }
                 owp = window_pane_z_next(owp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -327,7 +327,7 @@ unsafe fn cmd_join_pane_place(
     ) == 0 as ::core::ffi::c_int
     {
         owp = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if !owp.is_null() && window_pane_is_floating(owp) != 0 {
+        if !owp.is_null() && window_pane_is_floating(&*owp) != 0 {
             window_pane_z_remove(w, wp);
             window_pane_z_insert_after(w, owp, wp);
         } else {
@@ -473,8 +473,10 @@ unsafe fn cmd_join_pane_move(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
+    let mouse_pane_owner;
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).s_ptr();
@@ -484,11 +486,12 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }
-    wp = cmd_mouse_pane(&raw mut (*event).m, &raw mut s, &raw mut wl);
+    mouse_pane_owner = cmd_mouse_pane(&raw mut (*event).m, &raw mut s, &raw mut wl);
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() || c.is_null() || (*c).session != s {
         return CMD_RETURN_NORMAL;
     }
-    if window_pane_is_floating(wp) == 0 {
+    if window_pane_is_floating(&*wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
     w = (*wl).window_ptr();
@@ -502,6 +505,7 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_mouse_move(mut c: *mut client, mut m: *mut mouse_event) {
+    let mouse_pane_owner;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -510,7 +514,8 @@ unsafe fn cmd_join_pane_mouse_move(mut c: *mut client, mut m: *mut mouse_event) 
     let mut ly: ::core::ffi::c_int = 0;
     let mut x: ::core::ffi::c_int = 0;
     let mut lx: ::core::ffi::c_int = 0;
-    wp = cmd_mouse_pane(m, ::core::ptr::null_mut::<*mut session>(), &raw mut wl);
+    mouse_pane_owner = cmd_mouse_pane(m, ::core::ptr::null_mut::<*mut session>(), &raw mut wl);
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         (*c).tty.mouse_drag_update = None;
         return;
@@ -568,7 +573,7 @@ unsafe fn cmd_join_pane_zindex(
     n = 0 as u_int;
     owp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !owp.is_null() {
-        if window_pane_is_floating(owp) == 0 {
+        if window_pane_is_floating(&*owp) == 0 {
             break;
         }
         if n >= z {
@@ -597,7 +602,7 @@ unsafe fn cmd_join_pane_tile(
     mut wp: *mut window_pane,
 ) -> cmd_retval {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
-    if window_pane_is_floating(wp) == 0 {
+    if window_pane_is_floating(&*wp) == 0 {
         cmdq_error(item, |out| out.write_all(b"pane is not floating"));
         return CMD_RETURN_ERROR;
     }
@@ -633,7 +638,7 @@ unsafe fn cmd_join_pane_tile(
 }
 unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut dst_s: *mut session = ::core::ptr::null_mut::<session>();
@@ -665,7 +670,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             || args_has(args, 'L' as i32 as u_char) != 0
             || args_has(args, 'R' as i32 as u_char) != 0
         {
-            if window_pane_is_floating(dst_wp) == 0 {
+            if window_pane_is_floating(&*dst_wp) == 0 {
                 cmdq_error(item, |out| out.write_all(b"pane is not floating"));
                 return CMD_RETURN_ERROR;
             }
@@ -684,14 +689,14 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     src_wl = (*source).wl_ptr();
     src_wp = (*source).wp_ptr();
     src_w = (*src_wl).window_ptr();
-    if src_wp == (*src_w).modal || dst_wp == (*dst_w).modal {
+    if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
     server_unzoom_window(dst_w);
     server_unzoom_window(src_w);
     if src_wp == dst_wp {
-        if window_pane_is_floating(src_wp) != 0 {
+        if window_pane_is_floating(&*src_wp) != 0 {
             return cmd_join_pane_tile(item, args, src_w, src_wp);
         }
         cmdq_error(item, |out| {
@@ -741,7 +746,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'd' as i32 as u_char) == 0 {
         window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
         session_select(dst_s, dst_idx);
-        cmd_find_from_session(current, dst_s, 0 as ::core::ffi::c_int);
+        cmd_find_from_session(&mut *current.current.borrow_mut(), dst_s, 0 as ::core::ffi::c_int);
         server_redraw_session(dst_s);
     } else {
         server_status_session(dst_s);

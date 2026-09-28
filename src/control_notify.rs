@@ -33,7 +33,8 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     wp = event_payload_get_pane(ep);
     if !wp.is_null() {
-        c = clients.first();
+        let mut registry_c_owner = clients.first();
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !c.is_null() {
             if !c.is_null()
                 && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -44,14 +45,16 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
                     write!(out, "%pane-mode-changed %{}", ((*wp).id) as u32)
                 });
             }
-            c = clients.next(c);
+            registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         return;
     }
     let Some(value) = event_payload_print_owned(ep) else {
         return;
     };
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -63,7 +66,8 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
                 write_cstr(out, value.as_ptr().cast::<::core::ffi::c_char>())
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -82,7 +86,8 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     if window_winlinks_first(w).is_null() || (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root).is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -105,7 +110,8 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
                 control_notify_write(c, |out| write_cstr(out, cp.as_ptr()));
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -115,7 +121,8 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
     if w.is_null() || (*w).active.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -131,7 +138,8 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
                 )
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) {
@@ -142,7 +150,8 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
     if w.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -159,7 +168,8 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
                 });
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
@@ -170,7 +180,8 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
     if w.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -187,7 +198,8 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
                 });
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -198,7 +210,8 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
     if w.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -219,7 +232,8 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
                 });
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -231,7 +245,8 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
         return;
     }
     s = (*cc).session;
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -258,7 +273,8 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
                 });
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) {
@@ -268,7 +284,8 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
     if cc.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -285,7 +302,8 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
                 )
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -295,7 +313,8 @@ unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) 
     if s.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -307,12 +326,14 @@ unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) 
                 write_cstr(out, ((*s).name).as_ptr().cast_mut())
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_session_created_cb(_name: &CStr, _payload: &mut event_payload) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -321,12 +342,14 @@ unsafe fn control_session_created_cb(_name: &CStr, _payload: &mut event_payload)
         {
             control_notify_write(c, |out| out.write_all(b"%sessions-changed"));
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -335,7 +358,8 @@ unsafe fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) 
         {
             control_notify_write(c, |out| out.write_all(b"%sessions-changed"));
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -345,7 +369,8 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
     if s.is_null() || (*s).curw.is_null() {
         return;
     }
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -361,7 +386,8 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
                 )
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payload) {
@@ -370,7 +396,8 @@ unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payl
         return;
     };
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -382,7 +409,8 @@ unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payl
                 write_cstr(out, pbname.as_ptr())
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payload) {
@@ -391,7 +419,8 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
         return;
     };
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -403,7 +432,8 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
                 write_cstr(out, pbname.as_ptr())
             });
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn control_build_events() {

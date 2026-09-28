@@ -6,11 +6,12 @@ use super::layout::pane_lines;
 use super::menu::MenuWeak;
 use super::pane::window_pane;
 use super::window::window;
+use std::{cell::UnsafeCell, rc::Weak};
 
 #[repr(C)]
 pub struct redraw_scene {
-    pub c: *mut client,
-    pub w: *mut window,
+    pub c: Weak<UnsafeCell<client>>,
+    pub w: Weak<UnsafeCell<window>>,
     /// Stable boxed row slice owned by this scene, with length `sy`.
     /// Dropping the rows also drops their spans.
     pub lines: Box<[redraw_line]>,
@@ -141,20 +142,20 @@ impl redraw_span_data {
     }
 }
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct RedrawPaneSpan {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub px: u_int,
     pub py: u_int,
 }
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct RedrawBorderSpan {
-    pub top_wp: *mut window_pane,
-    pub bottom_wp: *mut window_pane,
-    pub left_wp: *mut window_pane,
-    pub right_wp: *mut window_pane,
-    pub style_wp: *mut window_pane,
+    pub top_wp: Weak<UnsafeCell<window_pane>>,
+    pub bottom_wp: Weak<UnsafeCell<window_pane>>,
+    pub left_wp: Weak<UnsafeCell<window_pane>>,
+    pub right_wp: Weak<UnsafeCell<window_pane>>,
+    pub style_wp: Weak<UnsafeCell<window_pane>>,
     pub cell_type: ::core::ffi::c_int,
     pub cell_mask: ::core::ffi::c_int,
     pub top_lines: pane_lines,
@@ -164,20 +165,62 @@ pub struct RedrawBorderSpan {
     pub flags: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct RedrawStatusSpan {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub offset: u_int,
     pub cell_type: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct RedrawScrollbarSpan {
-    pub wp: *mut window_pane,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub y: u_int,
     pub height: u_int,
     pub flags: ::core::ffi::c_int,
 }
+
+impl PartialEq for RedrawBorderSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.top_wp.ptr_eq(&other.top_wp)
+            && self.bottom_wp.ptr_eq(&other.bottom_wp)
+            && self.left_wp.ptr_eq(&other.left_wp)
+            && self.right_wp.ptr_eq(&other.right_wp)
+            && self.style_wp.ptr_eq(&other.style_wp)
+            && self.cell_type == other.cell_type
+            && self.cell_mask == other.cell_mask
+            && self.top_lines == other.top_lines
+            && self.bottom_lines == other.bottom_lines
+            && self.left_lines == other.left_lines
+            && self.right_lines == other.right_lines
+            && self.flags == other.flags
+    }
+}
+impl Eq for RedrawBorderSpan {}
+
+impl PartialEq for RedrawPaneSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.wp.ptr_eq(&other.wp) && self.px == other.px && self.py == other.py
+    }
+}
+impl Eq for RedrawPaneSpan {}
+
+impl PartialEq for RedrawStatusSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.wp.ptr_eq(&other.wp) && self.offset == other.offset && self.cell_type == other.cell_type
+    }
+}
+impl Eq for RedrawStatusSpan {}
+
+impl PartialEq for RedrawScrollbarSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.wp.ptr_eq(&other.wp)
+            && self.y == other.y
+            && self.height == other.height
+            && self.flags == other.flags
+    }
+}
+impl Eq for RedrawScrollbarSpan {}
 
 #[derive(Clone)]
 pub struct RedrawMenuSpan {

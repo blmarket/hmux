@@ -3,7 +3,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_current, cmdq_get_source, cmdq_get_target, cmdq_get_target_client,
+    cmdq_error, cmdq_get_state_owned, cmdq_get_source, cmdq_get_target, cmdq_get_target_client,
     cmdq_print,
 };
 use crate::src::events::events_fire_window;
@@ -90,7 +90,7 @@ unsafe fn cmd_break_pane_float(
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut lines: pane_lines = window_get_pane_lines(w);
     let mut fg: *mut layout_geometry = &raw mut (*lc).fg;
-    if window_pane_is_floating(wp) != 0 {
+    if window_pane_is_floating(&*wp) != 0 {
         cmdq_error(item, |out| out.write_all(b"pane is already floating"));
         return CMD_RETURN_ERROR;
     }
@@ -126,7 +126,7 @@ unsafe fn cmd_break_pane_float(
 }
 unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
@@ -143,7 +143,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut old_idx: ::core::ffi::c_int = (*wl).idx;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if wp == (*w).modal {
+    if (*w).modal.ptr_eq(&(*wp).observer) {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
@@ -217,7 +217,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         window_pane_list_insert_front(w, wp);
         window_pane_z_insert_front(w, wp);
         (*w).active = wp;
-        (*w).latest = tc as *mut ::core::ffi::c_void;
+        (*w).latest = tc.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         if name.is_null() {
             drop(window_replace_name(w, default_window_name_cstring(&*w)));
         } else {
@@ -256,7 +256,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         window_fire_pane_moved(wp, old_w, old_idx, w, (*wl).idx);
         if args_has(args, 'd' as i32 as u_char) == 0 {
             session_select(dst_s, (*wl).idx);
-            cmd_find_from_session(current, dst_s, 0 as ::core::ffi::c_int);
+            cmd_find_from_session(&mut *current.current.borrow_mut(), dst_s, 0 as ::core::ffi::c_int);
         }
         server_redraw_session(src_s);
         if src_s != dst_s {

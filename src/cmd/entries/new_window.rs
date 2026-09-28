@@ -4,7 +4,7 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_winlink;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_get_target_client,
+    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::environ::{environ_create, environ_put};
@@ -74,14 +74,14 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: ::core::ptr::null_mut::<session>(),
         wl: ::core::ptr::null_mut::<winlink>(),
-        tc: ::core::ptr::null_mut::<client>(),
-        wp0: ::core::ptr::null_mut::<window_pane>(),
+        tc: None,
+        wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
@@ -188,7 +188,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             server_redraw_session(s);
         }
         if !c.is_null() && !(*c).session.is_null() {
-            (*(*(*s).curw).window_ptr()).latest = c as *mut ::core::ffi::c_void;
+            (*(*(*s).curw).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         }
         recalculate_sizes();
         return CMD_RETURN_NORMAL;
@@ -202,7 +202,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     sc.item = item;
     sc.s = s;
-    sc.tc = tc;
+    sc.tc = tc_owner.clone();
     sc.name = wname;
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
@@ -244,7 +244,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         return CMD_RETURN_ERROR;
     } else {
         if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).curw {
-            cmd_find_from_winlink(current, new_wl, 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink(&mut *current.current.borrow_mut(), new_wl, 0 as ::core::ffi::c_int);
             server_redraw_session_group(s);
         } else {
             server_status_session_group(s);

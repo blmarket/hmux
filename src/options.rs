@@ -186,7 +186,7 @@ unsafe fn options_value_to_cstring(
         && (*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return cmd_list_print_cstring(&*ov.commands().expect("command option").get(), 0);
+        return cmd_list_print_cstring(&ov.commands().expect("command option").borrow(), 0);
     }
     if !tableentry.is_null()
         && ((*tableentry).type_0 as ::core::ffi::c_uint
@@ -904,7 +904,7 @@ pub unsafe fn options_get_number(
     }
     return (*o).value.number();
 }
-pub unsafe fn options_get_command(mut oo: *mut options) -> std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+pub unsafe fn options_get_command(mut oo: *mut options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let mut name: *const ::core::ffi::c_char =
         b"default-client-command\0" as *const u8 as *const ::core::ffi::c_char;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -1033,7 +1033,7 @@ pub unsafe fn options_set_number(
 pub unsafe fn options_set_command(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
-    value: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
+    value: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
 ) -> *mut options_entry {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if *name as ::core::ffi::c_int == '@' as i32 {
@@ -1620,14 +1620,16 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             12 as size_t,
         ) == 0 as ::core::ffi::c_int
     {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             server_client_update_theme_colours(loop_0);
             if (*loop_0).tty.flags & TTY_OPENED != 0 {
                 tty_invalidate(&raw mut (*loop_0).tty);
             }
             server_redraw_client(loop_0);
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1635,14 +1637,15 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&*std::ptr::addr_of!(windows));
-        while !w.is_null() {
+        let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+        while let Some(window_owner) = window_cursor.take() {
+            w = window_owner.as_ptr();
             if !(*w).active.is_null() {
                 if options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), name) != 0 {
                     (*(*w).active).flags |= PANE_CHANGED;
                 }
             }
-            w = windows_next(&*w);
+            window_cursor = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1650,10 +1653,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             window_pane_default_cursor(wp);
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1661,10 +1666,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             window_pane_default_cursor(wp);
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1672,10 +1679,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&*std::ptr::addr_of!(windows));
-        while !w.is_null() {
+        let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+        while let Some(window_owner) = window_cursor.take() {
+            w = window_owner.as_ptr();
             window_set_fill_cells(w);
-            w = windows_next(&*w);
+            window_cursor = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1683,10 +1691,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"key-table\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             server_client_set_key_table(loop_0, ::core::ptr::null::<::core::ffi::c_char>());
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1694,12 +1704,14 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"user-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        loop_0 = clients.first();
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if (*loop_0).tty.flags & TTY_OPENED != 0 {
                 tty_keys_build(&raw mut (*loop_0).tty);
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(name, b"status\0" as *const u8 as *const ::core::ffi::c_char)
@@ -1764,17 +1776,21 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if *name as ::core::ffi::c_int == '@' as i32 {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1782,10 +1798,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-colours\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1801,8 +1819,9 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&*std::ptr::addr_of!(windows));
-        while !w.is_null() {
+        let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+        while let Some(window_owner) = window_cursor.take() {
+            w = window_owner.as_ptr();
             (*w).sb = options_get_number(
                 options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
                 b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1812,7 +1831,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
                 b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-            w = windows_next(&*w);
+            window_cursor = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1820,10 +1839,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             window_pane_scrollbar_hide(wp);
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if strcmp(
@@ -1831,15 +1852,18 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
-            wp = window_pane_tree_next(&*wp);
+            indexed_pane_owner = window_pane_tree_next(&*wp);
+            wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        w = windows_minmax(&*std::ptr::addr_of!(windows));
-        while !w.is_null() {
+        let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+        while let Some(window_owner) = window_cursor.take() {
+            w = window_owner.as_ptr();
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-            w = windows_next(&*w);
+            window_cursor = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1877,12 +1901,14 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     recalculate_sizes();
-    loop_0 = clients.first();
+    let mut registry_loop_0_owner = clients.first();
+    loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !(*loop_0).session.is_null() {
             server_redraw_client(loop_0);
         }
-        loop_0 = clients.next(loop_0);
+        registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn options_remove_or_default(

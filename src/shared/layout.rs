@@ -2,6 +2,7 @@
 
 use super::abi::u_int;
 use super::pane::window_pane;
+use std::{cell::UnsafeCell, rc::Weak};
 pub type layout_type = ::core::ffi::c_uint;
 pub const LAYOUT_WINDOWPANE: layout_type = 2;
 pub const LAYOUT_TOPBOTTOM: layout_type = 1;
@@ -60,7 +61,8 @@ pub struct layout_cell {
     pub sibling_index: usize,
     pub g: layout_geometry,
     pub fg: layout_geometry,
-    pub wp: *mut window_pane,
+    /// Nonowning pane association; upgrade before accessing the pane.
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub cells: layout_cells,
 }
 
@@ -231,11 +233,14 @@ pub unsafe fn layout_cells_replace(
 
 impl Drop for layout_cell {
     fn drop(&mut self) {
-        if self.type_0 == LAYOUT_WINDOWPANE && !self.wp.is_null() {
-            unsafe {
-                if !(*self.wp).layout_cell.is_null() {
-                    (*(*self.wp).layout_cell).parent = std::ptr::null_mut();
-                    (*self.wp).layout_cell = std::ptr::null_mut();
+        if self.type_0 == LAYOUT_WINDOWPANE {
+            if let Some(owner) = self.wp.upgrade() {
+                unsafe {
+                    let pane = &mut *owner.get();
+                    if !pane.layout_cell.is_null() {
+                        (*pane.layout_cell).parent = std::ptr::null_mut();
+                        pane.layout_cell = std::ptr::null_mut();
+                    }
                 }
             }
         }

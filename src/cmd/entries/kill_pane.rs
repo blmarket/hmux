@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::format::{
-    format_create, format_defaults, format_expand_cstring, format_free, format_true,
+    format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::layout::layout_close_pane;
 use crate::src::server_client::server_client_remove_pane;
@@ -99,14 +99,13 @@ unsafe fn cmd_kill_pane_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    ft = format_create(
-        queue_client_ptr,
+    ft = format_create_with_client(
+        queue_client.as_ref(),
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

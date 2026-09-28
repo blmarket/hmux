@@ -59,7 +59,7 @@ pub unsafe fn window_visible_ranges(
         if wp == base_wp {
             found_self = true;
         } else {
-            let floating = window_pane_is_floating(wp) != 0;
+            let floating = window_pane_is_floating(&*wp) != 0;
             let no_border =
                 floating && window_pane_get_pane_lines(wp) == PANE_LINES_NONE as pane_lines;
             let (tb, bb) = if no_border {

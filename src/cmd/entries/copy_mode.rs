@@ -70,8 +70,10 @@ pub static cmd_clock_mode_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let mouse_pane_owner;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client(item);
@@ -85,11 +87,12 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
-        wp = cmd_mouse_pane(
+        mouse_pane_owner = cmd_mouse_pane(
             &raw mut (*event).m,
             &raw mut s,
             ::core::ptr::null_mut::<*mut winlink>(),
         );
+        wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
         }

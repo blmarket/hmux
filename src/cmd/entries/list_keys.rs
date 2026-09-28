@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create, format_defaults, format_expand_cstring, format_free,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
 };
 use crate::src::key_bindings::{
     key_bindings_get_table, key_bindings_has_repeat, key_bindings_tables,
@@ -102,14 +102,14 @@ unsafe fn cmd_list_keys_get_table_width(bindings: &[&key_binding]) -> u_int {
         .unwrap_or(0)
 }
 unsafe fn cmd_list_keys_get_root_and_prefix<'a>(
-    tables: &'a [std::rc::Rc<std::cell::UnsafeCell<key_table>>],
+    tables: &'a [std::cell::Ref<'_, key_table>],
     sort_crit: &sort_criteria,
 ) -> Vec<&'a key_binding> {
     let mut bindings = Vec::new();
     for name in [c"prefix", c"root"] {
         let table = tables
             .iter()
-            .map(|table| &*crate::src::shared::rc::as_ptr(table))
+            .map(|table| &**table)
             .find(|table| table.name.as_c_str() == name);
         bindings.extend(sort_get_key_bindings_table(table, sort_crit));
     }
@@ -194,7 +194,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         |out| write_cstr(out, key_string.as_ptr()),
     );
     let command = cmd_list_print_cstring(
-        &*bd.cmdlist().get(),
+        &bd.cmdlist().borrow(),
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
     format_add(
@@ -205,7 +205,6 @@ unsafe fn cmd_list_keys_format_add_key_binding(
 }
 unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client(item);
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -264,9 +263,11 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if template.is_null() {
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }
-    let tables = key_bindings_tables();
-    let mut bindings = if let Some(table) = table.as_ref() {
-        sort_get_key_bindings_table(Some(&*crate::src::shared::rc::as_ptr(table)), &sort_crit)
+    let table_owners = key_bindings_tables();
+    let tables: Vec<_> = table_owners.iter().map(|table| table.borrow()).collect();
+    let table_borrow = table.as_ref().map(|table| table.borrow());
+    let mut bindings = if let Some(table) = table_borrow.as_ref() {
+        sort_get_key_bindings_table(Some(table), &sort_crit)
     } else if notes_only != 0 {
         cmd_list_keys_get_root_and_prefix(&tables, &sort_crit)
     } else {
@@ -288,8 +289,8 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if single != 0 {
         bindings.truncate(1);
     }
-    ft = format_create(
-        queue_client_ptr,
+    ft = format_create_with_client(
+        queue_client.as_ref(),
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

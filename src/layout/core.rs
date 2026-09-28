@@ -61,7 +61,7 @@ pub fn layout_create_cell() -> Box<layout_cell> {
             xoff: INT_MAX,
             yoff: INT_MAX,
         },
-        wp: std::ptr::null_mut(),
+        wp: std::rc::Weak::new(),
         cells: layout_cells {
             children: Vec::new(),
         },
@@ -133,7 +133,7 @@ pub unsafe fn layout_print_cell(
         log_pointer((lc) as *const ::core::ffi::c_void),
         log_cstr((type_0) as *const _),
         log_pointer(((*lc).parent) as *const ::core::ffi::c_void),
-        log_pointer(((*lc).wp) as *const ::core::ffi::c_void),
+        log_pointer((*lc).wp.as_ptr().cast()),
         ((*lc).g.xoff) as i32,
         ((*lc).g.yoff) as i32,
         ((*lc).g.sx) as u32,
@@ -210,11 +210,12 @@ pub unsafe fn layout_set_size(
     (*lc).g.xoff = xoff;
     (*lc).g.yoff = yoff;
 }
-pub unsafe fn layout_make_leaf(mut lc: *mut layout_cell, mut wp: *mut window_pane) {
+pub unsafe fn layout_make_leaf(lc: *mut layout_cell, owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = owner.get();
     (*lc).type_0 = LAYOUT_WINDOWPANE;
     layout_cells_require_empty(&*lc);
     (*wp).layout_cell = lc as *mut layout_cell;
-    (*lc).wp = wp;
+    (*lc).wp = (*wp).observer.clone();
 }
 pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type) {
     if type_0 as ::core::ffi::c_uint
@@ -224,10 +225,10 @@ pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type
     }
     (*lc).type_0 = type_0;
     layout_cells_require_empty(&*lc);
-    if !(*lc).wp.is_null() {
-        (*(*lc).wp).layout_cell = ::core::ptr::null_mut::<layout_cell>();
+    if let Some(owner) = (*lc).wp.upgrade() {
+        (*owner.get()).layout_cell = ::core::ptr::null_mut::<layout_cell>();
     }
-    (*lc).wp = ::core::ptr::null_mut::<window_pane>();
+    (*lc).wp = std::rc::Weak::new();
 }
 pub unsafe fn layout_cell_is_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut is_leaf: ::core::ffi::c_int = ((*lc).type_0 as ::core::ffi::c_uint
@@ -441,7 +442,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
             sx = (*lc).g.sx;
             sy = (*lc).g.sy;
             status = window_pane_get_pane_status(wp);
-            if window_pane_is_floating(wp) == 0
+            if window_pane_is_floating(&*wp) == 0
                 && layout_add_horizontal_border(root, lc, status) != 0
             {
                 if status == PANE_STATUS_TOP {
@@ -738,7 +739,7 @@ pub unsafe fn layout_init(mut w: *mut window, mut wp: *mut window_pane) {
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    layout_make_leaf(lc, wp);
+    layout_make_leaf(lc, &(*wp).observer.upgrade().expect("live layout pane"));
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
 }
 pub unsafe fn layout_free(w: *mut window) {
@@ -907,6 +908,26 @@ mod layout_cell_collection_tests {
     use super::*;
 
     #[test]
+    fn leaf_observes_pane_without_retaining_it_and_node_clears_link() {
+        unsafe {
+            let owner = window_pane::new();
+            let observer = std::rc::Rc::downgrade(&owner);
+            let mut cell = layout_create_cell();
+            layout_make_leaf(&mut *cell, &owner);
+            assert!(cell.wp.ptr_eq(&observer));
+            assert_eq!((*owner.get()).layout_cell, &mut *cell as *mut layout_cell);
+            layout_make_node(&mut *cell, LAYOUT_LEFTRIGHT);
+            assert!((*owner.get()).layout_cell.is_null());
+            assert!(cell.wp.upgrade().is_none());
+            layout_make_leaf(&mut *cell, &owner);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            assert!(cell.wp.upgrade().is_none());
+            drop(cell);
+        }
+    }
+
+    #[test]
     fn parent_owned_children_preserve_order_and_neighbor_navigation() {
         unsafe {
             let mut root_owner = layout_create_cell();
@@ -964,18 +985,20 @@ mod layout_cell_collection_tests {
     #[test]
     fn detached_leaf_owners_preserve_panes_during_rebuild() {
         unsafe {
-            let mut first_pane = window_pane::empty();
-            let mut floating_pane = window_pane::empty();
+            let first_pane_owner = window_pane::new();
+            let first_pane = &mut *first_pane_owner.get();
+            let floating_pane_owner = window_pane::new();
+            let floating_pane = &mut *floating_pane_owner.get();
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_TOPBOTTOM);
             let mut nested = layout_create_cell();
             layout_make_node(&mut *nested, LAYOUT_LEFTRIGHT);
             let mut first = layout_create_cell();
-            layout_make_leaf(&mut *first, &mut first_pane);
+            layout_make_leaf(&mut *first, &first_pane_owner);
             let first_ptr = first_pane.layout_cell;
             let mut floating = layout_create_cell();
             floating.flags = LAYOUT_CELL_FLOATING;
-            layout_make_leaf(&mut *floating, &mut floating_pane);
+            layout_make_leaf(&mut *floating, &floating_pane_owner);
             let floating_ptr = floating_pane.layout_cell;
             layout_cells_push_back(&mut *nested, first);
             layout_cells_push_back(&mut *nested, floating);
@@ -1006,14 +1029,15 @@ mod layout_cell_collection_tests {
     #[test]
     fn replacement_and_root_collapse_transfer_boxes_without_moving_cells() {
         unsafe {
-            let mut pane = window_pane::empty();
+            let pane_owner = window_pane::new();
+            let pane = &mut *pane_owner.get();
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_TOPBOTTOM);
             let mut discarded = layout_create_cell();
             discarded.flags = LAYOUT_CELL_FLOATING;
             let discarded_ptr: *mut layout_cell = &mut *discarded;
             let mut retained = layout_create_cell();
-            layout_make_leaf(&mut *retained, &mut pane);
+            layout_make_leaf(&mut *retained, &pane_owner);
             let retained_ptr = pane.layout_cell;
             layout_cells_push_back(&mut *root, discarded);
             layout_cells_push_back(&mut *root, retained);
@@ -1254,7 +1278,7 @@ pub unsafe fn layout_assign_pane(
     mut wp: *mut window_pane,
     mut do_not_resize: ::core::ffi::c_int,
 ) {
-    layout_make_leaf(lc, wp);
+    layout_make_leaf(lc, &(*wp).observer.upgrade().expect("live layout pane"));
     if do_not_resize != 0 {
         layout_fix_panes((*wp).window as *mut window, wp);
     } else {
@@ -1752,7 +1776,7 @@ pub unsafe fn layout_split_pane(
         }
         layout_fix_offsets((*wp).window as *mut window);
     } else {
-        layout_make_leaf(lc, wp);
+        layout_make_leaf(lc, &(*wp).observer.upgrade().expect("live layout pane"));
     }
     return lcnew;
 }
@@ -1923,7 +1947,7 @@ pub unsafe fn layout_get_tiled_cell(
     let mut type_0: layout_type = LAYOUT_TOPBOTTOM;
     let mut curval: u_int = 0;
     let mut size: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    if window_pane_is_floating(wp) != 0 {
+    if window_pane_is_floating(&*wp) != 0 {
         return Err(c"can't split a floating pane".to_owned());
     }
     if flags & SPAWN_HORIZONTAL != 0 {
@@ -2436,7 +2460,10 @@ pub unsafe fn layout_insert_tile(
         layout_resize_set_size(w, lc, type_0, size1);
     } else {
         lctiled = layout_cell_get_first_tiled(lcneighbour);
-        if layout_split_check_space((*lctiled).wp, lcneighbour, type_0) == 0 {
+        let Some(tiled_pane_owner) = (*lctiled).wp.upgrade() else {
+            return -1;
+        };
+        if layout_split_check_space(tiled_pane_owner.get(), lcneighbour, type_0) == 0 {
             return -(1 as ::core::ffi::c_int);
         }
         layout_split_sizes(

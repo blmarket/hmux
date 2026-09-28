@@ -1325,7 +1325,8 @@ unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
 }
 pub unsafe fn tty_update_window_offset(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -1333,7 +1334,8 @@ pub unsafe fn tty_update_window_offset(mut w: *mut window) {
         {
             tty_update_client_offset(c);
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn tty_update_client_offset(mut c: *mut client) {
@@ -1965,7 +1967,8 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
     let Some(mut set_client_cb) = ctx.set_client_cb.take() else {
         return;
     };
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if tty_client_ready(ctx, c) != 0 {
             state = set_client_cb(ctx, &mut *c);
@@ -1976,7 +1979,8 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
                 cmdfn(&raw mut (*c).tty, ctx);
             }
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if ctx.set_client_cb.is_none() {
         ctx.set_client_cb = Some(set_client_cb);

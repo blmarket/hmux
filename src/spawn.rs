@@ -126,7 +126,7 @@ pub const _PATH_TMP: [::core::ffi::c_char; 6] =
 unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
     let mut s: *mut session = (*sc).s;
     let mut wl: *mut winlink = (*sc).wl;
-    let mut wp0: *mut window_pane = (*sc).wp0;
+    let wp0 = (*sc).wp0.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut name: *const ::core::ffi::c_char = if (*sc).name.is_null() {
         b"none\0" as *const u8 as *const ::core::ffi::c_char
     } else {
@@ -304,17 +304,19 @@ pub unsafe fn spawn_window(
                 return ::core::ptr::null_mut::<winlink>();
             }
         }
-        (*sc).wp0 = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pane_list_remove(w, (*sc).wp0);
-        window_pane_z_remove(w, (*sc).wp0);
+        (*sc).wp0 = window_pane_first(w);
+        let source_pane_owner = (*sc).wp0.clone().expect("respawn window has a pane");
+        let source_pane = source_pane_owner.get();
+        window_pane_list_remove(w, source_pane);
+        window_pane_z_remove(w, source_pane);
         layout_free(w);
         window_destroy_panes(w);
-        window_pane_list_insert_front(w, (*sc).wp0);
-        window_pane_z_insert_back(w, (*sc).wp0);
-        window_pane_resize((*sc).wp0, (*w).sx, (*w).sy);
-        layout_init(w, (*sc).wp0);
+        window_pane_list_insert_front(w, source_pane);
+        window_pane_z_insert_back(w, source_pane);
+        window_pane_resize(source_pane, (*w).sx, (*w).sy);
+        layout_init(w, source_pane);
         (*w).active = ::core::ptr::null_mut::<window_pane>();
-        window_set_active_pane(w, (*sc).wp0, 0 as ::core::ffi::c_int);
+        window_set_active_pane(w, source_pane, 0 as ::core::ffi::c_int);
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
         wl = winlink_find_by_index(&raw mut (*s).windows, idx);
@@ -356,7 +358,7 @@ pub unsafe fn spawn_window(
             return ::core::ptr::null_mut::<winlink>();
         }
         default_window_size(
-            (*sc).tc,
+            (*sc).tc.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()),
             s,
             ::core::ptr::null_mut::<window>(),
             &raw mut sx,
@@ -378,8 +380,8 @@ pub unsafe fn spawn_window(
         if (*s).curw.is_null() {
             (*s).curw = (*sc).wl;
         }
-        (*(*sc).wl).session = s;
-        (*w).latest = (*sc).tc as *mut ::core::ffi::c_void;
+        (*(*sc).wl).session = (*s).observer.clone();
+        (*w).latest = (*sc).tc.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
         winlink_set_window((*sc).wl, w);
         // The winlink now owns the window; release the construction reference.
         drop(window);
@@ -430,6 +432,8 @@ pub unsafe fn spawn_pane(
     mut sc: *mut spawn_context,
     cause: *mut Option<CString>,
 ) -> *mut window_pane {
+    let source_pane_owner = (*sc).wp0.clone();
+    let source_pane = source_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut item: *mut cmdq_item = (*sc).item;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
@@ -476,7 +480,8 @@ pub unsafe fn spawn_pane(
         c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     } else {
         ts = s;
-        c = (*sc).tc;
+        c_owner = (*sc).tc.clone();
+        c = c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     spawn_log(
         b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -487,7 +492,7 @@ pub unsafe fn spawn_pane(
             set_spawn_cause(cause.as_mut(), &[b"modal pane must be floating"]);
             return ::core::ptr::null_mut::<window_pane>();
         }
-        if !(*w).modal.is_null() {
+        if (*w).modal.upgrade().is_some() {
             set_spawn_cause(cause.as_mut(), &[b"window already has a modal pane"]);
             return ::core::ptr::null_mut::<window_pane>();
         }
@@ -507,13 +512,9 @@ pub unsafe fn spawn_pane(
         }
         let value = cwd.as_ref().expect("spawn cwd was just set");
         if !value.as_bytes().starts_with(b"/") {
-            let base = server_client_get_cwd(c, ts);
-            // glibc's old %s formatter rendered a null base as "(null)".
-            let base = if base.is_null() {
-                b"(null)".as_slice()
-            } else {
-                CStr::from_ptr(base).to_bytes()
-            };
+            let base_owner = server_client_get_cwd(c.as_ref(), ts.as_ref());
+            // Preserve the old formatter's rendering for an absent startup cwd.
+            let base = base_owner.as_deref().map_or(b"(null)".as_slice(), CStr::to_bytes);
             let mut combined = Vec::with_capacity(base.len() + value.as_bytes().len() + 1);
             combined.extend_from_slice(base);
             if !value.as_bytes().is_empty() {
@@ -523,15 +524,15 @@ pub unsafe fn spawn_pane(
             cwd = Some(CString::new(combined).expect("combined cwd contains no NUL"));
         }
     } else if !(*sc).flags & SPAWN_RESPAWN != 0 {
-        cwd = Some(CStr::from_ptr(server_client_get_cwd(c, ts)).to_owned());
+        cwd = server_client_get_cwd(c.as_ref(), ts.as_ref());
     }
     hlimit = options_get_number(
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if (*sc).flags & SPAWN_RESPAWN != 0 {
-        if (*(*sc).wp0).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
-            idx = window_pane_index((*sc).wp0).expect("pane belongs to window ordering");
+        if (*source_pane).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
+            idx = window_pane_index(&*source_pane).expect("pane belongs to window ordering");
             set_spawn_cause(
                 cause.as_mut(),
                 &[
@@ -546,30 +547,32 @@ pub unsafe fn spawn_pane(
             );
             return ::core::ptr::null_mut::<window_pane>();
         }
-        if !(*(*sc).wp0).event.is_null() {
-            bufferevent_free((*(*sc).wp0).event);
-            (*(*sc).wp0).event = ::core::ptr::null_mut::<bufferevent>();
+        if !(*source_pane).event.is_null() {
+            bufferevent_free((*source_pane).event);
+            (*source_pane).event = ::core::ptr::null_mut::<bufferevent>();
         }
-        if (*(*sc).wp0).fd != -(1 as ::core::ffi::c_int) {
-            close((*(*sc).wp0).fd);
-            (*(*sc).wp0).fd = -(1 as ::core::ffi::c_int);
+        if (*source_pane).fd != -(1 as ::core::ffi::c_int) {
+            close((*source_pane).fd);
+            (*source_pane).fd = -(1 as ::core::ffi::c_int);
         }
-        window_pane_reset_mode_all((*sc).wp0);
-        screen_reinit(&mut (*(*sc).wp0).base, 0 as ::core::ffi::c_int);
-        if let Some(ictx) = (*(*sc).wp0).ictx.take() {
+        window_pane_reset_mode_all(source_pane);
+        screen_reinit(&mut (*source_pane).base, 0 as ::core::ffi::c_int);
+        if let Some(ictx) = (*source_pane).ictx.take() {
             input_free(ictx);
         }
-        (*(*sc).wp0).offset.used = 0 as size_t;
-        (*(*sc).wp0).base_offset = 0 as size_t;
-        (*(*sc).wp0).pipe_offset.used = 0 as size_t;
-        loop_0 = clients.first();
+        (*source_pane).offset.used = 0 as size_t;
+        (*source_pane).base_offset = 0 as size_t;
+        (*source_pane).pipe_offset.used = 0 as size_t;
+        let mut registry_loop_0_owner = clients.first();
+        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
             if (*loop_0).flags & CLIENT_CONTROL as uint64_t != 0 {
-                control_reset_pane(loop_0, (*sc).wp0);
+                control_reset_pane(loop_0, source_pane);
             }
-            loop_0 = clients.next(loop_0);
+            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
+            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        new_wp = (*sc).wp0;
+        new_wp = source_pane;
         (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
     } else {
         if (*sc).lc.is_null() {
@@ -581,7 +584,7 @@ pub unsafe fn spawn_pane(
             );
             layout_init(w, new_wp);
         } else {
-            new_wp = window_add_pane(w, (*sc).wp0, hlimit, (*sc).flags);
+            new_wp = window_add_pane(w, source_pane, hlimit, (*sc).flags);
             if (*sc).flags & SPAWN_ZOOM != 0 {
                 layout_assign_pane((*sc).lc, new_wp, 1 as ::core::ffi::c_int);
             } else {
@@ -931,15 +934,15 @@ pub unsafe fn spawn_pane(
         return new_wp;
     }
     if (*sc).flags & SPAWN_MODAL != 0 {
-        (*w).modal_last = (*w).active;
-        (*w).modal = new_wp;
+        (*w).modal_last = (*w).active.as_ref().map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
+        (*w).modal = (*new_wp).observer.clone();
         window_redraw_active_switch(w, new_wp);
         if (*sc).flags & SPAWN_NONOTIFY != 0 {
             window_set_active_pane(w, new_wp, 0 as ::core::ffi::c_int);
         } else {
             window_set_active_pane(w, new_wp, 1 as ::core::ffi::c_int);
         }
-    } else if (!(*sc).flags & SPAWN_DETACHED != 0 || (*w).active.is_null()) && (*w).modal.is_null()
+    } else if (!(*sc).flags & SPAWN_DETACHED != 0 || (*w).active.is_null()) && (*w).modal.upgrade().is_none()
     {
         if (*sc).flags & SPAWN_NONOTIFY != 0 {
             window_set_active_pane(w, new_wp, 0 as ::core::ffi::c_int);
@@ -1076,8 +1079,8 @@ pub(crate) unsafe fn spawn_editor(
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: ::core::ptr::null_mut::<session>(),
         wl: ::core::ptr::null_mut::<winlink>(),
-        tc: ::core::ptr::null_mut::<client>(),
-        wp0: ::core::ptr::null_mut::<window_pane>(),
+        tc: None,
+        wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
@@ -1103,7 +1106,7 @@ pub(crate) unsafe fn spawn_editor(
         ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
     let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut fd: ::core::ffi::c_int = 0;
-    if !(*w).modal.is_null() {
+    if (*w).modal.upgrade().is_some() {
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     editor = options_get_string(
@@ -1156,8 +1159,8 @@ pub(crate) unsafe fn spawn_editor(
     .expect("editor command components contain no NUL");
     sc.s = s;
     sc.wl = wl;
-    sc.tc = c;
-    sc.wp0 = (*w).active;
+    sc.tc = c.as_ref().and_then(|client| client.observer.upgrade());
+    sc.wp0 = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
     sc.lc = lc;
     sc.argv = vec![cmd];
     sc.environ = Some(environ_create());
@@ -1189,6 +1192,31 @@ mod tests {
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn spawn_context_retains_client_and_source_pane_until_context_is_dropped() {
+        unsafe {
+            let owner = client::new();
+            let observer = std::rc::Rc::downgrade(&owner);
+            let pane_owner = window_pane::new();
+            let pane_observer = std::rc::Rc::downgrade(&pane_owner);
+            let context = spawn_context {
+                item: std::ptr::null_mut(), s: std::ptr::null_mut(),
+                wl: std::ptr::null_mut(), tc: Some(owner.clone()),
+                wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
+                name: std::ptr::null(), argv: Vec::new(), environ: None,
+                idx: 0, cwd: std::ptr::null(), flags: 0,
+            };
+            drop(owner);
+            drop(pane_owner);
+            assert!(pane_observer.upgrade().is_some());
+            assert!(observer.upgrade().is_some());
+            assert!(std::rc::Rc::ptr_eq(&observer.upgrade().unwrap(), context.tc.as_ref().unwrap()));
+            drop(context);
+            assert!(observer.upgrade().is_none());
+            assert!(pane_observer.upgrade().is_none());
+        }
+    }
 
     const CHILD_CASE: &str = "HMUX2_EDITOR_FD_OWNER_CASE";
     const SUCCESS_CASE: &str = "success";

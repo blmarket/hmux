@@ -115,14 +115,13 @@ static mut hooks_events: HooksEvents = HooksEvents { events: Vec::new() };
 unsafe fn hooks_insert_one(
     mut item: *mut cmdq_item,
     mut hd: *mut hooks_data,
-    commands: Option<&std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
-    state: &std::rc::Rc<std::cell::UnsafeCell<cmdq_state>>,
+    commands: Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>>,
+    state: &std::rc::Rc<cmdq_state>,
 ) -> *mut cmdq_item {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let Some(commands) = commands else { return item; };
-    let cmdlist = rc::as_ptr(commands);
     if log_get_level() != 0 as ::core::ffi::c_int {
-        let s = cmd_list_print_cstring(&*cmdlist, 0 as ::core::ffi::c_int);
+        let s = cmd_list_print_cstring(&commands.borrow(), 0 as ::core::ffi::c_int);
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",
@@ -223,9 +222,9 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
             CMDQ_STATE_NOHOOKS,
         );
     } else {
-        state = cmdq_new_state(&raw mut fs, cmdq_get_event(item), CMDQ_STATE_NOHOOKS);
+        state = cmdq_new_state(&raw mut fs, &mut cmdq_get_event(item), CMDQ_STATE_NOHOOKS);
     }
-    cmdq_add_formats(rc::as_ptr(&state), (*hd).formats.as_ptr());
+    cmdq_add_formats(&state, (*hd).formats.as_ptr());
     if *(*hd).name.as_ptr() as ::core::ffi::c_int == '@' as i32 {
         value = options_get_string(oo, (*hd).name.as_ptr());
         pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
@@ -459,7 +458,6 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     } else {
         cmd_find_copy_state(&raw mut fs, &raw mut (*hm).fs);
     }
-    event_payload_set_target(&mut *ep, &fs);
     event_payload_set_string(
         &mut *ep,
         c"value".as_ptr(),
@@ -490,11 +488,13 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     }
     if !wl.is_null() {
         if s.is_null() {
-            event_payload_set_session(
-                &mut *ep,
-                b"session\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wl).session,
-            );
+            if let Some(session_owner) = (*wl).session.upgrade() {
+                event_payload_set_session(
+                    &mut *ep,
+                    b"session\0" as *const u8 as *const ::core::ffi::c_char,
+                    session_owner.get(),
+                );
+            }
         }
         event_payload_set_window(
             &mut *ep,
@@ -523,6 +523,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     }
     // Payload construction has finished reading the link. Dispatch may unlink it.
     drop(link);
+    event_payload_set_target(&mut *ep, &fs);
     events_fire(change.name.as_ptr(), ep);
     if let Some(owner) = session_owner {
         session_remove_ref(owner, c"hooks_monitor_cb");
@@ -646,7 +647,7 @@ mod hooks_events_tests {
             let s = rc::as_ptr(&session_owner);
             let w = rc::as_ptr(&window_owner);
             let wl = winlink_add(&raw mut (*s).windows, 2);
-            (*wl).session = s;
+            (*wl).session = (*s).observer.clone();
             winlink_set_window(wl, w);
             let change = monitor_change {
                 name: c"test-monitor-unlink",
@@ -660,7 +661,10 @@ mod hooks_events_tests {
             let observer = change.wl.clone();
             let calls = Rc::new(Cell::new(0));
             let called = calls.clone();
-            let sink = events_add_sink(change.name, Rc::new(move |_, _| {
+            let sink = events_add_sink(change.name, Rc::new(move |_, payload| {
+                assert_eq!(payload.target.idx, 2);
+                assert!(payload.target_window.is_some());
+                assert!(payload.target_session.is_some());
                 assert!(!observer.is_borrowed());
                 winlink_remove(&raw mut (*s).windows, wl);
                 assert!(!observer.is_alive());

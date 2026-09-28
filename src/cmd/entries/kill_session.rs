@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::format::{
-    format_create, format_defaults, format_expand_cstring, format_free, format_true,
+    format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 use crate::src::session::sessions;
@@ -51,7 +51,8 @@ pub static cmd_kill_session_entry: cmd_entry = {
 unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).s_ptr();
+    let source = (*target).s.upgrade().expect("live target session");
+    let s = source.get();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -75,8 +76,9 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         sg = session_group_contains(s);
         !sg.is_null()
     } {
-        for sloop in crate::src::session::session_group_members(sg) {
-            server_destroy_session(sloop);
+        for session_owner in crate::src::session::session_group_members(sg) {
+            let sloop = session_owner.get();
+            server_destroy_session(&session_owner);
             session_destroy(
                 sloop,
                 1 as ::core::ffi::c_int,
@@ -84,7 +86,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             );
         }
     } else {
-        server_destroy_session(s);
+        server_destroy_session(&source);
         session_destroy(
             s,
             1 as ::core::ffi::c_int,
@@ -105,7 +107,7 @@ unsafe fn cmd_kill_session_all(
         let name = sessions_key(&*sloop);
         if !(sloop == s) {
             if !(cmd_kill_session_filter(item, sloop, filter) == 0) {
-                server_destroy_session(sloop);
+                server_destroy_session(sloop_owner.as_ref().expect("registered session"));
                 session_destroy(
                     sloop,
                     1 as ::core::ffi::c_int,
@@ -124,14 +126,13 @@ unsafe fn cmd_kill_session_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    ft = format_create(
-        queue_client_ptr,
+    ft = format_create_with_client(
+        queue_client.as_ref(),
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

@@ -3,7 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create, format_defaults, format_expand_cstring, format_free, format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::session::sessions;
 use crate::src::session::{sessions_minmax, sessions_next};
@@ -101,7 +101,6 @@ unsafe fn cmd_list_panes_window(
     mut type_0: ::core::ffi::c_int,
 ) {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -137,13 +136,13 @@ unsafe fn cmd_list_panes_window(
     filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let l = sort_get_panes_window((*wl).window_ptr(), &raw mut sort_crit);
+    let l = sort_get_panes_window(&*(*wl).window_ptr(), &sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
     while i < n {
-        wp = l[i as usize];
-        ft = format_create(
-            queue_client_ptr,
+        wp = l[i as usize].get();
+        ft = format_create_with_client(
+            queue_client.as_ref(),
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,

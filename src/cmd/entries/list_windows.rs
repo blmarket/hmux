@@ -3,7 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create, format_defaults, format_expand_cstring, format_free, format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -55,7 +55,6 @@ pub static cmd_list_windows_entry: cmd_entry = {
 };
 unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client(item);
@@ -102,9 +101,10 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     i = 0 as u_int;
     while i < n {
         wl = winlinks[i as usize];
-        s = (*wl).session;
-        ft = format_create(
-            queue_client_ptr,
+        let Some(session_owner) = (*wl).session.upgrade() else { i += 1; continue; };
+        s = session_owner.get();
+        ft = format_create_with_client(
+            queue_client.as_ref(),
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,

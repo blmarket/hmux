@@ -48,3 +48,29 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         sessions_remove(&mut head, &mut *replacement.get());
     }
 }
+
+#[test]
+fn previous_session_observer_requires_registration_without_retaining_session() {
+    use std::rc::Rc;
+    unsafe {
+        let mut head = sessions { storage: None };
+        let previous = node(c"previous");
+        let observer = Rc::downgrade(&previous);
+        assert!(sessions_resolve(&head, &observer).is_none());
+        sessions_insert(&mut head, previous.clone());
+        let resolved = sessions_resolve(&head, &observer).expect("registered session");
+        assert!(Rc::ptr_eq(&resolved, &previous));
+        sessions_remove(&mut head, &mut *previous.get());
+        // Queued work may retain the removed session, but it is no longer a target.
+        assert!(sessions_resolve(&head, &observer).is_none());
+        let replacement = node(c"previous");
+        sessions_insert(&mut head, replacement.clone());
+        assert!(sessions_resolve(&head, &observer).is_none());
+        drop(previous);
+        assert!(observer.upgrade().is_some());
+        drop(resolved);
+        assert!(observer.upgrade().is_none());
+        assert!(sessions_resolve(&head, &observer).is_none());
+        sessions_remove(&mut head, &mut *replacement.get());
+    }
+}

@@ -1,7 +1,7 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_insert_hook,
+    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_target, cmdq_insert_hook,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
@@ -119,7 +119,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut s: *mut session = (*target).s_ptr();
@@ -156,9 +156,9 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             cmdq_error(item, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }
-        cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
+        cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
         server_redraw_session(s);
-        cmdq_insert_hook(s, item, current, |out| {
+        cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| {
             out.write_all(b"after-select-window")
         });
     } else {
@@ -167,20 +167,20 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 cmdq_error(item, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
             }
-            if (*current).s_ptr() == s {
-                cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
+            if current.current.borrow().s_ptr() == s {
+                cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
             }
             server_redraw_session(s);
         } else if session_select(s, (*wl).idx) == 0 as ::core::ffi::c_int {
-            cmd_find_from_session(current, s, 0 as ::core::ffi::c_int);
+            cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
             server_redraw_session(s);
         }
-        cmdq_insert_hook(s, item, current, |out| {
+        cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| {
             out.write_all(b"after-select-window")
         });
     }
     if !c.is_null() && !(*c).session.is_null() {
-        (*(*(*s).curw).window_ptr()).latest = c as *mut ::core::ffi::c_void;
+        (*(*(*s).curw).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

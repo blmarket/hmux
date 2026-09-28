@@ -24,7 +24,7 @@ use std::rc::Rc;
 
 pub struct cmd_confirm_before_data {
     pub item: *mut cmdq_item,
-    pub cmdlist: Rc<UnsafeCell<cmd_list>>,
+    pub cmdlist: Rc<std::cell::RefCell<cmd_list>>,
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
 }
@@ -105,7 +105,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = cmd_list_first(&*rc::as_ptr(&cdata.cmdlist))
+        cmd = cmd_list_first(&cdata.cmdlist.borrow())
             .expect("confirmation command")
             .entry
             .name

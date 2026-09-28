@@ -564,7 +564,8 @@ unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut windo
     if (*c).session.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    wp = window_pane_find_by_id(pane);
+    let lookup_wp_owner = window_pane_find_by_id(pane);
+    wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }

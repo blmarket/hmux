@@ -258,7 +258,8 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         generation: 0,
         entry: monitor_pane_entry { owner: None },
     };
-    wp = window_pane_find_by_id((*me).id);
+    let lookup_wp_owner = window_pane_find_by_id((*me).id);
+    wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
         session_remove_ref(session_owner, c"monitor_check_pane");
         if let Some(client) = client_owner {
@@ -269,7 +270,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
     w = (*wp).window as *mut window;
     wl = window_winlinks_first(w);
     while !wl.is_null() {
-        if !((*wl).session != s) {
+        if (*wl).session.ptr_eq(&(*s).observer) {
             ft = monitor_create_formats(c, s, wl, wp);
             let value = format_expand_cstring(ft, ((*me).format).as_ptr());
             format_free(ft);
@@ -376,7 +377,11 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         generation: 0,
         entry: monitor_window_entry { owner: None },
     };
-    w = window_find_by_id((*me).id);
+    let window_owner = window_find_by_id((*me).id);
+    w = window_owner.as_ref().map_or(
+        std::ptr::null_mut(),
+        crate::src::shared::window::WindowOwner::as_ptr,
+    );
     if w.is_null() {
         session_remove_ref(session_owner, c"monitor_check_window");
         if let Some(client) = client_owner {
@@ -386,7 +391,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
     }
     wl = window_winlinks_first(w);
     while !wl.is_null() {
-        if !((*wl).session != s) {
+        if (*wl).session.ptr_eq(&(*s).observer) {
             ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
             let value = format_expand_cstring(ft, ((*me).format).as_ptr());
             format_free(ft);

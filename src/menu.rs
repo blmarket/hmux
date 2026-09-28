@@ -548,7 +548,7 @@ pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> :
     }
     let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
     let mut saved_event = key_event {
-        client: std::ptr::null_mut(),
+        client: None,
         key: md.key,
         m: md.m,
         bytes: None,
@@ -715,7 +715,7 @@ mod tests {
 
     fn event(key: key_code) -> key_event {
         key_event {
-            client: std::ptr::null_mut(),
+            client: None,
             key,
             m: mouse_event::default(),
             bytes: None,

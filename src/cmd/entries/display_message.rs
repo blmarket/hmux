@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_create, format_defaults, format_each, format_expand_time_cstring, format_free,
+    format_create_with_client, format_defaults, format_each, format_expand_time_cstring, format_free,
 };
 use crate::src::json::{json_parse, json_to_string};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
@@ -66,7 +66,6 @@ pub static cmd_display_message_entry: cmd_entry = {
 };
 unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let queue_client = cmdq_get_client(item);
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
@@ -130,10 +129,12 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     } else if template.is_null() {
         template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
     }
+    let best_client_owner;
     if !tc.is_null() && (*tc).session == s {
         c = tc;
     } else if !s.is_null() {
-        c = cmd_find_best_client(s);
+        best_client_owner = cmd_find_best_client(&*s);
+        c = best_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         c = ::core::ptr::null_mut::<client>();
     }
@@ -142,7 +143,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     } else {
         flags = 0 as ::core::ffi::c_int;
     }
-    ft = format_create(queue_client_ptr, item, FORMAT_NONE, flags);
+    ft = format_create_with_client(queue_client.as_ref(), item, FORMAT_NONE, flags);
     format_defaults(ft, c, s, wl, wp);
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {

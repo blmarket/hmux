@@ -37,7 +37,8 @@ pub const CLEAR: screen_write_item_type = 1;
 
 #[derive(Default)]
 pub struct screen_write_ctx {
-    pub wp: *mut window_pane,
+    /// Optional pane observer; the caller separately guarantees the screen borrow.
+    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub s: *mut screen,
     pub flags: ::core::ffi::c_int,
     pub init_ctx_cb: screen_write_init_ctx_cb,

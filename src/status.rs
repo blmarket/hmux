@@ -119,10 +119,12 @@ pub unsafe fn status_timer_start(mut c: *mut client) {
 }
 pub unsafe fn status_timer_start_all() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         status_timer_start(c);
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn status_update_cache(mut s: *mut session) {
@@ -263,7 +265,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sle: *mut style_line_entry = ::core::ptr::null_mut::<style_line_entry>();
     let mut s: *mut session = (*c).session;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -562,7 +564,7 @@ unsafe fn status_message_callback(mut data: *mut ::core::ffi::c_void) {
 pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -784,7 +786,7 @@ unsafe fn status_prompt_screen_line(c: &client) -> u_int {
 pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,

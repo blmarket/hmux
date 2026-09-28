@@ -114,29 +114,29 @@ impl EventPayloadValue {
         };
         *value
     }
-    pub fn client(&self) -> *mut client {
+    pub fn client(&self) -> &std::rc::Rc<std::cell::UnsafeCell<client>> {
         let Self::Client(value) = self else {
             panic!("incorrect event payload type")
         };
-        super::rc::as_ptr(value)
+        value
     }
-    pub fn session(&self) -> *mut session {
+    pub fn session(&self) -> &std::rc::Rc<std::cell::UnsafeCell<session>> {
         let Self::Session(value) = self else {
             panic!("incorrect event payload type")
         };
-        super::rc::as_ptr(value)
+        value
     }
-    pub fn window(&self) -> *mut window {
+    pub fn window(&self) -> &std::rc::Rc<std::cell::UnsafeCell<window>> {
         let Self::Window(value) = self else {
             panic!("incorrect event payload type")
         };
-        super::rc::as_ptr(value)
+        value
     }
-    pub fn pane(&self) -> *mut window_pane {
+    pub fn pane(&self) -> &std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
         let Self::Pane(value) = self else {
             panic!("incorrect event payload type")
         };
-        super::rc::as_ptr(value)
+        value
     }
     pub fn pointer(&self) -> &EventPayloadPointer {
         let Self::Pointer(value) = self else {

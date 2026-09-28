@@ -127,7 +127,7 @@ unsafe fn cmd_send_keys_inject_key(
         return item;
     }
     let table = key_bindings_get_table(std::ffi::CStr::from_ptr((*(*wme).mode).key_table.expect("non-null function pointer")(wme)), 1 as ::core::ffi::c_int).expect("created key table");
-    let command = key_bindings_get(&*crate::src::shared::rc::as_ptr(&table), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
+    let command = key_bindings_get(&table.borrow(), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
         after = key_bindings_dispatch(
             command,
@@ -204,6 +204,7 @@ unsafe fn cmd_send_keys_inject_string(
     return after;
 }
 unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let mouse_pane_owner;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client(item);
@@ -211,7 +212,8 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut after: *mut cmdq_item = item;
@@ -263,7 +265,8 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
-        wp = cmd_mouse_pane(m, &raw mut s, ::core::ptr::null_mut::<*mut winlink>());
+        mouse_pane_owner = cmd_mouse_pane(m, &raw mut s, ::core::ptr::null_mut::<*mut winlink>());
+        wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             cmdq_error(item, |out| out.write_all(b"no mouse target"));
             return CMD_RETURN_ERROR;

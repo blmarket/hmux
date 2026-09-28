@@ -173,7 +173,6 @@ unsafe fn cmd_source_file_done(
 ) {
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = cdata.item;
-    let c = cdata.client_ptr();
     // Progress does not coalesce the buffer; only complete files are parsed.
     let bdata = evbuffer_pullup(buffer, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
@@ -192,7 +191,7 @@ unsafe fn cmd_source_file_done(
             bdata,
             bsize,
             path,
-            c,
+            cdata.client.as_ref(),
             cdata.after,
             target,
             cdata.flags,
@@ -298,10 +297,8 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             cdata.flags |= CMD_PARSE_VERBOSE;
         }
     }
-    let cwd = cmd_source_file_quote_for_glob(CStr::from_ptr(server_client_get_cwd(
-        c,
-        ::core::ptr::null_mut::<session>(),
-    )));
+    let cwd_owner = server_client_get_cwd(c.as_ref(), None).expect("source working directory");
+    let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
     i = 0 as u_int;
     while i < args_count(args) {
         path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());

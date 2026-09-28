@@ -485,7 +485,7 @@ unsafe fn popup_draw(c: *mut client, popup: &PopupGuard) {
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -1200,10 +1200,10 @@ pub unsafe fn popup_display(
         return -(1 as ::core::ffi::c_int);
     }
     (*pd).ictx = Some(input_init(
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
         job_get_event((*pd).job),
         (*pd).palette.as_ptr().cast_mut(),
-        c,
+        (*pd).c.as_ref(),
     ));
     (*pd).published = true;
     let check_cb = popup_check_callback(owner.handle());

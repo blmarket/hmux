@@ -199,21 +199,21 @@ unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
         ls.pop().expect("layout serializer underflow");
         ls.extend_from_slice(b"]");
     } else {
-        wp = (*lc).wp;
-        if wp.is_null() {
-            return -(1 as ::core::ffi::c_int);
-        }
+        let Some(pane_owner) = (*lc).wp.upgrade() else {
+            return -1;
+        };
+        wp = pane_owner.get();
         if wp == (*(*wp).window).active {
             ls.extend_from_slice(b",\"a\":true");
-        } else if window_pane_last_index(wp).map(|value| { i = value; }).is_some() {
+        } else if window_pane_last_index(&*wp).map(|value| { i = value; }).is_some() {
             ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());
         }
-        if !window_pane_index(wp).map(|value| { i = value; }).is_some() {
+        if !window_pane_index(&*wp).map(|value| { i = value; }).is_some() {
             return -(1 as ::core::ffi::c_int);
         }
         ls.extend_from_slice(format!(",\"i\":{}", i).as_bytes());
         if (*lc).flags & LAYOUT_CELL_FLOATING != 0
-            && window_pane_zindex(wp).map(|value| { i = value; }).is_some()
+            && window_pane_zindex(&*wp).map(|value| { i = value; }).is_some()
         {
             ls.extend_from_slice(format!(",\"z\":{}", i).as_bytes());
         }
@@ -228,7 +228,7 @@ unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
     if lc.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    if !(*lc).wp.is_null() {
+    if let Some(pane_owner) = (*lc).wp.upgrade() {
         ls.extend_from_slice(
             format!(
                 "{}x{},{},{},{}",
@@ -236,7 +236,7 @@ unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
                 (*lc).g.sy,
                 (*lc).g.xoff,
                 (*lc).g.yoff,
-                (*(*lc).wp).id
+                (*pane_owner.get()).id
             )
             .as_bytes(),
         );
@@ -293,7 +293,7 @@ unsafe fn layout_custom_copy_layout(lc: *mut layout_cell) -> Option<Box<layout_c
     owner.flags = (*lc).flags;
     owner.g = (*lc).g;
     if owner.type_0 == LAYOUT_WINDOWPANE {
-        owner.wp = (*lc).wp;
+        owner.wp = (*lc).wp.clone();
     } else {
         let mut child = layout_cells_first(&*lc);
         while !child.is_null() {
@@ -323,7 +323,7 @@ unsafe fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
-            (*lc).wp = ::core::ptr::null_mut::<window_pane>();
+            (*lc).wp = std::rc::Weak::new();
         }
         0 | 1 => {
             lcchild = layout_cells_first(&*lc);
@@ -536,7 +536,7 @@ pub unsafe fn layout_parse(
                     if pctx.version == 1 as int64_t {
                         wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                         while !wp.is_null() {
-                            if !(window_pane_is_floating(wp) == 0) {
+                            if !(window_pane_is_floating(&*wp) == 0) {
                                 lcchild = (*wp).layout_cell as *mut layout_cell;
                                 floating.push(layout_cells_remove((*lcchild).parent, lcchild).expect("floating cell is owned"));
                                 (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
@@ -576,35 +576,32 @@ pub unsafe fn layout_parse(
     return -(1 as ::core::ffi::c_int);
 }
 unsafe fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    for cctx in &(*pctx).cctxs {
-        layout_make_leaf(cctx.lc, wp);
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let panes = (*w).panes.snapshot();
+    assert!(panes.len() >= (*pctx).cctxs.len(), "layout requires enough live panes");
+    for (cctx, pane_owner) in (*pctx).cctxs.iter().zip(&panes) {
+        layout_make_leaf(cctx.lc, pane_owner);
     }
 }
-unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *mut layout_cell) {
+unsafe fn layout_assign_fallback_tiled(
+    panes: &mut impl Iterator<Item = std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    lc: *mut layout_cell,
+) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if lc.is_null() {
         return;
     }
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
-            while !(*wp).is_null() && !(**wp).layout_cell.is_null() {
-                *wp = window_pane_next(*wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            if let Some(owner) = panes.find(|owner| (*owner.get()).layout_cell.is_null()) {
+                layout_make_leaf(lc, &owner);
             }
-            if (*wp).is_null() {
-                return;
-            }
-            layout_make_leaf(lc, *wp);
-            *wp = window_pane_next(*wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             return;
         }
         0 | 1 => {
             lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
-                layout_assign_fallback_tiled(wp, lcchild);
+                layout_assign_fallback_tiled(panes, lcchild);
                 lcchild = layout_cell_next(lcchild);
             }
             return;
@@ -613,22 +610,20 @@ unsafe fn layout_assign_fallback_tiled(mut wp: *mut *mut window_pane, mut lc: *m
     };
 }
 unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
-    let mut wp: *mut window_pane = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    layout_assign_fallback_tiled(&raw mut wp, lcroot);
+    let panes = (*w).panes.snapshot();
+    layout_assign_fallback_tiled(&mut panes.iter().cloned(), lcroot);
     if window_count_panes(w, 1 as ::core::ffi::c_int) > 1 as u_int
         && (*lcroot).type_0 as ::core::ffi::c_uint
             == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         lcroot = layout_replace_with_node(w, lcroot, LAYOUT_TOPBOTTOM);
     }
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if window_pane_is_floating(wp) != 0 {
-            lc = (*wp).layout_cell as *mut layout_cell;
+    for owner in &panes {
+        let wp = owner.get();
+        if window_pane_is_floating(&*wp) != 0 {
+            let lc = (*wp).layout_cell;
             layout_cells_push_back(lcroot, layout_take_leaf(floating, lc));
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx, floating: &mut Vec<Box<layout_cell>>) {
@@ -970,38 +965,39 @@ unsafe fn layout_construct(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wpnext: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        wpnext = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if window_pane_is_floating(wp) != 0 {
+    let mut wp: *mut window_pane;
+    for pane_owner in (*w).z_index.snapshot() {
+        wp = pane_owner.get();
+        if window_pane_is_floating(&*wp) != 0 {
             window_pane_z_remove(w, wp);
         }
-        wp = wpnext;
     }
     (*pctx)
         .cctxs
         .sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
     for cctx in &(*pctx).cctxs {
-        wp = (*cctx.lc).wp;
-        if window_pane_is_floating(wp) != 0 {
+        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else { continue; };
+        wp = pane_owner.get();
+        if window_pane_is_floating(&*wp) != 0 {
             window_pane_z_insert_front(w, wp);
         }
     }
     for cctx in &(*pctx).cctxs {
         if cctx.active == 1 as ::core::ffi::c_int {
-            window_set_active_pane(w, (*cctx.lc).wp, 1 as ::core::ffi::c_int);
+            if let Some(pane_owner) = (*cctx.lc).wp.upgrade() {
+                window_set_active_pane(w, pane_owner.get(), 1 as ::core::ffi::c_int);
+            }
             break;
         }
     }
-    while !window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
-        wp = window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    while let Some(pane_owner) = window_pane_stack_first(w) {
+        wp = pane_owner.get();
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }
     (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
     for cctx in &(*pctx).cctxs {
-        wp = (*cctx.lc).wp;
+        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else { continue; };
+        wp = pane_owner.get();
         if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
             window_pane_stack_push(&raw mut (*w).last_panes, wp);
         }

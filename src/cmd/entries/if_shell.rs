@@ -134,15 +134,13 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     } else {
         cdata.client = client_retain(tc);
     }
+    let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
     let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),
         None,
         s,
-        {
-            let cwd = server_client_get_cwd(queue_client_ptr, s);
-            (!cwd.is_null()).then(|| std::ffi::CStr::from_ptr(cwd))
-        },
+        cwd.as_deref(),
         None,
         None,
         None,

@@ -117,7 +117,8 @@ unsafe fn server_acl_check(mut c: *mut client) -> *mut server_acl_entry {
 unsafe fn server_acl_update() {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.first();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         entry = server_acl_check(c);
         if entry.is_null() {
@@ -131,7 +132,8 @@ unsafe fn server_acl_update() {
         } else {
             (*c).flags &= !CLIENT_READONLY as uint64_t;
         }
-        c = clients.next(c);
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_acl_init() {

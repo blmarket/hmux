@@ -4,7 +4,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_current, cmdq_get_event, cmdq_get_target, cmdq_get_target_client,
+    cmdq_error, cmdq_get_state_owned, cmdq_get_event, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
@@ -124,14 +124,14 @@ pub static cmd_split_window_entry: cmd_entry = {
 unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut current: *mut cmd_find_state = cmdq_get_current(item);
+    let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: ::core::ptr::null_mut::<session>(),
         wl: ::core::ptr::null_mut::<winlink>(),
-        tc: ::core::ptr::null_mut::<client>(),
-        wp0: ::core::ptr::null_mut::<window_pane>(),
+        tc: None,
+        wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         argv: Vec::new(),
@@ -158,7 +158,8 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         wp: Default::default(),
         idx: 0,
     };
-    let mut event: *mut key_event = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(item);
+    let event: *mut key_event = &mut event_snapshot;
     let mut input: ::core::ffi::c_int = 0;
     let mut empty: ::core::ffi::c_int = 0;
     let mut is_floating: ::core::ffi::c_int = 0;
@@ -184,7 +185,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if restore_zoom == 0 {
             window_unzoom(w, 1 as ::core::ffi::c_int);
         }
-        is_floating = window_pane_is_floating(wp);
+        is_floating = window_pane_is_floating(&*wp);
         flags |= SPAWN_SPLIT;
     }
     if args_has(args, 'O' as i32 as u_char) != 0 {
@@ -192,7 +193,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             cmdq_error(item, |out| out.write_all(b"modal pane must be floating"));
             return CMD_RETURN_ERROR;
         }
-        if !(*w).modal.is_null() {
+        if (*w).modal.upgrade().is_some() {
             cmdq_error(item, |out| {
                 out.write_all(b"window already has a modal pane")
             });
@@ -293,7 +294,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     sc.item = item;
     sc.s = s;
     sc.wl = wl;
-    sc.wp0 = wp;
+    sc.wp0 = (*wp).observer.upgrade();
     sc.lc = lc;
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
@@ -498,7 +499,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                     _ => {
                                         if !flags & SPAWN_DETACHED != 0 {
                                             cmd_find_from_winlink_pane(
-                                                current,
+                                                &mut *current.current.borrow_mut(),
                                                 wl,
                                                 new_wp,
                                                 0 as ::core::ffi::c_int,
@@ -595,8 +596,9 @@ unsafe fn cmd_split_window_mouse_resize(mut c: *mut client, mut m: *mut mouse_ev
     if (*c).tty.mouse_last_pane == -(1 as ::core::ffi::c_int) {
         return;
     }
-    wp = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
-    if wp.is_null() || window_pane_is_floating(wp) == 0 {
+    let lookup_wp_owner = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
+    wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    if wp.is_null() || window_pane_is_floating(&*wp) == 0 {
         (*c).tty.mouse_drag_update = None;
         return;
     }

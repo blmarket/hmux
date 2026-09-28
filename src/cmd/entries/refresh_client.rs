@@ -192,7 +192,8 @@ unsafe fn cmd_refresh_client_update_offset(tc: *mut client, value: *const ::core
     let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
-    let wp = window_pane_find_by_id(pane);
+    let lookup_wp_owner = window_pane_find_by_id(pane);
+    let wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
     }
@@ -209,7 +210,8 @@ unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
     let Some((pane, report)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
-    let wp = window_pane_find_by_id(pane);
+    let lookup_wp_owner = window_pane_find_by_id(pane);
+    let wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
     }

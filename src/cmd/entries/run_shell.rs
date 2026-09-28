@@ -101,6 +101,7 @@ fn cmd_run_shell_args_parse(
     Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core::ffi::c_char) {
+    let lookup_wp_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -113,7 +114,8 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
     };
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if cdata.wp_id != -(1 as ::core::ffi::c_int) {
-        wp = window_pane_find_by_id(cdata.wp_id as u_int);
+        lookup_wp_owner = window_pane_find_by_id(cdata.wp_id as u_int);
+        wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if wp.is_null() {
         if !cdata.item.is_null() {
@@ -193,15 +195,15 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         return CMD_RETURN_NORMAL;
     }
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
-        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned)
     } else {
-        server_client_get_cwd(c, s)
+        server_client_get_cwd(c.as_ref(), s.as_ref())
     };
     let mut cdata = Box::new(cmd_run_shell_data {
         client: None,
         cmd: None,
         state: None,
-        cwd: CStr::from_ptr(cwd).to_owned(),
+        cwd: cwd.expect("shell working directory"),
         item: ::core::ptr::null_mut(),
         s: None,
         wp_id: 0,

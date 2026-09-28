@@ -82,7 +82,8 @@ pub struct sessions {
 pub struct session_group {
     pub name: std::ffi::CString,
     pub entry: session_group_entry,
-    pub(crate) members: Vec<*mut session>,
+    /// Membership observes globally owned sessions without retaining them.
+    pub(crate) members: Vec<std::rc::Weak<std::cell::UnsafeCell<session>>>,
 }
 
 impl session_group {
@@ -110,6 +111,40 @@ pub struct session_groups {
 mod retained_session_tests {
     use super::*;
     use crate::src::{reactor, shared::rc};
+
+    #[test]
+    fn group_membership_is_weak_but_traversal_retains_live_sessions() {
+        use crate::src::session::{session_group_attached_count, session_group_count, session_group_members};
+        use std::rc::Rc;
+
+        unsafe {
+            let first = session::new();
+            let expired = session::new();
+            let last = session::new();
+            (*first.get()).attached = 2;
+            (*last.get()).attached = 3;
+            let first_weak = Rc::downgrade(&first);
+            let last_weak = Rc::downgrade(&last);
+            let mut group = session_group::empty();
+            group.members = vec![first_weak.clone(), Rc::downgrade(&expired), last_weak.clone()];
+            assert_eq!(Rc::strong_count(&first), 1);
+            drop(expired);
+            assert_eq!(session_group_count(&mut group), 2);
+            assert_eq!(session_group_attached_count(&mut group), 5);
+            let snapshot = session_group_members(&mut group);
+            assert_eq!(snapshot.len(), 2);
+            assert!(Rc::ptr_eq(&snapshot[0], &first));
+            assert!(Rc::ptr_eq(&snapshot[1], &last));
+            drop(first);
+            drop(last);
+            drop(group);
+            assert!(first_weak.upgrade().is_some());
+            assert!(last_weak.upgrade().is_some());
+            drop(snapshot);
+            assert!(first_weak.upgrade().is_none());
+            assert!(last_weak.upgrade().is_none());
+        }
+    }
 
     #[test]
     fn removing_typed_reference_preserves_other_owners() {

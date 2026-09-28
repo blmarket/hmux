@@ -630,7 +630,7 @@ unsafe fn window_copy_init(
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
     let mut base: *mut screen = &raw mut (*wp).base;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -704,10 +704,10 @@ unsafe fn window_copy_view_init(
     (*data).backing = Some(Box::new(screen::empty()));
     screen_init((*data).backing_mut(), sx, (*base).grid().sy, UINT_MAX);
     (*data).ictx = Some(input_init(
-        ::core::ptr::null_mut::<window_pane>(),
+        None,
         ::core::ptr::null_mut::<bufferevent>(),
         ::core::ptr::null_mut::<colour_palette>(),
-        ::core::ptr::null_mut::<client>(),
+        None,
     ));
     (*data).mx = (*data).cx;
     (*data).my = (*data).backing().grid()
@@ -738,7 +738,7 @@ pub unsafe fn window_copy_add(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut backing: *mut screen = (*data).backing_mut();
     let mut backing_ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -747,7 +747,7 @@ pub unsafe fn window_copy_add(
         bg: 0,
     };
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -801,7 +801,7 @@ pub unsafe fn window_copy_add(
     (*data).oy = (*data)
         .oy
         .wrapping_add((*data).backing().grid().hsize.wrapping_sub(old_hsize));
-    screen_write_start_pane(&mut ctx, wp, &raw mut (*data).screen);
+    screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), &raw mut (*data).screen);
     if (*data).backing().grid().hsize != 0 {
         window_copy_redraw_lines(wme, 0 as u_int, 1 as u_int);
     }
@@ -1151,7 +1151,8 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
     );
 }
 unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
+    let pane_owner = format_get_pane(&*ft)?;
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid_mut();
@@ -1163,19 +1164,22 @@ unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CS
     );
 }
 unsafe fn window_copy_cursor_word_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
+    let pane_owner = format_get_pane(&*ft)?;
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_get_word_cstring(wp, (*data).cx, (*data).cy);
 }
 unsafe fn window_copy_cursor_line_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
+    let pane_owner = format_get_pane(&*ft)?;
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_get_line_cstring(wp, (*data).cy);
 }
 unsafe fn window_copy_search_match_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
+    let pane_owner = format_get_pane(&*ft)?;
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_match_at_cursor_cstring(data);
@@ -1375,7 +1379,7 @@ unsafe fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -6100,7 +6104,7 @@ unsafe fn window_copy_search(
     let mut s: *mut screen = (*data).backing_mut();
     let mut ss: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -6395,7 +6399,7 @@ unsafe fn window_copy_search_marks(
     let mut s: *mut screen = (*data).backing_mut();
     let mut ss: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -7396,7 +7400,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -7425,7 +7429,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
     if window_pane_scrollbar_overlay_visible(wp) != 0 {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
     }
     i = py;
     while i < py.wrapping_add(ny) {
@@ -7548,7 +7552,7 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -7598,7 +7602,7 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
             window_copy_redraw_screen(wme);
             return;
         }
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
         screen_write_cursormove(
             &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
@@ -7619,7 +7623,7 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
     if (*data).cx == (*s).grid().sx {
         window_copy_redraw_lines(wme, (*data).cy, 1 as u_int);
     } else {
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
         screen_write_cursormove(
             &mut ctx,
             window_copy_cursor_offset(wme, (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
@@ -8023,7 +8027,7 @@ unsafe fn window_copy_copy_buffer(
     };
     let mut wp: *mut window_pane = (*wme).wp;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -8042,7 +8046,7 @@ unsafe fn window_copy_copy_buffer(
             redraw = PANE_REDRAW;
             (*wp).flags &= !PANE_REDRAW;
         }
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &mut ctx,
             c"",
@@ -8132,7 +8136,7 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     let mut buf: Vec<u8>;
     let mut bufname: Option<CString> = None;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -8149,7 +8153,7 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
         b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0 as ::core::ffi::c_longlong
     {
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &mut ctx,
             c"",
@@ -9023,7 +9027,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -9095,7 +9099,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
     if window_pane_scrollbar_overlay_visible(wp) != 0 {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
     }
     screen_write_cursormove(
         &mut ctx,
@@ -9133,7 +9137,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
+        wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
@@ -9199,7 +9203,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
     if window_pane_scrollbar_overlay_visible(wp) != 0 {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
-        screen_write_start_pane(&mut ctx, wp, ::core::ptr::null_mut::<screen>());
+        screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), ::core::ptr::null_mut::<screen>());
     }
     screen_write_cursormove(
         &mut ctx,
@@ -9243,16 +9247,18 @@ unsafe fn window_copy_rectangle_set(
     window_copy_redraw_screen(wme);
 }
 unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
+    let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
-    wp = cmd_mouse_pane(
+    mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
         ::core::ptr::null_mut::<*mut winlink>(),
     );
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
     }
@@ -9273,6 +9279,7 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
     window_copy_update_cursor(wme, x, y);
 }
 pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event) {
+    let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
@@ -9285,11 +9292,12 @@ pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event
     if c.is_null() {
         return;
     }
-    wp = cmd_mouse_pane(
+    mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
         ::core::ptr::null_mut::<*mut winlink>(),
     );
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
     }
@@ -9369,6 +9377,7 @@ pub unsafe fn window_copy_start_drag(mut c: *mut client, mut m: *mut mouse_event
     window_copy_drag_update(c, m);
 }
 unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
+    let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
@@ -9383,11 +9392,12 @@ unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
     if c.is_null() {
         return;
     }
-    wp = cmd_mouse_pane(
+    mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
         ::core::ptr::null_mut::<*mut winlink>(),
     );
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
     }
@@ -9423,17 +9433,19 @@ unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
     }
 }
 unsafe fn window_copy_drag_release(mut c: *mut client, mut m: *mut mouse_event) {
+    let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
     if c.is_null() {
         return;
     }
-    wp = cmd_mouse_pane(
+    mouse_pane_owner = cmd_mouse_pane(
         m,
         ::core::ptr::null_mut::<*mut session>(),
         ::core::ptr::null_mut::<*mut winlink>(),
     );
+    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
     }

@@ -34,7 +34,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
-pub static mut cfg_client: *mut client = ::core::ptr::null::<client>() as *mut client;
+pub static mut cfg_client: std::rc::Weak<std::cell::UnsafeCell<client>> = std::rc::Weak::new();
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 #[cfg(test)]
@@ -76,8 +76,9 @@ unsafe fn cfg_done() -> cmd_retval {
 pub unsafe fn start_cfg() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    c = clients.first();
-    cfg_client = c;
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    cfg_client = registry_c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     if !c.is_null() {
         cfg_item = cmdq_get_callback_owned(
             b"cfg_client_done\0" as *const u8 as *const ::core::ffi::c_char,
@@ -89,7 +90,7 @@ pub unsafe fn start_cfg() {
         flags = CMD_PARSE_QUIET;
     }
     for path in cfg_files() {
-        load_cfg(path.as_ptr(), c, flags);
+        load_cfg(path.as_ptr(), registry_c_owner.as_ref(), flags);
     }
     cmdq_append(
         ::core::ptr::null_mut::<client>(),
@@ -101,7 +102,7 @@ pub unsafe fn start_cfg() {
 }
 pub unsafe fn load_cfg(
     mut path: *const ::core::ffi::c_char,
-    mut c: *mut client,
+    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -112,7 +113,7 @@ pub unsafe fn load_cfg(
         file: None,
         line: 0,
         item: ::core::ptr::null_mut::<cmdq_item>(),
-        c: ::core::ptr::null_mut::<client>(),
+        c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -145,7 +146,7 @@ pub unsafe fn load_cfg(
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
     pi.item = item;
-    pi.c = c;
+    pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     pr = cmd_parse_from_file(stream.as_ptr(), &raw mut pi);
     drop(stream);
     if pr.status as ::core::ffi::c_uint
@@ -173,7 +174,7 @@ pub unsafe fn load_cfg(
     );
 
     cmdq_add_format(
-        crate::src::shared::rc::as_ptr(&state),
+        &state,
         c"current_file",
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
@@ -191,7 +192,7 @@ pub unsafe fn load_cfg_from_buffer(
     mut buf: *const ::core::ffi::c_void,
     mut len: size_t,
     mut path: *const ::core::ffi::c_char,
-    mut c: *mut client,
+    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut item: *mut cmdq_item,
     mut current: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
@@ -202,7 +203,7 @@ pub unsafe fn load_cfg_from_buffer(
         file: None,
         line: 0,
         item: ::core::ptr::null_mut::<cmdq_item>(),
-        c: ::core::ptr::null_mut::<client>(),
+        c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
             current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -224,7 +225,7 @@ pub unsafe fn load_cfg_from_buffer(
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
     pi.item = item;
-    pi.c = c;
+    pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     pr = cmd_parse_from_buffer(buf, len, &raw mut pi);
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -244,7 +245,7 @@ pub unsafe fn load_cfg_from_buffer(
         return 0 as ::core::ffi::c_int;
     }
     if !item.is_null() {
-        state = cmdq_copy_state(cmdq_get_state(&*item).map_or(std::ptr::null_mut(), |owner| owner.get()), current);
+        state = cmdq_copy_state(cmdq_get_state(&*item).expect("command queue state"), current);
     } else {
         state = cmdq_new_state(
             ::core::ptr::null_mut::<cmd_find_state>(),
@@ -253,7 +254,7 @@ pub unsafe fn load_cfg_from_buffer(
         );
     }
     cmdq_add_format(
-        crate::src::shared::rc::as_ptr(&state),
+        &state,
         c"current_file",
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
@@ -307,7 +308,8 @@ pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
     });
 }
 pub unsafe fn cfg_show_causes(mut s: *mut session) {
-    let mut c: *mut client = clients.first();
+    let mut registry_c_owner = clients.first();
+    let mut c: *mut client = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if CFG_CAUSES.lock().unwrap().is_empty() {

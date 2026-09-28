@@ -119,11 +119,11 @@ pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 #[repr(C)]
 pub struct format_tree {
     pub type_0: format_type,
-    pub c: *mut client,
-    pub s: *mut session,
+    pub c: std::rc::Weak<UnsafeCell<client>>,
+    pub s: std::rc::Weak<UnsafeCell<session>>,
     pub wl: *mut winlink,
-    pub w: *mut window,
-    pub wp: *mut window_pane,
+    pub w: std::rc::Weak<UnsafeCell<window>>,
+    pub wp: std::rc::Weak<UnsafeCell<window_pane>>,
     pub pb: Option<PasteBufferRef>,
     pub item: *mut cmdq_item,
     pub client: Option<Rc<UnsafeCell<client>>>,
@@ -187,7 +187,8 @@ pub type format_type = ::core::ffi::c_uint;
 
 #[repr(C)]
 pub struct format_job {
-    pub client: *mut client,
+    /// The client owns its job cache; callbacks only observe it.
+    pub client: std::rc::Weak<UnsafeCell<client>>,
     pub tag: u_int,
     pub cmd: std::ffi::CString,
     pub expanded: Option<std::ffi::CString>,

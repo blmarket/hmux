@@ -1,4 +1,3 @@
-use crate::src::shared::key::key_table_owner_ptr;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_command,
@@ -26,7 +25,7 @@ use std::ffi::CStr;
 
 #[repr(C)]
 pub struct key_tables {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<key_table>>>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>>>,
 }
 
 static mut key_tables: key_tables = key_tables { storage: None };
@@ -38,7 +37,7 @@ pub(crate) fn key_bindings_set_note(bd: &mut key_binding, note: Option<&CStr>) {
 pub unsafe fn key_bindings_get_table(
     name: &CStr,
     create: i32,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
     if let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() {
         let map = index.try_borrow_mut().expect("key table index already borrowed");
         if let Some(table) = map.get(name.to_bytes()) {
@@ -50,10 +49,7 @@ pub unsafe fn key_bindings_get_table(
     }
     let mut value = key_table::empty();
     value.name = name.to_owned();
-    let table = std::rc::Rc::new_cyclic(|observer| {
-        value.observer = observer.clone();
-        std::cell::UnsafeCell::new(value)
-    });
+    let table = std::rc::Rc::new(std::cell::RefCell::new(value));
     key_tables_insert(&raw mut key_tables, table.clone());
     Some(table)
 }
@@ -66,7 +62,7 @@ pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key
 }
 
 /// Retain the tables while callers borrow their bindings for listing.
-pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
+pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::RefCell<key_table>>> {
     let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() else {
         return Vec::new();
     };
@@ -79,10 +75,10 @@ pub unsafe fn key_bindings_add(
     key: key_code,
     note: Option<&CStr>,
     repeat: ::core::ffi::c_int,
-    cmdlist: Option<std::rc::Rc<std::cell::UnsafeCell<cmd_list>>>,
+    cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
 ) {
     let owner = key_bindings_get_table(name, 1).expect("created key table");
-    let table = &mut *crate::src::shared::rc::as_ptr(&owner);
+    let mut table = owner.borrow_mut();
     let key = key & !KEYC_MASK_FLAGS;
     let Some(cmdlist) = cmdlist else {
         if let Some(bd) = table.key_bindings.get_mut(key) {
@@ -103,7 +99,7 @@ pub unsafe fn key_bindings_add(
         tablename: Some(table.name.clone()),
         flags: if repeat != 0 { KEY_BINDING_REPEAT } else { 0 },
     });
-    let s = cmd_list_print_cstring(&*bd.cmdlist().get(), 0);
+    let s = cmd_list_print_cstring(&bd.cmdlist().borrow(), 0);
     let key_string = key_string_format(key, true);
     table.key_bindings.insert(bd);
     log_debug(format_args!(
@@ -116,8 +112,8 @@ pub unsafe fn key_bindings_add(
 
 pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
     let Some(owner) = key_bindings_get_table(name, 0) else { return; };
-    let table = crate::src::shared::rc::as_ptr(&owner);
-    let Some(bd) = (*table).key_bindings.remove(key & !KEYC_MASK_FLAGS) else {
+    let mut table = owner.borrow_mut();
+    let Some(bd) = table.key_bindings.remove(key & !KEYC_MASK_FLAGS) else {
         return;
     };
     let key_string = key_string_format(bd.key, true);
@@ -127,20 +123,22 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
         log_cstr(key_string.as_ptr())
     ));
     drop(bd);
-    if (*table).key_bindings.storage.is_none() && (*table).default_key_bindings.storage.is_none() {
-        drop(key_tables_remove(&raw mut key_tables, table));
+    if table.key_bindings.storage.is_none() && table.default_key_bindings.storage.is_none() {
+        drop(table);
+        drop(key_tables_remove(&raw mut key_tables, &owner));
     }
 }
 
 pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
     let Some(owner) = key_bindings_get_table(name, 0) else { return; };
-    let table = crate::src::shared::rc::as_ptr(&owner);
+    let mut table = owner.borrow_mut();
     let key = key & !KEYC_MASK_FLAGS;
     let table_ref = &mut *table;
     let Some(bd) = table_ref.key_bindings.get_mut(key) else {
         return;
     };
     let Some(dd) = table_ref.default_key_bindings.get(key) else {
+        drop(table);
         key_bindings_remove(name, key);
         return;
     };
@@ -152,14 +150,15 @@ pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
 pub unsafe fn key_bindings_remove_table(name: &CStr) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if let Some(owner) = key_bindings_get_table(name, 0) {
-        let table = crate::src::shared::rc::as_ptr(&owner);
-        let detached = key_tables_remove(&raw mut key_tables, table);
-        c = clients.first();
+        let detached = key_tables_remove(&raw mut key_tables, &owner);
+        let mut registry_c_owner = clients.first();
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !c.is_null() {
-            if key_table_owner_ptr(&(*c).keytable).map_or(std::ptr::null_mut(), |owner| owner.get()) == table {
+            if (*c).keytable.as_ref().is_some_and(|current| std::rc::Rc::ptr_eq(current, &owner)) {
                 server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
             }
-            c = clients.next(c);
+            registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         drop(detached);
     }
@@ -168,7 +167,8 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
 /// Snapshot startup defaults with their own command-list reference and note.
 unsafe fn key_bindings_init_done() -> cmd_retval {
     for owner in key_bindings_tables() {
-        let table_ref = &mut *owner.get();
+        let mut table = owner.borrow_mut();
+        let table_ref = &mut *table;
         for bd in table_ref.key_bindings.iter() {
             table_ref.default_key_bindings.insert(Box::new(key_binding {
                 key: bd.key,
@@ -862,7 +862,7 @@ pub unsafe fn key_bindings_dispatch(
     if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
         readonly = 1 as ::core::ffi::c_int;
     } else {
-        readonly = cmd_list_all_have(bd.cmdlist().get());
+        readonly = cmd_list_all_have(&bd.cmdlist().borrow());
     }
     if readonly == 0 {
         new_item = cmdq_get_callback_owned(
@@ -890,80 +890,48 @@ pub fn key_bindings_has_repeat(bindings: &[&key_binding]) -> bool {
     bindings.iter().any(|bd| bd.flags & KEY_BINDING_REPEAT != 0)
 }
 
-pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_table {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    let key = elm.name.as_bytes();
-    map.get(key).map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+pub fn key_tables_find(head: &key_tables, elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let owner = head.storage.as_ref()?;
+    let map = owner.try_borrow_mut().expect("key table index already borrowed");
+    map.get(elm.name.as_bytes()).cloned()
 }
-pub unsafe fn key_tables_insert(head: *mut key_tables, table: std::rc::Rc<std::cell::UnsafeCell<key_table>>) -> *mut key_table {
-    let elm = crate::src::shared::rc::as_ptr(&table);
-    let key = (*elm).name.as_bytes();
+pub unsafe fn key_tables_insert(head: *mut key_tables, table: std::rc::Rc<std::cell::RefCell<key_table>>) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let key = table.borrow().name.as_bytes().to_vec();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    match map.entry(key.to_vec()) {
-        std::collections::btree_map::Entry::Occupied(entry) => return crate::src::shared::rc::as_ptr(entry.get()),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(table);
-            (*elm).entry.owner = Some(observer);
-        }
-    }
-    std::ptr::null_mut()
+    let mut map = owner.try_borrow_mut().expect("key table index already borrowed");
+    if let Some(existing) = map.get(&key) { return Some(existing.clone()); }
+    table.borrow_mut().entry.owner = Some(observer);
+    map.insert(key, table);
+    None
 }
-pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
-    if elm.is_null() {
-        return None;
-    }
-    let key = (*elm).name.as_bytes();
-    let Some(owner) = (*head).storage.as_ref() else {
-        return None;
-    };
+pub unsafe fn key_tables_remove(head: *mut key_tables, table: &std::rc::Rc<std::cell::RefCell<key_table>>) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let key = table.borrow().name.as_bytes().to_vec();
+    let owner = (*head).storage.as_ref()?;
     let (detached, empty) = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("key table index already borrowed");
-        if map.get(key).map(crate::src::shared::rc::as_ptr) != Some(elm) {
-            return None;
-        }
-        let detached = map.remove(key).expect("matching key table");
+        let mut map = owner.try_borrow_mut().expect("key table index already borrowed");
+        if !map.get(&key).is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table)) { return None; }
+        let detached = map.remove(&key).expect("matching key table");
         (detached, map.is_empty())
     };
-    (*elm).entry.owner = None;
-    if empty {
-        (*head).storage = None;
-    }
+    table.borrow_mut().entry.owner = None;
+    if empty { (*head).storage = None; }
     Some(detached)
 }
-pub unsafe fn key_tables_minmax(head: &key_tables) -> *mut key_table {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
+pub fn key_tables_minmax(head: &key_tables) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let owner = head.storage.as_ref()?;
+    let map = owner.try_borrow_mut().expect("key table index already borrowed");
+    map.first_key_value().map(|(_, table)| table.clone())
 }
-pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
+pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let owner = elm.entry.owner.as_ref()?;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Dropped) => return None,
         Err(refbox::BorrowError::Borrowed) => panic!("key table index already borrowed"),
     };
-    let key = elm.name.as_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| crate::src::shared::rc::as_ptr(node))
+    map.range::<[u8], _>((std::ops::Bound::Excluded(elm.name.as_bytes()), std::ops::Bound::Unbounded))
+        .next().map(|(_, table)| table.clone())
 }
 
 
@@ -982,6 +950,41 @@ mod ownership_tests {
             tablename: None,
             flags: 0,
         })
+    }
+
+    #[test]
+    fn table_index_returns_owners_and_removes_only_matching_allocations() {
+        use std::cell::RefCell;
+        unsafe {
+            let mut index = key_tables { storage: None };
+            let mut a = key_table::empty();
+            a.name = c"a".to_owned();
+            let a = Rc::new(RefCell::new(a));
+            let mut b = key_table::empty();
+            b.name = c"b".to_owned();
+            let b = Rc::new(RefCell::new(b));
+            let mut duplicate = key_table::empty();
+            duplicate.name = c"a".to_owned();
+            let duplicate = Rc::new(RefCell::new(duplicate));
+            assert_ne!(a.borrow().identity, duplicate.borrow().identity);
+            assert!(key_tables_insert(&mut index, a.clone()).is_none());
+            assert!(key_tables_insert(&mut index, b.clone()).is_none());
+            assert!(Rc::ptr_eq(&key_tables_insert(&mut index, duplicate.clone()).unwrap(), &a));
+            assert!(key_tables_remove(&mut index, &duplicate).is_none());
+            assert!(Rc::ptr_eq(&key_tables_minmax(&index).unwrap(), &a));
+            assert!(Rc::ptr_eq(&key_tables_next(&a.borrow()).unwrap(), &b));
+            assert!(key_tables_next(&b.borrow()).is_none());
+            let observed = Rc::downgrade(&a);
+            let found = key_tables_find(&index, &duplicate.borrow()).unwrap();
+            drop(key_tables_remove(&mut index, &a));
+            assert!(a.borrow().entry.owner.is_none());
+            drop(a);
+            assert!(observed.upgrade().is_some());
+            drop(found);
+            assert!(observed.upgrade().is_none());
+            drop(key_tables_remove(&mut index, &b));
+            assert!(index.storage.is_none());
+        }
     }
 
     #[test]
@@ -1017,10 +1020,8 @@ mod ownership_tests {
             let name = c"binding-owner-defaults";
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
-            let original_ptr = rc::as_ptr(&original);
             key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = c"original".as_ptr(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
-            let table = rc::as_ptr(&table_owner);
             key_bindings_init_done();
             assert_eq!(original_lifetime.strong_count(), 2);
             let replacement = cmd_list_new();
@@ -1029,17 +1030,19 @@ mod ownership_tests {
             assert_eq!(original_lifetime.strong_count(), 1);
             key_bindings_reset(name, 65);
             assert!(replacement_lifetime.upgrade().is_none());
-            let bd = key_bindings_get(&*table, 65).unwrap();
+            let table_borrow = table_owner.borrow();
+            let bd = key_bindings_get(&table_borrow, 65).unwrap();
             assert_eq!(bd.note.as_deref(), Some(c"original"));
             assert_eq!(bd.flags, KEY_BINDING_REPEAT);
-            assert_eq!(bd.cmdlist().get(), original_ptr);
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(bd.cmdlist()), &original_lifetime));
             assert_eq!(original_lifetime.strong_count(), 2);
+            drop(table_borrow);
             key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = c"note only".as_ptr(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, None);
-            assert_eq!(key_bindings_get(&*table, 65).unwrap().cmdlist().get(), original_ptr);
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(key_bindings_get(&table_owner.borrow(), 65).unwrap().cmdlist()), &original_lifetime));
             assert_eq!(original_lifetime.strong_count(), 2);
             key_bindings_add(name, 66, { let note: *const ::core::ffi::c_char = std::ptr::null(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, Some(cmd_list_new()));
             key_bindings_reset(name, 66);
-            assert!(key_bindings_get(&*table, 66).is_none());
+            assert!(key_bindings_get(&table_owner.borrow(), 66).is_none());
             drop(table_owner);
             key_bindings_remove_table(name);
             assert!(original_lifetime.upgrade().is_none());
@@ -1052,15 +1055,13 @@ mod ownership_tests {
             let name = c"binding-owner-dispatch";
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
-            let original_ptr = rc::as_ptr(&original);
             key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = std::ptr::null(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
-            let table = rc::as_ptr(&table_owner);
-            let table_lifetime = (*table).observer.clone();
+            let table_lifetime = Rc::downgrade(&table_owner);
             let retained_table = table_lifetime.upgrade().unwrap();
-            let command = key_bindings_get(&*table, 65).unwrap().command();
+            let command = key_bindings_get(&table_owner.borrow(), 65).unwrap().command();
             key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = std::ptr::null(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, Some(cmd_list_new()));
-            assert_eq!(command.cmdlist().get(), original_ptr);
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(command.cmdlist()), &original_lifetime));
             assert_eq!(command.key, 65);
             assert_eq!(command.flags, KEY_BINDING_REPEAT);
             assert_eq!(original_lifetime.strong_count(), 1);

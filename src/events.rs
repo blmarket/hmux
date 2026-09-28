@@ -167,7 +167,7 @@ pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, mut s: *
         idx: 0,
     };
     let mut ep = event_payload_create();
-    if session_alive(s) != 0 {
+    if session_alive(s.as_ref()) != 0 {
         cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
         event_payload_set_target(&mut *ep, &fs);
     }
@@ -236,11 +236,13 @@ pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: 
     let mut ep = event_payload_create();
     cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
-    event_payload_set_session(
-        &mut *ep,
-        b"session\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wl).session,
-    );
+    if let Some(session_owner) = (*wl).session.upgrade() {
+        event_payload_set_session(
+            &mut *ep,
+            b"session\0" as *const u8 as *const ::core::ffi::c_char,
+            session_owner.get(),
+        );
+    }
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,

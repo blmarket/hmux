@@ -1451,7 +1451,9 @@ pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 #[repr(C)]
 pub struct key_event {
-    pub client: *mut client,
+    /// Explicit dispatch target, observed without extending its lifetime.
+    /// None uses the queue client; an expired explicit target must not fall back.
+    pub client: Option<std::rc::Weak<std::cell::UnsafeCell<client>>>,
     pub key: key_code,
     pub m: mouse_event,
     pub bytes: Option<Vec<u8>>,
@@ -1460,16 +1462,28 @@ pub struct key_event {
 impl key_event {
     pub fn new(key: key_code, m: mouse_event, bytes: Option<Vec<u8>>) -> Box<Self> {
         Box::new(Self {
-            client: ::core::ptr::null_mut(),
+            client: None,
             key,
             m,
             bytes,
         })
     }
 
+    /// Retain the explicit client, or resolve the queue client only when no
+    /// explicit target was supplied. Expiry must not redirect input.
+    pub fn resolve_client(
+        &self,
+        fallback: impl FnOnce() -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+        match self.client.as_ref() {
+            Some(observer) => observer.upgrade(),
+            None => fallback(),
+        }
+    }
+
     pub fn metadata_snapshot(&self) -> Self {
         Self {
-            client: self.client,
+            client: self.client.clone(),
             key: self.key,
             m: self.m,
             bytes: None,
@@ -1483,8 +1497,8 @@ impl key_event {
 
 #[repr(C)]
 pub struct key_table {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<key_table>>,
+    /// Stable numeric identity for mode-tree sections; never an address.
+    pub(crate) identity: u64,
     pub name: std::ffi::CString,
     pub activity_time: timeval,
     pub key_bindings: key_bindings,
@@ -1494,8 +1508,15 @@ pub struct key_table {
 
 impl key_table {
     pub fn empty() -> Self {
+        thread_local! { static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
+        let identity = NEXT.with(|next| {
+            let id = next.get();
+            assert!(id < (1_u64 << 62), "key table identity exhausted");
+            next.set(id + 1);
+            id
+        });
         Self {
-            observer: std::rc::Weak::new(),
+            identity,
             name: Default::default(),
             activity_time: Default::default(),
             key_bindings: key_bindings::default(),
@@ -1508,7 +1529,7 @@ impl key_table {
 #[repr(C)]
 pub struct key_table_entry {
     /// Weak traversal handle into the key table index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<key_table>>>>>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>>>,
 }
 
 /// Each table owns its bindings; the map is allocated only when first populated.
@@ -1550,7 +1571,7 @@ impl key_bindings {
 
 pub struct key_binding {
     pub key: key_code,
-    pub commands: std::rc::Rc<std::cell::UnsafeCell<cmd_list>>,
+    pub commands: std::rc::Rc<std::cell::RefCell<cmd_list>>,
     pub note: Option<std::ffi::CString>,
     pub tablename: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
@@ -1558,7 +1579,7 @@ pub struct key_binding {
 
 impl key_binding {
     /// Borrow the retained command list for the remaining legacy command APIs.
-    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::RefCell<cmd_list>> {
         &self.commands
     }
 
@@ -1575,17 +1596,12 @@ impl key_binding {
 
 pub struct KeyBindingCommand {
     pub key: key_code,
-    pub commands: std::rc::Rc<std::cell::UnsafeCell<cmd_list>>,
+    pub commands: std::rc::Rc<std::cell::RefCell<cmd_list>>,
     pub flags: ::core::ffi::c_int,
 }
 
 impl KeyBindingCommand {
-    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::UnsafeCell<cmd_list>> {
+    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::RefCell<cmd_list>> {
         &self.commands
     }
-}
-
-/// One of the key table's existing strong references.
-pub fn key_table_owner_ptr(owner: &Option<std::rc::Rc<std::cell::UnsafeCell<key_table>>>) -> Option<&std::rc::Rc<std::cell::UnsafeCell<key_table>>> {
-    owner.as_ref()
 }

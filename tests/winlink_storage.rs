@@ -100,11 +100,12 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
 #[test]
 fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
     unsafe {
-        let mut session = Box::new(session::empty());
+        let session_owner = session::new();
+        let session = &mut *session_owner.get();
         let mut nodes = Vec::new();
         for idx in 1..=3 {
             let node = winlink_add(&raw mut session.windows, idx);
-            (*node).session = &mut *session;
+            (*node).session = std::rc::Rc::downgrade(&session_owner);
             nodes.push(node);
         }
         winlink_stack_push(&raw mut session.lastw, nodes[0]);
@@ -132,5 +133,21 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         assert!(winlink_stack_indices(&session.lastw).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert!(session.windows.storage.is_none());
+    }
+}
+
+#[test]
+fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry() {
+    unsafe {
+        let owner = session::new();
+        let observer = std::rc::Rc::downgrade(&owner);
+        let mut links = winlinks { storage: None };
+        let link = winlink_add(&mut links, 1);
+        (*link).session = observer.clone();
+        assert!(std::rc::Rc::ptr_eq(&(*link).session.upgrade().unwrap(), &owner));
+        drop(owner);
+        assert!((*link).session.upgrade().is_none());
+        winlink_remove(&mut links, link);
+        assert!(links.storage.is_none());
     }
 }

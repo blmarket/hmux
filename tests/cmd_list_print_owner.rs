@@ -8,7 +8,6 @@ use hmux2::src::cmd::{
     CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::{args_value, ArgumentValue};
-use hmux2::src::shared::rc;
 use std::ffi::CString;
 
 #[test]
@@ -69,15 +68,17 @@ fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
 fn list_printer_preserves_empty_and_group_separator_bytes() {
     unsafe {
         let list = cmd_list_new();
-        let empty = cmd_list_print(&*rc::as_ptr(&list), 0);
+        let empty = cmd_list_print(&list.borrow(), 0);
         assert_eq!(empty.as_bytes(), b"");
 
         for _ in 0..3 {
             let item = display_message_command();
-            cmd_list_append(rc::as_ptr(&list), item);
+            cmd_list_append(&list, item);
         }
-        let commands = &mut (*rc::as_ptr(&list)).list;
+        let mut list_borrow = list.borrow_mut();
+        let commands = &mut list_borrow.list;
         commands[2].group = commands[1].group.wrapping_add(1);
+        drop(list_borrow);
 
         let name = b"display-message";
         for (flags, separator1, separator2) in [
@@ -104,7 +105,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             expected.extend_from_slice(name);
             expected.extend_from_slice(separator2);
             expected.extend_from_slice(name);
-            let printed = cmd_list_print(&*rc::as_ptr(&list), flags);
+            let printed = cmd_list_print(&list.borrow(), flags);
             assert_eq!(printed.as_bytes(), expected);
         }
         let mut args = args_create();
@@ -138,42 +139,42 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
         let destination = cmd_list_new();
         let first = display_message_command();
         let first_address = first.as_ref() as *const cmd as usize;
-        cmd_list_append(rc::as_ptr(&destination), first);
+        cmd_list_append(&destination, first);
         let source = cmd_list_new();
         let second = display_message_command();
         let second_address = second.as_ref() as *const cmd as usize;
-        cmd_list_append(rc::as_ptr(&source), second);
-        cmd_list_append_all(rc::as_ptr(&destination), rc::as_ptr(&source));
-        assert!((*rc::as_ptr(&source)).list.is_empty());
-        assert_eq!(addresses(&*rc::as_ptr(&destination)), [first_address, second_address]);
+        cmd_list_append(&source, second);
+        cmd_list_append_all(&destination, &source);
+        assert!(source.borrow_mut().list.is_empty());
+        assert_eq!(addresses(&destination.borrow()), [first_address, second_address]);
 
         let tail = cmd_list_new();
         let third = display_message_command();
         let third_address = third.as_ref() as *const cmd as usize;
-        cmd_list_append(rc::as_ptr(&tail), third);
-        cmd_list_move(rc::as_ptr(&destination), rc::as_ptr(&tail));
-        assert!((*rc::as_ptr(&tail)).list.is_empty());
+        cmd_list_append(&tail, third);
+        cmd_list_move(&destination, &tail);
+        assert!(tail.borrow_mut().list.is_empty());
         let original = vec![first_address, second_address, third_address];
-        assert_eq!(addresses(&*rc::as_ptr(&destination)), original);
+        assert_eq!(addresses(&destination.borrow()), original);
         // Self append/move remain valid no-ops for storage ownership.
-        cmd_list_append_all(rc::as_ptr(&destination), rc::as_ptr(&destination));
-        cmd_list_move(rc::as_ptr(&destination), rc::as_ptr(&destination));
-        assert_eq!(addresses(&*rc::as_ptr(&destination)), original);
+        cmd_list_append_all(&destination, &destination);
+        cmd_list_move(&destination, &destination);
+        assert_eq!(addresses(&destination.borrow()), original);
 
-        let copied = cmd_list_copy(&*rc::as_ptr(&destination), &Vec::new());
-        let copied_addresses = addresses(&*rc::as_ptr(&copied));
+        let copied = cmd_list_copy(&destination.borrow(), &Vec::new());
+        let copied_addresses = addresses(&copied.borrow());
         assert_eq!(copied_addresses.len(), original.len());
         for address in &copied_addresses {
             assert!(!original.contains(address));
         }
         assert_eq!(
-            cmd_list_print(&*rc::as_ptr(&copied), 0).as_bytes(),
+            cmd_list_print(&copied.borrow(), 0).as_bytes(),
             b"display-message ; display-message ;; display-message"
         );
 
         let retained = destination.clone();
         drop(retained);
-        assert_eq!(addresses(&*rc::as_ptr(&destination)), original);
+        assert_eq!(addresses(&destination.borrow()), original);
         drop(destination);
         drop(source);
         drop(tail);
@@ -184,8 +185,7 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
 #[test]
 fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
     use hmux2::src::cmd::queue::{cmdq_free_detached, cmdq_get_command};
-    use hmux2::src::shared::rc;
-    unsafe {
+        unsafe {
         let nested = cmd_list_new();
         let nested_observer = std::rc::Rc::downgrade(&nested);
         let values = vec![
@@ -200,10 +200,10 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
         assert_eq!(nested_observer.strong_count(), 1);
         let list = cmd_list_new();
         let list_observer = std::rc::Rc::downgrade(&list);
-        cmd_list_append(rc::as_ptr(&list), command);
+        cmd_list_append(&list, command);
         // Grow the owning vector after insertion; pointee addresses stay stable.
         for _ in 0..32 {
-            cmd_list_append(rc::as_ptr(&list), display_message_command());
+            cmd_list_append(&list, display_message_command());
         }
         let mut item = cmdq_get_command(&list, None);
         assert_eq!((*item).cmd as usize, address);

@@ -22,11 +22,13 @@ pub type input_request_type = ::core::ffi::c_uint;
 
 #[repr(C)]
 pub struct input_ctx {
-    pub wp: *mut window_pane,
+    /// Pane lifetime is owned by the pane index and retained event handlers.
+    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub event: *mut bufferevent,
     pub ctx: screen_write_ctx,
     pub palette: *mut colour_palette,
-    pub c: *mut client,
+    /// Client observation; request/context ownership does not retain the client.
+    pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub cell: input_cell,
     pub old_cell: input_cell,
     pub old_cx: u_int,
@@ -56,7 +58,8 @@ pub struct input_ctx {
 
 #[repr(C)]
 pub struct input_request {
-    pub c: *mut client,
+    /// Client observation; request/context ownership does not retain the client.
+    pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub ictx: *mut input_ctx,
     pub type_0: input_request_type,
     pub t: uint64_t,
