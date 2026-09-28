@@ -464,7 +464,7 @@ pub unsafe fn layout_parse(
                     break;
                 } else {
                     layout_destroy_cell(
-                        None,
+                        Some(w_owner),
                         lcchild,
                         &mut pctx.root,
                     );
