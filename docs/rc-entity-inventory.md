@@ -2567,3 +2567,10 @@ flag distinguishes a registered wait whose item expired from a file with no
 command wait. Cancellation clears the queue link when live, while terminal
 dispatch cancels a callback whose item expired. Pane input and file wait tests
 use production detached queue items. The raw-field count is 44.
+
+## Implemented weak run-shell wait item
+
+`cmd_run_shell_data.item` now observes its waiting queue item weakly. Timer,
+output and completion paths retain upgrades through queue item access, and
+expired waits skip their callbacks. A separate wait flag preserves background
+output and command append behavior. The raw-field count is 43.
