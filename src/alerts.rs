@@ -94,10 +94,10 @@ unsafe fn alerts_action_applies(
         return 1 as ::core::ffi::c_int;
     }
     if action == ALERT_CURRENT {
-        return (wl == (*s).curw) as ::core::ffi::c_int;
+        return (wl == (*s).curw_ptr()) as ::core::ffi::c_int;
     }
     if action == ALERT_OTHER {
-        return (wl != (*s).curw) as ::core::ffi::c_int;
+        return (wl != (*s).curw_ptr()) as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -243,7 +243,7 @@ unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
             continue;
         };
         s = session_owner.get();
-        if (*s).curw != wl || (*s).attached == 0 as u_int {
+        if (*s).curw_ptr() != wl || (*s).attached == 0 as u_int {
             (*wl).flags |= WINLINK_BELL;
             server_status_session(&*(s));
         }
@@ -297,7 +297,7 @@ unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
                 continue;
             };
             s = session_owner.get();
-            if (*s).curw != wl || (*s).attached == 0 as u_int {
+            if (*s).curw_ptr() != wl || (*s).attached == 0 as u_int {
                 (*wl).flags |= WINLINK_ACTIVITY;
                 server_status_session(&*(s));
             }
@@ -352,7 +352,7 @@ unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
                 continue;
             };
             s = session_owner.get();
-            if (*s).curw != wl || (*s).attached == 0 as u_int {
+            if (*s).curw_ptr() != wl || (*s).attached == 0 as u_int {
                 (*wl).flags |= WINLINK_SILENCE;
                 server_status_session(&*(s));
             }
@@ -397,7 +397,7 @@ unsafe fn alerts_set_message(
                 tty_putcode(&raw mut (*c).tty, TTYC_BEL);
             }
             if !(visual == VISUAL_OFF) {
-                if (*(*c).session).curw == wl {
+                if (*(*c).session).curw_ptr() == wl {
                     status_message_set(
                         c,
                         -(1 as ::core::ffi::c_int),

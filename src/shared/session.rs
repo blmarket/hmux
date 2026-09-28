@@ -19,7 +19,7 @@ pub struct session {
     pub activity_time: timeval,
     pub last_activity_time: timeval,
     pub lock_timer: event,
-    pub curw: *mut winlink,
+    pub curw: refbox::Weak<winlink>,
     pub lastw: winlink_stack,
     pub windows: winlinks,
     pub statusat: ::core::ffi::c_int,
@@ -33,6 +33,20 @@ pub struct session {
 }
 
 impl session {
+    /// Borrowed compatibility view of the current session-index winlink.
+    pub fn curw_ptr(&self) -> *mut winlink {
+        if self.curw.is_alive() {
+            self.curw.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+
+    /// The supplied winlink must be live in a session index.
+    pub unsafe fn set_curw(&mut self, wl: *mut winlink) {
+        self.curw = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
+    }
+
     pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
         std::rc::Rc::new_cyclic(|observer| {
             let mut value = Self::empty();

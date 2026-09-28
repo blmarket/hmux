@@ -356,7 +356,7 @@ unsafe fn window_panes_get_border_cell(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
         s,
-        if s.is_null() { std::ptr::null_mut() } else { (*s).curw },
+        if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() },
         wp,
     );
     style_apply(
@@ -1134,7 +1134,7 @@ unsafe fn window_panes_draw_format(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
     let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw };
+    let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() };
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if sx == 0 as u_int {
         if let Some(owner) = session_owner {
@@ -1217,7 +1217,7 @@ unsafe fn window_panes_draw_number(
     let session_owner = window_panes_session(data);
     let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut w: *mut window = (*wp).window as *mut window;
-    let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw };
+    let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() };
     let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1303,7 +1303,7 @@ unsafe fn window_panes_draw_number(
     );
     if !s.is_null() {
         if wl.is_null() {
-            wl = (*s).curw;
+            wl = (*s).curw_ptr();
         }
     }
     if (*w).active == wp {

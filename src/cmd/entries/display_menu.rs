@@ -926,7 +926,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
-    let o = options_owner_ptr(&mut (*(*(*(*target).s_ptr()).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let o = options_owner_ptr(&mut (*(*(*(*target).s_ptr()).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
         if std::ffi::CStr::from_ptr(args_get(&*(args), b'C').map_or(std::ptr::null(), |value| value.as_ptr())) == c"-" {
@@ -1059,7 +1059,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
-    let mut o: *mut options = options_owner_ptr(&mut (*(*(*s).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut o: *mut options = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if args_has(args, 'C' as i32 as u_char) != 0 {
         server_client_clear_overlay(tc);

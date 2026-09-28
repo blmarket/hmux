@@ -123,7 +123,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             return;
         }
         if cdata.client.is_some() && !(*client_rc_ptr(&cdata.client)).session.is_null() {
-            wp = (*(*(*(*client_rc_ptr(&cdata.client)).session).curw).window_ptr()).active;
+            wp = (*(*(*(*client_rc_ptr(&cdata.client)).session).curw_ptr()).window_ptr()).active;
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)

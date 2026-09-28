@@ -887,7 +887,7 @@ pub unsafe fn server_client_set_overlay(
     if (*c).overlay_mode.is_none() {
         (*c).tty.flags |= TTY_NOCURSOR;
     }
-    window_update_focus((*(*(*c).session).curw).window_ptr());
+    window_update_focus((*(*(*c).session).curw_ptr()).window_ptr());
     server_redraw_client(&mut *(c));
 }
 pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
@@ -921,7 +921,7 @@ pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
         (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     }
     if !(*c).session.is_null() {
-        window_update_focus((*(*(*c).session).curw).window_ptr());
+        window_update_focus((*(*(*c).session).curw_ptr()).window_ptr());
     }
     server_redraw_client(&mut *(c));
 }
@@ -1309,7 +1309,7 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
             loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !loop_0.is_null() {
                 s = (*loop_0).session;
-                if !(loop_0 == c || s.is_null() || (*(*s).curw).window_ptr() != w) {
+                if !(loop_0 == c || s.is_null() || (*(*s).curw_ptr()).window_ptr() != w) {
                     if found.is_null()
                         || (if (*loop_0).activity_time.tv_sec == (*found).activity_time.tv_sec {
                             ((*loop_0).activity_time.tv_usec > (*found).activity_time.tv_usec)
@@ -1479,17 +1479,17 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
     }
     (*c).session = s;
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
-    if !old.is_null() && !(*old).curw.is_null() {
-        window_update_focus((*(*old).curw).window_ptr());
+    if !old.is_null() && !(*old).curw_ptr().is_null() {
+        window_update_focus((*(*old).curw_ptr()).window_ptr());
     }
     if !s.is_null() {
-        (*(*(*s).curw).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+        (*(*(*s).curw_ptr()).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         recalculate_sizes();
-        window_update_focus((*(*s).curw).window_ptr());
+        window_update_focus((*(*s).curw_ptr()).window_ptr());
         session_update_activity(&mut *s, None);
         session_theme_changed(s.as_ref());
         gettimeofday(&raw mut (*s).last_attached_time, NULL);
-        (*(*s).curw).flags &= !WINLINK_ALERTFLAGS;
+        (*(*s).curw_ptr()).flags &= !WINLINK_ALERTFLAGS;
         alerts_check_session(s);
         tty_update_client_offset(c);
         status_timer_start(c);
@@ -1719,7 +1719,7 @@ unsafe fn server_client_update_scrollbar_hover(
         return;
     };
     let window_owner = crate::src::shared::window::WindowOwner::adopt(
-        (*(*session_owner.get()).curw).window_owner.as_ref().expect("hover window").as_rc().clone(),
+        (*(*session_owner.get()).curw_ptr()).window_owner.as_ref().expect("hover window").as_rc().clone(),
     );
     let w = window_owner.as_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1935,7 +1935,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
     };
     let s = session_owner.get();
     let window_owner = crate::src::shared::window::WindowOwner::adopt(
-        (*(*s).curw).window_owner.as_ref().expect("mouse window").as_rc().clone(),
+        (*(*s).curw_ptr()).window_owner.as_ref().expect("mouse window").as_rc().clone(),
     );
     let w = window_owner.as_ptr();
     let mut fwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -2658,7 +2658,7 @@ unsafe fn server_client_update_latest(mut c: *mut client) {
     if (*c).session.is_null() {
         return;
     }
-    w = (*(*(*c).session).curw).window_ptr();
+    w = (*(*(*c).session).curw_ptr()).window_ptr();
     if (*w).latest.ptr_eq(&(*c).observer) {
         return;
     }
@@ -2783,7 +2783,7 @@ unsafe fn server_client_key_callback(
     c = crate::src::shared::rc::as_ptr(&c_owner);
     s = (*c).session;
     if !(s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-        wl = (*s).curw;
+        wl = (*s).curw_ptr();
         memcpy(
             &raw mut (*c).last_activity_time as *mut ::core::ffi::c_void,
             &raw mut (*c).activity_time as *const ::core::ffi::c_void,
@@ -3196,7 +3196,7 @@ unsafe fn server_client_handle_menu_key(
     mut event: *mut key_event,
 ) -> ::core::ffi::c_int {
     let c = owner.get();
-    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
+    let mut w: *mut window = (*(*(*c).session).curw_ptr()).window_ptr();
     let mut new_event = (*event).metadata_snapshot();
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
     let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) else {
@@ -3276,7 +3276,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(c);
-        wp = (*(*(*s).curw).window_ptr()).active;
+        wp = (*(*(*s).curw_ptr()).window_ptr()).active;
         let active_pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
@@ -3304,7 +3304,7 @@ unsafe fn server_client_handle_key0(
                             << 32 as ::core::ffi::c_int)
         {
             if !(*wp).flags & PANE_EXITED != 0 {
-                window_pane_key(active_pane_owner.as_ref().expect("key target pane"), Some(owner), (*s).curw, (*event).key, &raw mut (*event).m);
+                window_pane_key(active_pane_owner.as_ref().expect("key target pane"), Some(owner), (*s).curw_ptr(), (*event).key, &raw mut (*event).m);
                 return 0 as ::core::ffi::c_int;
             }
         }
@@ -3317,7 +3317,7 @@ unsafe fn server_client_handle_key0(
                 0 | 3 | _ => {}
             }
         }
-        let prompt_window = (*(*s).curw).window_ptr();
+        let prompt_window = (*(*s).curw_ptr()).window_ptr();
         let mut prompt_pane = (*prompt_window).active.as_ref()
             .and_then(|pane| pane.observer.upgrade());
         if !prompt_pane.as_ref().is_some_and(|pane| window_pane_has_prompt(&*pane.get()) != 0) {
@@ -3428,7 +3428,7 @@ pub unsafe fn server_client_loop() {
     while let Some(client_owner) = registry_c_owner {
         let c = client_owner.get();
         server_client_check_exit(&client_owner, 0 as ::core::ffi::c_int);
-        if !(*c).session.is_null() && !(*(*c).session).curw.is_null() {
+        if !(*c).session.is_null() && !(*(*c).session).curw_ptr().is_null() {
             server_client_check_modes(&client_owner);
             server_client_check_redraw(&client_owner);
             server_client_reset_state(&client_owner);
@@ -3471,7 +3471,7 @@ unsafe fn server_client_check_window_resize(owner: &std::rc::Rc<std::cell::Unsaf
     }
     wl = window_winlinks_first(w);
     while !wl.is_null() {
-        if (*wl).session.upgrade().is_some_and(|owner| (*owner.get()).attached != 0 && (*owner.get()).curw == wl) {
+        if (*wl).session.upgrade().is_some_and(|owner| (*owner.get()).attached != 0 && (*owner.get()).curw_ptr() == wl) {
             break;
         }
         wl = window_winlinks_next(w, wl);
@@ -3852,7 +3852,7 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
     let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
         return;
     };
-    let Some(link) = (*session_owner.get()).curw.as_ref() else {
+    let Some(link) = (*session_owner.get()).curw_ptr().as_ref() else {
         return;
     };
     let window_owner = crate::src::shared::window::WindowOwner::adopt(
@@ -4185,7 +4185,7 @@ unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::Unsafe
     let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
         return;
     };
-    let Some(link) = (*session_owner.get()).curw.as_ref() else {
+    let Some(link) = (*session_owner.get()).curw_ptr().as_ref() else {
         return;
     };
     let window_owner = crate::src::shared::window::WindowOwner::adopt(
@@ -4223,7 +4223,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
     let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
         return;
     };
-    let Some(link) = (*session_owner.get()).curw.as_ref() else {
+    let Some(link) = (*session_owner.get()).curw_ptr().as_ref() else {
         return;
     };
     let window_owner = crate::src::shared::window::WindowOwner::adopt(
@@ -4463,7 +4463,7 @@ unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCe
 /// Raw relationship fields are accessed only while resolving the handle.
 unsafe fn server_client_active_pane(c: &client) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let session = c.session.as_ref()?;
-    let link = session.curw.as_ref()?;
+    let link = session.curw_ptr().as_ref()?;
     let window = &*link.window_owner.as_ref()?.as_rc().get();
     window.active.as_ref()?.observer.upgrade()
 }
@@ -5396,7 +5396,7 @@ pub unsafe fn server_client_print(
                 });
             }
         } else {
-            wp = (*(*(*(*c).session).curw).window_ptr()).active;
+            wp = (*(*(*(*c).session).curw_ptr()).window_ptr()).active;
             let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
             wme = (*wp).modes.active_ptr();
             if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
@@ -5548,16 +5548,19 @@ mod overlay_dispatch_tests {
     use std::rc::Rc;
 
     unsafe fn with_client(test: impl FnOnce(*mut client)) {
-        let mut link = Box::new(winlink::default());
-        let mut session = Box::new(session::empty());
-        session.curw = &mut *link;
+        let session_owner = session::new();
+        let session = &mut *session_owner.get();
+        let link = crate::src::window::winlink_add(&raw mut session.windows, 0);
+        session.set_curw(link);
         let client_owner = client::new();
         let client = &mut *client_owner.get();
-        client.session = &mut *session;
+        client.session = session;
         client.tty.client = std::rc::Rc::downgrade(&client_owner);
         test(&mut *client);
         server_client_clear_overlay(&mut *client);
         client.session = std::ptr::null_mut();
+        session.set_curw(std::ptr::null_mut());
+        crate::src::window::winlink_remove(&raw mut session.windows, link);
     }
 
     unsafe fn install(c: *mut client) {

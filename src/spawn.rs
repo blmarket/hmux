@@ -333,8 +333,8 @@ pub unsafe fn spawn_window(
             );
             winlink_stack_remove(&raw mut (*s).lastw, wl);
             winlink_remove(&raw mut (*s).windows, wl);
-            if (*s).curw == wl {
-                (*s).curw = ::core::ptr::null_mut::<winlink>();
+            if (*s).curw_ptr() == wl {
+                (*s).set_curw(::core::ptr::null_mut::<winlink>());
                 (*sc).flags &= !SPAWN_DETACHED;
             }
         }
@@ -375,8 +375,8 @@ pub unsafe fn spawn_window(
             );
             return ::core::ptr::null_mut::<winlink>();
         }
-        if (*s).curw.is_null() {
-            (*s).curw = (*sc).wl_ptr();
+        if (*s).curw_ptr().is_null() {
+            (*s).set_curw((*sc).wl_ptr());
         }
         (*(*sc).wl_ptr()).session = (*s).observer.clone();
         (*w).latest = (*sc).tc.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -1094,7 +1094,7 @@ pub(crate) unsafe fn spawn_editor(
         flags: 0,
     };
     let s = session_owner.get();
-    let mut wl: *mut winlink = (*s).curw;
+    let mut wl: *mut winlink = (*s).curw_ptr();
     let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();

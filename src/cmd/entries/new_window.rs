@@ -188,7 +188,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             server_redraw_session(&*(s));
         }
         if !c.is_null() && !(*c).session.is_null() {
-            (*(*(*s).curw).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+            (*(*(*s).curw_ptr()).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         }
         recalculate_sizes();
         return CMD_RETURN_NORMAL;
@@ -243,7 +243,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     } else {
-        if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).curw {
+        if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).curw_ptr() {
             cmd_find_from_winlink(&mut *current.current.borrow_mut(), new_wl, 0 as ::core::ffi::c_int);
             server_redraw_session_group(&*(s));
         } else {

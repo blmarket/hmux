@@ -526,11 +526,11 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
         w,
         |candidate| unsafe {
             let session = candidate.session;
-            if session.is_null() || (*session).curw.is_null() {
+            if session.is_null() || (*session).curw_ptr().is_null() {
                 return true;
             }
             if current != 0 {
-                (*(*session).curw).window_ptr() != w
+                (*(*session).curw_ptr()).window_ptr() != w
             } else {
                 session_has(&*session, &*w) == 0
             }

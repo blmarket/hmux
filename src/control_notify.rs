@@ -366,7 +366,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
     let ep = &*payload;
     let mut s: *mut session = event_payload_get_session(ep);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    if s.is_null() || (*s).curw.is_null() {
+    if s.is_null() || (*s).curw_ptr().is_null() {
         return;
     }
     let mut registry_c_owner = clients.first();
@@ -382,7 +382,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
                     out,
                     "%session-window-changed ${} @{}",
                     ((*s).id) as u32,
-                    ((*(*(*s).curw).window_ptr()).id) as u32
+                    ((*(*(*s).curw_ptr()).window_ptr()).id) as u32
                 )
             });
         }

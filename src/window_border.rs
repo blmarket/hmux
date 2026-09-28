@@ -222,7 +222,7 @@ pub unsafe fn window_pane_get_border_style(
     let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
-    if wp == (*(*(*(*c).session).curw).window_ptr()).active {
+    if wp == (*(*(*(*c).session).curw_ptr()).window_ptr()).active {
         flag = &raw mut (*wp).active_border_gc_set;
         saved = &raw mut (*wp).active_border_gc;
         option = b"pane-active-border-style\0" as *const u8 as *const ::core::ffi::c_char;
@@ -232,7 +232,7 @@ pub unsafe fn window_pane_get_border_style(
         option = b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if *flag == 0 {
-        ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), c, s, (*s).curw, wp);
+        ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), c, s, (*s).curw_ptr(), wp);
         style_apply(saved, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), option, ft);
         format_free(ft);
         *flag = 1 as ::core::ffi::c_int;
@@ -291,7 +291,7 @@ pub unsafe fn window_make_pane_status(
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         FORMAT_STATUS,
     );
-    format_defaults(ft, c, (*c).session, (*(*c).session).curw, wp);
+    format_defaults(ft, c, (*c).session, (*(*c).session).curw_ptr(), wp);
     fmt = options_get_string(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,

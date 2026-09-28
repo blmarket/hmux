@@ -450,7 +450,7 @@ pub unsafe fn format_defaults(
         s = (*c).session;
     }
     if wl.is_null() && !s.is_null() {
-        wl = (*s).curw;
+        wl = (*s).curw_ptr();
     }
     if wp.is_null() && !wl.is_null() {
         wp = (*(*wl).window_ptr()).active;

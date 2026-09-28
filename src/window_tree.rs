@@ -308,7 +308,7 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
     };
     let s = session.get();
     let wl = if item.type_0 == WINDOW_TREE_SESSION {
-        (*s).curw
+        (*s).curw_ptr()
     } else {
         winlink_find_by_index(&raw mut (*s).windows, item.winlink)
     };
@@ -503,7 +503,7 @@ unsafe fn window_tree_build_session(
 ) {
     let s = session_owner.get();
     let data = mode_owner.get();
-    let mut wl: *mut winlink = (*s).curw;
+    let mut wl: *mut winlink = (*s).curw_ptr();
     let mut i: u_int = 0;
     let mut empty: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -817,7 +817,7 @@ unsafe fn window_tree_draw_session(
     current = 0 as u_int;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if wl == (*s).curw {
+        if wl == (*s).curw_ptr() {
             break;
         }
         current = current.wrapping_add(1);
@@ -1657,9 +1657,9 @@ unsafe fn window_tree_swap(
     }
     window_winlinks_append(cur_window, other_winlink);
     window_winlinks_append(other_window, cur_winlink);
-    if (*cur_session).curw == cur_winlink {
+    if (*cur_session).curw_ptr() == cur_winlink {
         session_set_current(cur_session, other_winlink);
-    } else if (*cur_session).curw == other_winlink {
+    } else if (*cur_session).curw_ptr() == other_winlink {
         session_set_current(cur_session, cur_winlink);
     }
     session_group_synchronize_from(cur_session);

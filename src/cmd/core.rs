@@ -604,7 +604,7 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut sessio
         return ::core::ptr::null_mut::<winlink>();
     }
     if (*m).w == -(1 as ::core::ffi::c_int) {
-        wl = (*s).curw;
+        wl = (*s).curw_ptr();
     } else {
         let window_owner = window_find_by_id((*m).w as u_int);
         w = window_owner.as_ref().map_or(

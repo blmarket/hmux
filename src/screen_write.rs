@@ -188,7 +188,7 @@ fn screen_write_set_client_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<win
             }
             return 0;
         }
-        if (*(*(*c).session).curw).window_ptr() != (*wp).window {
+        if (*(*(*c).session).curw_ptr()).window_ptr() != (*wp).window {
             return 0;
         }
         if (*wp).layout_cell.is_null() {

@@ -162,7 +162,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             out.write_all(b"after-select-window")
         });
     } else {
-        if args_has(args, 'T' as i32 as u_char) != 0 && wl == (*s).curw {
+        if args_has(args, 'T' as i32 as u_char) != 0 && wl == (*s).curw_ptr() {
             if session_last(s) != 0 as ::core::ffi::c_int {
                 cmdq_error(item, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
@@ -180,7 +180,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         });
     }
     if !c.is_null() && !(*c).session.is_null() {
-        (*(*(*s).curw).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+        (*(*(*s).curw_ptr()).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

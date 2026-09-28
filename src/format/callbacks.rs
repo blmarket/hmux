@@ -188,7 +188,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
     if s.is_null() {
         return None;
     }
-    xformat(&mut result, format_args!("{}", ((*(*s).curw).idx) as u32));
+    xformat(&mut result, format_args!("{}", ((*(*s).curw_ptr()).idx) as u32));
     wl = crate::src::window::winlink_stack_first(&(*s).lastw);
     while !wl.is_null() {
         xformat(&mut tmp, format_args!("{}", ((*wl).idx) as u32));
@@ -274,7 +274,7 @@ unsafe fn format_cb_window_active_sessions(mut ft: *mut format_tree) -> Option<C
             wl = window_winlinks_next(w, wl);
             continue;
         };
-        if (*session_owner.get()).curw == wl {
+        if (*session_owner.get()).curw_ptr() == wl {
             n = n.wrapping_add(1);
         }
         wl = window_winlinks_next(w, wl);
@@ -297,7 +297,7 @@ unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Opt
             wl = window_winlinks_next(w, wl);
             continue;
         };
-        if (*session_owner.get()).curw == wl {
+        if (*session_owner.get()).curw_ptr() == wl {
             if !names.is_empty() {
                 names.push(b',');
             }
@@ -325,7 +325,7 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
-            if w == (*(*client_session).curw).window_ptr() {
+            if w == (*(*client_session).curw_ptr()).window_ptr() {
                 n = n.wrapping_add(1);
             }
         }
@@ -350,7 +350,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
-            if w == (*(*client_session).curw).window_ptr() {
+            if w == (*(*client_session).curw_ptr()).window_ptr() {
                 if !names.is_empty() {
                     names.push(b',');
                 }
@@ -2825,7 +2825,7 @@ unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CStr
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
         return Some(
-            CString::new(format!("{}", ((*(*format_session).curw).idx) as u32))
+            CString::new(format!("{}", ((*(*format_session).curw_ptr()).idx) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -2847,7 +2847,7 @@ unsafe fn format_cb_last_window_index(mut ft: *mut format_tree) -> Option<CStrin
 unsafe fn format_cb_window_active(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl_ptr().is_null() {
         let session_owner = (*(*ft).wl_ptr()).session.upgrade()?;
-        if (*ft).wl_ptr() == (*session_owner.get()).curw {
+        if (*ft).wl_ptr() == (*session_owner.get()).curw_ptr() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

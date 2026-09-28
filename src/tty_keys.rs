@@ -2106,7 +2106,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 }
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     (*c).flags &= !CLIENT_FOCUSED as uint64_t;
-                    window_update_focus((*(*(*c).session).curw).window_ptr());
+                    window_update_focus((*(*(*c).session).curw_ptr()).window_ptr());
                     events_fire_client(
                         b"client-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
                         c,
@@ -2117,7 +2117,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         b"client-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
                         c,
                     );
-                    window_update_focus((*(*(*c).session).curw).window_ptr());
+                    window_update_focus((*(*(*c).session).curw_ptr()).window_ptr());
                 }
                 if key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                     let bytes = if size == 0 {

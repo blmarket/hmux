@@ -1287,7 +1287,7 @@ pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
     let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
+    let mut w: *mut window = (*(*(*c).session).curw_ptr()).window_ptr();
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(&*c)) < (*w).sy)
         as ::core::ffi::c_int;
 }
@@ -1301,7 +1301,7 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     }
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
-    let w = (*(*c.session).curw).window_ptr();
+    let w = (*(*c.session).curw_ptr()).window_ptr();
     let wp = (*w).active;
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
@@ -1363,8 +1363,8 @@ pub unsafe fn tty_update_window_offset(mut w: *mut window) {
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session.is_null()
-            && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window_ptr() == w
+            && !(*(*c).session).curw_ptr().is_null()
+            && (*(*(*c).session).curw_ptr()).window_ptr() == w
         {
             tty_update_client_offset(c);
         }

@@ -162,7 +162,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if !(*target).wl_ptr().is_null() {
             idx = winlink_shuffle_up(dst_s, (*target).wl_ptr(), before);
         } else {
-            idx = winlink_shuffle_up(dst_s, (*dst_s).curw, before);
+            idx = winlink_shuffle_up(dst_s, (*dst_s).curw_ptr(), before);
         }
         if idx == -(1 as ::core::ffi::c_int) {
             return CMD_RETURN_ERROR;

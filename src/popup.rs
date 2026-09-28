@@ -303,12 +303,12 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     if s.is_null() {
         return;
     }
-    o = options_owner_ptr(&mut (*(*(*s).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+    o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
         c,
         s,
-        (*s).curw,
+        (*s).curw_ptr(),
         ::core::ptr::null_mut::<window_pane>(),
     );
     memcpy(
@@ -1066,9 +1066,9 @@ pub unsafe fn popup_display(
         link: 0,
     };
     if !s.is_null() {
-        o = options_owner_ptr(&mut (*(*(*s).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     } else {
-        o = options_owner_ptr(&mut (*(*(*(*c).session).curw).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*(*(*(*c).session).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     }
     if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
         lines = options_get_number(

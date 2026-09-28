@@ -1372,7 +1372,7 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
                 if !(*c).session.is_null()
                     && (*(*c).session).attached != 0 as u_int
                     && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
-                    && (*(*(*c).session).curw).window_ptr() == (*wp).window
+                    && (*(*(*c).session).curw_ptr()).window_ptr() == (*wp).window
                     && (*c).overlay_draw.is_none()
                     && (*(*wp).window).menu.is_none()
                 {
@@ -2123,7 +2123,7 @@ pub unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh6 as usize] = '~' as i32 as ::core::ffi::c_char;
     }
-    if session_owner.as_ref().is_some_and(|owner| wl == (*owner.get()).curw) {
+    if session_owner.as_ref().is_some_and(|owner| wl == (*owner.get()).curw_ptr()) {
         let fresh7 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh7 as usize] = '*' as i32 as ::core::ffi::c_char;

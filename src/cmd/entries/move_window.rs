@@ -124,7 +124,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if !target.wl_ptr().is_null() {
             idx = winlink_shuffle_up(dst, target.wl_ptr(), before);
         } else {
-            idx = winlink_shuffle_up(dst, (*dst).curw, before);
+            idx = winlink_shuffle_up(dst, (*dst).curw_ptr(), before);
         }
         if idx == -(1 as ::core::ffi::c_int) {
             return CMD_RETURN_ERROR;

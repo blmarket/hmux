@@ -183,7 +183,7 @@ pub unsafe fn server_redraw_window(window: &window) {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
         let matches = client.session.as_ref()
-            .and_then(|session| session.curw.as_ref())
+            .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
                 &window.observer,
@@ -200,7 +200,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
         let matches = client.session.as_ref()
-            .and_then(|session| session.curw.as_ref())
+            .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Rc::ptr_eq(current.as_rc(), window_owner));
         if matches {
@@ -214,7 +214,7 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
         let matches = client.session.as_ref()
-            .and_then(|session| session.curw.as_ref())
+            .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
                 &window.observer,
@@ -406,9 +406,9 @@ pub unsafe fn server_link_window(
             (*dstwl).flags &= !WINLINK_ALERTFLAGS;
             winlink_stack_remove(&raw mut (*dst).lastw, dstwl);
             winlink_remove(&raw mut (*dst).windows, dstwl);
-            if dstwl == (*dst).curw {
+            if dstwl == (*dst).curw_ptr() {
                 selectflag = 1 as ::core::ffi::c_int;
-                (*dst).curw = ::core::ptr::null_mut::<winlink>();
+                (*dst).set_curw(::core::ptr::null_mut::<winlink>());
             }
         }
     }

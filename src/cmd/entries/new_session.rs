@@ -685,7 +685,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                     template,
                                                                     c,
                                                                     s,
-                                                                    (*s).curw,
+                                                                    (*s).curw_ptr(),
                                                                     ::core::ptr::null_mut::<
                                                                         window_pane,
                                                                     >(

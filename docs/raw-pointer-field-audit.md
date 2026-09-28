@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **74 raw fields in
+fields and their lifecycle decisions. The current scanner finds **73 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-162 explicitly record a migration and twelve record
-removal. The remaining 74 comprise 3 candidates, 23 needing an access or teardown
+163 explicitly record a migration and twelve record
+removal. The remaining 73 comprise 2 candidates, 23 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 74 fields have audit dispositions. Candidate and design entries
+The remaining 73 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -97,6 +97,7 @@ are now recorded individually in the TSV.
 | `window_pane_modes.active` | Removed the stored raw alias. `active_ptr` projects the first owned entry for bounded legacy calls, so insertion, promotion and removal cannot leave a separate active field stale. |
 | `spawn_context.wl` | `refbox::Weak<winlink>` observes the session index owner for one spawn operation. Creation and caller setup clone the link's self observer; the compatibility projection checks liveness before use. Removal expires the field without extending winlink ownership. |
 | `format_tree.wl` | `refbox::Weak<winlink>` observes the session index owner. Format callbacks and nested trees project a pointer only for a live entry; the index callback returns no value after removal. Session activity and silence callbacks read the session link they selected. |
+| `session.curw` | `refbox::Weak<winlink>` observes the session's index entry. `curw_ptr` returns null after removal; explicit clearing leaves an empty weak handle. Session teardown checks emptiness to distinguish explicit destruction from an expired current link. Group synchronization replaces the observer before dropping old links. |
 | `window_copy_cmd_state.wme` | A weak mode-entry observer replaces the raw command-state field. Command dispatch finds the pane-owned RefBox, and callbacks check that it is live before projecting a legacy pointer. Dispatch also stops before using saved mode data if a callback removed the entry. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |

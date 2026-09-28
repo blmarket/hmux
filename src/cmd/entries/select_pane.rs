@@ -100,10 +100,10 @@ unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !((*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-            if (*(*(*c).session).curw).window_ptr() == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
+            if (*(*(*c).session).curw_ptr()).window_ptr() == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
                 server_redraw_client(&mut *(c));
             } else {
-                if (*(*(*c).session).curw).window_ptr() == w {
+                if (*(*(*c).session).curw_ptr()).window_ptr() == w {
                     (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
                 }
                 if session_has(&*(*c).session, &*w) != 0 {

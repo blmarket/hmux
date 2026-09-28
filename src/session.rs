@@ -401,10 +401,12 @@ pub unsafe fn session_destroy(
         log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
         log_cstr((from) as *const _)
     ));
-    if (*s).curw.is_null() {
+    // This field also marks explicit session teardown. An expired observer
+    // still needs the normal destruction path if the index owner remains.
+    if (*s).curw.is_empty() {
         return;
     }
-    (*s).curw = ::core::ptr::null_mut::<winlink>();
+    (*s).set_curw(::core::ptr::null_mut::<winlink>());
     let owner = sessions_remove(&raw mut sessions, s).expect("registered session owner");
     if notify != 0 {
         events_fire_session(
@@ -540,7 +542,7 @@ pub unsafe fn session_detach(mut s: *mut session, mut wl: *mut winlink) -> ::cor
     {
         return 1 as ::core::ffi::c_int;
     }
-    if (*s).curw == wl
+    if (*s).curw_ptr() == wl
         && session_last(s) != 0 as ::core::ffi::c_int
         && session_previous(s, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int
     {
@@ -594,10 +596,10 @@ pub unsafe fn session_next(
     mut alert: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    if (*s).curw.is_null() {
+    if (*s).curw_ptr().is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    wl = winlink_next((*s).curw);
+    wl = winlink_next((*s).curw_ptr());
     if alert != 0 {
         wl = session_next_alert(wl);
     }
@@ -626,10 +628,10 @@ pub unsafe fn session_previous(
     mut alert: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    if (*s).curw.is_null() {
+    if (*s).curw_ptr().is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    wl = winlink_previous((*s).curw);
+    wl = winlink_previous((*s).curw_ptr());
     if alert != 0 {
         wl = session_previous_alert(wl);
     }
@@ -658,7 +660,7 @@ pub unsafe fn session_last(mut s: *mut session) -> ::core::ffi::c_int {
     if wl.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    if wl == (*s).curw {
+    if wl == (*s).curw_ptr() {
         return 1 as ::core::ffi::c_int;
     }
     return session_set_current(s, wl);
@@ -723,16 +725,16 @@ unsafe fn session_fire_window_changed(
     );
 }
 pub unsafe fn session_set_current(mut s: *mut session, mut wl: *mut winlink) -> ::core::ffi::c_int {
-    let mut old: *mut winlink = (*s).curw;
+    let mut old: *mut winlink = (*s).curw_ptr();
     if wl.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    if wl == (*s).curw {
+    if wl == (*s).curw_ptr() {
         return 1 as ::core::ffi::c_int;
     }
     winlink_stack_remove(&raw mut (*s).lastw, wl);
-    winlink_stack_push(&raw mut (*s).lastw, (*s).curw);
-    (*s).curw = wl;
+    winlink_stack_push(&raw mut (*s).lastw, (*s).curw_ptr());
+    (*s).set_curw(wl);
     if options_get_number(
         global_options,
         b"focus-events\0" as *const u8 as *const ::core::ffi::c_char,
@@ -898,8 +900,8 @@ unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut sessi
     if (*ww).storage.is_none() {
         return;
     }
-    if !(*s).curw.is_null()
-        && winlink_find_by_index(ww, (*(*s).curw).idx).is_null()
+    if !(*s).curw_ptr().is_null()
+        && winlink_find_by_index(ww, (*(*s).curw_ptr()).idx).is_null()
         && session_last(s) != 0 as ::core::ffi::c_int
         && session_previous(s, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int
     {
@@ -918,13 +920,13 @@ unsafe fn session_group_synchronize1(mut target: *mut session, mut s: *mut sessi
         (*wl2).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
         wl = winlinks_next(&*wl);
     }
-    if !(*s).curw.is_null() {
-        (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*s).curw).idx);
-    } else if !(*target).curw.is_null() {
-        (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*target).curw).idx);
+    if !(*s).curw_ptr().is_null() {
+        (*s).set_curw(winlink_find_by_index(&raw mut (*s).windows, (*(*s).curw_ptr()).idx));
+    } else if !(*target).curw_ptr().is_null() {
+        (*s).set_curw(winlink_find_by_index(&raw mut (*s).windows, (*(*target).curw_ptr()).idx));
     }
-    if (*s).curw.is_null() {
-        (*s).curw = winlinks_minmax(&(*s).windows, RB_NEGINF);
+    if (*s).curw_ptr().is_null() {
+        (*s).set_curw(winlinks_minmax(&(*s).windows, RB_NEGINF));
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
@@ -972,7 +974,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
         if wl == marked_pane.wl_ptr() {
             marked_idx = (*wl_new).idx;
         }
-        if wl == (*s).curw {
+        if wl == (*s).curw_ptr() {
             new_curw_idx = (*wl_new).idx;
         }
         wl = winlinks_next(&*wl);
@@ -1003,7 +1005,7 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
             server_clear_marked();
         }
     }
-    (*s).curw = winlink_find_by_index(&raw mut (*s).windows, new_curw_idx);
+    (*s).set_curw(winlink_find_by_index(&raw mut (*s).windows, new_curw_idx));
     wl = winlinks_minmax(&old_wins, RB_NEGINF);
     while !wl.is_null() && {
         wl1 = winlinks_next(&*wl);
@@ -1055,6 +1057,22 @@ pub unsafe fn session_update_history(session: &session) {
 #[cfg(test)]
 mod session_index_tests {
     use super::*;
+
+    #[test]
+    fn current_winlink_observer_expires_when_index_removes_it() {
+        unsafe {
+            let owner = session::new();
+            let session = &mut *owner.get();
+            let link = winlink_add(&raw mut session.windows, 4);
+            session.set_curw(link);
+            assert_eq!(session.curw_ptr(), link);
+            winlink_remove(&raw mut session.windows, link);
+            assert!(session.curw_ptr().is_null());
+            assert!(!session.curw.is_empty());
+            session.set_curw(std::ptr::null_mut());
+            assert!(session.curw.is_empty());
+        }
+    }
 
     #[test]
     fn session_group_index_drops_nodes_after_releasing_the_map_borrow() {

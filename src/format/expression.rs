@@ -1047,7 +1047,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     });
     let key = CString::new([prefix, b"_window_active"].concat()).expect("C string key");
     format_add(nft, key.as_ptr(), |out| {
-        write!(out, "{}", ((wl == (*s).curw) as ::core::ffi::c_int) as i32)
+        write!(out, "{}", ((wl == (*s).curw_ptr()) as ::core::ffi::c_int) as i32)
     });
     let o_root = options_owner_ptr(&mut (*(*wl).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
@@ -1132,7 +1132,7 @@ pub(super) unsafe fn format_loop_windows(
                 )
             },
         );
-        let use_0 = if active.is_some() && wl == (*s).curw {
+        let use_0 = if active.is_some() && wl == (*s).curw_ptr() {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
@@ -1159,7 +1159,7 @@ pub(super) unsafe fn format_loop_windows(
                 )
             },
         );
-        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == (*s).curw {
+        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == (*s).curw_ptr() {
             format_add(
                 nft,
                 b"window_after_active\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1173,7 +1173,7 @@ pub(super) unsafe fn format_loop_windows(
             );
         }
         if (i + 1 as ::core::ffi::c_int) < n
-            && l[(i + 1 as ::core::ffi::c_int) as usize] == (*s).curw
+            && l[(i + 1 as ::core::ffi::c_int) as usize] == (*s).curw_ptr()
         {
             format_add(
                 nft,
