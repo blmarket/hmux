@@ -411,8 +411,7 @@ impl PopupRenderSnapshot {
             }
             Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
         };
-        ttyctx.owned_palette = Some(Box::new(palette.clone()));
-        ttyctx.style_ctx.palette = ttyctx.owned_palette.as_deref_mut().unwrap();
+        ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Snapshot(Box::new(palette.clone()));
         ttyctx.style_ctx.defaults = self.defaults;
         ttyctx.flags &= !TTY_CTX_WINDOW_BIGGER;
         let redraw = self.clone();
@@ -514,7 +513,7 @@ unsafe fn popup_draw(c: *mut client, popup: &PopupGuard) {
     };
     let mut style_ctx: tty_style_ctx = tty_style_ctx {
         defaults: grid_cell::default(),
-        palette: ::core::ptr::null_mut::<colour_palette>(),
+        palette: crate::src::shared::tty::PaletteSource::None,
         dim: 0,
         hyperlinks: None,
     };
@@ -581,7 +580,8 @@ unsafe fn popup_draw(c: *mut client, popup: &PopupGuard) {
         defaults.bg = palette.bg;
     }
     style_ctx.defaults = defaults;
-    style_ctx.palette = &mut *palette;
+    style_ctx.palette = crate::src::shared::tty::PaletteSource::Popup((*pd).palette.downgrade());
+    drop(palette);
     style_ctx.dim = 0 as u_int;
     style_ctx.hyperlinks = s.hyperlinks.clone();
     (*c).overlay_check = None;
@@ -1331,19 +1331,22 @@ mod tests {
             let render = PopupRenderSnapshot::new(&guard);
             let mut first = tty_ctx::default();
             render.init_ctx(&mut first);
-            assert_ne!(first.style_ctx.palette.cast_const(), source.as_ptr());
-            assert_eq!((*first.style_ctx.palette).fg, 3);
+            let crate::src::shared::tty::PaletteSource::Snapshot(snapshot) = &first.style_ctx.palette else {
+                panic!("popup context owns its palette snapshot");
+            };
+            assert_ne!(&**snapshot as *const colour_palette, source.as_ptr());
+            assert_eq!(first.style_ctx.palette.with_palette(|palette| palette.unwrap().fg), 3);
             source.try_borrow_mut().unwrap().fg = 5;
             let mut second = tty_ctx::default();
             render.init_ctx(&mut second);
-            assert_eq!((*second.style_ctx.palette).fg, 5);
-            assert_eq!((*first.style_ctx.palette).fg, 3);
+            assert_eq!(second.style_ctx.palette.with_palette(|palette| palette.unwrap().fg), 5);
+            assert_eq!(first.style_ctx.palette.with_palette(|palette| palette.unwrap().fg), 3);
             drop(owner);
             drop(guard);
             assert!(!handle.0.is_alive());
             assert!(!render.palette.is_alive());
             assert_eq!(
-                crate::src::style::colour::colour_palette_get(Some(&*first.style_ctx.palette), 1),
+                first.style_ctx.palette.with_palette(|palette| crate::src::style::colour::colour_palette_get(palette, 1)),
                 7
             );
             let mut client = client::empty();
@@ -1352,8 +1355,7 @@ mod tests {
             (first.redraw_cb.as_ref().unwrap())(&first);
             let mut expired = tty_ctx::default();
             render.init_ctx(&mut expired);
-            assert!(expired.style_ctx.palette.is_null());
-            assert!(expired.owned_palette.is_none());
+            assert!(expired.style_ctx.palette.with_palette(|palette| palette.is_none()));
         }
     }
 

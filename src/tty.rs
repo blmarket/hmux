@@ -123,7 +123,7 @@ static mut tty_log_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
         defaults: grid_default_cell,
-        palette: ::core::ptr::null::<colour_palette>() as *mut colour_palette,
+        palette: crate::src::shared::tty::PaletteSource::None,
         dim: 0 as u_int,
         hyperlinks: None,
     }
@@ -2863,7 +2863,8 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
     let mut gc2 = *gc;
     let mut changed: ::core::ffi::c_int = 0;
     let style_ctx = style_ctx.unwrap_or(&*std::ptr::addr_of!(tty_default_style_ctx));
-    let palette = style_ctx.palette.as_ref();
+    let palette_guard = style_ctx.palette.resolve();
+    let palette = palette_guard.as_ref();
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
         if gc2.fg == 8 as ::core::ffi::c_int {
             gc2.fg = style_ctx.defaults.fg;

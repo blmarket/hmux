@@ -2605,3 +2605,12 @@ queue item and hold an upgrade during hook insertion. Monitor events store an
 address identity used only for equality. Typed accessors remove the c_void
 casts while preserving the old pointer-format output. The raw-field count is
 38.
+
+## Implemented typed terminal palette source
+
+`tty_style_ctx.palette` now records no palette, a weak pane palette, a weak
+popup palette, or an owned snapshot. Terminal attribute reads hold a pane
+upgrade or popup palette borrow for the operation. Popup callback snapshots
+live directly in the style context, removing its self-pointer into
+`tty_ctx.owned_palette`. Tests cover live colour updates, source expiry and
+snapshot survival. The raw-field count is 37.

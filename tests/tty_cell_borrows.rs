@@ -277,13 +277,14 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
         colour_palette_init(&mut palette);
         colour_palette_set(Some(&mut palette), 1, 2);
         colour_palette_set(Some(&mut palette), 4, 6);
+        let palette = refbox::RefBox::new(palette);
         let style = tty_style_ctx {
             defaults: grid_cell {
                 fg: 1,
                 bg: 4,
                 ..grid_default_cell
             },
-            palette: &raw mut palette,
+            palette: hmux2::src::shared::tty::PaletteSource::Popup(palette.downgrade()),
             ..Default::default()
         };
         let source = grid_cell {
@@ -300,7 +301,7 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
             ),
             (2, 6, 2)
         );
-        colour_palette_set(Some(&mut palette), 1, 5);
+        colour_palette_set(Some(&mut palette.try_borrow_mut().unwrap()), 1, 5);
         tty_cell(&raw mut terminal, &source, Some(&style));
         assert_eq!(
             (

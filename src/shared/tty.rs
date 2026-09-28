@@ -8,6 +8,7 @@ use super::event::{evbuffer, event};
 use super::grid::grid_cell;
 use super::key::key_code;
 use super::mouse::mouse_event;
+use super::pane::window_pane;
 use super::terminal::termios;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;
@@ -427,8 +428,6 @@ pub struct tty_term_entry {
 /// Command metadata; screen and cell borrows are supplied only at dispatch.
 #[derive(Default)]
 pub struct tty_ctx<'a> {
-    /// Optional independent palette for terminal callbacks that outlive their source.
-    pub owned_palette: Option<Box<colour_palette>>,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
     pub flags: ::core::ffi::c_int,
@@ -455,9 +454,79 @@ pub struct tty_ctx<'a> {
 #[repr(C)]
 pub struct tty_style_ctx {
     pub defaults: grid_cell,
-    pub palette: *mut colour_palette,
+    pub palette: PaletteSource,
     pub dim: u_int,
     pub hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
+}
+
+#[derive(Clone, Default)]
+pub enum PaletteSource {
+    #[default]
+    None,
+    Pane(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Popup(refbox::Weak<colour_palette>),
+    Snapshot(Box<colour_palette>),
+}
+
+pub enum PaletteGuard<'a> {
+    None,
+    Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
+    Popup(refbox::Borrow<'a, colour_palette>),
+    Snapshot(&'a colour_palette),
+}
+
+impl PaletteGuard<'_> {
+    pub fn as_ref(&self) -> Option<&colour_palette> {
+        match self {
+            Self::None => None,
+            Self::Pane(pane) => Some(unsafe { &(*pane.get()).palette }),
+            Self::Popup(palette) => Some(palette),
+            Self::Snapshot(palette) => Some(palette),
+        }
+    }
+}
+
+impl PaletteSource {
+    pub fn resolve(&self) -> PaletteGuard<'_> {
+        match self {
+            Self::None => PaletteGuard::None,
+            Self::Pane(pane) => pane.upgrade().map_or(PaletteGuard::None, PaletteGuard::Pane),
+            Self::Popup(palette) => match palette.try_borrow_mut() {
+                Ok(borrowed) => PaletteGuard::Popup(borrowed),
+                Err(refbox::BorrowError::Dropped) => PaletteGuard::None,
+                Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
+            },
+            Self::Snapshot(palette) => PaletteGuard::Snapshot(palette),
+        }
+    }
+
+    pub fn with_palette<R>(&self, use_palette: impl FnOnce(Option<&colour_palette>) -> R) -> R {
+        let guard = self.resolve();
+        use_palette(guard.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod palette_source_tests {
+    use super::*;
+
+    #[test]
+    fn weak_sources_expire_and_snapshots_keep_their_colours() {
+        let pane = window_pane::new();
+        unsafe { (*pane.get()).palette.fg = 3 };
+        let pane_source = PaletteSource::Pane(std::rc::Rc::downgrade(&pane));
+        assert_eq!(pane_source.with_palette(|palette| palette.unwrap().fg), 3);
+        drop(pane);
+        assert!(pane_source.with_palette(|palette| palette.is_none()));
+
+        let popup = refbox::RefBox::new(colour_palette { fg: 5, ..Default::default() });
+        let popup_source = PaletteSource::Popup(popup.downgrade());
+        let snapshot = PaletteSource::Snapshot(Box::new(popup.try_borrow_mut().unwrap().clone()));
+        assert_eq!(popup_source.with_palette(|palette| palette.unwrap().fg), 5);
+        drop(popup);
+        assert!(popup_source.with_palette(|palette| palette.is_none()));
+        assert_eq!(snapshot.with_palette(|palette| palette.unwrap().fg), 5);
+    }
 }
 
 /// Payload borrowed for the synchronous terminal command dispatch.

@@ -1095,7 +1095,7 @@ unsafe fn redraw_draw_pane_span(
     };
     let mut style_ctx: tty_style_ctx = tty_style_ctx {
         defaults: grid_cell::default(),
-        palette: ::core::ptr::null_mut::<colour_palette>(),
+        palette: crate::src::shared::tty::PaletteSource::None,
         dim: 0,
         hyperlinks: None,
     };
@@ -1103,7 +1103,7 @@ unsafe fn redraw_draw_pane_span(
     let mut py: u_int = 0;
     (defaults, style_ctx.dim) = tty_default_colours(wp);
     style_ctx.defaults = defaults;
-    style_ctx.palette = &raw mut (*wp).palette;
+    style_ctx.palette = crate::src::shared::tty::PaletteSource::Pane((*wp).observer.clone());
     style_ctx.hyperlinks = (*s).hyperlinks.clone();
     px = (*span).data.pane().px.wrapping_add(x.wrapping_sub(span.x));
     py = span.data.pane().py;

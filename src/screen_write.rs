@@ -329,7 +329,6 @@ unsafe fn screen_write_initctx(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.s;
-    let mut palette: *mut colour_palette = ::core::ptr::null_mut::<colour_palette>();
     *ttyctx = tty_ctx::default();
     ttyctx.sx = (*s).grid().sx;
     ttyctx.sy = (*s).grid().sy;
@@ -344,13 +343,12 @@ unsafe fn screen_write_initctx(
     ttyctx.style_ctx.hyperlinks = (*ctx.s).hyperlinks.clone();
     if let Some(callback) = ctx.init_ctx_cb.as_mut() {
         callback(ttyctx);
-        if !ttyctx.style_ctx.palette.is_null() {
-            palette = ttyctx.style_ctx.palette;
+        if let Some((fg, bg)) = ttyctx.style_ctx.palette.with_palette(|palette| palette.map(|palette| (palette.fg, palette.bg))) {
             if ttyctx.style_ctx.defaults.fg == 8 as ::core::ffi::c_int {
-                ttyctx.style_ctx.defaults.fg = (*palette).fg;
+                ttyctx.style_ctx.defaults.fg = fg;
             }
             if ttyctx.style_ctx.defaults.bg == 8 as ::core::ffi::c_int {
-                ttyctx.style_ctx.defaults.bg = (*palette).bg;
+                ttyctx.style_ctx.defaults.bg = bg;
             }
         }
     } else {
@@ -358,7 +356,7 @@ unsafe fn screen_write_initctx(
         if !write_pane.is_null() {
             (ttyctx.style_ctx.defaults, ttyctx.style_ctx.dim) =
                 tty_default_colours(write_pane);
-            ttyctx.style_ctx.palette = &raw mut (*write_pane).palette;
+            ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Pane((*write_pane).observer.clone());
             ttyctx.set_client_cb = screen_write_set_client_cb(&ctx.wp);
         }
     }
@@ -3663,18 +3661,18 @@ mod write_ctx_tests {
         unsafe {
             let mut s = screen::empty();
             s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
-            let mut palette = colour_palette {
+            let palette = refbox::RefBox::new(colour_palette {
                 fg: 3,
                 bg: 4,
                 ..Default::default()
-            };
-            let palette_ptr = &raw mut palette;
+            });
+            let palette_observer = palette.downgrade();
             let mut ctx = screen_write_ctx {
                 s: &raw mut s,
                 flags: SCREEN_WRITE_SYNC,
                 init_ctx_cb: Some(Box::new(move |ttyctx| {
                     ttyctx.style_ctx.defaults.fg = 7;
-                    ttyctx.style_ctx.palette = palette_ptr;
+                    ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Popup(palette_observer.clone());
                 })),
                 ..Default::default()
             };
@@ -3685,7 +3683,7 @@ mod write_ctx_tests {
                 (7, 4)
             );
             let previous = std::hint::black_box(ttyctx);
-            palette.bg = 6;
+            palette.try_borrow_mut().unwrap().bg = 6;
             ttyctx = tty_ctx::default();
             screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
             assert_eq!(
