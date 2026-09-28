@@ -2992,7 +2992,7 @@ unsafe fn window_customize_init(
     ));
     mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
 unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
@@ -3159,7 +3159,7 @@ unsafe fn window_customize_set_option_callback(
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data_ptr());
+            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
@@ -3215,7 +3215,7 @@ unsafe fn window_customize_set_environment_callback(
         |out| write_cstr(out, s),
     );
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -3407,7 +3407,7 @@ unsafe fn window_customize_add_option_callback(
     }
     options_push_changes(name);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -3519,7 +3519,7 @@ unsafe fn window_customize_add_environment_callback(
         });
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -3631,7 +3631,7 @@ unsafe fn window_customize_edit_close_cb(
     match current_block {
         1608152415753874203 => {
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data_ptr());
+            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             (*wp).flags |= PANE_REDRAW;
         }
         _ => {}
@@ -3992,7 +3992,7 @@ unsafe fn window_customize_set_array_key_callback(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-        mode_tree_draw((*data).data_ptr());
+        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
         (*mode_pane).flags |= PANE_REDRAW;
         return PROMPT_CLOSE;
     };
@@ -4206,7 +4206,7 @@ unsafe fn window_customize_set_command_callback(
             bd.commands = pr.cmdlist.take().expect("successful command parse");
             drop(kt);
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data_ptr());
+            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
@@ -4236,7 +4236,7 @@ unsafe fn window_customize_set_note_callback(
     key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
     drop(kt);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -4419,7 +4419,7 @@ unsafe fn window_customize_add_key_callback(
         1 | _ => {
             key_bindings_add(item.table.as_deref().expect("key binding table name"), key, { let note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0 as ::core::ffi::c_int, pr.take_cmdlist());
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data_ptr());
+            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             (*mode_pane).flags |= PANE_REDRAW;
             return PROMPT_CLOSE;
         }
@@ -4644,7 +4644,7 @@ unsafe fn window_customize_change_current_callback(
         options_push_changes(name.as_ref().expect("option name was copied").as_ptr());
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -4704,7 +4704,7 @@ unsafe fn window_customize_change_tagged_callback(
         0 as ::core::ffi::c_int,
     );
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
@@ -5072,7 +5072,7 @@ unsafe fn window_customize_key(
     if finished != 0 {
         window_pane_reset_mode(&mode_pane_owner);
     } else {
-        mode_tree_draw((*data).data_ptr());
+        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
         window_customize_draw_waiting(data);
         (*wp).flags |= PANE_REDRAW;
     };

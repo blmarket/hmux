@@ -810,7 +810,7 @@ unsafe fn window_client_init(
         mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"preview"));
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
 unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
@@ -833,7 +833,7 @@ unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_client_do_detach(
@@ -924,7 +924,7 @@ unsafe fn window_client_key(
     if finished != 0 || server_client_how_many() == 0 as u_int {
         window_pane_reset_mode(&mode_pane_owner);
     } else {
-        mode_tree_draw(mtd);
+        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
         (*wp).flags |= PANE_REDRAW;
     };
 }

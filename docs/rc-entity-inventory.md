@@ -1202,3 +1202,16 @@ recovers its ownership from a raw pointer.
 the tree from its build callback, verifying dispatch stops and the tree is
 released after the rebuild returns. Drawing, prompt adapters and internal raw
 model projections still require migration.
+
+## Implemented retained mode trees for drawing
+
+Mode-tree drawing and help display now borrow Rc tree handles. All four mode
+implementations retain their stored tree across drawing; resize, key, prompt and
+filter paths pass their existing owners. Drawing skips logically destroyed trees
+before accessing their released screen. The pane association remains weak and is
+upgraded only for the duration of drawing.
+
+`cargo test --workspace` and `git diff --check` passed. Regression coverage checks
+drawing with an expired parent and with a destroyed tree whose screen is already
+released. Drawing internals, callback payloads and other raw model APIs remain
+pending.

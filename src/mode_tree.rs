@@ -668,7 +668,7 @@ pub unsafe fn mode_tree_resize(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut 
     let mut s: *mut screen = &raw mut (*mtd).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     mode_tree_build(tree_owner);
-    mode_tree_draw(mtd);
+    mode_tree_draw(tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
 }
 pub unsafe fn mode_tree_add(
@@ -751,7 +751,11 @@ fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: Option<&CStr>) {
         bytes.extend_from_slice(b"(null)");
     }
 }
-pub unsafe fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
+pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
+    if (*mtd).dead != 0 {
+        return;
+    }
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
@@ -1462,7 +1466,7 @@ pub unsafe fn mode_tree_set_prompt(
     let prompt = prompt_create(pd);
     (*mtd).prompt = Some(prompt);
     (*mtd).prompt_data = Some(identity);
-    mode_tree_draw(mtd);
+    mode_tree_draw(&tree);
     (*mode_pane).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
             let tree = tree.clone();
@@ -1576,7 +1580,7 @@ unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
     }
     mode_tree_build(&tree_owner);
     mode_tree_set_current(mtd, tag);
-    mode_tree_draw(mtd);
+    mode_tree_draw(&tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn mode_tree_search_callback(
@@ -1619,7 +1623,7 @@ unsafe fn mode_tree_filter_callback(
         .map(CStr::to_owned);
     (*mtd).filter = replacement;
     mode_tree_build(&tree_owner);
-    mode_tree_draw(mtd);
+    mode_tree_draw(&tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -1635,7 +1639,7 @@ unsafe fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     (*mtd).filter = None;
     mode_tree_build(&tree_owner);
-    mode_tree_draw(mtd);
+    mode_tree_draw(&tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
 }
 fn mode_tree_menu_callback(
@@ -1880,9 +1884,10 @@ unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen
     }
     format_free(ft);
 }
-unsafe fn mode_tree_display_help(mut mtd: *mut mode_tree_data) {
+unsafe fn mode_tree_display_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     (*mtd).help = 1 as ::core::ffi::c_int;
-    mode_tree_draw(mtd);
+    mode_tree_draw(tree_owner);
 }
 pub unsafe fn mode_tree_key(
     tree: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
@@ -1912,7 +1917,7 @@ pub unsafe fn mode_tree_key(
         return 1 as ::core::ffi::c_int;
     }
     if let Some(prompt) = (*mtd).prompt.as_ref().map(|prompt| prompt.downgrade()) {
-        let tree = (*mtd).observer.clone();
+        let tree_observer = (*mtd).observer.clone();
         redraw = 0 as ::core::ffi::c_int;
         let mtp = (*mtd).prompt_data.clone();
         if let Some(mtp) = &mtp {
@@ -1966,7 +1971,7 @@ pub unsafe fn mode_tree_key(
             result = prompt_key(&prompt, *key, &mut redraw);
         }
         // A prompt can destroy its pane and release the tree during dispatch.
-        let Some(_tree_owner) = tree.upgrade() else {
+        let Some(_tree_owner) = tree_observer.upgrade() else {
             *key = KEYC_NONE;
             return 0;
         };
@@ -1999,7 +2004,7 @@ pub unsafe fn mode_tree_key(
                 .as_ref()
                 .is_some_and(|current| prompt.is(current))
         {
-            mode_tree_draw(mtd);
+            mode_tree_draw(&tree);
             (*mode_pane).flags |= PANE_REDRAW;
         }
         if result as ::core::ffi::c_uint
@@ -2028,7 +2033,7 @@ pub unsafe fn mode_tree_key(
             return 0 as ::core::ffi::c_int;
         }
         (*mtd).help = 0 as ::core::ffi::c_int;
-        mode_tree_draw(mtd);
+        mode_tree_draw(&tree);
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 0 as ::core::ffi::c_int;
     }
@@ -2115,7 +2120,7 @@ pub unsafe fn mode_tree_key(
     match *key {
         113 | 27 | 35184372088923 | 35184372088935 => return 1 as ::core::ffi::c_int,
         8589934600 | 35184372088936 => {
-            mode_tree_display_help(mtd);
+            mode_tree_display_help(&tree);
         }
         8589934619 | 107 | 38654705664 | 35184372088944 => {
             mode_tree_up(mtd, 1 as ::core::ffi::c_int);
@@ -2606,6 +2611,8 @@ mod pane_observer_tests {
             assert_eq!(Rc::strong_count(&pane), 1);
             drop(pane);
 
+            mode_tree_draw(&tree_owner);
+
             let mut key = b'x' as key_code;
             assert_eq!(
                 mode_tree_key(
@@ -2641,6 +2648,21 @@ mod pane_observer_tests {
             mode_tree_free(tree_owner);
             assert!(tree_observer.upgrade().is_none());
             assert_eq!(Rc::strong_count(&frees), 1);
+        }
+    }
+
+    #[test]
+    fn drawing_a_closed_tree_does_not_access_its_released_screen() {
+        unsafe {
+            let pane = window_pane::new();
+            let tree = mode_tree_alloc_data();
+            (*tree.get()).wp = Rc::downgrade(&pane);
+            (*tree.get()).zoomed = 1;
+            mode_tree_free(tree.clone());
+            assert!((*tree.get()).screen.grid.is_none());
+            mode_tree_draw(&tree);
+            assert_eq!(Rc::strong_count(&tree), 1);
+            assert_eq!(Rc::strong_count(&pane), 1);
         }
     }
 }

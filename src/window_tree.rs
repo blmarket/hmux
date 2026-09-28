@@ -1800,7 +1800,7 @@ unsafe fn window_tree_init(
     mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"preview"));
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*data).type_0 = WINDOW_TREE_NONE;
     return s;
 }
@@ -1825,7 +1825,7 @@ unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
 }
 unsafe fn window_tree_get_target(
@@ -1901,7 +1901,7 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
             };
             let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data_ptr());
+            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             (*mode_pane).flags |= PANE_REDRAW;
         }
         CMD_RETURN_NORMAL
@@ -2368,7 +2368,7 @@ unsafe fn window_tree_key(
     if finished != 0 {
         window_pane_reset_mode(&mode_pane_owner);
     } else {
-        mode_tree_draw((*data).data_ptr());
+        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
         (*wp).flags |= PANE_REDRAW;
     };
 }

@@ -525,7 +525,7 @@ unsafe fn window_buffer_init(
     ));
     mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
 unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
@@ -551,7 +551,7 @@ unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data_ptr());
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     window_buffer_draw_waiting(data);
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -741,7 +741,7 @@ unsafe fn window_buffer_edit_close_cb(
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
             data = (*wme).data as *mut window_buffer_modedata;
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data_ptr());
+            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             window_buffer_draw_waiting(data);
         }
         (*wp).flags |= PANE_REDRAW;
@@ -873,7 +873,7 @@ unsafe fn window_buffer_key(
     if finished != 0 || paste_is_empty() != 0 {
         window_pane_reset_mode(&mode_pane_owner);
     } else {
-        mode_tree_draw(mtd);
+        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
         window_buffer_draw_waiting(data);
         (*wp).flags |= PANE_REDRAW;
     };
