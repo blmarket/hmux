@@ -863,7 +863,7 @@ unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
     {
         return None;
     }
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_word_cstring(wp, x, y);
         }
@@ -900,7 +900,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
     {
         return None;
     }
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_hyperlink_cstring(wp, x, y);
         }
@@ -937,7 +937,7 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
     {
         return None;
     }
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         if window_pane_mode(&*wp) != WINDOW_PANE_NO_MODE {
             return window_copy_get_line_cstring(wp, y);
         }

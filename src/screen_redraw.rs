@@ -1402,7 +1402,7 @@ unsafe fn redraw_draw_scrollbar_span(
         slider_h = (sb_h as ::core::ffi::c_double * pct_view) as u_int;
         slider_y = sb_h.wrapping_sub(slider_h);
     } else {
-        if (*wp).modes.active_ptr().is_null() {
+        if (*wp).modes.is_empty() {
             return;
         }
         let Some((cm_y, cm_size)) = window_copy_get_current_offset(&*wp) else {

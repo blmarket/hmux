@@ -292,6 +292,10 @@ pub struct window_pane_modes {
 }
 
 impl window_pane_modes {
+    pub fn is_empty(&self) -> bool {
+        self.storage.as_ref().is_none_or(|storage| storage.entries.is_empty())
+    }
+
     /// Observe the current entry without retaining the pane-owned allocation.
     pub fn active_weak(&self) -> refbox::Weak<window_mode_entry> {
         self.storage

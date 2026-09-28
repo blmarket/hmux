@@ -2372,7 +2372,7 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
     let mut wp: *mut window_pane = input_pane;
     input_reset_cell(ictx);
     if clear != 0 && !wp.is_null() {
-        if (*wp).modes.active_ptr().is_null() {
+        if (*wp).modes.is_empty() {
             screen_write_start_pane(&mut *sctx, input_pane_owner.as_ref().expect("live input pane"), &raw mut (*wp).base);
         } else {
             screen_write_start(&mut *sctx, &raw mut (*wp).base);
@@ -2470,10 +2470,10 @@ pub unsafe fn input_parse_buffer(
         );
     }
     (*wp).flags |= PANE_CHANGED;
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         (*wp).flags |= PANE_UNSEENCHANGES;
     }
-    if (*wp).modes.active_ptr().is_null() {
+    if (*wp).modes.is_empty() {
         screen_write_start_pane(&mut *sctx, &(*wp).observer.upgrade().expect("live screen-write pane"), &raw mut (*wp).base);
     } else {
         screen_write_start(&mut *sctx, &raw mut (*wp).base);

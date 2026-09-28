@@ -2504,7 +2504,7 @@ mod window_mode_collection_tests {
         let owner = (*wme).wp.upgrade().expect("cleanup retains parent pane");
         let pane = &mut *owner.get();
         assert_ne!(pane.modes.active_ptr(), wme);
-        let expected = if pane.modes.active_ptr().is_null() {
+        let expected = if pane.modes.is_empty() {
             &raw mut pane.base
         } else {
             &raw mut pane.status_screen
@@ -2532,7 +2532,7 @@ mod window_mode_collection_tests {
             }
             window_pane_free_modes(&owner);
             assert_eq!((*wp).sx, 3);
-            assert!((*wp).modes.active_ptr().is_null());
+            assert!((*wp).modes.is_empty());
             assert!((*wp).modes.storage.is_none());
             assert_eq!((*wp).screen_ptr(), &raw mut (*wp).base);
             drop(owner);
@@ -2591,7 +2591,7 @@ mod window_mode_collection_tests {
             assert_eq!(window_pane_mode_next(a), b);
             assert!(window_pane_mode_next(b).is_null());
 
-            while !(*wp).modes.active_ptr().is_null() {
+            while !(*wp).modes.is_empty() {
                 let top = (*wp).modes.active_ptr();
                 drop(window_pane_mode_remove(wp, top).expect("mode was present"));
             }
@@ -2706,7 +2706,7 @@ pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
 unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    while !(*wp).modes.active_ptr().is_null() {
+    while !(*wp).modes.is_empty() {
         wme = (*wp).modes.active_ptr();
         let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
         let next = (*wp).modes.active_ptr();
@@ -2991,7 +2991,7 @@ pub unsafe fn window_pane_set_mode(
     let mut w: *mut window = (*wp).window_ptr();
     let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         if std::ptr::eq((*(*wp).modes.active_ptr()).mode, mode) {
             return 1 as ::core::ffi::c_int;
         }
@@ -2999,7 +2999,7 @@ pub unsafe fn window_pane_set_mode(
             window_pane_reset_mode(pane_owner);
         }
     }
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         oname = (*(*(*wp).modes.active_ptr()).mode).name.as_ptr();
     }
     let existing = (*wp)
@@ -3065,7 +3065,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     let mut kill_0: ::core::ffi::c_int = 0;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut p: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if (*wp).modes.active_ptr().is_null() {
+    if (*wp).modes.is_empty() {
         return;
     }
     wme = (*wp).modes.active_ptr();
@@ -3129,7 +3129,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
 }
 pub unsafe fn window_pane_reset_mode_all(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    while !(*wp).modes.active_ptr().is_null() {
+    while !(*wp).modes.is_empty() {
         window_pane_reset_mode(pane_owner);
     }
 }
@@ -3365,7 +3365,7 @@ unsafe fn window_pane_copy_paste(
     while let Some(pane_owner) = cursor {
         let loop_0 = pane_owner.get();
         if loop_0 != wp
-            && (*loop_0).modes.active_ptr().is_null()
+            && (*loop_0).modes.is_empty()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(&*loop_0) != 0
@@ -3393,7 +3393,7 @@ unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     while let Some(pane_owner) = cursor {
         let loop_0 = pane_owner.get();
         if loop_0 != wp
-            && (*loop_0).modes.active_ptr().is_null()
+            && (*loop_0).modes.is_empty()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(&*loop_0) != 0
@@ -3413,7 +3413,7 @@ pub unsafe fn window_pane_paste(
     bytes: &[u8],
 ) {
     let wp = pane_owner.get();
-    if !(*wp).modes.active_ptr().is_null() {
+    if !(*wp).modes.is_empty() {
         return;
     }
     if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
@@ -3986,7 +3986,7 @@ pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
     screen_set_default_cursor(&mut *(*wp).screen_ptr(), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
 }
 pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
-    if !wp.modes.active_ptr().is_null() {
+    if !wp.modes.is_empty() {
         if std::ptr::eq((*wp.modes.active_ptr()).mode, &window_copy_mode) {
             return 1 as ::core::ffi::c_int;
         }

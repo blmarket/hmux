@@ -2886,7 +2886,7 @@ unsafe fn server_client_key_callback(
                                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                         as ::core::ffi::c_ulonglong)
                                         << 32 as ::core::ffi::c_int)
-                        && (*wp).modes.active_ptr().is_null()
+                        && (*wp).modes.is_empty()
                     {
                         current_block = 15469183920764600035;
                     } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code
@@ -3289,7 +3289,7 @@ unsafe fn server_client_handle_key0(
         }
         if !wp.is_null()
             && (*wp).flags & PANE_CAPTUREALLKEYS != 0
-            && (*wp).modes.active_ptr().is_null()
+            && (*wp).modes.is_empty()
             && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                 || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
