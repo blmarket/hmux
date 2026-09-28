@@ -1,6 +1,6 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strerror};
-use crate::src::log::{log_cstr, log_debug};
+use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
 use crate::src::shared::abi::*;
@@ -82,7 +82,7 @@ pub unsafe fn prompt_load_history() {
     };
     log_debug(format_args!(
         "loading history from {}",
-        log_cstr((history_file.as_ptr()) as *const _)
+        log_bytes(history_file.as_bytes())
     ));
     f = fopen(
         history_file.as_ptr(),
@@ -91,7 +91,7 @@ pub unsafe fn prompt_load_history() {
     if f.is_null() {
         log_debug(format_args!(
             "{}: {}",
-            log_cstr((history_file.as_ptr()) as *const _),
+            log_bytes(history_file.as_bytes()),
             log_cstr((strerror(*__errno_location())) as *const _)
         ));
         return;
@@ -112,7 +112,7 @@ pub unsafe fn prompt_save_history() {
     };
     log_debug(format_args!(
         "saving history to {}",
-        log_cstr((history_file.as_ptr()) as *const _)
+        log_bytes(history_file.as_bytes())
     ));
     f = fopen(
         history_file.as_ptr(),
@@ -121,7 +121,7 @@ pub unsafe fn prompt_save_history() {
     if f.is_null() {
         log_debug(format_args!(
             "{}: {}",
-            log_cstr((history_file.as_ptr()) as *const _),
+            log_bytes(history_file.as_bytes()),
             log_cstr((strerror(*__errno_location())) as *const _)
         ));
         return;

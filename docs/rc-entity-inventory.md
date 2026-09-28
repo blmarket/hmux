@@ -2717,3 +2717,6 @@ Session names and typed release reasons now pass their owned `CString`/`CStr`
 bytes directly to the deferred log formatter. The formatter borrows those
 bytes through the synchronous logging call, preserving escaping without a raw
 C-string holder for these sites. Raw logger callers elsewhere remain.
+
+The prompt history logger now borrows its owned `CString` path bytes for load
+and save messages. Libc error strings still use the deferred raw formatter.
