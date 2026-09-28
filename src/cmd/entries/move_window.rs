@@ -101,7 +101,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
         session_renumber_windows(target.s_ptr());
         recalculate_sizes();
-        server_status_session(target.s_ptr());
+        server_status_session(&*(target.s_ptr()));
         return CMD_RETURN_NORMAL;
     }
     if cmd_find_target(

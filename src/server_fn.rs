@@ -155,27 +155,27 @@ pub unsafe fn server_redraw_session_group(mut s: *mut session) {
         }
     };
 }
-pub unsafe fn server_status_session(mut s: *mut session) {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if (*c).session == s {
-            server_status_client(c);
+pub unsafe fn server_status_session(session: &session) {
+    let mut next = clients.first();
+    while let Some(client_owner) = next {
+        next = clients.next(&client_owner);
+        let client = &mut *client_owner.get();
+        if client.session.as_ref().is_some_and(|current| {
+            std::rc::Weak::ptr_eq(&current.observer, &session.observer)
+        }) {
+            client.flags |= CLIENT_REDRAWSTATUS as uint64_t;
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_status_session_group(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
-        server_status_session(s);
+        server_status_session(&*(s));
     } else {
         for session_owner in crate::src::session::session_group_members(sg) {
             let s = session_owner.get();
-            server_status_session(s);
+            server_status_session(&*(s));
         }
     };
 }
@@ -231,7 +231,7 @@ pub unsafe fn server_status_window(mut w: *mut window) {
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if session_has(&*s, &*w) != 0 {
-            server_status_session(s);
+            server_status_session(&*(s));
         }
         s_owner = sessions_next(&*s);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);

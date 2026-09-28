@@ -750,7 +750,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         cmd_find_from_session(&mut *current.current.borrow_mut(), dst_s, 0 as ::core::ffi::c_int);
         server_redraw_session(dst_s);
     } else {
-        server_status_session(dst_s);
+        server_status_session(&*(dst_s));
     }
     window_fire_pane_moved(src_wp, src_w, (*src_wl).idx, dst_w, dst_idx);
     if window_count_panes(&*src_w, 1 as ::core::ffi::c_int) == 0 as u_int {

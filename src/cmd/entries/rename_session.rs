@@ -103,7 +103,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let owner = sessions_remove(&raw mut sessions, s).expect("registered session owner");
     drop(session_replace_name(&mut *s, newname));
     sessions_insert(&raw mut sessions, owner);
-    server_status_session(s);
+    server_status_session(&*(s));
     events_fire(
         b"session-renamed\0" as *const u8 as *const ::core::ffi::c_char,
         ep,

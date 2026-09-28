@@ -3786,7 +3786,7 @@ pub unsafe fn winlink_clear_flags(mut wl: *mut winlink) {
         if (*loop_0).flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
             (*loop_0).flags &= !WINLINK_ALERTFLAGS;
             if let Some(session_owner) = (*loop_0).session.upgrade() {
-                server_status_session(session_owner.get());
+                server_status_session(&*(session_owner.get()));
             }
         }
         loop_0 = window_winlinks_next(w, loop_0);

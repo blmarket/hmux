@@ -245,7 +245,7 @@ unsafe fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int {
         s = session_owner.get();
         if (*s).curw != wl || (*s).attached == 0 as u_int {
             (*wl).flags |= WINLINK_BELL;
-            server_status_session(s);
+            server_status_session(&*(s));
         }
         if !(alerts_action_applies(
             wl,
@@ -299,7 +299,7 @@ unsafe fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c_int {
             s = session_owner.get();
             if (*s).curw != wl || (*s).attached == 0 as u_int {
                 (*wl).flags |= WINLINK_ACTIVITY;
-                server_status_session(s);
+                server_status_session(&*(s));
             }
             if !(alerts_action_applies(
                 wl,
@@ -354,7 +354,7 @@ unsafe fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_int {
             s = session_owner.get();
             if (*s).curw != wl || (*s).attached == 0 as u_int {
                 (*wl).flags |= WINLINK_SILENCE;
-                server_status_session(s);
+                server_status_session(&*(s));
             }
             if !(alerts_action_applies(
                 wl,

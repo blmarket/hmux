@@ -2208,3 +2208,14 @@ types.
 
 `cargo test --workspace` and `git diff --check` passed. Raw parent/session
 relationships at callers and other redraw/status APIs remain pending.
+
+## Implemented borrowed sessions for status redraw
+
+Session status redraw accepts a shared session borrow and traverses retained
+client registry handles. It compares session weak identities and sets the status
+redraw flag through a client borrow, removing the raw client cursor and raw
+session comparison. All ten callers pass borrows; existing raw relationships are
+adapted at the call boundary. No new Rc-managed type or persistent owner is added.
+
+`cargo test --workspace` and `git diff --check` passed. Client session fields,
+group/window status traversal and other redraw APIs still require migration.
