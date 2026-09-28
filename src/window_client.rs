@@ -918,7 +918,7 @@ unsafe fn window_client_key(
         13 => {
             let item_owner = mode_tree_get_current(&*mtd);
             if let Some(item) = item_owner.as_client() {
-                mode_tree_run_command(c, None, &(*data).command, &item.ttyname);
+                mode_tree_run_command(c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(), None, &(*data).command, &item.ttyname);
             }
             finished = 1 as ::core::ffi::c_int;
         }

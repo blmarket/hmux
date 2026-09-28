@@ -998,3 +998,13 @@ Callback-only menus retain their no-client path using `None`.
 `cargo test --workspace` and `git diff --check` passed, including menu callback
 reentry, menu destruction during callbacks and expired-menu handling. Session/window
 associations in the outer helper and other raw model APIs remain pending.
+
+## Implemented retained client arguments for mode command runners
+
+Mode-tree and window-switch command runners now borrow optional Rc clients through
+parsing and error reporting. Tree, client-list, buffer-list and switch-mode callers
+upgrade their client before dispatch; the runners pass that owner directly to the
+parser. Error reporting derives its client view from the retained owner.
+
+`cargo test --workspace` and `git diff --check` passed. Outer mode callback client
+arguments, saved model associations and local raw projections remain pending.

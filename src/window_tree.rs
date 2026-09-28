@@ -1887,7 +1887,7 @@ unsafe fn window_tree_command_each(
     };
     if let Some(name) = window_tree_get_target(item, &mut fs) {
         mode_tree_run_command(
-            c,
+            c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(),
             Some(&fs),
             (*data).entered.as_deref().expect("entered tree command"),
             &name,
@@ -2362,7 +2362,7 @@ unsafe fn window_tree_key(
                 .as_deref()
                 .and_then(|item| window_tree_get_target(item, &mut fs))
             {
-                mode_tree_run_command(c, None, &(*data).command, &name);
+                mode_tree_run_command(c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(), None, &(*data).command, &name);
             }
             finished = 1 as ::core::ffi::c_int;
         }

@@ -2304,7 +2304,7 @@ pub unsafe fn mode_tree_key(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn mode_tree_run_command(
-    c: *mut client,
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: Option<&cmd_find_state>,
     template: &CStr,
     name: &CStr,
@@ -2319,13 +2319,12 @@ pub unsafe fn mode_tree_run_command(
         std::ptr::null_mut(),
         0,
     );
-    let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
     if let Err(mut error) =
-        cmd_parse_and_append(&command, parse_client_owner.as_ref(), Some(&state))
+        cmd_parse_and_append(&command, client_owner, Some(&state))
     {
-        if !c.is_null() {
+        if let Some(owner) = client_owner {
             cmd_parse_error_uppercase_first(&mut error);
-            status_message_set(c, -1, 1, 0, 0, |out| {
+            status_message_set(owner.get(), -1, 1, 0, 0, |out| {
                 write_cstr(
                     out,
                     error

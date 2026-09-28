@@ -562,7 +562,7 @@ unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, m
 }
 unsafe fn window_switch_run_command(
     mut data: *mut window_switch_modedata,
-    mut c: *mut client,
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
 ) -> ::core::ffi::c_int {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -626,12 +626,11 @@ unsafe fn window_switch_run_command(
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
-        let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
-        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), parse_client_owner.as_ref(), Some(&state)) {
-            if !c.is_null() {
+        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), client_owner, Some(&state)) {
+            if let Some(owner) = client_owner {
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(
-                    c,
+                    owner.get(),
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -747,7 +746,7 @@ unsafe fn window_switch_key(
                 }
                 window_switch_set_current(data, (*data).offset.wrapping_add(y));
                 if key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
-                    if window_switch_run_command(data, c) != 0 {
+                    if window_switch_run_command(data, c.as_ref().map(|client| client.observer.upgrade().expect("switch command client is live")).as_ref()) != 0 {
                         window_pane_reset_mode(wp);
                     }
                     return;
@@ -767,7 +766,7 @@ unsafe fn window_switch_key(
         }
         match key {
             13 => {
-                if window_switch_run_command(data, c) != 0 {
+                if window_switch_run_command(data, c.as_ref().map(|client| client.observer.upgrade().expect("switch command client is live")).as_ref()) != 0 {
                     window_pane_reset_mode(wp);
                 }
                 return;

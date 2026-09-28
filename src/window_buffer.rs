@@ -577,7 +577,7 @@ unsafe fn window_buffer_do_paste(
     mut c: *mut client,
 ) {
     if paste_get_name(&item.name).is_some() {
-        mode_tree_run_command(c, None, &(*data).command, &item.name);
+        mode_tree_run_command(c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(), None, &(*data).command, &item.name);
     }
 }
 unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
