@@ -62,15 +62,11 @@ unsafe fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::Un
     let owner = std::rc::Rc::new(std::cell::UnsafeCell::new(cmdq_item::empty()));
     let item = owner.get();
     (*item).observer = std::rc::Rc::downgrade(&owner);
-    let label = label.to_bytes();
-    let address = format!("{item:p}");
-    let mut bytes = Vec::with_capacity(label.len() + address.len() + 3);
-    bytes.push(b'[');
-    bytes.extend_from_slice(label);
-    bytes.push(b'/');
-    bytes.extend_from_slice(address.as_bytes());
-    bytes.push(b']');
-    (*item).name = Some(CString::new(bytes).expect("queue item label has no NUL"));
+    (*item).name = Some(format_message_with(|out| {
+        out.write_all(b"[")?;
+        out.write_all(label.to_bytes())?;
+        write!(out, "/{item:p}]")
+    }));
 
     owner
 }
