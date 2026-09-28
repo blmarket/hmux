@@ -1,3 +1,6 @@
+use std::cell::UnsafeCell;
+use std::rc::Rc;
+use crate::src::shared::window::WindowOwner;
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
@@ -49,27 +52,34 @@ pub static cmd_swap_pane_entry: cmd_entry = {
         exec: Some(cmd_swap_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_swap_pane_next_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
-    while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+unsafe fn cmd_swap_pane_next_tiled_pane(
+    mut pane: Option<Rc<UnsafeCell<window_pane>>>,
+) -> Option<Rc<UnsafeCell<window_pane>>> {
+    while let Some(owner) = pane.as_ref() {
+        let wp = &*owner.get();
+        if layout_cell_is_tiled(wp.layout_cell) != 0 {
+            break;
+        }
+        pane = window_pane_next(Some(wp));
     }
-    return wp;
+    pane
 }
-unsafe fn cmd_swap_pane_prev_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
-    while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-        wp = window_pane_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+unsafe fn cmd_swap_pane_prev_tiled_pane(
+    mut pane: Option<Rc<UnsafeCell<window_pane>>>,
+) -> Option<Rc<UnsafeCell<window_pane>>> {
+    while let Some(owner) = pane.as_ref() {
+        let wp = &*owner.get();
+        if layout_cell_is_tiled(wp.layout_cell) != 0 {
+            break;
+        }
+        pane = window_pane_previous(Some(wp));
     }
-    return wp;
+    pane
 }
 unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut src_w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut dst_w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut tmp_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut src_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut dst_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut src_lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut dst_lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut sx: u_int = 0;
@@ -78,11 +88,15 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut yoff: u_int = 0;
     let mut src_idx: ::core::ffi::c_int = 0;
     let mut dst_idx: ::core::ffi::c_int = 0;
-    dst_w = (*(*target).wl_ptr()).window_ptr();
-    dst_wp = (*target).wp_ptr();
+    let dst_window_owner = WindowOwner::adopt((*target).w.upgrade().expect("live swap target window"));
+    let dst_pane_owner = (*target).wp.upgrade().expect("live swap target pane");
+    let dst_w = dst_window_owner.as_ptr();
+    let dst_wp = dst_pane_owner.get();
     dst_idx = (*(*target).wl_ptr()).idx;
-    src_w = (*(*source).wl_ptr()).window_ptr();
-    src_wp = (*source).wp_ptr();
+    let mut src_window_owner = WindowOwner::adopt((*source).w.upgrade().expect("live swap source window"));
+    let mut src_pane_owner = (*source).wp.upgrade().expect("live swap source pane");
+    let mut src_w = src_window_owner.as_ptr();
+    let src_wp = src_pane_owner.get();
     src_idx = (*(*source).wl_ptr()).idx;
     if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
         cmdq_error(item, |out| out.write_all(b"pane is modal"));
@@ -103,13 +117,11 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             });
             return CMD_RETURN_ERROR;
         }
-        src_w = dst_w;
-        src_wp = window_pane_next(dst_wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        src_wp = cmd_swap_pane_next_tiled_pane(src_wp);
-        if src_wp.is_null() {
-            src_wp = window_pane_first(dst_w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            src_wp = cmd_swap_pane_next_tiled_pane(src_wp);
-        }
+        src_window_owner = WindowOwner::adopt(dst_window_owner.as_rc().clone());
+        src_w = src_window_owner.as_ptr();
+        src_pane_owner = cmd_swap_pane_next_tiled_pane(window_pane_next(Some(&*dst_wp)))
+            .or_else(|| cmd_swap_pane_next_tiled_pane(window_pane_first(Some(&*dst_w))))
+            .expect("tiled swap target remains in its window");
     } else if args_has(args, 'U' as i32 as u_char) != 0 {
         if window_pane_is_floating(&*dst_wp) != 0 {
             cmdq_error(item, |out| {
@@ -117,14 +129,13 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             });
             return CMD_RETURN_ERROR;
         }
-        src_w = dst_w;
-        src_wp = window_pane_previous(dst_wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        src_wp = cmd_swap_pane_prev_tiled_pane(src_wp);
-        if src_wp.is_null() {
-            src_wp = window_pane_last(dst_w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            src_wp = cmd_swap_pane_prev_tiled_pane(src_wp);
-        }
+        src_window_owner = WindowOwner::adopt(dst_window_owner.as_rc().clone());
+        src_w = src_window_owner.as_ptr();
+        src_pane_owner = cmd_swap_pane_prev_tiled_pane(window_pane_previous(Some(&*dst_wp)))
+            .or_else(|| cmd_swap_pane_prev_tiled_pane(window_pane_last(Some(&*dst_w))))
+            .expect("tiled swap target remains in its window");
     }
+    let src_wp = src_pane_owner.get();
     if src_w != dst_w
         && window_push_zoom(
             src_w,
@@ -134,7 +145,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     {
         server_redraw_window(src_w);
     }
-    if !(src_wp == dst_wp) {
+    if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
         server_client_remove_pane(src_wp);
         server_client_remove_pane(dst_wp);
         window_pane_swap_order(
@@ -176,8 +187,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 window_set_active_pane(src_w, dst_wp, 1 as ::core::ffi::c_int);
                 window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
             } else {
-                tmp_wp = dst_wp;
-                window_set_active_pane(src_w, tmp_wp, 1 as ::core::ffi::c_int);
+                window_set_active_pane(src_w, dst_wp, 1 as ::core::ffi::c_int);
             }
         } else {
             if (*src_w).active == src_wp {

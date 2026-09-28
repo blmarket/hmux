@@ -1760,3 +1760,15 @@ have migrated to the borrowed interfaces.
 same-window and cross-window swaps in both orderings and verifies pane strong
 counts remain unchanged. Raw model relationships and raw projections in calling
 commands/layout routines remain pending.
+
+## Implemented retained swap-pane selection and dispatch
+
+Swap-pane upgrades its source and destination panes and windows before dispatch.
+Window handles use WindowOwner so their normal release policy is preserved.
+Directional tiled-pane searches consume/return optional Rc handles and retain each
+candidate while advancing; wraparound stays in the owning-handle path. The final
+source/destination pane identity check uses Rc::ptr_eq. Both selected panes remain
+owned through layout, focus, redraw and event operations.
+
+`cargo test --workspace` and `git diff --check` passed. Legacy layout/focus APIs and
+pane-to-window links still use raw projections within the retained operation.
