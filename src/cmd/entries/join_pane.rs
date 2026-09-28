@@ -351,7 +351,7 @@ unsafe fn cmd_join_pane_place(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_move(
@@ -468,7 +468,7 @@ unsafe fn cmd_join_pane_move(
             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
             w,
         );
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
     return CMD_RETURN_NORMAL;
 }
@@ -542,7 +542,7 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
         (*lc).g.xoff += x - lx;
         (*lc).g.yoff += y - ly;
         layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
         server_redraw_window_borders(&*(w));
     }
 }
@@ -593,7 +593,7 @@ unsafe fn cmd_join_pane_zindex(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_tile(
@@ -634,7 +634,7 @@ unsafe fn cmd_join_pane_tile(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
@@ -742,8 +742,8 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     layout_assign_pane(lc, src_wp, 0 as ::core::ffi::c_int);
     colour_palette_from_option(Some(&mut (*src_wp).palette), options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options));
     recalculate_sizes();
-    server_redraw_window(src_w);
-    server_redraw_window(dst_w);
+    server_redraw_window(&*(src_w));
+    server_redraw_window(&*(dst_w));
     if args_has(args, 'd' as i32 as u_char) == 0 {
         window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
         session_select(dst_s, dst_idx);

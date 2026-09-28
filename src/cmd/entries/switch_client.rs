@@ -187,12 +187,12 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 visible = window_pane_is_visible(&*wp);
             }
             if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
-                server_redraw_window(w);
+                server_redraw_window(&*(w));
             }
             window_redraw_active_switch(w, wp);
             window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
             if visible == 0 && window_pop_zoom(w) != 0 {
-                server_redraw_window(w);
+                server_redraw_window(&*(w));
             }
         }
         if !wl.is_null() {

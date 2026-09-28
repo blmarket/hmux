@@ -191,7 +191,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     drop(oldlayout);
     recalculate_sizes();
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,

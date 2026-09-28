@@ -132,7 +132,7 @@ pub unsafe fn resize_window(
         }
     }
     tty_update_window_offset(w);
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,

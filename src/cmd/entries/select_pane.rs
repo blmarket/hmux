@@ -278,7 +278,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 visible = window_pane_is_visible(&*lastwp);
             }
             if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
-                server_redraw_window(w);
+                server_redraw_window(&*(w));
             }
             window_redraw_active_switch(w, lastwp);
             if window_set_active_pane(w, lastwp, 1 as ::core::ffi::c_int) != 0 {
@@ -286,7 +286,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 cmd_select_pane_redraw(w);
             }
             if visible == 0 && window_pop_zoom(w) != 0 {
-                server_redraw_window(w);
+                server_redraw_window(&*(w));
             }
         }
         return CMD_RETURN_NORMAL;
@@ -406,7 +406,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         visible = window_pane_is_visible(&*wp);
     }
     if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
     window_redraw_active_switch(w, wp);
     if window_set_active_pane(w, wp, 1 as ::core::ffi::c_int) != 0 {
@@ -415,7 +415,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
     cmd_select_pane_redraw(w);
     if visible == 0 && window_pop_zoom(w) != 0 {
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
     return CMD_RETURN_NORMAL;
 }

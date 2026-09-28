@@ -507,12 +507,12 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                         }
                                         if restore_zoom != 0 {
                                             window_pop_zoom((*wp).window as *mut window);
-                                            server_redraw_window((*wp).window as *mut window);
+                                            server_redraw_window(&*((*wp).window));
                                         } else if !flags & SPAWN_FLOATING != 0
                                             && args_has(args, 'O' as i32 as u_char) == 0
                                         {
                                             window_pop_zoom((*wp).window as *mut window);
-                                            server_redraw_window((*wp).window as *mut window);
+                                            server_redraw_window(&*((*wp).window));
                                         }
                                         server_redraw_session(&*(s));
                                         if args_has(args, 'M' as i32 as u_char) != 0
@@ -672,6 +672,6 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &std::rc::Rc<std::cell::Un
     }
     layout_set_size(lc, sx, sy, xoff, yoff);
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     server_redraw_window_borders(&*(w));
 }

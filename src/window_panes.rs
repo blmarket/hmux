@@ -1721,7 +1721,7 @@ unsafe fn window_panes_init(
             window_panes_set_preview(data);
         }
         if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(w);
+            server_redraw_window(&*(w));
         }
     }
     event_set(
@@ -1750,7 +1750,7 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window(w);
     }
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     server_redraw_window_borders(&*(w));
     server_status_window(&*(w));
     drop((*data).state.take());

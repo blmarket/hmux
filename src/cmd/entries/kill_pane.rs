@@ -83,7 +83,7 @@ unsafe fn cmd_kill_pane_all(
             window_remove_pane((*wl).window_ptr(), &pane_owner);
         }
     }
-    server_redraw_window((*wl).window_ptr());
+    server_redraw_window(&*((*wl).window_ptr()));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_pane_filter(

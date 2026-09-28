@@ -179,19 +179,21 @@ pub unsafe fn server_status_session_group(mut s: *mut session) {
         }
     };
 }
-pub unsafe fn server_redraw_window(mut w: *mut window) {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !(*c).session.is_null()
-            && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window_ptr() == w
-        {
-            server_redraw_client(&mut *(c));
+pub unsafe fn server_redraw_window(window: &window) {
+    let mut next = clients.first();
+    while let Some(client_owner) = next {
+        next = clients.next(&client_owner);
+        let client = &mut *client_owner.get();
+        let matches = client.session.as_ref()
+            .and_then(|session| session.curw.as_ref())
+            .and_then(|link| link.window_owner.as_ref())
+            .is_some_and(|current| std::rc::Weak::ptr_eq(
+                &window.observer,
+                &std::rc::Rc::downgrade(current.as_rc()),
+            ));
+        if matches {
+            server_redraw_client(client);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
@@ -308,7 +310,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
         layout_close_pane(wp);
         window_remove_pane(w, pane_owner);
         window_pop_zoom(w);
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     };
 }
 pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window>>, mut renumber: ::core::ffi::c_int) {
@@ -578,7 +580,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
     } else {
         window_pop_zoom(w);
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     };
 }
 unsafe fn server_destroy_session_group(mut s: *mut session) {
@@ -810,7 +812,7 @@ pub unsafe fn server_check_unattached() {
 }
 pub unsafe fn server_unzoom_window(mut w: *mut window) {
     if window_unzoom(w, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
 }
 

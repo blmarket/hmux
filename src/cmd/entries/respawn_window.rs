@@ -104,7 +104,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
-    server_redraw_window((*wl).window_ptr());
+    server_redraw_window(&*((*wl).window_ptr()));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

@@ -1255,7 +1255,7 @@ pub unsafe fn window_resize(
             sx,
             sy,
         );
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
     if xpixel != -(1 as ::core::ffi::c_int) {
         (*w).xpixel = xpixel as u_int;
@@ -1468,7 +1468,7 @@ pub unsafe fn window_set_active_pane(
         window_pane_update_focus((*w).active);
     }
     tty_update_window_offset(w);
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     if notify != 0 {
         window_fire_pane_changed(w, (*w).active, lastwp);
     }
@@ -2693,7 +2693,7 @@ unsafe fn window_pane_scrollbar_redraw_visibility(pane_owner: &Rc<std::cell::Uns
     let wp = pane_owner.get();
     redraw_invalidate_scene((*wp).window as *mut window);
     (*wp).flags |= PANE_REDRAW;
-    server_redraw_window((*wp).window as *mut window);
+    server_redraw_window(&*((*wp).window));
 }
 unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();

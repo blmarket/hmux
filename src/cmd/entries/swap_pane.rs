@@ -108,7 +108,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         args_has(args, 'Z' as i32 as u_char),
     ) != 0
     {
-        server_redraw_window(dst_w);
+        server_redraw_window(&*(dst_w));
     }
     if args_has(args, 'D' as i32 as u_char) != 0 {
         if window_pane_is_floating(&*dst_wp) != 0 {
@@ -143,7 +143,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             args_has(args, 'Z' as i32 as u_char),
         ) != 0
     {
-        server_redraw_window(src_w);
+        server_redraw_window(&*(src_w));
     }
     if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
         server_client_remove_pane(src_wp);
@@ -204,11 +204,11 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             colour_palette_from_option(Some(&mut (*dst_wp).palette), options_owner_ptr(&mut (*dst_wp).options).map_or(std::ptr::null_mut(), |options| options));
             layout_fix_panes(src_w, ::core::ptr::null_mut::<window_pane>());
             redraw_invalidate_scene(src_w);
-            server_redraw_window(src_w);
+            server_redraw_window(&*(src_w));
         }
         layout_fix_panes(dst_w, ::core::ptr::null_mut::<window_pane>());
         redraw_invalidate_scene(dst_w);
-        server_redraw_window(dst_w);
+        server_redraw_window(&*(dst_w));
         if src_w != dst_w {
             window_fire_pane_moved(src_wp, src_w, src_idx, dst_w, dst_idx);
             window_fire_pane_moved(dst_wp, dst_w, dst_idx, src_w, src_idx);
@@ -225,10 +225,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
     }
     if window_pop_zoom(src_w) != 0 {
-        server_redraw_window(src_w);
+        server_redraw_window(&*(src_w));
     }
     if src_w != dst_w && window_pop_zoom(dst_w) != 0 {
-        server_redraw_window(dst_w);
+        server_redraw_window(&*(dst_w));
     }
     return CMD_RETURN_NORMAL;
 }

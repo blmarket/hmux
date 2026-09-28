@@ -273,7 +273,7 @@ pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&Me
         let w = crate::src::shared::rc::as_ptr(&owner);
         redraw_invalidate_scene(w);
         window_update_focus(w);
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
 }
 pub fn menu_destroy(menu: Option<MenuOwner>) {
@@ -691,7 +691,7 @@ pub unsafe fn menu_display(
         let w = crate::src::shared::rc::as_ptr(&retained);
         redraw_invalidate_scene(w);
         window_update_focus(w);
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
 }
 

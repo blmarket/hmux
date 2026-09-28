@@ -121,7 +121,7 @@ unsafe fn cmd_break_pane_float(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {

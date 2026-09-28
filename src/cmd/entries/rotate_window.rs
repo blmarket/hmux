@@ -136,6 +136,6 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, wp, 0 as ::core::ffi::c_int);
     window_pop_zoom(w);
     redraw_invalidate_scene(w);
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }

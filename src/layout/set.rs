@@ -257,7 +257,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
 }
 unsafe fn layout_set_even_h(mut w: *mut window) {
     layout_set_even(w, LAYOUT_LEFTRIGHT);
@@ -442,7 +442,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
 }
 unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -600,7 +600,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
 }
 unsafe fn layout_set_main_v(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -758,7 +758,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
 }
 unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -916,7 +916,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
 }
 unsafe fn layout_set_tiled(mut w: *mut window) {
     let mut oo: *mut options = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
@@ -1103,5 +1103,5 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
 }

@@ -115,7 +115,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         } else {
             window_zoom(&pane_owner);
         }
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
         return CMD_RETURN_NORMAL;
     }
     server_unzoom_window(w);
@@ -261,7 +261,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         w,
     );
-    server_redraw_window(w);
+    server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
@@ -444,7 +444,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
     }
     if resizes != 0 as ::core::ffi::c_int {
         layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
         server_redraw_window_borders(&*(w));
     }
 }
@@ -551,6 +551,6 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cel
         i = i.wrapping_add(1);
     }
     if resizes != 0 as u_int {
-        server_redraw_window(w);
+        server_redraw_window(&*(w));
     }
 }

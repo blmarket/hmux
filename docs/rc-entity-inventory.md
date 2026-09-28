@@ -2251,3 +2251,14 @@ new Rc-managed type or persistent owner is added.
 
 `cargo test --workspace` and `git diff --check` passed. Group lookup, raw client
 session fields and remaining window redraw interfaces are still pending.
+
+## Implemented borrowed windows for full redraw
+
+Window-wide full redraw accepts a shared window borrow and traverses retained
+client handles. It compares weak window identities through current link holders
+and marks matching clients through the safe redraw setter. All 51 callers pass
+window borrows. No new Rc-managed type or persistent owner is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Raw parent/session
+relationships at callers and remaining group traversal APIs still require
+migration.
