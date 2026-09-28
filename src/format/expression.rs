@@ -2243,8 +2243,7 @@ pub(super) unsafe fn format_replace_expression(
     }
     return None;
 }
-pub(super) unsafe fn format_cycle_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut c: *mut client = arg as *mut client;
+pub(super) unsafe fn format_cycle_callback(c: *mut client) {
     if (*c).message_string.is_none() && (*c).prompt.is_none() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
@@ -2262,7 +2261,7 @@ pub(super) unsafe fn format_cycle_start_timer(mut c: *mut client) {
             &raw mut (*c).cycle_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |_, _| unsafe { format_cycle_callback(c as *mut ::core::ffi::c_void) },
+            move |_, _| unsafe { format_cycle_callback(c) },
         );
     }
     if event_pending(
