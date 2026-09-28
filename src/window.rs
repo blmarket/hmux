@@ -4237,30 +4237,26 @@ pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
     };
 }
 pub unsafe fn window_pane_status_get_range(
-    mut wp: *mut window_pane,
-    mut x: u_int,
-    mut y: u_int,
-) -> *mut style_range {
-    let mut srs: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
-    let mut line: u_int = 0;
-    let mut pane_status: ::core::ffi::c_int = 0;
-    if wp.is_null() {
-        return ::core::ptr::null_mut::<style_range>();
-    }
-    srs = &raw mut (*wp).border_status_line.ranges;
-    pane_status = window_pane_get_pane_status(wp);
-    if pane_status == PANE_STATUS_TOP {
-        line = ((*wp).yoff - 1 as ::core::ffi::c_int) as u_int;
+    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+    x: u_int,
+    y: u_int,
+) -> Option<style_range> {
+    let wp = pane_owner.get();
+    let pane_status = window_pane_get_pane_status(wp);
+    let line = if pane_status == PANE_STATUS_TOP {
+        ((*wp).yoff - 1) as u_int
     } else if pane_status == PANE_STATUS_BOTTOM {
-        line = ((*wp).yoff as u_int).wrapping_add((*wp).sy);
-    }
+        ((*wp).yoff as u_int).wrapping_add((*wp).sy)
+    } else {
+        0
+    };
     if pane_status == PANE_STATUS_OFF || line != y {
-        return ::core::ptr::null_mut::<style_range>();
+        return None;
     }
-    return style_ranges_get_range(
-        srs,
-        x.wrapping_sub((*wp).xoff as u_int).wrapping_sub(2 as u_int),
-    );
+    let x = x.wrapping_sub((*wp).xoff as u_int).wrapping_sub(2);
+    (*wp).border_status_line.ranges.as_slice().iter()
+        .find(|range| x >= range.start && x < range.end)
+        .map(|range| **range)
 }
 pub unsafe fn window_get_pane_lines(mut w: *mut window) -> pane_lines {
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();

@@ -1678,3 +1678,15 @@ validation tests the lookup result without extracting a raw pointer.
 `cargo test --workspace` and `git diff --check` passed. Selected-pane projections
 for legacy status-range and active-pane APIs, raw window relationships and other
 mouse internals remain pending.
+
+## Implemented retained pane status-range lookup
+
+Pane status-range lookup takes a retained pane handle and returns an optional
+copied style range instead of a pointer into pane-owned storage. Mouse border
+handling passes its selected owner and consumes the copied argument directly.
+Range matching borrows the collection for the lookup only.
+
+`cargo test --workspace` and `git diff --check` passed. Added checks cover range
+boundaries, wrong-row rejection, and a result surviving range-storage cleanup.
+Client status-range lookup, pane-status options queries and other internal raw
+model projections remain pending.

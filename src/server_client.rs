@@ -2302,9 +2302,10 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
             } else if loc as ::core::ffi::c_uint
                 == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                sr = window_pane_status_get_range(wp, px, py);
-                if !sr.is_null() {
-                    n = (*sr).argument;
+                if let Some(range) = window_pane_status_get_range(
+                    selected_pane.as_ref().expect("mouse border pane"), px, py,
+                ) {
+                    n = range.argument;
                     loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
                         .wrapping_add(n) as key_code_mouse_location;
                 }

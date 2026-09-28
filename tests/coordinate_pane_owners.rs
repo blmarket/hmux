@@ -49,6 +49,25 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         (*window.get()).flags |= hmux2::src::window::WINDOW_WASZOOMED;
         assert_eq!(hmux2::src::window::window_pop_zoom(window.get()), 0);
         assert_eq!((*window.get()).flags & hmux2::src::window::WINDOW_WASZOOMED, 0);
+        options_set_number((*window.get()).options.as_deref_mut().unwrap(), c"pane-border-status".as_ptr(), 1);
+        (*first.get()).yoff = 3;
+        (*first.get()).border_status_line.ranges.push(Box::new(
+            hmux2::src::shared::style::style_range {
+                type_0: hmux2::src::shared::style::STYLE_RANGE_CONTROL,
+                argument: 4,
+                string: [0; 16],
+                start: 1,
+                end: 3,
+                _reserved: [0; 2],
+            },
+        ));
+        let range = hmux2::src::window::window_pane_status_get_range(&first, 3, 2).unwrap();
+        assert!(hmux2::src::window::window_pane_status_get_range(&first, 2, 2).is_none());
+        assert!(hmux2::src::window::window_pane_status_get_range(&first, 5, 2).is_none());
+        assert!(hmux2::src::window::window_pane_status_get_range(&first, 3, 3).is_none());
+        (*first.get()).border_status_line.ranges.clear();
+        assert_eq!(range.argument, 4);
+        assert!(hmux2::src::window::window_pane_status_get_range(&first, 3, 2).is_none());
         drop(first);
         drop(window);
     }
