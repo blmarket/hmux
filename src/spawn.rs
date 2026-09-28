@@ -124,7 +124,8 @@ pub const _PATH_TMP: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
 
 unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
-    let mut s: *mut session = (*sc).s;
+    let session_owner = (*sc).s.clone().expect("spawn context session");
+    let s = session_owner.get();
     let mut wl: *mut winlink = (*sc).wl;
     let wp0 = (*sc).wp0.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut name: *const ::core::ffi::c_char = if (*sc).name.is_null() {
@@ -182,7 +183,7 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     event_payload_set_session(
         &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
-        (*sc).s,
+        (*sc).s.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()),
     );
     event_payload_set_window(
         &mut *ep,
@@ -267,7 +268,8 @@ pub unsafe fn spawn_window(
     mut sc: *mut spawn_context,
     cause: *mut Option<CString>,
 ) -> *mut winlink {
-    let mut s: *mut session = (*sc).s;
+    let session_owner = (*sc).s.clone().expect("spawn context session");
+    let s = session_owner.get();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -437,7 +439,8 @@ pub unsafe fn spawn_pane(
     let mut item: *mut cmdq_item = (*sc).item;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s: *mut session = (*sc).s;
+    let session_owner = (*sc).s.clone().expect("spawn context session");
+    let s = session_owner.get();
     let mut ts: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = (*(*sc).wl).window_ptr();
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1077,7 +1080,7 @@ pub(crate) unsafe fn spawn_editor(
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
-        s: ::core::ptr::null_mut::<session>(),
+        s: None,
         wl: ::core::ptr::null_mut::<winlink>(),
         tc: None,
         wp0: None,
@@ -1157,7 +1160,7 @@ pub(crate) unsafe fn spawn_editor(
         .concat(),
     )
     .expect("editor command components contain no NUL");
-    sc.s = s;
+    sc.s = (*s).observer.upgrade();
     sc.wl = wl;
     sc.tc = c.as_ref().and_then(|client| client.observer.upgrade());
     sc.wp0 = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
@@ -1194,14 +1197,16 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
-    fn spawn_context_retains_client_and_source_pane_until_context_is_dropped() {
+    fn spawn_context_retains_models_until_context_is_dropped() {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
             let pane_owner = window_pane::new();
             let pane_observer = std::rc::Rc::downgrade(&pane_owner);
+            let session_owner = session::new();
+            let session_observer = std::rc::Rc::downgrade(&session_owner);
             let context = spawn_context {
-                item: std::ptr::null_mut(), s: std::ptr::null_mut(),
+                item: std::ptr::null_mut(), s: Some(session_owner.clone()),
                 wl: std::ptr::null_mut(), tc: Some(owner.clone()),
                 wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
                 name: std::ptr::null(), argv: Vec::new(), environ: None,
@@ -1209,12 +1214,15 @@ mod tests {
             };
             drop(owner);
             drop(pane_owner);
+            drop(session_owner);
+            assert!(session_observer.upgrade().is_some());
             assert!(pane_observer.upgrade().is_some());
             assert!(observer.upgrade().is_some());
             assert!(std::rc::Rc::ptr_eq(&observer.upgrade().unwrap(), context.tc.as_ref().unwrap()));
             drop(context);
             assert!(observer.upgrade().is_none());
             assert!(pane_observer.upgrade().is_none());
+            assert!(session_observer.upgrade().is_none());
         }
     }
 

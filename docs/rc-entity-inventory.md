@@ -791,3 +791,14 @@ keeps a local owner throughout reset, callback and creation work.
 client and source-pane retention after external owners are dropped and release
 when the context ends. Spawn session storage, layout/winlink views and legacy raw
 projections remain pending.
+
+## Implemented spawn-context session owner
+
+`spawn_context.s` now owns an optional session `Rc` for the spawn operation.
+Command/editor contexts retain their session, and window/pane spawning keeps a
+local owner throughout access. Context destruction releases this temporary owner.
+
+`cargo test --workspace` passed. The context-lifetime regression now verifies
+session, client and source-pane retention after external owners are dropped and
+release when the context ends. All three Rc model fields in spawn contexts now
+use owning handles. Layout/winlink views and legacy raw projections remain pending.

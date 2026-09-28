@@ -35,7 +35,7 @@ pub type spawn_finish_edit_cb =
 #[repr(C)]
 pub struct spawn_context {
     pub item: *mut cmdq_item,
-    pub s: *mut session,
+    pub s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>>,
     pub wl: *mut winlink,
     /// Retain the target client for the duration of this spawn operation.
     pub tc: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,

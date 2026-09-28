@@ -128,7 +128,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
-        s: ::core::ptr::null_mut::<session>(),
+        s: None,
         wl: ::core::ptr::null_mut::<winlink>(),
         tc: None,
         wp0: None,
@@ -292,7 +292,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         };
     }
     sc.item = item;
-    sc.s = s;
+    sc.s = (*s).observer.upgrade();
     sc.wl = wl;
     sc.wp0 = (*wp).observer.upgrade();
     sc.lc = lc;

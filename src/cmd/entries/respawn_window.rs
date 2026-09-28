@@ -50,7 +50,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
-        s: ::core::ptr::null_mut::<session>(),
+        s: None,
         wl: ::core::ptr::null_mut::<winlink>(),
         tc: None,
         wp0: None,
@@ -69,7 +69,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = item;
-    sc.s = s;
+    sc.s = (*s).observer.upgrade();
     sc.wl = wl;
     sc.tc = tc_owner.clone();
     argv_owner = args_to_vector(&*args);
