@@ -150,12 +150,12 @@ pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
     drop(owner);
 }
 
-unsafe fn cmdq_name(c: *mut client) -> CString {
-    if c.is_null() {
+fn cmdq_name(c: Option<&client>) -> CString {
+    let Some(c) = c else {
         return c"<global>".to_owned();
-    }
+    };
     format_message_with(|out| {
-        if let Some(name) = (*c).name.as_ref() {
+        if let Some(name) = c.name.as_ref() {
             out.write_all(b"<")?;
             out.write_all(name.as_bytes())?;
             out.write_all(b">")
@@ -305,7 +305,6 @@ pub unsafe fn cmdq_append(
     owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut item: *mut cmdq_item,
 ) -> *mut cmdq_item {
-    let c = owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut queue: *mut cmdq_list = cmdq_get(owner);
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     loop {
@@ -319,7 +318,7 @@ pub unsafe fn cmdq_append(
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_append",
-            log_cstr(cmdq_name(c).as_ptr()),
+            log_cstr(cmdq_name(owner.map(|owner| &*owner.get())).as_ptr()),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -339,7 +338,6 @@ pub unsafe fn cmdq_insert_after(
     mut item: *mut cmdq_item,
 ) -> *mut cmdq_item {
     let c_owner = cmdq_get_client(after);
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut queue: *mut cmdq_list = (*after).queue;
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut position = (*queue).position(after) + 1;
@@ -347,12 +345,8 @@ pub unsafe fn cmdq_insert_after(
         next = (*item).next;
         (*item).next = (*after).next;
         (*after).next = item;
-        (*item).client_owner = if c.is_null() {
-            None
-        } else {
-            Some((*c).observer.upgrade().expect("live Rc client"))
-        };
-        (*item).client = c.as_ref().map_or_else(std::rc::Weak::new, |c| c.observer.clone());
+        (*item).client_owner = c_owner.clone();
+        (*item).client = c_owner.as_ref().map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
         (*queue).list.insert(position, Box::from_raw(item));
@@ -360,7 +354,7 @@ pub unsafe fn cmdq_insert_after(
         log_debug(format_args!(
             "{} {}: {} after {}",
             "cmdq_insert_after",
-            log_cstr(cmdq_name(c).as_ptr()),
+            log_cstr(cmdq_name(c_owner.as_ref().map(|owner| &*owner.get())).as_ptr()),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -618,7 +612,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let saved_client = cmdq_get_client(item);
     let saved_client_ptr = saved_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let name = cmdq_name(saved_client_ptr);
+    let name = cmdq_name(saved_client.as_ref().map(|owner| &*owner.get()));
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut cmd: *mut cmd = (*item).cmd;
     let mut args: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
@@ -831,10 +825,9 @@ unsafe fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     );
 }
 pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>) -> u_int {
-    let c = owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
     let mut queue: *mut cmdq_list = cmdq_get(owner);
-    let name = cmdq_name(c);
+    let name = cmdq_name(owner.map(|owner| &*owner.get()));
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut items: u_int = 0 as u_int;
@@ -1112,7 +1105,7 @@ mod client_observer_tests {
     }
 
     #[test]
-    fn append_retains_client_for_every_item_in_a_chain() {
+    fn append_and_insert_retain_client_for_every_queued_item() {
         unsafe {
             let owner = client::new();
             (*owner.get()).queue = Some(cmdq_new());
@@ -1121,18 +1114,25 @@ mod client_observer_tests {
             let second = cmdq_get_callback_owned(c"second".as_ptr(), None);
             (*first).next = second;
             assert_eq!(cmdq_append(Some(&owner), first), second);
-            assert_eq!(Rc::strong_count(&owner), 3);
+            let inserted = cmdq_get_callback_owned(c"inserted".as_ptr(), None);
+            assert_eq!(cmdq_insert_after(first, inserted), inserted);
+            assert_eq!(Rc::strong_count(&owner), 4);
+            assert!(Rc::ptr_eq(&cmdq_get_client(inserted).unwrap(), &owner));
             assert!(Rc::ptr_eq(&cmdq_get_client(first).unwrap(), &owner));
             assert!(Rc::ptr_eq(&cmdq_get_client(second).unwrap(), &owner));
-            assert!((*first).next.is_null());
+            assert_eq!((*first).next, inserted);
             drop(owner);
             let retained = observer.upgrade().expect("queued items retain their client");
             let queue = (*retained.get()).queue.as_deref_mut().unwrap();
-            assert_eq!(queue.list.len(), 2);
+            assert_eq!(queue.list.len(), 3);
             // Detach the items so their ordinary owners can be released here.
             let first = queue.list.pop_front().unwrap();
+            let middle = queue.list.pop_front().unwrap();
+            assert_eq!((&*middle as *const cmdq_item).cast_mut(), inserted);
             let second = queue.list.pop_front().unwrap();
             drop(first);
+            assert_eq!(Rc::strong_count(&retained), 3);
+            drop(middle);
             assert_eq!(Rc::strong_count(&retained), 2);
             drop(second);
             assert_eq!(Rc::strong_count(&retained), 1);

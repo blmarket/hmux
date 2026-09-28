@@ -905,3 +905,16 @@ a retained client through cancellation and item removal. Global queue access use
 covers a waiting callback, repeated polling, continuation, subsequent callback
 client identity, queue draining and expiration after deferred releases dispatch.
 Other queue helpers and internal raw model projections remain pending.
+
+## Implemented direct client ownership in queue insertion
+
+`cmdq_insert_after` now clones its retained execution-context client directly into
+each inserted item and downgrades that owner for the observer field. It no longer
+projects a raw client and upgrades it again. Queue-name formatting takes an
+optional shared client borrow, eliminating logging-only client pointer locals in
+append, insertion and queue execution.
+
+`cargo test --workspace` and `git diff --check` passed. The queue ownership
+regression now covers insertion between appended items, ordering, execution-context
+identity and per-item retention/release. Other model pointers and queue-item raw
+APIs remain pending.
