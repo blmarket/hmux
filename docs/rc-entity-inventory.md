@@ -893,3 +893,15 @@ queue-item release behavior remains in place.
 checks per-item ownership, weak execution-context identity, retained lifetime after
 the external owner is dropped and release when detached items are dropped. Other
 queue APIs and raw caller projections remain pending.
+
+## Implemented retained client arguments for queue execution and cancellation
+
+`cmdq_next` and internal queue lookup now accept optional borrowed Rc clients;
+the server loop passes its registry owner directly. `cmdq_abort_file_wait` requires
+a retained client through cancellation and item removal. Global queue access uses
+`None`. Queue-item removal still transfers client owners to deferred release.
+
+`cargo test --workspace` and `git diff --check` passed. The execution regression
+covers a waiting callback, repeated polling, continuation, subsequent callback
+client identity, queue draining and expiration after deferred releases dispatch.
+Other queue helpers and internal raw model projections remain pending.

@@ -364,12 +364,12 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     let mut items: u_int = 0;
     current_time = time(::core::ptr::null_mut::<time_t>());
     loop {
-        items = cmdq_next(::core::ptr::null_mut::<client>());
+        items = cmdq_next(None);
         let mut registry_c_owner = clients.first();
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !c.is_null() {
             if (*c).flags & CLIENT_IDENTIFIED as uint64_t != 0 {
-                items = items.wrapping_add(cmdq_next(c));
+                items = items.wrapping_add(cmdq_next(registry_c_owner.as_ref()));
             }
             registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
             c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

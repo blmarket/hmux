@@ -1507,7 +1507,7 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     server_client_clear_overlay(c);
     status_prompt_clear(c);
     status_message_clear(c);
-    cmdq_abort_file_wait(c);
+    cmdq_abort_file_wait(&(*c).observer.upgrade().expect("disconnecting client is live"));
     let mut next_file = client_files_minmax(&(*c).files);
     while let Some(file) = next_file {
         cf = crate::src::shared::rc::as_ptr(&file);
