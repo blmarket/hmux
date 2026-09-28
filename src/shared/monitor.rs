@@ -79,7 +79,7 @@ impl monitor_item {
             windows: monitor_windows { storage: None },
             fire_count: Default::default(),
             fire_time: Default::default(),
-            entry: monitor_item_entry { owner: None },
+            entry: monitor_item_entry { owner: refbox::Weak::new() },
         }
     }
 }
@@ -87,7 +87,7 @@ impl monitor_item {
 #[repr(C)]
 pub struct monitor_item_entry {
     /// Weak traversal handle into the monitor item index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>>>,
+    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>>,
 }
 
 #[repr(C)]
@@ -112,7 +112,7 @@ impl monitor_window {
             idx: Default::default(),
             last: Default::default(),
             generation: Default::default(),
-            entry: monitor_window_entry { owner: None },
+            entry: monitor_window_entry { owner: refbox::Weak::new() },
         }
     }
 }
@@ -120,7 +120,7 @@ impl monitor_window {
 #[repr(C)]
 pub struct monitor_window_entry {
     /// Weak traversal handle into the monitor window index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_window>>>>,
+    pub owner: refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_window>>>,
 }
 
 #[repr(C)]
@@ -144,7 +144,7 @@ impl monitor_pane {
             idx: Default::default(),
             last: Default::default(),
             generation: Default::default(),
-            entry: monitor_pane_entry { owner: None },
+            entry: monitor_pane_entry { owner: refbox::Weak::new() },
         }
     }
 }
@@ -152,7 +152,7 @@ impl monitor_pane {
 #[repr(C)]
 pub struct monitor_pane_entry {
     /// Weak traversal handle into the monitor pane index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>>,
+    pub owner: refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>,
 }
 
 /// Sole monitor-set owner. Detach the allocation before destroying callbacks,

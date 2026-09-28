@@ -260,7 +260,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_pane_entry { owner: None },
+        entry: monitor_pane_entry { owner: refbox::Weak::new() },
     };
     let lookup_wp_owner = window_pane_find_by_id((*me).id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -322,7 +322,7 @@ unsafe fn monitor_check_all_panes_one(
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_pane_entry { owner: None },
+        entry: monitor_pane_entry { owner: refbox::Weak::new() },
     };
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     find.pane = (*wp).id;
@@ -379,7 +379,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_window_entry { owner: None },
+        entry: monitor_window_entry { owner: refbox::Weak::new() },
     };
     let window_owner = window_find_by_id((*me).id);
     w = window_owner.as_ref().map_or(
@@ -451,7 +451,7 @@ unsafe fn monitor_check_all_windows_one(
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_window_entry { owner: None },
+        entry: monitor_window_entry { owner: refbox::Weak::new() },
     };
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     find.window = (*w).id;
@@ -889,7 +889,7 @@ pub unsafe fn monitor_add(
         windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry { owner: None },
+        entry: monitor_item_entry { owner: refbox::Weak::new() },
     };
     let mut tv: timeval = timeval {
         tv_sec: 1 as __time_t,
@@ -943,7 +943,7 @@ pub unsafe fn monitor_remove(mut ms: *mut monitor_set, mut name: *const ::core::
         windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry { owner: None },
+        entry: monitor_item_entry { owner: refbox::Weak::new() },
     };
     me = monitor_items_find(&(*ms).items, &find);
     if !me.is_null() {
@@ -969,7 +969,7 @@ pub unsafe fn monitor_get_fire_count(
         windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry { owner: None },
+        entry: monitor_item_entry { owner: refbox::Weak::new() },
     };
     me = monitor_items_find(&(*ms).items, &find);
     if me.is_null() {
@@ -993,7 +993,7 @@ pub unsafe fn monitor_get_fire_time(
         windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry { owner: None },
+        entry: monitor_item_entry { owner: refbox::Weak::new() },
     };
     me = monitor_items_find(&(*ms).items, &find);
     if me.is_null() {
@@ -1029,7 +1029,7 @@ pub unsafe fn monitor_items_insert(
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            (*elm).entry.owner = Some(observer);
+            (*elm).entry.owner = observer;
             entry.insert(Box::from_raw(elm));
             std::ptr::null_mut()
         }
@@ -1056,7 +1056,7 @@ pub unsafe fn monitor_items_remove(
         let node = map.remove(&key).expect("matching monitor node");
         (node, map.is_empty())
     };
-    node.entry.owner = None;
+    node.entry.owner = refbox::Weak::new();
     if empty {
         (*head).storage = None;
     }
@@ -1075,9 +1075,7 @@ pub unsafe fn monitor_items_minmax(head: &monitor_items) -> *mut monitor_item {
 }
 pub unsafe fn monitor_items_next(elm: &monitor_item) -> *mut monitor_item {
     let key = elm.name.as_bytes().to_vec();
-    let Some(owner) = elm.entry.owner.clone() else {
-        return std::ptr::null_mut();
-    };
+    let owner = elm.entry.owner.clone();
     let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -1114,7 +1112,7 @@ pub unsafe fn monitor_panes_insert(
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            (*elm).entry.owner = Some(observer);
+            (*elm).entry.owner = observer;
             entry.insert(Box::from_raw(elm));
             std::ptr::null_mut()
         }
@@ -1141,7 +1139,7 @@ pub unsafe fn monitor_panes_remove(
         let node = map.remove(&key).expect("matching monitor node");
         (node, map.is_empty())
     };
-    node.entry.owner = None;
+    node.entry.owner = refbox::Weak::new();
     if empty {
         (*head).storage = None;
     }
@@ -1160,9 +1158,7 @@ pub unsafe fn monitor_panes_minmax(head: &monitor_panes) -> *mut monitor_pane {
 }
 pub unsafe fn monitor_panes_next(elm: &monitor_pane) -> *mut monitor_pane {
     let key = (elm.pane, elm.idx);
-    let Some(owner) = elm.entry.owner.clone() else {
-        return std::ptr::null_mut();
-    };
+    let owner = elm.entry.owner.clone();
     let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -1202,7 +1198,7 @@ pub unsafe fn monitor_windows_insert(
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            (*elm).entry.owner = Some(observer);
+            (*elm).entry.owner = observer;
             entry.insert(Box::from_raw(elm));
             std::ptr::null_mut()
         }
@@ -1229,7 +1225,7 @@ pub unsafe fn monitor_windows_remove(
         let node = map.remove(&key).expect("matching monitor node");
         (node, map.is_empty())
     };
-    node.entry.owner = None;
+    node.entry.owner = refbox::Weak::new();
     if empty {
         (*head).storage = None;
     }
@@ -1248,9 +1244,7 @@ pub unsafe fn monitor_windows_minmax(head: &monitor_windows) -> *mut monitor_win
 }
 pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window {
     let key = (elm.window, elm.idx);
-    let Some(owner) = elm.entry.owner.clone() else {
-        return std::ptr::null_mut();
-    };
+    let owner = elm.entry.owner.clone();
     let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -1442,17 +1436,17 @@ mod last_owner_tests {
             let duplicate = item("alpha");
             assert!(monitor_items_insert(&mut head, first).is_null());
             assert!(monitor_items_insert(&mut head, second).is_null());
-            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
+            let index_observer = (*first).entry.owner.clone();
             assert_eq!(monitor_items_insert(&mut head, duplicate), first);
-            assert!((*duplicate).entry.owner.is_none());
+            assert!((*duplicate).entry.owner.is_empty());
             assert!(monitor_items_remove(&mut other, first).is_null());
-            assert!((*first).entry.owner.is_some());
+            assert!(!(*first).entry.owner.is_empty());
 
             let mut moved = head;
             assert_eq!(monitor_items_minmax(&moved), first);
             assert_eq!(monitor_items_next(&*first), second);
             assert_eq!(monitor_items_remove(&mut moved, first), first);
-            assert!((*first).entry.owner.is_none());
+            assert!((*first).entry.owner.is_empty());
             drop(Box::from_raw(first));
             assert_eq!(monitor_items_remove(&mut moved, second), second);
             drop(Box::from_raw(second));
@@ -1480,12 +1474,12 @@ mod last_owner_tests {
             let pane2 = Box::into_raw(pane2);
             assert!(monitor_panes_insert(&mut panes, pane1).is_null());
             assert!(monitor_panes_insert(&mut panes, pane2).is_null());
-            let pane_index_observer = (*pane1).entry.owner.as_ref().unwrap().clone();
+            let pane_index_observer = (*pane1).entry.owner.clone();
             assert!(monitor_panes_remove(&mut other_panes, pane1).is_null());
-            assert!((*pane1).entry.owner.is_some());
+            assert!(!(*pane1).entry.owner.is_empty());
             assert_eq!(monitor_panes_next(&*pane1), pane2);
             assert_eq!(monitor_panes_remove(&mut panes, pane1), pane1);
-            assert!((*pane1).entry.owner.is_none());
+            assert!((*pane1).entry.owner.is_empty());
             drop(Box::from_raw(pane1));
             assert_eq!(monitor_panes_remove(&mut panes, pane2), pane2);
             drop(Box::from_raw(pane2));
@@ -1506,12 +1500,12 @@ mod last_owner_tests {
             let window2 = Box::into_raw(window2);
             assert!(monitor_windows_insert(&mut windows, window1).is_null());
             assert!(monitor_windows_insert(&mut windows, window2).is_null());
-            let window_index_observer = (*window1).entry.owner.as_ref().unwrap().clone();
+            let window_index_observer = (*window1).entry.owner.clone();
             assert!(monitor_windows_remove(&mut other_windows, window1).is_null());
-            assert!((*window1).entry.owner.is_some());
+            assert!(!(*window1).entry.owner.is_empty());
             assert_eq!(monitor_windows_next(&*window1), window2);
             assert_eq!(monitor_windows_remove(&mut windows, window1), window1);
-            assert!((*window1).entry.owner.is_none());
+            assert!((*window1).entry.owner.is_empty());
             drop(Box::from_raw(window1));
             assert_eq!(monitor_windows_remove(&mut windows, window2), window2);
             drop(Box::from_raw(window2));
