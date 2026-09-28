@@ -117,7 +117,7 @@ unsafe fn cmd_join_pane_place(
     let mut xoff: ::core::ffi::c_int = (*lc).g.xoff;
     let mut yoff: ::core::ffi::c_int = (*lc).g.yoff;
     let mut border: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
+    if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         border = 0 as ::core::ffi::c_int;
@@ -375,7 +375,7 @@ unsafe fn cmd_join_pane_move(
     let mut yoff: ::core::ffi::c_int = (*lc).g.yoff;
     let mut adjust: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
-    let mut lines: pane_lines = window_pane_get_pane_lines(wp);
+    let mut lines: pane_lines = window_pane_get_pane_lines(&*wp);
     if args_has(args, 'X' as i32 as u_char) != 0 {
         xoff = match args_percentage_and_expand_result(
             args,

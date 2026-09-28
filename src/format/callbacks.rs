@@ -764,7 +764,7 @@ unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    status = window_pane_get_pane_status(wp);
+    status = window_pane_get_pane_status(&*wp);
     if status == PANE_STATUS_TOP {
         flag = ((*wp).yoff == 1 as ::core::ffi::c_int) as ::core::ffi::c_int;
     } else {
@@ -786,7 +786,7 @@ unsafe fn format_cb_pane_at_bottom(mut ft: *mut format_tree) -> Option<CString> 
         return None;
     }
     w = (*wp).window as *mut window;
-    status = window_pane_get_pane_status(wp);
+    status = window_pane_get_pane_status(&*wp);
     if status == PANE_STATUS_BOTTOM {
         flag = ((*wp).yoff + (*wp).sy as ::core::ffi::c_int
             == (*w).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int)
@@ -2446,9 +2446,9 @@ unsafe fn format_cb_pane_unzoomed_height(mut ft: *mut format_tree) -> Option<CSt
         root = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     }
     if lc == (*wp).saved_layout_cell && floating == 0 {
-        status = window_get_pane_status(w);
+        status = window_get_pane_status(&*w);
     } else {
-        status = window_pane_get_pane_status(wp);
+        status = window_pane_get_pane_status(&*wp);
     }
     if floating == 0
         && !root.is_null()

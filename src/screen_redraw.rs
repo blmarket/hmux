@@ -482,7 +482,7 @@ unsafe fn redraw_mark_border_status(
     let mut ex: ::core::ffi::c_int = 0;
     let mut wx: ::core::ffi::c_int = 0;
     let mut cell_type: ::core::ffi::c_int = 0;
-    pane_status = window_pane_get_pane_status(wp);
+    pane_status = window_pane_get_pane_status(&*wp);
     if pane_status == PANE_STATUS_OFF {
         return;
     }
@@ -579,7 +579,7 @@ unsafe fn redraw_mark_pane_borders(
     mut sb_w: ::core::ffi::c_int,
     mut sb_left: ::core::ffi::c_int,
 ) {
-    let mut pane_lines: pane_lines = window_pane_get_pane_lines(wp);
+    let mut pane_lines: pane_lines = window_pane_get_pane_lines(&*wp);
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut left: ::core::ffi::c_int = 0;
     let mut right: ::core::ffi::c_int = 0;
@@ -599,7 +599,7 @@ unsafe fn redraw_mark_pane_borders(
     {
         return;
     }
-    pane_status = window_pane_get_pane_status(wp);
+    pane_status = window_pane_get_pane_status(&*wp);
     left = (*wp).xoff - 1 as ::core::ffi::c_int;
     right = ((*wp).xoff as u_int).wrapping_add((*wp).sx) as ::core::ffi::c_int;
     if sb_w != 0 as ::core::ffi::c_int {
@@ -1619,7 +1619,7 @@ unsafe fn redraw_pane_status_line(
     let scene = dctx.scene;
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut wy: ::core::ffi::c_int = 0;
-    pane_status = window_pane_get_pane_status(wp);
+    pane_status = window_pane_get_pane_status(&*wp);
     if pane_status == PANE_STATUS_OFF {
         return 0 as ::core::ffi::c_int;
     }

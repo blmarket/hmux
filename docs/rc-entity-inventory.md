@@ -1702,3 +1702,16 @@ pointers; mouse session-range validation also avoids a temporary raw session.
 boundaries, missing/out-of-bounds rows and snapshots surviving storage cleanup and
 client release. Raw client/session relationships and other status APIs remain
 pending.
+
+## Implemented borrowed pane border-option queries
+
+The four window/pane border-line and border-status queries take shared model
+borrows. Their inputs neither retain nor release references. Numeric option
+lookup now has a shared-borrow accessor, including ancestor fallback; the legacy
+raw accessor delegates to it. All callers supply scoped borrows. Floating-only
+status mapping and zoomed-mode status suppression are preserved.
+
+`cargo test --workspace` and `git diff --check` passed. Option-storage coverage
+checks inherited numeric values, local overrides and fallback after
+removal through the shared accessor. Raw pane/window relationships, active-mode
+pointers and option parent links still require unsafe access and remain pending.

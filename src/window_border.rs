@@ -209,7 +209,7 @@ pub unsafe fn window_pane_get_border_cell(
     mut cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
-    let mut pane_lines: pane_lines = window_pane_get_pane_lines(wp);
+    let mut pane_lines: pane_lines = window_pane_get_pane_lines(&*wp);
     window_get_border_cell(wp, pane_lines, cell_type, gc);
 }
 pub unsafe fn window_pane_get_border_style(
@@ -281,7 +281,7 @@ pub unsafe fn window_make_pane_status(
     let mut pane_lines: pane_lines = PANE_LINES_SINGLE;
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut cell_type: ::core::ffi::c_int = 0;
-    pane_status = window_pane_get_pane_status(wp);
+    pane_status = window_pane_get_pane_status(&*wp);
     if pane_status == PANE_STATUS_OFF || width == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -302,7 +302,7 @@ pub unsafe fn window_make_pane_status(
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
     screen_write_start(&mut ctx, &raw mut (*wp).status_screen);
     window_pane_get_border_style(wp, c, &raw mut gc);
-    pane_lines = window_pane_get_pane_lines(wp);
+    pane_lines = window_pane_get_pane_lines(&*wp);
     i = 0 as u_int;
     while i < width {
         cell_type = redraw_get_status_border_cell_type(spans, &mut span_index, i);

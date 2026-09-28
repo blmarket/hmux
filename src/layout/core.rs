@@ -441,7 +441,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
             (*wp).yoff = (*lc).g.yoff;
             sx = (*lc).g.sx;
             sy = (*lc).g.sy;
-            status = window_pane_get_pane_status(wp);
+            status = window_pane_get_pane_status(&*wp);
             if window_pane_is_floating(&*wp) == 0
                 && layout_add_horizontal_border(root, lc, status) != 0
             {
@@ -528,7 +528,7 @@ unsafe fn layout_resize_check(
     let mut available: u_int = 0;
     let mut minimum: u_int = 0;
     let mut status: ::core::ffi::c_int = 0;
-    status = window_get_pane_status(w);
+    status = window_get_pane_status(&*w);
     if layout_cell_is_tiled(lc) == 0 && layout_cell_has_tiled_child(lc) == 0 {
         return 0 as u_int;
     }
@@ -756,7 +756,7 @@ unsafe fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_int, mut sy:
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if !(lc.is_null() || !(*lc).flags & LAYOUT_CELL_FLOATING != 0) {
-            if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
+            if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
                 == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 pad = 0 as u_int;
@@ -1071,7 +1071,7 @@ pub unsafe fn layout_resize_floating_pane_to(
     if !(*lc).flags & LAYOUT_CELL_FLOATING != 0 {
         return Err(c"pane is not floating".to_owned());
     }
-    if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
+    if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
         != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         && size >= (PANE_MINIMUM + 2 as ::core::ffi::c_int) as u_int
     {
@@ -1526,7 +1526,7 @@ pub unsafe fn layout_split_check_space(
     if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
         fatalx(|out| out.write_all(b"floating cells cannot be split"));
     }
-    status = window_get_pane_status((*wp).window as *mut window);
+    status = window_get_pane_status(&*(*wp).window);
     match type_0 as ::core::ffi::c_uint {
         0 => {
             if (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS {
@@ -1849,7 +1849,7 @@ pub unsafe fn layout_spread_cell(
     if number <= 1 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    status = window_get_pane_status(w);
+    status = window_get_pane_status(&*w);
     if (*parent).type_0 as ::core::ffi::c_uint
         == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
     {

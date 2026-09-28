@@ -165,7 +165,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 return CMD_RETURN_ERROR;
             }
         };
-        status = window_get_pane_status(w);
+        status = window_get_pane_status(&*w);
         match status {
             PANE_STATUS_TOP => {
                 if y != INT_MAX && (*wp).yoff == 1 as ::core::ffi::c_int {

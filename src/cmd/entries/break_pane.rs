@@ -88,7 +88,7 @@ unsafe fn cmd_break_pane_float(
     mut wp: *mut window_pane,
 ) -> cmd_retval {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
-    let mut lines: pane_lines = window_get_pane_lines(w);
+    let mut lines: pane_lines = window_get_pane_lines(&*w);
     let mut fg: *mut layout_geometry = &raw mut (*lc).fg;
     if window_pane_is_floating(&*wp) != 0 {
         cmdq_error(item, |out| out.write_all(b"pane is already floating"));

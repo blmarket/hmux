@@ -256,7 +256,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     }
     value = args_get(&*(args), 'B' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if value.is_null() {
-        lines = window_get_pane_lines(w);
+        lines = window_get_pane_lines(&*w);
     } else {
         oe = options_search(b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
         lines = options_find_choice(oe, value, &raw mut choice_cause) as pane_lines;
@@ -608,7 +608,7 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &std::rc::Rc<std::cell::Un
     } else if (*m).statusat > 0 as ::core::ffi::c_int && y >= (*m).statusat {
         y = (*m).statusat - 1 as ::core::ffi::c_int;
     }
-    lines = window_pane_get_pane_lines(wp);
+    lines = window_pane_get_pane_lines(&*wp);
     border = (lines as ::core::ffi::c_uint
         != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;

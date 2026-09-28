@@ -872,37 +872,40 @@ pub unsafe fn options_get_string(
     }
     return (*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
-pub unsafe fn options_get_number(
-    mut oo: *mut options,
-    mut name: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    o = options_get(oo, name);
-    if o.is_null() {
-        fatalx(|out| {
-            out.write_all(b"missing option ")?;
-            write_cstr(out, name)
-        });
-    }
-    if !(!(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null()
-        && ((*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).type_0 as ::core::ffi::c_uint
-                == OPTIONS_TABLE_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).type_0 as ::core::ffi::c_uint
-                == OPTIONS_TABLE_COLOUR as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).type_0 as ::core::ffi::c_uint
-                == OPTIONS_TABLE_FLAG as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).type_0 as ::core::ffi::c_uint
-                == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint))
+/// Read a numeric option without borrowing the option tree mutably.
+///
+/// The caller must ensure that the raw parent chain remains valid.
+pub unsafe fn options_get_number_ref(mut oo: &options, name: &CStr) -> ::core::ffi::c_longlong {
+    let entry = loop {
+        if let Some(entry) = options_get_only(oo, name) {
+            break entry;
+        }
+        match oo.parent.as_ref() {
+            Some(parent) => oo = parent,
+            None => fatalx(|out| {
+                out.write_all(b"missing option ")?;
+                write_cstr(out, name.as_ptr())
+            }),
+        }
+    };
+    if !entry.tableentry_ptr().is_some_and(|table| matches!(table.type_0,
+        OPTIONS_TABLE_NUMBER | OPTIONS_TABLE_KEY | OPTIONS_TABLE_COLOUR |
+        OPTIONS_TABLE_FLAG | OPTIONS_TABLE_CHOICE))
     {
         fatalx(|out| {
             out.write_all(b"option ")?;
-            write_cstr(out, name)?;
+            write_cstr(out, name.as_ptr())?;
             out.write_all(b" is not a number")
         });
     }
-    return (*o).value.number();
+    entry.value.number()
+}
+
+pub unsafe fn options_get_number(
+    oo: *mut options,
+    name: *const ::core::ffi::c_char,
+) -> ::core::ffi::c_longlong {
+    options_get_number_ref(&*oo, CStr::from_ptr(name))
 }
 pub unsafe fn options_get_command(mut oo: *mut options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let mut name: *const ::core::ffi::c_char =

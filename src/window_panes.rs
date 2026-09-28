@@ -322,7 +322,7 @@ unsafe fn window_panes_get_geometry(
     if sx == 0 as u_int || sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    status = window_get_pane_status((*wp).window as *mut window);
+    status = window_get_pane_status(&*(*wp).window);
     if layout_add_horizontal_border(root, lc, status) != 0 && sy > 1 as u_int {
         if status == PANE_STATUS_TOP {
             y = y.wrapping_add(1);
@@ -551,7 +551,7 @@ unsafe fn window_panes_mark_pane_status_borders(
     let mut y: ::core::ffi::c_int = 0;
     let mut x2: ::core::ffi::c_int = 0;
     let mut y2: ::core::ffi::c_int = 0;
-    status = window_get_pane_status(w);
+    status = window_get_pane_status(&*w);
     if status != PANE_STATUS_TOP && status != PANE_STATUS_BOTTOM {
         return;
     }

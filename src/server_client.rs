@@ -1763,7 +1763,7 @@ unsafe fn server_client_check_mouse_in_pane(
     let mut sb_start: ::core::ffi::c_int = 0;
     let mut sb_end: ::core::ffi::c_int = 0;
     let mut sb_overlay: ::core::ffi::c_int = 0;
-    pane_status = window_pane_get_pane_status(wp);
+    pane_status = window_pane_get_pane_status(&*wp);
     sb_overlay = window_pane_scrollbar_overlay(&*wp);
     if window_pane_scrollbar_visible(&*wp) != 0 {
         sb_w = (*wp).scrollbar_style.width;
@@ -1851,7 +1851,7 @@ unsafe fn server_client_check_mouse_in_pane(
                 return KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN;
             }
         } else if window_pane_is_floating(&*wp) != 0
-            && window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
+            && window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
                 != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             && (px == bdr_left
                 || py == (*wp).yoff - 1 as ::core::ffi::c_int
@@ -1867,7 +1867,7 @@ unsafe fn server_client_check_mouse_in_pane(
             fwp = border_pane.get();
             if !(window_pane_is_visible(&*fwp) == 0) {
                 if !(window_pane_is_floating(&*fwp) != 0
-                    && window_pane_get_pane_lines(fwp) as ::core::ffi::c_uint
+                    && window_pane_get_pane_lines(&*fwp) as ::core::ffi::c_uint
                         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
                     if window_pane_scrollbar_reserve(&*fwp) != 0 {

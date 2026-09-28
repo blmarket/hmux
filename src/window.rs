@@ -28,7 +28,7 @@ use crate::src::layout::{
 };
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::menu::{menu_destroy, menu_resize};
-use crate::src::options::{options_create, options_free, options_get_number};
+use crate::src::options::{options_create, options_free, options_get_number, options_get_number_ref};
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_type_string, prompt_update,
@@ -1322,7 +1322,7 @@ pub unsafe fn window_pane_contains(
         if (y as ::core::ffi::c_int) < yoff || y > (yoff as u_int).wrapping_add(sy) {
             return 0 as ::core::ffi::c_int;
         }
-    } else if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
+    } else if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if (x as ::core::ffi::c_int) < xoff
@@ -1541,7 +1541,7 @@ pub unsafe fn window_get_active_at(
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    pane_status = window_get_pane_status(w);
+    pane_status = window_get_pane_status(&*w);
     if let Some(modal) = (*w).modal.upgrade() {
         if window_pane_contains(&modal, x, y) != 0 {
             return Some(modal);
@@ -1583,7 +1583,7 @@ pub unsafe fn window_get_active_at(
                 } else {
                     current_block_15 = 8693738493027456495;
                 }
-            } else if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
+            } else if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
                 == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 if (x as ::core::ffi::c_int) < xoff
@@ -1630,7 +1630,7 @@ pub unsafe fn window_find_string(
     let mut status: ::core::ffi::c_int = 0;
     x = (*w).sx.wrapping_div(2 as u_int);
     y = (*w).sy.wrapping_div(2 as u_int);
-    status = window_get_pane_status(w);
+    status = window_get_pane_status(&*w);
     if status == PANE_STATUS_TOP {
         top = top.wrapping_add(1);
     } else if status == PANE_STATUS_BOTTOM {
@@ -3604,7 +3604,7 @@ pub unsafe fn window_pane_find_up(source: Option<&Rc<std::cell::UnsafeCell<windo
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     w = (*wp).window as *mut window;
-    status = window_get_pane_status(w);
+    status = window_get_pane_status(&*w);
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff;
     if status == PANE_STATUS_TOP {
@@ -3659,7 +3659,7 @@ pub unsafe fn window_pane_find_down(source: Option<&Rc<std::cell::UnsafeCell<win
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     w = (*wp).window as *mut window;
-    status = window_get_pane_status(w);
+    status = window_get_pane_status(&*w);
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if status == PANE_STATUS_TOP {
@@ -4242,7 +4242,7 @@ pub unsafe fn window_pane_status_get_range(
     y: u_int,
 ) -> Option<style_range> {
     let wp = pane_owner.get();
-    let pane_status = window_pane_get_pane_status(wp);
+    let pane_status = window_pane_get_pane_status(&*wp);
     let line = if pane_status == PANE_STATUS_TOP {
         ((*wp).yoff - 1) as u_int
     } else if pane_status == PANE_STATUS_BOTTOM {
@@ -4258,66 +4258,50 @@ pub unsafe fn window_pane_status_get_range(
         .find(|range| x >= range.start && x < range.end)
         .map(|range| **range)
 }
-pub unsafe fn window_get_pane_lines(mut w: *mut window) -> pane_lines {
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    oo = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
-    return options_get_number(
-        oo,
-        b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as pane_lines;
+pub unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
+    options_get_number_ref(w.options.as_deref().expect("window options"), c"pane-border-lines") as pane_lines
 }
-pub unsafe fn window_pane_get_pane_lines(mut wp: *mut window_pane) -> pane_lines {
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    if window_pane_is_floating(&*wp) == 0 {
-        oo = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+pub unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
+    let options = if window_pane_is_floating(wp) == 0 {
+        (*wp.window).options.as_deref().expect("window options")
     } else {
-        oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
-    }
-    return options_get_number(
-        oo,
-        b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as pane_lines;
+        wp.options.as_deref().expect("pane options")
+    };
+    options_get_number_ref(options, c"pane-border-lines") as pane_lines
 }
-pub unsafe fn window_get_pane_status(mut w: *mut window) -> ::core::ffi::c_int {
-    let mut status: ::core::ffi::c_int = 0;
-    status = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"pane-border-status\0" as *const u8 as *const ::core::ffi::c_char,
+pub unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
+    let status = options_get_number_ref(
+        w.options.as_deref().expect("window options"), c"pane-border-status",
     ) as ::core::ffi::c_int;
     if status == PANE_STATUS_TOP_FLOATING || status == PANE_STATUS_BOTTOM_FLOATING {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
-    return status;
+    status
 }
-pub unsafe fn window_pane_get_pane_status(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut status: ::core::ffi::c_int = 0;
-    wme = (*wp).modes.active;
+pub unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
+    let wme = wp.modes.active;
     if !wme.is_null()
         && (*(*wme).mode).flags & WINDOW_MODE_HIDE_PANE_STATUS != 0
-        && (*wp).flags & PANE_ZOOMED != 0
+        && wp.flags & PANE_ZOOMED != 0
     {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
-    if window_pane_is_floating(&*wp) == 0 {
-        return window_get_pane_status((*wp).window as *mut window);
+    if window_pane_is_floating(wp) == 0 {
+        return window_get_pane_status(&*wp.window);
     }
-    if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
-        == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return 0 as ::core::ffi::c_int;
+    if window_pane_get_pane_lines(wp) == PANE_LINES_NONE as pane_lines {
+        return 0;
     }
-    status = options_get_number(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"pane-border-status\0" as *const u8 as *const ::core::ffi::c_char,
+    let status = options_get_number_ref(
+        wp.options.as_deref().expect("pane options"), c"pane-border-status",
     ) as ::core::ffi::c_int;
     if status == PANE_STATUS_TOP_FLOATING {
-        return 1 as ::core::ffi::c_int;
+        return 1;
     }
     if status == PANE_STATUS_BOTTOM_FLOATING {
-        return 2 as ::core::ffi::c_int;
+        return 2;
     }
-    return status;
+    status
 }
 pub unsafe fn window_pane_is_floating(wp: &window_pane) -> ::core::ffi::c_int {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
