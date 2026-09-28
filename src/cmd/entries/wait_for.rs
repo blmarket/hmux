@@ -232,6 +232,22 @@ unsafe fn cmd_wait_for_item_client_name(item: *mut cmdq_item) -> CString {
         .and_then(|owner| (*owner.get()).name.clone())
         .unwrap_or_default()
 }
+unsafe fn cmd_wait_for_waiter_client_name(waiter: &wait_item) -> CString {
+    waiter.item.upgrade().map_or_else(CString::default, |item| {
+        cmd_wait_for_item_client_name(item.get())
+    })
+}
+
+unsafe fn cmd_wait_for_continue_waiter(waiter: &wait_item) {
+    if let Some(item) = waiter.item.upgrade() {
+        cmdq_continue(item.get());
+    }
+}
+
+unsafe fn cmd_wait_for_prune_expired(wc: *mut wait_channel) {
+    (&mut *wait_channel_waiters(wc)).retain(|waiter| waiter.item.upgrade().is_some());
+    (&mut *wait_channel_lockers(wc)).retain(|waiter| waiter.item.upgrade().is_some());
+}
 unsafe fn cmd_wait_for_client_name(wei: *mut wait_event_item) -> CString {
     (*wei).item.upgrade().map_or_else(CString::default, |item| {
         cmd_wait_for_item_client_name(item.get())
@@ -425,14 +441,15 @@ unsafe fn cmd_wait_for_list(mut item: *mut cmdq_item, mut wc: *mut wait_channel)
     if wc.is_null() {
         return CMD_RETURN_NORMAL;
     }
+    cmd_wait_for_prune_expired(wc);
     for wi in &*wait_channel_waiters(wc) {
         cmdq_print(item, |out| {
-            write_cstr(out, cmd_wait_for_item_client_name(wi.item).as_ptr())
+            write_cstr(out, cmd_wait_for_waiter_client_name(wi).as_ptr())
         });
     }
     for wi in &*wait_channel_lockers(wc) {
         cmdq_print(item, |out| {
-            write_cstr(out, cmd_wait_for_item_client_name(wi.item).as_ptr())
+            write_cstr(out, cmd_wait_for_waiter_client_name(wi).as_ptr())
         });
     }
     return CMD_RETURN_NORMAL;
@@ -443,15 +460,16 @@ unsafe fn cmd_wait_for_wake(
 ) -> cmd_retval {
     let mut client_name: *const ::core::ffi::c_char = args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !wc.is_null() {
+        cmd_wait_for_prune_expired(wc);
         let waiters = wait_channel_waiters(wc);
         let mut wi = wait_item_ptr(waiters, 0);
         while !wi.is_null() {
             let wi1 = wait_item_next(waiters, wi);
-            let name = cmd_wait_for_item_client_name((*wi).item);
+            let name = cmd_wait_for_waiter_client_name(&*wi);
             if strcmp(name.as_ptr(), client_name) != 0 as ::core::ffi::c_int {
                 wi = wi1;
             } else {
-                cmdq_continue((*wi).item);
+                cmd_wait_for_continue_waiter(&*wi);
                 drop(wait_item_remove(waiters, wi));
                 cmd_wait_for_remove_empty(wc);
                 return CMD_RETURN_NORMAL;
@@ -461,11 +479,11 @@ unsafe fn cmd_wait_for_wake(
         let mut wi = wait_item_ptr(lockers, 0);
         while !wi.is_null() {
             let wi1 = wait_item_next(lockers, wi);
-            let name = cmd_wait_for_item_client_name((*wi).item);
+            let name = cmd_wait_for_waiter_client_name(&*wi);
             if strcmp(name.as_ptr(), client_name) != 0 as ::core::ffi::c_int {
                 wi = wi1;
             } else {
-                cmdq_continue((*wi).item);
+                cmd_wait_for_continue_waiter(&*wi);
                 drop(wait_item_remove(lockers, wi));
                 cmd_wait_for_remove_empty(wc);
                 return CMD_RETURN_NORMAL;
@@ -481,6 +499,7 @@ unsafe fn cmd_wait_for_signal(
     if wc.is_null() {
         wc = cmd_wait_for_add(name);
     }
+    cmd_wait_for_prune_expired(wc);
     if (*wait_channel_waiters(wc)).is_empty() && (*wc).woken == 0 {
         log_debug(format_args!(
             "signal wait channel {}, no waiters",
@@ -497,7 +516,7 @@ unsafe fn cmd_wait_for_signal(
     let mut wi = wait_item_ptr(waiters, 0);
     while !wi.is_null() {
         let wi1 = wait_item_next(waiters, wi);
-        cmdq_continue((*wi).item);
+        cmd_wait_for_continue_waiter(&*wi);
         drop(wait_item_remove(waiters, wi));
         wi = wi1;
     }
@@ -532,7 +551,7 @@ unsafe fn cmd_wait_for_wait(
         log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
-    (*wait_channel_waiters(wc)).push(Box::new(wait_item { item }));
+    (*wait_channel_waiters(wc)).push(Box::new(wait_item { item: (*item).observer.clone() }));
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_wait_for_lock(
@@ -548,7 +567,7 @@ unsafe fn cmd_wait_for_lock(
         wc = cmd_wait_for_add(name);
     }
     if (*wc).locked != 0 {
-        (*wait_channel_lockers(wc)).push(Box::new(wait_item { item }));
+        (*wait_channel_lockers(wc)).push(Box::new(wait_item { item: (*item).observer.clone() }));
         return CMD_RETURN_WAIT;
     }
     (*wc).locked = 1 as ::core::ffi::c_int;
@@ -568,9 +587,10 @@ unsafe fn cmd_wait_for_unlock(
         return CMD_RETURN_ERROR;
     }
     let lockers = wait_channel_lockers(wc);
+    cmd_wait_for_prune_expired(wc);
     let wi = wait_item_ptr(lockers, 0);
     if !wi.is_null() {
-        cmdq_continue((*wi).item);
+        cmd_wait_for_continue_waiter(&*wi);
         drop(wait_item_remove(lockers, wi));
     } else {
         (*wc).locked = 0 as ::core::ffi::c_int;
@@ -608,7 +628,7 @@ pub unsafe fn cmd_wait_for_flush() {
         let mut wi = wait_item_ptr(waiters, 0);
         while !wi.is_null() {
             let wi1 = wait_item_next(waiters, wi);
-            cmdq_continue((*wi).item);
+            cmd_wait_for_continue_waiter(&*wi);
             drop(wait_item_remove(waiters, wi));
             wi = wi1;
         }
@@ -617,7 +637,7 @@ pub unsafe fn cmd_wait_for_flush() {
         let mut wi = wait_item_ptr(lockers, 0);
         while !wi.is_null() {
             let wi1 = wait_item_next(lockers, wi);
-            cmdq_continue((*wi).item);
+            cmd_wait_for_continue_waiter(&*wi);
             drop(wait_item_remove(lockers, wi));
             wi = wi1;
         }
@@ -686,9 +706,9 @@ mod tests {
         let mut owner = test_channel(&name);
         let channel = &raw mut *owner;
         let original = (0..128)
-            .map(|index| {
+            .map(|_| {
                 Box::new(wait_item {
-                    item: index as *mut cmdq_item,
+                    item: Weak::new(),
                 })
             })
             .collect::<Vec<_>>();
@@ -697,11 +717,13 @@ mod tests {
             .map(|item| &**item as *const wait_item as *mut wait_item)
             .collect::<Vec<_>>();
         owner.waiters.extend(original);
-        owner.lockers.extend((128..256).map(|index| {
+        let lockers = (0..128).map(|_| {
             Box::new(wait_item {
-                item: index as *mut cmdq_item,
+                item: Weak::new(),
             })
-        }));
+        }).collect::<Vec<_>>();
+        let first_locker = &*lockers[0] as *const wait_item as *mut wait_item;
+        owner.lockers.extend(lockers);
 
         unsafe {
             assert_eq!(
@@ -713,11 +735,8 @@ mod tests {
                 addresses[127]
             );
             assert_eq!(
-                wait_item_ptr(wait_channel_lockers(channel), 0)
-                    .as_ref()
-                    .unwrap()
-                    .item,
-                128_usize as *mut cmdq_item,
+                wait_item_ptr(wait_channel_lockers(channel), 0),
+                first_locker,
             );
 
             drop(wait_item_remove(
@@ -731,6 +750,24 @@ mod tests {
             assert_eq!(remaining[36], addresses[36]);
             assert_eq!(remaining[37], addresses[38]);
             assert_eq!(remaining[126], addresses[127]);
+        }
+    }
+
+    #[test]
+    fn expired_channel_waiters_are_pruned() {
+        unsafe {
+            let expired = cmdq_get_callback_owned(c"expired channel".as_ptr(), None);
+            let live = cmdq_get_callback_owned(c"live channel".as_ptr(), None);
+            let mut channel = test_channel(c"channel");
+            channel.waiters.push(Box::new(wait_item { item: (*expired).observer.clone() }));
+            channel.waiters.push(Box::new(wait_item { item: (*live).observer.clone() }));
+            channel.lockers.push(Box::new(wait_item { item: (*expired).observer.clone() }));
+            cmdq_free_detached(expired);
+            cmd_wait_for_prune_expired(&mut *channel);
+            assert_eq!(channel.waiters.len(), 1);
+            assert!(channel.waiters[0].item.ptr_eq(&(*live).observer));
+            assert!(channel.lockers.is_empty());
+            cmdq_free_detached(live);
         }
     }
 

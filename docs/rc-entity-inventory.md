@@ -2581,3 +2581,10 @@ output and command append behavior. The raw-field count is 43.
 retains an upgrade through formatting and continuation, and removes the sink
 if the item expired. Event listing and waking prune expired records; flush
 skips queue continuation for expired items. The raw-field count is 42.
+
+## Implemented weak channel wait items
+
+`wait_item.item` now observes a queue item weakly. Wake, signal, unlock and
+flush retain upgrades through queue continuation; list and wake paths prune
+expired waiters and lockers. A regression covers both expired channel queues.
+The raw-field count is 41.

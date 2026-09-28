@@ -401,10 +401,10 @@ pub type cmdq_cb = Option<Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_re
 
 pub type cmdq_type = ::core::ffi::c_uint;
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct wait_item {
-    pub item: *mut cmdq_item,
+    pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
 }
 
 #[derive(Clone, Default)]
