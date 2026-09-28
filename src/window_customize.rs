@@ -377,6 +377,7 @@ pub static window_customize_mode: window_mode = {
         command: None,
         formats: None,
         get_screen: None,
+        display_screen: Some(window_customize_get_screen),
     }
 };
 const CUSTOMIZE_SERVER_OPTIONS: u_int = 1;
@@ -2997,6 +2998,16 @@ unsafe fn window_customize_init(
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
+unsafe fn window_customize_get_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_customize_modedata>();
+    if data.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
+        &raw mut (*tree.get()).screen
+    })
+}
+
 unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
         return;

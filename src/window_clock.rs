@@ -70,6 +70,7 @@ pub static window_clock_mode: window_mode = {
         command: None,
         formats: None,
         get_screen: None,
+        display_screen: Some(window_clock_get_screen),
     }
 };
 pub static mut window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
@@ -689,6 +690,11 @@ unsafe fn window_clock_init(
     window_clock_draw_screen(wme);
     return s;
 }
+unsafe fn window_clock_get_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_clock_mode_data>();
+    if data.is_null() { std::ptr::null_mut() } else { &raw mut (*data).screen }
+}
+
 unsafe fn window_clock_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     event_del(&raw mut (*data).timer);

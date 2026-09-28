@@ -2614,3 +2614,11 @@ upgrade or popup palette borrow for the operation. Popup callback snapshots
 live directly in the style context, removing its self-pointer into
 `tty_ctx.owned_palette`. Tests cover live colour updates, source expiry and
 snapshot survival. The raw-field count is 37.
+
+## Removed cached mode display screen
+
+`window_mode_entry.screen` no longer caches a pointer into its mode payload.
+Each mode exposes a `display_screen` callback, which resolves the embedded
+screen when the pane promotes or restores that mode. Copy mode keeps its
+separate `get_screen` callback for the backing screen used by `capture-pane`.
+The raw-field count is 36.

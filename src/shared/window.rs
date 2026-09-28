@@ -173,7 +173,6 @@ pub struct window_mode_entry {
     pub data: *mut ::core::ffi::c_void,
     /// Typed owner for mode data; `data` is only a borrowed callback view.
     pub data_owner: Option<std::rc::Rc<dyn std::any::Any>>,
-    pub screen: *mut screen,
     pub prefix: u_int,
     pub kill: ::core::ffi::c_int,
 }
@@ -227,6 +226,7 @@ pub struct window_mode {
     >,
     pub formats: Option<unsafe fn(*mut window_mode_entry, *mut format_tree) -> ()>,
     pub get_screen: Option<unsafe fn(*mut window_mode_entry) -> *mut screen>,
+    pub display_screen: Option<unsafe fn(*mut window_mode_entry) -> *mut screen>,
 }
 
 impl Default for window_mode {
@@ -245,6 +245,7 @@ impl Default for window_mode {
             command: None,
             formats: None,
             get_screen: None,
+            display_screen: None,
         }
     }
 }

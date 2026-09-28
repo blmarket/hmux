@@ -239,6 +239,7 @@ pub static window_tree_mode: window_mode = {
         command: None,
         formats: None,
         get_screen: None,
+        display_screen: Some(window_tree_get_screen),
     }
 };
 static window_tree_order_seq: [sort_order; 4] = [SORT_INDEX, SORT_NAME, SORT_ACTIVITY, SORT_Z];
@@ -1821,6 +1822,16 @@ unsafe fn window_tree_init(
     (*data).type_0 = WINDOW_TREE_NONE;
     return s;
 }
+unsafe fn window_tree_get_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_tree_modedata>();
+    if data.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
+        &raw mut (*tree.get()).screen
+    })
+}
+
 unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
         return;

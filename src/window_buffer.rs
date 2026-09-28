@@ -189,6 +189,7 @@ pub static window_buffer_mode: window_mode = {
         command: None,
         formats: None,
         get_screen: None,
+        display_screen: Some(window_buffer_get_screen),
     }
 };
 static window_buffer_order_seq: [sort_order; 3] = [SORT_CREATION, SORT_NAME, SORT_SIZE];
@@ -526,6 +527,16 @@ unsafe fn window_buffer_init(
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
+unsafe fn window_buffer_get_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_buffer_modedata>();
+    if data.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
+        &raw mut (*tree.get()).screen
+    })
+}
+
 unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
     if data.is_null() {

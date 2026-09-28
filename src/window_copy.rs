@@ -424,6 +424,7 @@ pub static window_copy_mode: window_mode = {
         get_screen: Some(
             window_copy_get_screen as unsafe fn(*mut window_mode_entry) -> *mut screen,
         ),
+        display_screen: Some(window_copy_display_screen),
     }
 };
 pub static window_view_mode: window_mode = {
@@ -466,6 +467,7 @@ pub static window_view_mode: window_mode = {
         get_screen: Some(
             window_copy_get_screen as unsafe fn(*mut window_mode_entry) -> *mut screen,
         ),
+        display_screen: Some(window_copy_display_screen),
     }
 };
 pub const WINDOW_COPY_SEARCH_TIMEOUT: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
@@ -1433,6 +1435,10 @@ unsafe fn window_copy_formats(mut wme: *mut window_mode_entry, mut ft: *mut form
 unsafe fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return (*data).backing_mut();
+}
+unsafe fn window_copy_display_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_copy_mode_data>();
+    if data.is_null() { std::ptr::null_mut() } else { &raw mut (*data).screen }
 }
 unsafe fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
@@ -9870,7 +9876,6 @@ mod backing_owner_tests {
                 mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),
                 data_owner: None,
-                screen: std::ptr::null_mut(),
                 prefix: 0,
                 kill: 0,
             });

@@ -235,6 +235,7 @@ pub static window_client_mode: window_mode = {
         command: None,
         formats: None,
         get_screen: None,
+        display_screen: Some(window_client_get_screen),
     }
 };
 static window_client_order_seq: [sort_order; 4] =
@@ -813,6 +814,16 @@ unsafe fn window_client_init(
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
+unsafe fn window_client_get_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_client_modedata>();
+    if data.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
+        &raw mut (*tree.get()).screen
+    })
+}
+
 unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
     if data.is_null() {

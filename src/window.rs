@@ -2505,7 +2505,6 @@ mod window_mode_collection_tests {
             mode: &window_copy_mode,
             data: ::core::ptr::null_mut(),
             data_owner: None,
-            screen: ::core::ptr::null_mut(),
             prefix: 1,
             kill: 0,
         })
@@ -2936,6 +2935,7 @@ pub unsafe fn window_pane_set_mode(
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mode_screen: *mut screen;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2959,6 +2959,7 @@ pub unsafe fn window_pane_set_mode(
     }
     if !wme.is_null() {
         window_pane_mode_promote(wp, wme);
+        mode_screen = (*(*wme).mode).display_screen.expect("mode display screen getter")(wme);
     } else {
         // The pane owns a stable RefBox address for as long as callbacks retain it.
         let entry = refbox::RefBox::new(window_mode_entry {
@@ -2967,14 +2968,12 @@ pub unsafe fn window_pane_set_mode(
             mode,
             data: ::core::ptr::null_mut(),
             data_owner: None,
-            screen: ::core::ptr::null_mut(),
             prefix: 1,
             kill: 0,
         });
         wme = window_pane_mode_insert_front(&mut *wp, entry).as_ptr().cast_mut();
-        (*wme).screen =
-            (*(*wme).mode).init.expect("non-null function pointer")(wme, item, fs, args);
-        if (*wme).screen.is_null() {
+        mode_screen = (*(*wme).mode).init.expect("non-null function pointer")(wme, item, fs, args);
+        if mode_screen.is_null() {
             drop(window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane"));
             return 1 as ::core::ffi::c_int;
         }
@@ -2984,7 +2983,8 @@ pub unsafe fn window_pane_set_mode(
     } else {
         0 as ::core::ffi::c_int
     };
-    (*wp).screen = (*wme).screen;
+    assert!(!mode_screen.is_null(), "active mode has a screen");
+    (*wp).screen = mode_screen;
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     server_redraw_window_borders(&*((*wp).window));
@@ -3033,7 +3033,8 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
             "window_pane_reset_mode",
             log_cstr(((*(*next).mode).name.as_ptr()) as *const _)
         ));
-        (*wp).screen = (*next).screen;
+        (*wp).screen = (*(*next).mode).display_screen.expect("mode display screen getter")(next);
+        assert!(!(*wp).screen.is_null(), "restored mode has a screen");
         if (*(*next).mode).resize.is_some() {
             (*(*next).mode).resize.expect("non-null function pointer")(next, (*wp).sx, (*wp).sy);
         }

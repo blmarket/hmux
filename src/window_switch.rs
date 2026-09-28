@@ -124,6 +124,7 @@ pub static window_switch_mode: window_mode = {
         command: None,
         formats: None,
         get_screen: None,
+        display_screen: Some(window_switch_get_screen),
     }
 };
 unsafe fn window_switch_add_item(
@@ -536,6 +537,11 @@ unsafe fn window_switch_init(
     window_switch_draw_screen(wme);
     return s;
 }
+unsafe fn window_switch_get_screen(wme: *mut window_mode_entry) -> *mut screen {
+    let data = (*wme).data.cast::<window_switch_modedata>();
+    if data.is_null() { std::ptr::null_mut() } else { &raw mut (*data).screen }
+}
+
 unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
