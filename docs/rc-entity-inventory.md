@@ -2078,3 +2078,16 @@ shared tree borrows between rebuilds.
 final borrow cleanup. `git diff --check` passed. No explicit raw mode_tree_data
 types remain under src, but inferred raw projections in tree internals and other
 tests still require migration, along with the broader model relationships.
+
+## Implemented tree borrows for setup, sizing and cleanup
+
+Mode-tree construction borrows its new tree and source pane. Height calculation
+takes the callback out of the tree before dispatch, then reacquires a mutable
+borrow and checks logical destruction before restoring the callback or updating
+height. Default preview sizing borrows the tree directly. Resize finishes its
+screen borrow before rebuilding/drawing and reacquires the retained pane to mark
+redraw. Cleanup borrows again after unzoom and prompt cleanup, preserving the
+special allowance for a logically destroyed pane during teardown.
+
+`cargo test --workspace` and `git diff --check` passed. Tree build/draw internals,
+zoom access and broader raw model relationships remain pending.

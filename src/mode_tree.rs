@@ -502,38 +502,38 @@ pub unsafe fn mode_tree_start(
     menu: &'static [menu_item<'static>],
     s: *mut *mut screen,
 ) -> std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>> {
-    let wp = pane_owner.get();
+    let pane = &*pane_owner.get();
     let owner = mode_tree_alloc_data();
-    let mtd = crate::src::shared::rc::as_ptr(&owner);
-    (*mtd).wp = std::rc::Rc::downgrade(pane_owner);
-    (*mtd).menu = menu;
+    let mtd = &mut *owner.get();
+    mtd.wp = std::rc::Rc::downgrade(pane_owner);
+    mtd.menu = menu;
     if drawcb.is_none() {
-        (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
+        mtd.preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
     } else if args_has(args, 'N' as i32 as u_char) > 1 as ::core::ffi::c_int {
-        (*mtd).preview = MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int;
+        mtd.preview = MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int;
     } else if args_has(args, 'N' as i32 as u_char) != 0 {
-        (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
+        mtd.preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
     } else {
-        (*mtd).preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
+        mtd.preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
     }
-    (*mtd).sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
-    (*mtd).sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    mtd.sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    mtd.sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        (*mtd).filter = Some(CStr::from_ptr(args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned());
+        mtd.filter = Some(CStr::from_ptr(args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned());
     } else {
-        (*mtd).filter = None;
+        mtd.filter = None;
     }
-    (*mtd).buildcb = buildcb;
-    (*mtd).drawcb = drawcb;
-    (*mtd).searchcb = searchcb;
-    (*mtd).menucb = menucb;
-    (*mtd).heightcb = heightcb;
-    (*mtd).keycb = keycb;
-    (*mtd).swapcb = swapcb;
-    (*mtd).sortcb = sortcb;
-    (*mtd).helpcb = helpcb;
-    *s = &raw mut (*mtd).screen;
-    screen_init(&mut **s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
+    mtd.buildcb = buildcb;
+    mtd.drawcb = drawcb;
+    mtd.searchcb = searchcb;
+    mtd.menucb = menucb;
+    mtd.heightcb = heightcb;
+    mtd.keycb = keycb;
+    mtd.swapcb = swapcb;
+    mtd.sortcb = sortcb;
+    mtd.helpcb = helpcb;
+    *s = &raw mut mtd.screen;
+    screen_init(&mut **s, pane.base.grid().sx, pane.base.grid().sy, 0 as u_int);
     (**s).mode &= !MODE_CURSOR;
     return owner;
 }
@@ -554,44 +554,48 @@ pub unsafe fn mode_tree_zoom(tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode
     };
 }
 unsafe fn mode_tree_set_height(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
-    let mtd = tree_owner.get();
-    let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut height: u_int = 0;
-    if let Some(mut callback) = (*mtd).heightcb.take() {
-        height = callback((*s).grid().sy);
-        if (*mtd).dead != 0 {
+    let callback = (&mut *tree_owner.get()).heightcb.take();
+    if let Some(mut callback) = callback {
+        let sy = (&*tree_owner.get()).screen.grid().sy;
+        let height = callback(sy);
+        let mtd = &mut *tree_owner.get();
+        if mtd.dead != 0 {
             return;
         }
-        if (*mtd).heightcb.is_none() {
-            (*mtd).heightcb = Some(callback);
+        if mtd.heightcb.is_none() {
+            mtd.heightcb = Some(callback);
         }
-        if height < (*s).grid().sy {
-            (*mtd).height = (*s).grid().sy.wrapping_sub(height);
-        }
-    } else if (*mtd).preview == MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int {
-        (*mtd).height = (*s).grid()
-            .sy
-            .wrapping_div(3 as u_int)
-            .wrapping_mul(2 as u_int);
-        if (*mtd).height > mode_tree_line_count(&*mtd) {
-            (*mtd).height = (*s).grid().sy.wrapping_div(2 as u_int);
-        }
-        if (*mtd).height < 10 as u_int {
-            (*mtd).height = (*s).grid().sy;
-        }
-    } else if (*mtd).preview == MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int {
-        (*mtd).height = (*s).grid().sy.wrapping_div(4 as u_int);
-        if (*mtd).height > mode_tree_line_count(&*mtd) {
-            (*mtd).height = mode_tree_line_count(&*mtd);
-        }
-        if (*mtd).height < 2 as u_int {
-            (*mtd).height = 2 as u_int;
+        if height < mtd.screen.grid().sy {
+            mtd.height = mtd.screen.grid().sy.wrapping_sub(height);
         }
     } else {
-        (*mtd).height = (*s).grid().sy;
+        let mtd = &mut *tree_owner.get();
+        if mtd.preview == MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int {
+            mtd.height = mtd.screen.grid()
+                .sy
+                .wrapping_div(3 as u_int)
+                .wrapping_mul(2 as u_int);
+            if mtd.height > mode_tree_line_count(mtd) {
+                mtd.height = mtd.screen.grid().sy.wrapping_div(2 as u_int);
+            }
+            if mtd.height < 10 as u_int {
+                mtd.height = mtd.screen.grid().sy;
+            }
+        } else if mtd.preview == MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int {
+            mtd.height = mtd.screen.grid().sy.wrapping_div(4 as u_int);
+            if mtd.height > mode_tree_line_count(mtd) {
+                mtd.height = mode_tree_line_count(mtd);
+            }
+            if mtd.height < 2 as u_int {
+                mtd.height = 2 as u_int;
+            }
+        } else {
+            mtd.height = mtd.screen.grid().sy;
+        }
     }
-    if (*s).grid().sy.wrapping_sub((*mtd).height) < 2 as u_int {
-        (*mtd).height = (*s).grid().sy;
+    let mtd = &mut *tree_owner.get();
+    if mtd.screen.grid().sy.wrapping_sub(mtd.height) < 2 as u_int {
+        mtd.height = mtd.screen.grid().sy;
     }
 }
 pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
@@ -647,34 +651,33 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
 }
 
 pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>) {
-    let mtd = crate::src::shared::rc::as_ptr(&owner);
+    let mtd = &*owner.get();
     // Pane destruction closes modes before releasing the pane's initial owner.
     // Unlike normal access, cleanup must allow a logically destroyed pane.
-    if (*mtd).zoomed == 0 {
-        if let Some(pane) = (*mtd).wp.upgrade() {
-            let wp = crate::src::shared::rc::as_ptr(&pane);
-            server_unzoom_window((*wp).window);
+    if mtd.zoomed == 0 {
+        if let Some(pane) = mtd.wp.upgrade() {
+            let wp = &*pane.get();
+            server_unzoom_window(wp.window);
         }
     }
     mode_tree_clear_prompt(&owner);
-    mode_tree_free_items(&mut (*mtd).children);
+    let mtd = &mut *owner.get();
+    mode_tree_free_items(&mut mtd.children);
     mode_tree_clear_lines(&mut *mtd);
-    screen_free(&mut (*mtd).screen);
-    (*mtd).search = None;
-    (*mtd).filter = None;
-    (*mtd).dead = 1 as ::core::ffi::c_int;
+    screen_free(&mut mtd.screen);
+    mtd.search = None;
+    mtd.filter = None;
+    mtd.dead = 1 as ::core::ffi::c_int;
 }
 pub unsafe fn mode_tree_resize(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut sx: u_int, mut sy: u_int) {
-    let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let mtd = &mut *tree_owner.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut s: *mut screen = &raw mut (*mtd).screen;
-    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut mtd.screen, sx, sy, 0 as ::core::ffi::c_int);
     mode_tree_build(tree_owner);
     mode_tree_draw(tree_owner);
-    (*mode_pane).flags |= PANE_REDRAW;
+    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
 }
 pub fn mode_tree_add(
     mtd: &mut mode_tree_data,
