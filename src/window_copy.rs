@@ -7166,7 +7166,8 @@ unsafe fn window_copy_set_line_numbers1(
     window_copy_redraw_screen(wme);
 }
 pub unsafe fn window_copy_get_current_offset(pane: &window_pane) -> Option<(u_int, u_int)> {
-    let mode = pane.modes.active_ptr().as_ref()?;
+    let entry = pane.modes.storage.as_ref()?.entries.first()?;
+    let mode = entry.try_borrow_mut().expect("active copy mode already borrowed");
     if !std::ptr::eq(mode.mode, &window_copy_mode) && !std::ptr::eq(mode.mode, &window_view_mode) {
         return None;
     }

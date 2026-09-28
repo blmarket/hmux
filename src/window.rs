@@ -4319,11 +4319,9 @@ pub unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
     status
 }
 pub unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
-    let wme = wp.modes.active_ptr();
-    if !wme.is_null()
-        && (*(*wme).mode).flags & WINDOW_MODE_HIDE_PANE_STATUS != 0
-        && wp.flags & PANE_ZOOMED != 0
-    {
+    let hide_status = wp.modes.storage.as_ref().and_then(|storage| storage.entries.first())
+        .is_some_and(|entry| entry.try_borrow_mut().expect("active pane mode already borrowed").mode.flags & WINDOW_MODE_HIDE_PANE_STATUS != 0);
+    if hide_status && wp.flags & PANE_ZOOMED != 0 {
         return 0;
     }
     if window_pane_is_floating(wp) == 0 {
