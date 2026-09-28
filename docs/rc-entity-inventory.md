@@ -2629,3 +2629,10 @@ The raw-field count is 36.
 screen or a weak selected mode entry. Readers resolve mode screens through the
 mode's display callback. Mode reset and teardown switch to the next source
 before freeing the old payload. The raw-field count is 35.
+
+## Clock mode payload ownership
+
+`window_clock_mode_data` is now owned by the mode entry in a typed boxed slot.
+Clock callbacks resolve a typed pointer from that owner, and mode cleanup
+releases the box after cancelling its timer and freeing its screen. Other mode
+payloads still use `window_mode_entry.data`, so the raw-field count remains 35.

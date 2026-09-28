@@ -9875,6 +9875,7 @@ mod backing_owner_tests {
                 swp: std::rc::Rc::downgrade(&pane_owner),
                 mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),
+                boxed_data: None,
                 data_owner: None,
                 prefix: 0,
                 kill: 0,

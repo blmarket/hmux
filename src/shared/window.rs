@@ -171,6 +171,8 @@ pub struct window_mode_entry {
     pub swp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub mode: &'static window_mode,
     pub data: *mut ::core::ffi::c_void,
+    /// Owns mode payloads that need a stable address but no shared ownership.
+    pub boxed_data: Option<Box<dyn std::any::Any>>,
     /// Typed owner for mode data; `data` is only a borrowed callback view.
     pub data_owner: Option<std::rc::Rc<dyn std::any::Any>>,
     pub prefix: u_int,
@@ -178,6 +180,13 @@ pub struct window_mode_entry {
 }
 
 impl window_mode_entry {
+    pub fn boxed_data_ptr<T: std::any::Any>(&self) -> Option<*mut T> {
+        self.boxed_data
+            .as_ref()?
+            .downcast_ref::<std::cell::UnsafeCell<T>>()
+            .map(std::cell::UnsafeCell::get)
+    }
+
     /// Retain an Rc-backed payload across callbacks that may remove this entry.
     pub fn retained_data<T: std::any::Any>(&self) -> Option<std::rc::Rc<T>> {
         self.data_owner.as_ref().map(|owner| {

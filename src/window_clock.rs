@@ -593,8 +593,14 @@ pub static mut window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
         ],
     ],
 ];
+unsafe fn window_clock_data(wme: *mut window_mode_entry) -> *mut window_clock_mode_data {
+    (*wme)
+        .boxed_data_ptr::<window_clock_mode_data>()
+        .expect("clock mode payload")
+}
+
 unsafe fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
+    let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -620,7 +626,7 @@ unsafe fn window_clock_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
+    let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     let mut now: tm = tm {
         tm_sec: 0,
         tm_min: 0,
@@ -670,12 +676,13 @@ unsafe fn window_clock_init(
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    data = Box::into_raw(Box::new(window_clock_mode_data {
+    let owner = Box::new(std::cell::UnsafeCell::new(window_clock_mode_data {
         screen: screen::empty(),
         tim: 0,
         timer: Default::default(),
     }));
-    (*wme).data = data as *mut ::core::ffi::c_void;
+    data = owner.get();
+    (*wme).boxed_data = Some(owner);
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
     event_set(
         &raw mut (*data).timer,
@@ -691,18 +698,18 @@ unsafe fn window_clock_init(
     return s;
 }
 unsafe fn window_clock_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).data.cast::<window_clock_mode_data>();
-    if data.is_null() { std::ptr::null_mut() } else { &raw mut (*data).screen }
+    let data = (*wme).boxed_data_ptr::<window_clock_mode_data>();
+    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
 unsafe fn window_clock_free(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
+    let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     event_del(&raw mut (*data).timer);
     screen_free(&mut (*data).screen);
-    drop(Box::from_raw(data));
+    drop((*wme).boxed_data.take());
 }
 unsafe fn window_clock_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
+    let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     let mut s: *mut screen = &raw mut (*data).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     window_clock_draw_screen(wme);
@@ -723,7 +730,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut w: *mut window = (*wp).window as *mut window;
-    let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
+    let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
