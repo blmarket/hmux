@@ -132,8 +132,6 @@ pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
-pub type WindowPanePromptOwner = refbox::RefBox<window_pane_prompt>;
-pub type WindowPanePromptWeak = refbox::Weak<window_pane_prompt>;
 
 pub struct window_pane_prompt {
     pub wp_id: u_int,
@@ -213,7 +211,7 @@ pub struct window_pane {
     pub searchregex: ::core::ffi::c_int,
     pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     /// Callback-owned data; this observer cannot keep a closed prompt alive.
-    pub prompt_data: WindowPanePromptWeak,
+    pub prompt_data: refbox::Weak<crate::src::shared::pane::window_pane_prompt>,
     pub prompt_cx: u_int,
     pub border_gc_set: ::core::ffi::c_int,
     pub border_gc: grid_cell,

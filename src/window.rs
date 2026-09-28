@@ -52,7 +52,7 @@ use crate::src::server_fn::{
 };
 use crate::src::session::session_has;
 use crate::src::shared::events::event_payload;
-use crate::src::shared::pane::{window_pane_tree, WindowPanePromptOwner};
+use crate::src::shared::pane::{window_pane_tree};
 use crate::src::shared::prompt::prompt_create_data;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::status::status_at_line;
@@ -3154,7 +3154,7 @@ fn window_pane_prompt_input_callback(
     }
     result
 }
-unsafe fn window_pane_prompt_free_callback(data: &WindowPanePromptOwner) {
+unsafe fn window_pane_prompt_free_callback(data: &refbox::RefBox<crate::src::shared::pane::window_pane_prompt>) {
     let (wp_id, callback, inputcb) = {
         let mut state = data.try_borrow_mut().expect("prompt cleanup record");
         (state.wp_id, state.freecb.take(), state.inputcb.take())
@@ -4473,7 +4473,7 @@ mod pane_prompt_data_tests {
     use crate::src::text::utf8::utf8_fromcstr_vec;
     use std::cell::Cell;
 
-    fn data(wp_id: u_int) -> WindowPanePromptOwner {
+    fn data(wp_id: u_int) -> refbox::RefBox<crate::src::shared::pane::window_pane_prompt> {
         refbox::RefBox::new(window_pane_prompt {
             wp_id,
             c: Weak::new(),
@@ -4483,7 +4483,7 @@ mod pane_prompt_data_tests {
         })
     }
 
-    fn attach(data: WindowPanePromptOwner) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+    fn attach(data: refbox::RefBox<crate::src::shared::pane::window_pane_prompt>) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
         let pr = refbox::RefBox::new(prompt {
             flags: PROMPT_SINGLE,
             buffer: utf8_fromcstr_vec(c""),
