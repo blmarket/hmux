@@ -1319,3 +1319,15 @@ Production callers and traversal tests use the typed interfaces.
 `cargo test --workspace` and `git diff --check` passed, including key/search
 callbacks that remove rows and tests for nested traversal and selection. Internal
 raw projections, drawing helpers and other refcounted model APIs remain pending.
+
+## Implemented retained trees for drawing helpers
+
+Height calculation, prompt drawing and help drawing now borrow retained tree
+handles from their callers. Height calculation detaches its callback during
+invocation, stops if the callback destroys the tree, and preserves a replacement
+callback instead of accessing the released screen or overwriting replacement
+state. The detached callback is restored only when the live tree still needs it.
+
+`cargo test --workspace` and `git diff --check` passed. Regressions cover a height
+callback that destroys its tree and one that replaces itself. Drawing bodies and
+other model implementations still contain raw projections and remain pending.

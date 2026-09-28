@@ -553,11 +553,18 @@ pub unsafe fn mode_tree_zoom(tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode
         (*mtd).zoomed = -(1 as ::core::ffi::c_int);
     };
 }
-unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
+unsafe fn mode_tree_set_height(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut height: u_int = 0;
-    if (*mtd).heightcb.is_some() {
-        height = (*mtd).heightcb.as_mut().expect("non-null height callback")((*s).grid().sy);
+    if let Some(mut callback) = (*mtd).heightcb.take() {
+        height = callback((*s).grid().sy);
+        if (*mtd).dead != 0 {
+            return;
+        }
+        if (*mtd).heightcb.is_none() {
+            (*mtd).heightcb = Some(callback);
+        }
         if height < (*s).grid().sy {
             (*mtd).height = (*s).grid().sy.wrapping_sub(height);
         }
@@ -632,7 +639,7 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     mode_tree_set_current(&mut *mtd, tag.unwrap_or(UINT64_MAX as uint64_t));
     (*mtd).width = (*s).grid().sx;
     if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
-        mode_tree_set_height(mtd);
+        mode_tree_set_height(tree_owner);
     } else {
         (*mtd).height = (*s).grid().sy;
     }
@@ -1290,10 +1297,10 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         }
     }
     if (*mtd).help != 0 {
-        mode_tree_draw_help(mtd, &raw mut ctx);
+        mode_tree_draw_help(tree_owner, &raw mut ctx);
     }
     if (*mtd).prompt.is_some() {
-        mode_tree_draw_prompt(mtd, &mut ctx);
+        mode_tree_draw_prompt(tree_owner, &mut ctx);
     } else {
         (*s).mode &= !MODE_CURSOR;
         screen_write_cursormove(
@@ -1305,7 +1312,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     }
     screen_write_stop(&mut ctx);
 }
-unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_write_ctx) {
+unsafe fn mode_tree_draw_prompt(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, ctx: &mut screen_write_ctx) {
+    let mtd = tree_owner.get();
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut sx: u_int = (*s).grid().sx;
     let mut sy: u_int = (*s).grid().sy;
@@ -1784,7 +1792,8 @@ unsafe fn mode_tree_draw_help_line(
         0 as ::core::ffi::c_int,
     );
 }
-unsafe fn mode_tree_draw_help(mut mtd: *mut mode_tree_data, mut ctx: *mut screen_write_ctx) {
+unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut ctx: *mut screen_write_ctx) {
+    let mtd = tree_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
@@ -3056,6 +3065,43 @@ mod row_owner_tests {
             mode_tree_build(&observer.upgrade().expect("tree retained by callback"));
             assert_eq!(calls.get(), 1);
             assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn height_callback_can_close_tree_without_accessing_freed_screen() {
+        unsafe {
+            let tree = mode_tree_alloc_data();
+            (*tree.get()).zoomed = 1;
+            (*tree.get()).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            let observer = Rc::downgrade(&tree);
+            (*tree.get()).heightcb = Some(Box::new(move |height| {
+                assert_eq!(height, 24);
+                mode_tree_free(observer.upgrade().unwrap());
+                5
+            }));
+            mode_tree_set_height(&tree);
+            assert_eq!((*tree.get()).dead, 1);
+            assert!((*tree.get()).screen.grid.is_none());
+            assert!((*tree.get()).heightcb.is_none());
+            assert_eq!(Rc::strong_count(&tree), 1);
+        }
+    }
+
+    #[test]
+    fn height_callback_preserves_replacement_callback() {
+        unsafe {
+            let tree = mode_tree_alloc_data();
+            (*tree.get()).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            let observer = Rc::downgrade(&tree);
+            (*tree.get()).heightcb = Some(Box::new(move |_| {
+                (*observer.upgrade().unwrap().get()).heightcb = Some(Box::new(|_| 7));
+                5
+            }));
+            mode_tree_set_height(&tree);
+            assert_eq!((*tree.get()).height, 19);
+            mode_tree_set_height(&tree);
+            assert_eq!((*tree.get()).height, 17);
         }
     }
 
