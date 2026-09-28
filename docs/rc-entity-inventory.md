@@ -2441,3 +2441,11 @@ only for the synchronous operation, while callbacks run after input borrows
 end. Respawn and pane teardown free the stream through the handle. The
 empty-pane teardown regression checks that callbacks release and a stale
 handle expires. The inventory now counts 59 remaining in-scope raw fields.
+
+## Implemented weak terminal client observation
+
+`tty_term` now stores a weak client observer instead of a pointer back to the
+client's embedded `tty`. Terminal creation clones the existing `tty.client`
+observer, and the three readers upgrade it directly for client access. The
+terminal-owner regression checks identity and expiration. The inventory now
+counts 58 remaining in-scope raw fields.

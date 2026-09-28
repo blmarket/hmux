@@ -1277,7 +1277,7 @@ pub unsafe fn tty_term_create(
     // The global list and tty keep this address until tty_term_free.
     let mut owner = Box::new(tty_term {
         name: CStr::from_ptr(name).to_owned(),
-        tty: ::core::ptr::null_mut(),
+        client: (*tty).client.clone(),
         applied_features: 0,
         acs: [[0; 2]; 256],
         codes: vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice(),
@@ -1289,7 +1289,6 @@ pub unsafe fn tty_term_create(
     });
 
     term = &raw mut *owner;
-    (*term).tty = tty as *mut tty;
     (*term).entry.le_next = tty_terms.lh_first;
     if !(*term).entry.le_next.is_null() {
         (*tty_terms.lh_first).entry.le_prev = &raw mut (*term).entry.le_next;
@@ -1808,6 +1807,8 @@ mod term_string_owner_tests {
             let first_ptr = &*first as *const tty_term;
             terminal.term = Some(first);
             let second = tty_term_create(&mut terminal, name, caps.as_mut_ptr(), 2).unwrap();
+            assert!(second.client.ptr_eq(&terminal.client));
+            let stale_client = second.client.clone();
             assert!(std::ptr::eq(second.entry.le_next, first_ptr));
             // Remove the tail before the head; the head's back-links must be repaired.
             drop(terminal.term.take());
@@ -1816,6 +1817,7 @@ mod term_string_owner_tests {
             assert_eq!(tty_terms.lh_first, initial_head);
             drop(client_owner);
             assert!(terminal.client.upgrade().is_none());
+            assert!(stale_client.upgrade().is_none());
             global_options = saved;
         }
     }

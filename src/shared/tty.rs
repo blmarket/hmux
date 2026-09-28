@@ -394,7 +394,8 @@ impl tty {
 #[repr(C)]
 pub struct tty_term {
     pub name: std::ffi::CString,
-    pub tty: *mut tty,
+    /// Observes the terminal client without retaining a closed client.
+    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub applied_features: ::core::ffi::c_int,
     pub acs: [[u8; 2]; 256],
     pub codes: Box<[tty_code]>,
@@ -406,7 +407,7 @@ impl tty_term {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            tty: Default::default(),
+            client: Default::default(),
             applied_features: Default::default(),
             acs: [[0; 2]; 256],
             codes: Default::default(),

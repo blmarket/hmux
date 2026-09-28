@@ -72,7 +72,7 @@ unsafe fn cmd_show_messages_terminals(
                 blank = 0 as ::core::ffi::c_int;
             }
             cmdq_print(item, |out| {
-                let owner = (*(*term).tty).client.upgrade().expect("terminal client");
+                let owner = (*term).client.upgrade().expect("terminal client");
                 write!(out, "Terminal {}: ", (n) as u32)?;
                 write_cstr(out, ((*term).name).as_ptr().cast_mut())?;
                 out.write_all(b" for ")?;
