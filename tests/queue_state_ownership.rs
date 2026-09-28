@@ -13,7 +13,7 @@ fn shared_current_is_checked_and_event_snapshots_outlive_queue_items() {
         let observed = Rc::downgrade(&state);
         let client = client::new();
         (*client.get()).queue = Some(cmdq_new());
-        let item_owner = cmdq_get_callback_owned(c"state snapshot test".as_ptr(), Some(Box::new(|_| hmux2::src::shared::command::CMD_RETURN_NORMAL)));
+        let item_owner = cmdq_get_callback_owned(c"state snapshot test", Some(Box::new(|_| hmux2::src::shared::command::CMD_RETURN_NORMAL)));
         let item = &mut *item_owner.get();
         item.state = Some(state.clone());
         let retained = cmdq_get_state_owned(&*item);

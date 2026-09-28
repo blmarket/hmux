@@ -151,7 +151,7 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
     };
     let after = after_owner.get();
     let new_item_allocation = cmdq_get_callback_owned(
-        c"cmd_source_file_complete_cb".as_ptr(),
+        c"cmd_source_file_complete_cb",
         Some(Box::new(move |item| unsafe {
             cmd_source_file_complete_cb(item, cdata)
         })),

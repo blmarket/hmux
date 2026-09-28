@@ -1530,7 +1530,7 @@ pub unsafe fn mode_tree_set_prompt(
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && client_owner.is_some() {
             let tree = tree.clone();
         let item_allocation = cmdq_get_callback_owned(
-            c"mode_tree_prompt_accept".as_ptr(),
+            c"mode_tree_prompt_accept",
             mode_tree_prompt_accept(tree),
         );
         cmdq_append(client_owner, item_allocation);

@@ -839,7 +839,7 @@ pub unsafe fn key_bindings_init() {
     cmdq_append(
         None,
         cmdq_get_callback_owned(
-            b"key_bindings_init_done\0" as *const u8 as *const ::core::ffi::c_char,
+            c"key_bindings_init_done",
             Some(Box::new(|_| unsafe { key_bindings_init_done() })),
         ),
     );
@@ -867,7 +867,7 @@ pub unsafe fn key_bindings_dispatch(
     }
     if readonly == 0 {
         new_item_allocation = cmdq_get_callback_owned(
-            b"key_bindings_read_only\0" as *const u8 as *const ::core::ffi::c_char,
+            c"key_bindings_read_only",
             Some(Box::new(|item| unsafe {
                 key_bindings_read_only(item)
             })),

@@ -81,7 +81,7 @@ pub unsafe fn start_cfg() {
     cfg_client = registry_c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     if !c.is_null() {
         let item = cmdq_get_callback_owned(
-            b"cfg_client_done\0" as *const u8 as *const ::core::ffi::c_char,
+            c"cfg_client_done",
             Some(Box::new(|_| unsafe { cfg_client_done() })),
         );
         cfg_item = std::rc::Rc::downgrade(&item);
@@ -96,7 +96,7 @@ pub unsafe fn start_cfg() {
     cmdq_append(
         None,
         cmdq_get_callback_owned(
-            b"cfg_done\0" as *const u8 as *const ::core::ffi::c_char,
+            c"cfg_done",
             Some(Box::new(|_| unsafe { cfg_done() })),
         ),
     );

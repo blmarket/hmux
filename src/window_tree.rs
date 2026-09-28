@@ -1944,7 +1944,7 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
 }
 unsafe fn window_tree_enqueue_command_done(client_owner: Option<&Rc<UnsafeCell<client>>>, mode: &Rc<UnsafeCell<window_tree_modedata>>) {
     let item_allocation = cmdq_get_callback_owned(
-        c"window_tree_command_done".as_ptr(),
+        c"window_tree_command_done",
         window_tree_command_done(mode.clone()),
     );
     cmdq_append(client_owner, item_allocation);

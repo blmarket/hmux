@@ -1175,7 +1175,7 @@ unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
             ) {
                 Err(error) => {
                     let error_item_allocation = cmdq_get_callback_owned(
-                        b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
+                        c"control_error",
                         Some(Box::new(move |item| unsafe {
                             control_error(item, error)
                         })),

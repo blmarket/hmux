@@ -58,11 +58,11 @@ use std::ffi::{CStr, CString};
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
-unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
+unsafe fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
     let owner = std::rc::Rc::new(std::cell::UnsafeCell::new(cmdq_item::empty()));
     let item = owner.get();
     (*item).observer = std::rc::Rc::downgrade(&owner);
-    let label = label.map_or(b"(null)".as_slice(), CStr::to_bytes);
+    let label = label.to_bytes();
     let address = format!("{item:p}");
     let mut bytes = Vec::with_capacity(label.len() + address.len() + 3);
     bytes.push(b'[');
@@ -490,7 +490,7 @@ pub unsafe fn cmdq_get_command(
 ) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
     let cmdlist = commands.borrow();
     if cmdlist.list.is_empty() {
-        return cmdq_get_callback_owned(c"cmdq_empty_command".as_ptr(), Some(Box::new(|_| CMD_RETURN_NORMAL)));
+        return cmdq_get_callback_owned(c"cmdq_empty_command", Some(Box::new(|_| CMD_RETURN_NORMAL)));
     }
     let state = state.cloned().unwrap_or_else(|| cmdq_new_state(
         std::ptr::null_mut(), std::ptr::null_mut(), 0,
@@ -498,7 +498,7 @@ pub unsafe fn cmdq_get_command(
     let mut remaining = None;
     for command in cmdlist.list.iter().rev() {
         let cmd = command.as_ptr().cast_mut();
-        let owner = cmdq_new_named_item(Some(cmd_get_entry(&*cmd).name));
+        let owner = cmdq_new_named_item(cmd_get_entry(&*cmd).name);
         let item = owner.get();
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
@@ -757,14 +757,10 @@ unsafe fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq
 }
 #[must_use = "enqueue the detached command chain"]
 pub unsafe fn cmdq_get_callback_owned(
-    mut name: *const ::core::ffi::c_char,
-    mut cb: cmdq_cb,
+    name: &'static CStr,
+    cb: cmdq_cb,
 ) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
-    let owner = cmdq_new_named_item(if name.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(name))
-    });
+    let owner = cmdq_new_named_item(name);
     let item = owner.get();
     (*item).type_0 = CMDQ_CALLBACK;
     (*item).group = 0 as u_int;
@@ -781,7 +777,7 @@ pub unsafe fn cmdq_get_callback_owned(
 pub unsafe fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
     let error = CStr::from_ptr(error).to_owned();
     cmdq_get_callback_owned(
-        b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
+        c"cmdq_error_callback",
         Some(Box::new(move |item| unsafe {
             cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
             CMD_RETURN_NORMAL
@@ -966,7 +962,7 @@ mod client_observer_tests {
     fn client_accessors_retain_upgrades_and_handle_expired_observers() {
         unsafe {
             let mut queue = cmdq_new();
-            let item_owner = cmdq_get_callback_owned(c"accessor test".as_ptr(), None);
+            let item_owner = cmdq_get_callback_owned(c"accessor test", None);
             let item = &mut *item_owner.get();
             item.queue = &mut *queue;
             assert!(cmdq_get_client(Some(&item)).is_none());
@@ -997,11 +993,11 @@ mod client_observer_tests {
             (*owner.get()).queue = Some(cmdq_new());
             let observer = Rc::downgrade(&owner);
             let calls = Rc::new(std::cell::Cell::new(0));
-            let waiting_allocation = cmdq_get_callback_owned(c"wait".as_ptr(), Some(Box::new(|_| CMD_RETURN_WAIT)));
+            let waiting_allocation = cmdq_get_callback_owned(c"wait", Some(Box::new(|_| CMD_RETURN_WAIT)));
             let waiting = waiting_allocation.get();
             let seen = calls.clone();
             let expected = observer.clone();
-            let following_allocation = cmdq_get_callback_owned(c"following".as_ptr(), Some(Box::new(move |item| {
+            let following_allocation = cmdq_get_callback_owned(c"following", Some(Box::new(move |item| {
                 assert!(Rc::ptr_eq(&cmdq_get_client(Some(&*item.get())).unwrap(), &expected.upgrade().unwrap()));
                 seen.set(seen.get() + 1);
                 CMD_RETURN_NORMAL
@@ -1028,13 +1024,13 @@ mod client_observer_tests {
             let owner = client::new();
             (*owner.get()).queue = Some(cmdq_new());
             let observer = Rc::downgrade(&owner);
-            let first_allocation = cmdq_get_callback_owned(c"first".as_ptr(), None);
+            let first_allocation = cmdq_get_callback_owned(c"first", None);
             let first = first_allocation.get();
-            let second_allocation = cmdq_get_callback_owned(c"second".as_ptr(), None);
+            let second_allocation = cmdq_get_callback_owned(c"second", None);
             let second = second_allocation.get();
             (*first).next = Some(second_allocation);
             assert_eq!(cmdq_append(Some(&owner), first_allocation).upgrade().unwrap().get(), second);
-            let inserted_allocation = cmdq_get_callback_owned(c"inserted".as_ptr(), None);
+            let inserted_allocation = cmdq_get_callback_owned(c"inserted", None);
             let inserted = inserted_allocation.get();
             assert_eq!(cmdq_insert_after(&(*first).observer.upgrade().unwrap(), inserted_allocation).upgrade().unwrap().get(), inserted);
             assert_eq!(Rc::strong_count(&owner), 4);
@@ -1064,7 +1060,7 @@ mod client_observer_tests {
             let target = client::new();
             let observer = Rc::downgrade(&owner);
             let mut queue = cmdq_new();
-            let item_owner = cmdq_get_callback_owned(c"accessor test".as_ptr(), None);
+            let item_owner = cmdq_get_callback_owned(c"accessor test", None);
             let item = &mut *item_owner.get();
             item.queue = &mut *queue;
             item.client_owner = Some(owner);
@@ -1106,7 +1102,7 @@ mod cancellation_tests {
         unsafe {
             let mut queue = cmdq_new();
             let address = &mut *queue as *mut cmdq_list;
-            let item_allocation = cmdq_get_callback_owned(c"queued-cancel".as_ptr(), None);
+            let item_allocation = cmdq_get_callback_owned(c"queued-cancel", None);
             let item = item_allocation.get();
             let payload = Payload;
             cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
@@ -1137,7 +1133,7 @@ mod lifecycle_tests {
     fn removal_rejects_an_extra_strong_owner_before_cleanup() {
         unsafe {
             let mut queue = cmdq_new();
-            let item = cmdq_get_callback_owned(c"extra owner".as_ptr(), None);
+            let item = cmdq_get_callback_owned(c"extra owner", None);
             (*item.get()).queue = &mut *queue;
             let observer = Rc::downgrade(&item);
             let guard = item.clone();
@@ -1159,7 +1155,7 @@ mod lifecycle_tests {
     #[test]
     fn dropping_without_removal_panics_and_does_not_run_cancellation() {
         unsafe {
-            let item = cmdq_get_callback_owned(c"unreleased detached item".as_ptr(), None);
+            let item = cmdq_get_callback_owned(c"unreleased detached item", None);
             let observer = Rc::downgrade(&item);
             let cancelled = Rc::new(Cell::new(false));
             let called = cancelled.clone();
@@ -1180,9 +1176,9 @@ mod lifecycle_tests {
             let client = client::new();
             (*client.get()).queue = Some(cmdq_new());
             let cancelled = Rc::new(Cell::new(0));
-            let first = cmdq_get_callback_owned(c"first".as_ptr(), None);
-            let same = cmdq_get_callback_owned(c"same group".as_ptr(), None);
-            let other = cmdq_get_callback_owned(c"other group".as_ptr(), None);
+            let first = cmdq_get_callback_owned(c"first", None);
+            let same = cmdq_get_callback_owned(c"same group", None);
+            let other = cmdq_get_callback_owned(c"other group", None);
             (*first.get()).group = 7;
             (*same.get()).group = 7;
             (*other.get()).group = 9;

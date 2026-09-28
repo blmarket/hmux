@@ -755,7 +755,7 @@ pub unsafe fn status_prompt_set(
         cmdq_append(
             c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
             cmdq_get_callback_owned(
-                b"status_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
+                c"status_prompt_accept",
                 Some(Box::new({
                     let observer = std::rc::Rc::downgrade(c_owner);
                     move |_| unsafe {

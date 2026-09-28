@@ -3389,7 +3389,7 @@ unsafe fn server_client_handle_key0(
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
     item_allocation = cmdq_get_callback_owned(
-        b"server_client_key_callback\0" as *const u8 as *const ::core::ffi::c_char,
+        c"server_client_key_callback",
         Some(Box::new(move |item| unsafe {
             server_client_key_callback(item, queued_event)
         })),
@@ -4711,7 +4711,7 @@ unsafe fn server_client_default_command(item_handle: &std::rc::Rc<std::cell::Uns
     let cmdlist = options_get_command(global_options);
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(&cmdlist.borrow()) == 0 {
         new_item_allocation = cmdq_get_callback_owned(
-            b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
+            c"server_client_read_only",
             Some(Box::new(|item| unsafe {
                 server_client_read_only(item)
             })),
@@ -4773,7 +4773,7 @@ unsafe fn server_client_dispatch_command(
         argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
         if argc == 0 as ::core::ffi::c_int {
             new_item_allocation = Some(cmdq_get_callback_owned(
-                b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
+                c"server_client_default_command",
                 Some(Box::new(|item| unsafe {
                     server_client_default_command(item)
                 })),
@@ -4792,7 +4792,7 @@ unsafe fn server_client_dispatch_command(
                         && cmd_list_all_have(&pr.cmdlist.as_ref().expect("parsed command list").borrow()) == 0
                     {
                         new_item_allocation = Some(cmdq_get_callback_owned(
-                            b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
+                            c"server_client_read_only",
                             Some(Box::new(|item| unsafe {
                                 server_client_read_only(item)
                             })),
@@ -4812,7 +4812,7 @@ unsafe fn server_client_dispatch_command(
                 cmdq_append(
                     Some(owner),
                     cmdq_get_callback_owned(
-                        b"server_client_command_done\0" as *const u8 as *const ::core::ffi::c_char,
+                        c"server_client_command_done",
                         Some(Box::new(|item| unsafe {
                             server_client_command_done(item)
                         })),
