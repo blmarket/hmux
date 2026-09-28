@@ -76,7 +76,7 @@ impl session {
             attached: Default::default(),
             tio: Default::default(),
             environ: Default::default(),
-            entry: session_entry { owner: None },
+            entry: session_entry { owner: refbox::Weak::new() },
         }
     }
 }
@@ -84,7 +84,7 @@ impl session {
 #[repr(C)]
 pub struct session_entry {
     /// Weak traversal handle into the session index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>>,
+    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>,
 }
 
 #[repr(C)]
@@ -104,7 +104,7 @@ impl session_group {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            entry: session_group_entry { owner: None },
+            entry: session_group_entry { owner: refbox::Weak::new() },
             members: Default::default(),
         }
     }
@@ -113,7 +113,7 @@ impl session_group {
 #[repr(C)]
 pub struct session_group_entry {
     /// Weak traversal handle into the session group index.
-    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
+    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>,
 }
 
 #[repr(C)]

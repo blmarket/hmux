@@ -81,7 +81,7 @@ pub unsafe fn sessions_insert(head: *mut sessions, session: Rc<UnsafeCell<sessio
         std::collections::btree_map::Entry::Occupied(entry) => return crate::src::shared::rc::as_ptr(entry.get()),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(session);
-            (*elm).entry.owner = Some(observer);
+            (*elm).entry.owner = observer;
         }
     }
     std::ptr::null_mut()
@@ -103,7 +103,7 @@ pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> Option<
         }
         (map.remove(key).expect("matching session"), map.is_empty())
     };
-    (*elm).entry.owner = None;
+    (*elm).entry.owner = refbox::Weak::new();
     if empty {
         (*head).storage = None;
     }
@@ -135,9 +135,7 @@ pub fn sessions_after(head: &sessions, name: &[u8]) -> Option<Rc<UnsafeCell<sess
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
 pub unsafe fn sessions_next(elm: &session) -> Option<Rc<UnsafeCell<session>>> {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return None;
-    };
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return None,
@@ -163,7 +161,7 @@ impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
         let mut owner = Box::new(session_group {
             name: name.to_owned(),
-            entry: session_group_entry { owner: None },
+            entry: session_group_entry { owner: refbox::Weak::new() },
             members: Vec::new(),
         });
 
@@ -192,7 +190,7 @@ pub unsafe fn session_groups_insert(
         std::collections::btree_map::Entry::Vacant(entry) => {
             let elm = owner.node_ptr();
             entry.insert(owner);
-            (*elm).entry.owner = Some(observer);
+            (*elm).entry.owner = observer;
         }
     }
     std::ptr::null_mut()
@@ -215,7 +213,7 @@ pub unsafe fn session_groups_remove(head: *mut session_groups, elm: *mut session
         if map.get(key).map(|owner| owner.node_ptr()) != Some(elm) {
             return false;
         }
-        (*elm).entry.owner = None;
+        (*elm).entry.owner = refbox::Weak::new();
         (
             map.remove(key).expect("indexed session group disappeared"),
             map.is_empty(),
@@ -238,9 +236,7 @@ pub fn session_groups_minmax(head: &session_groups) -> *mut session_group {
     pair.map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
 pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
-    let Some(owner) = elm.entry.owner.as_ref() else {
-        return std::ptr::null_mut();
-    };
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -765,7 +761,7 @@ pub unsafe fn session_group_contains(target: Option<&session>) -> *mut session_g
 pub unsafe fn session_group_find(mut name: *const ::core::ffi::c_char) -> *mut session_group {
     let mut sg: session_group = session_group {
         name: Default::default(),
-        entry: session_group_entry { owner: None },
+        entry: session_group_entry { owner: refbox::Weak::new() },
         ..session_group::empty()
     };
     sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
@@ -1084,12 +1080,12 @@ mod session_index_tests {
             assert!(session_groups_insert(&mut head, first_owner).is_null());
             assert!(session_groups_insert(&mut head, second_owner).is_null());
 
-            let index_observer = (*second).entry.owner.as_ref().unwrap().clone();
+            let index_observer = (*second).entry.owner.clone();
             let duplicate = session_group::new(c"alpha");
             assert_eq!(session_groups_insert(&mut head, duplicate), first);
-            assert!((*second).entry.owner.is_some());
+            assert!(!(*second).entry.owner.is_empty());
             assert!(!session_groups_remove(&mut other, second));
-            assert!((*second).entry.owner.is_some());
+            assert!(!(*second).entry.owner.is_empty());
 
             let mut moved = head;
             assert_eq!(session_groups_next(&*first), second);
