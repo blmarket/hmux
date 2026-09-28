@@ -2171,3 +2171,16 @@ replacement and window-destruction behavior. No new Rc-managed type is added.
 `cargo test --workspace` and `git diff --check` passed, including menu replacement
 and target-window destruction coverage. Raw window access in menu display and raw
 session relationships still require migration.
+
+## Implemented retained window setup for menu display
+
+Menu display acquires its setup window from the current link's existing holder
+or the target state's Weak window. A WindowOwner preserves window release policy;
+sizing and remembered menu coordinates use a mutable window borrow. Setup releases
+that owner before closing an existing menu, so cancellation callbacks retain the
+ability to destroy the target. Installation borrows the upgraded window directly.
+No new Rc-managed entity type is introduced.
+
+`cargo test --workspace` and `git diff --check` passed, including replacement
+callbacks that release the final target-window owner. Client/session link access
+and command-find/redraw raw API boundaries remain pending.

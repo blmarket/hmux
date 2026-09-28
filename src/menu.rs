@@ -34,7 +34,7 @@ use crate::src::shared::mouse::{
 use crate::src::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;
-use crate::src::shared::window::window;
+use crate::src::shared::window::{window, WindowOwner};
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
 use std::cell::UnsafeCell;
@@ -616,29 +616,31 @@ pub unsafe fn menu_display(
     fs: *mut cmd_find_state,
     cb: menu_choice_cb,
 ) {
-    let w = if fs.is_null() {
+    let setup_window = WindowOwner::adopt(if fs.is_null() {
         let client = &*client_owner.expect("menu without a target requires a client").get();
-        (*(*client.session).curw).window_ptr()
+        let link = &*(*client.session).curw;
+        link.window_owner.as_ref().expect("current link has a window").as_rc().clone()
     } else {
-        (*fs).w_ptr()
-    };
-    let window = (*w).observer.clone();
+        (*fs).w.upgrade().expect("live menu target window")
+    });
+    let window = Rc::downgrade(setup_window.as_rc());
+    let w = &mut *setup_window.as_rc().get();
     let sx = menu.width.wrapping_add(4);
     let sy = menu.count.wrapping_add(2);
-    if sx >= (*w).sx {
+    if sx >= w.sx {
         px = 0;
-    } else if px.wrapping_add(sx) > (*w).sx {
-        px = (*w).sx.wrapping_sub(sx);
+    } else if px.wrapping_add(sx) > w.sx {
+        px = w.sx.wrapping_sub(sx);
     }
-    if sy >= (*w).sy {
+    if sy >= w.sy {
         py = 0;
-    } else if py.wrapping_add(sy) > (*w).sy {
-        py = (*w).sy.wrapping_sub(sy);
+    } else if py.wrapping_add(sy) > w.sy {
+        py = w.sy.wrapping_sub(sy);
     }
-    (*w).menu_last_px = px;
-    (*w).menu_last_py = py;
+    w.menu_last_px = px;
+    w.menu_last_py = py;
     if lines == BOX_LINES_DEFAULT {
-        lines = options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), c"menu-border-lines".as_ptr()) as box_lines;
+        lines = options_get_number(options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options), c"menu-border-lines".as_ptr()) as box_lines;
     }
     let owner = MenuOwner::new(menu_data {
         w: window.clone(),
@@ -663,7 +665,7 @@ pub unsafe fn menu_display(
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
         if !fs.is_null() {
             cmd_find_copy_state(&mut md.fs, fs);
-        } else if cmd_find_from_window(&mut md.fs, w, 0) != 0 {
+        } else if cmd_find_from_window(&mut md.fs, setup_window.as_ptr(), 0) != 0 {
             cmd_find_clear_state(&mut md.fs, 0);
         }
         screen_init(&mut md.s, sx, sy, 0);
@@ -672,14 +674,15 @@ pub unsafe fn menu_display(
         }
         md.s.mode &= !MODE_CURSOR;
     }
+    drop(setup_window);
     menu_close(&window, None);
     let replaced = {
         let Some(retained) = window.upgrade() else {
             menu_free_data(owner);
             return;
         };
-        let w = crate::src::shared::rc::as_ptr(&retained);
-        (*w).menu.replace(owner)
+        let w = &mut *retained.get();
+        w.menu.replace(owner)
     };
     if let Some(replaced) = replaced {
         menu_free_data(replaced);
