@@ -2356,10 +2356,10 @@ pub unsafe fn mode_tree_run_command(
 }
 
 #[cfg(test)]
-unsafe fn mode_tree_test_row(mtd: *mut mode_tree_data) -> ModeTreeItemRef {
+fn mode_tree_test_row(mtd: &mut mode_tree_data) -> ModeTreeItemRef {
     let owner = refbox::RefBox::new(mode_tree_item::empty());
     let observer = ModeTreeItemRef::observe(&owner);
-    (*mtd).children.items.push(owner);
+    mtd.children.items.push(owner);
     observer
 }
 
@@ -2456,17 +2456,12 @@ mod mode_tree_tests {
         }
     }
 
-    struct NestedBuildState {
-        mtd: *mut mode_tree_data,
-        empty: bool,
-    }
-
-    unsafe fn nested_build(state: &mut NestedBuildState) {
-        if state.empty {
+    fn nested_build(mtd: &mut mode_tree_data, empty: bool) {
+        if empty {
             return;
         }
         let parent = mode_tree_add(
-            &mut *state.mtd,
+            mtd,
             None,
             ModeTreeItemData::None,
             1,
@@ -2476,7 +2471,7 @@ mod mode_tree_tests {
         );
         for id in 0..64 {
             mode_tree_add(
-                &mut *state.mtd,
+                mtd,
                 Some(&parent),
                 ModeTreeItemData::None,
                 id as u64 + 2,
@@ -2491,32 +2486,38 @@ mod mode_tree_tests {
     fn nested_lines_survive_growth_and_clear_on_empty_rebuild() {
         unsafe {
             let mtd_owner = mode_tree_alloc_data();
-            let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
-            (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
-            let state = Box::into_raw(Box::new(NestedBuildState { mtd, empty: false }));
-            (*mtd).buildcb = Some(Box::new(move |_, _, _| {
-                nested_build(&mut *state);
+            (&mut *mtd_owner.get()).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
+            let empty = Rc::new(std::cell::Cell::new(false));
+            let callback_empty = empty.clone();
+            let observer = Rc::downgrade(&mtd_owner);
+            let callback_tree = observer.clone();
+            (&mut *mtd_owner.get()).buildcb = Some(Box::new(move |_, _, _| {
+                let tree = callback_tree.upgrade().expect("live test tree");
+                nested_build(&mut *tree.get(), callback_empty.get());
                 None
             }));
-            (*mtd).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            (&mut *mtd_owner.get()).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
 
             mode_tree_build(&mtd_owner);
-            assert_eq!((*mtd).lines.len(), 65);
-            assert_eq!((&(*mtd).lines)[0].depth, 0);
-            for i in 1..65 {
-                assert_eq!((&(*mtd).lines)[i].depth, 1);
-                assert_eq!((&(*mtd).lines)[i].item.borrow().line, i as u_int);
+            {
+                let tree = &*mtd_owner.get();
+                assert_eq!(tree.lines.len(), 65);
+                assert_eq!(tree.lines[0].depth, 0);
+                for i in 1..65 {
+                    assert_eq!(tree.lines[i].depth, 1);
+                    assert_eq!(tree.lines[i].item.borrow().line, i as u_int);
+                }
             }
-            assert_eq!(mode_tree_set_current(&mut *mtd, 65), 1);
-            assert_eq!((*mtd).current, 64);
+            assert_eq!(mode_tree_set_current(&mut *mtd_owner.get(), 65), 1);
+            assert_eq!((&*mtd_owner.get()).current, 64);
 
-            (*state).empty = true;
+            empty.set(true);
             mode_tree_build(&mtd_owner);
-            assert!((*mtd).lines.is_empty());
-            mode_tree_free_items(&mut (*mtd).children);
-            drop((*mtd).screen.grid.take());
+            assert!((&*mtd_owner.get()).lines.is_empty());
+            mode_tree_free_items(&mut (&mut *mtd_owner.get()).children);
+            drop((&mut *mtd_owner.get()).screen.grid.take());
             drop(mtd_owner);
-            drop(Box::from_raw(state));
+            assert!(observer.upgrade().is_none(), "build callback must not retain its tree");
         }
     }
 
@@ -2778,7 +2779,7 @@ mod menu_callback_owner_tests {
 
     unsafe fn one_line(tree: &Rc<UnsafeCell<mode_tree_data>>) {
         (*rc::as_ptr(tree)).lines.push(mode_tree_line {
-            item: mode_tree_test_row(rc::as_ptr(tree)),
+            item: mode_tree_test_row(&mut *tree.get()),
             depth: 0,
             last: 1,
             flat: 0,

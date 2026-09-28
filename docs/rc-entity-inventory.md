@@ -2064,3 +2064,17 @@ for later selection and preview operations.
 mode_tree_data declarations remain in these four chooser modules. UnsafeCell
 projections, mode payload pointers, other model accesses and raw mode-tree test
 helpers remain pending; this is not a complete alias-safety migration.
+
+## Implemented typed mode-tree test helpers
+
+The test-row and nested-build helpers accept mutable tree borrows. The nested
+rebuild fixture observes its tree through Weak and shares its rebuild switch
+through Rc<Cell<bool>>, replacing raw tree and manually allocated callback-state
+pointers. Its callback upgrades only for dispatch; a lifetime assertion verifies
+that the callback cannot form a strong ownership cycle. Assertions use scoped
+shared tree borrows between rebuilds.
+
+`cargo test --workspace` passed; the nested rebuild test passed again after the
+final borrow cleanup. `git diff --check` passed. No explicit raw mode_tree_data
+types remain under src, but inferred raw projections in tree internals and other
+tests still require migration, along with the broader model relationships.
