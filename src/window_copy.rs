@@ -761,7 +761,7 @@ unsafe fn window_copy_view_init(
     (*data).ictx = Some(input_init(
         None,
         ::core::ptr::null_mut::<bufferevent>(),
-        ::core::ptr::null_mut::<colour_palette>(),
+        Default::default(),
         None,
     ));
     (*data).mx = (*data).cx;

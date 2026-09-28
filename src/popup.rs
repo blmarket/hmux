@@ -1202,7 +1202,7 @@ pub unsafe fn popup_display(
     (*pd).ictx = Some(input_init(
         None,
         job_get_event((*pd).job),
-        (*pd).palette.as_ptr().cast_mut(),
+        crate::src::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
         (*pd).c.as_ref(),
     ));
     (*pd).published = true;

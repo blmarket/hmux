@@ -18,6 +18,35 @@ pub const INPUT_REQUEST_PALETTE: input_request_type = 0;
 
 pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c_int;
 
+#[derive(Default)]
+pub enum InputPalette {
+    #[default]
+    None,
+    Pane(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Popup(refbox::Weak<colour_palette>),
+}
+
+impl InputPalette {
+    /// Borrow the current palette for one operation; no guard crosses parser callbacks.
+    pub fn with_mut<R>(&self, access: impl FnOnce(&mut colour_palette) -> R) -> Option<R> {
+        match self {
+            Self::None => None,
+            Self::Pane(observer) => {
+                let owner = observer.upgrade()?;
+                Some(access(unsafe { &mut (*owner.get()).palette }))
+            }
+            Self::Popup(observer) => {
+                let mut palette = match observer.try_borrow_mut() {
+                    Ok(palette) => palette,
+                    Err(refbox::BorrowError::Dropped) => return None,
+                    Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
+                };
+                Some(access(&mut palette))
+            }
+        }
+    }
+}
+
 pub type input_request_type = ::core::ffi::c_uint;
 
 #[repr(C)]
@@ -26,7 +55,7 @@ pub struct input_ctx {
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub event: crate::src::reactor::StreamHandle,
     pub ctx: screen_write_ctx,
-    pub palette: *mut colour_palette,
+    pub palette: InputPalette,
     /// Client observation; request/context ownership does not retain the client.
     pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub cell: input_cell,

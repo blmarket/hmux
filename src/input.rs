@@ -127,7 +127,7 @@ impl input_ctx {
                 scrolled: 0,
                 bg: 0,
             },
-            palette: ::core::ptr::null_mut(),
+            palette: Default::default(),
             c: std::rc::Weak::new(),
             cell: Default::default(),
             old_cell: Default::default(),
@@ -177,10 +177,28 @@ mod input_buffer_ownership_tests {
     use crate::src::reactor::{bufferevent_free, bufferevent_new};
 
     #[test]
+    fn palette_source_observes_pane_or_popup_owner() {
+        use crate::src::shared::input::InputPalette;
+        let pane = window_pane::new();
+        let pane_source = InputPalette::Pane(std::rc::Rc::downgrade(&pane));
+        pane_source.with_mut(|palette| palette.fg = 17);
+        assert_eq!(unsafe { (*pane.get()).palette.fg }, 17);
+        drop(pane);
+        assert!(pane_source.with_mut(|palette| palette.fg).is_none());
+
+        let popup = refbox::RefBox::new(colour_palette::default());
+        let popup_source = InputPalette::Popup(popup.downgrade());
+        popup_source.with_mut(|palette| palette.bg = 23);
+        assert_eq!(popup.try_borrow_mut().unwrap().bg, 23);
+        drop(popup);
+        assert!(popup_source.with_mut(|palette| palette.bg).is_none());
+    }
+
+    #[test]
     fn input_reply_skips_a_freed_stream() {
         unsafe {
             let stream = bufferevent_new(-1, None, None, None);
-            let mut input = input_init(None, stream, std::ptr::null_mut(), None);
+            let mut input = input_init(None, stream, Default::default(), None);
             assert!(input.event.is_alive());
             bufferevent_free(stream);
             assert!(!input.event.is_alive());
@@ -196,7 +214,7 @@ mod input_buffer_ownership_tests {
             let mut owner = input_init(
                 None,
                 std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                Default::default(),
                 None,
             );
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
@@ -221,7 +239,7 @@ mod input_buffer_ownership_tests {
     fn input_observes_pane_and_can_outlive_its_allocation() {
         unsafe {
             let pane = window_pane::new();
-            let context = input_init(Some(&pane), std::ptr::null_mut(), std::ptr::null_mut(), None);
+            let context = input_init(Some(&pane), std::ptr::null_mut(), Default::default(), None);
             assert_eq!(std::rc::Rc::strong_count(&pane), 1);
             assert!(context.wp.ptr_eq(&std::rc::Rc::downgrade(&pane)));
             drop(pane);
@@ -238,7 +256,7 @@ mod input_buffer_ownership_tests {
             let pointer = pane.get();
             (*pointer).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
             (*pointer).base.mode |= MODE_SYNC;
-            (*pointer).ictx = Some(input_init(Some(&pane), std::ptr::null_mut(), std::ptr::null_mut(), None));
+            (*pointer).ictx = Some(input_init(Some(&pane), std::ptr::null_mut(), Default::default(), None));
             let observed = std::rc::Rc::downgrade(&pane);
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             let callback_calls = calls.clone();
@@ -2297,7 +2315,7 @@ unsafe fn input_restore_state(mut ictx: *mut input_ctx) {
 pub unsafe fn input_init(
     wp: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut bev: *mut bufferevent,
-    mut palette: *mut colour_palette,
+    palette: crate::src::shared::input::InputPalette,
     c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
 ) -> Box<input_ctx> {
     let mut owner = Box::new(input_ctx::new());
@@ -2838,7 +2856,7 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     }
     match (*entry).type_0 {
         9 => {
-            colour_palette_clear((*ictx).palette.as_mut());
+            let _ = (*ictx).palette.with_mut(|palette| colour_palette_clear(Some(palette)));
             input_reset_cell(ictx);
             screen_write_reset(&mut *sctx);
             screen_write_fullredraw(&mut *sctx);
@@ -5011,7 +5029,6 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
     let mut c: ::core::ffi::c_int = 0;
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut palette: *mut colour_palette = (*ictx).palette;
     while !s.is_null() && *s as ::core::ffi::c_int != '\0' as i32 {
         idx = strtol(s, &raw mut next, 10 as ::core::ffi::c_int);
         let fresh9 = next;
@@ -5030,10 +5047,10 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
             if strcmp(s, b"?\0" as *const u8 as *const ::core::ffi::c_char)
                 == 0 as ::core::ffi::c_int
             {
-                c = colour_palette_get(
-                    palette.as_ref(),
-                    (idx | COLOUR_FLAG_256 as ::core::ffi::c_long) as ::core::ffi::c_int,
-                );
+                c = (*ictx).palette.with_mut(|palette| {
+                    colour_palette_get(Some(palette),
+                        (idx | COLOUR_FLAG_256 as ::core::ffi::c_long) as ::core::ffi::c_int)
+                }).unwrap_or(-1);
                 if c != -(1 as ::core::ffi::c_int) {
                     input_osc_colour_reply(
                         ictx,
@@ -5053,7 +5070,9 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
                 if c == -(1 as ::core::ffi::c_int) {
                     s = next;
                 } else {
-                    if colour_palette_set(palette.as_mut(), idx as ::core::ffi::c_int, c) != 0 {
+                    if (*ictx).palette.with_mut(|palette| {
+                        colour_palette_set(Some(palette), idx as ::core::ffi::c_int, c)
+                    }).unwrap_or(0) != 0 {
                         redraw = 1 as ::core::ffi::c_int;
                     }
                     s = next;
@@ -5268,8 +5287,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         log_debug(format_args!("bad OSC 10: {}", log_cstr((p) as *const _)));
         return;
     }
-    if !(*ictx).palette.is_null() {
-        (*(*ictx).palette).fg = c;
+    if (*ictx).palette.with_mut(|palette| palette.fg = c).is_some() {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
@@ -5283,8 +5301,7 @@ unsafe fn input_osc_110(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     if *p as ::core::ffi::c_int != '\0' as i32 {
         return;
     }
-    if !(*ictx).palette.is_null() {
-        (*(*ictx).palette).fg = 8 as ::core::ffi::c_int;
+    if (*ictx).palette.with_mut(|palette| palette.fg = 8 as ::core::ffi::c_int).is_some() {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
@@ -5316,8 +5333,7 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         log_debug(format_args!("bad OSC 11: {}", log_cstr((p) as *const _)));
         return;
     }
-    if !(*ictx).palette.is_null() {
-        (*(*ictx).palette).bg = c;
+    if (*ictx).palette.with_mut(|palette| palette.bg = c).is_some() {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
@@ -5331,8 +5347,7 @@ unsafe fn input_osc_111(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     if *p as ::core::ffi::c_int != '\0' as i32 {
         return;
     }
-    if !(*ictx).palette.is_null() {
-        (*(*ictx).palette).bg = 8 as ::core::ffi::c_int;
+    if (*ictx).palette.with_mut(|palette| palette.bg = 8 as ::core::ffi::c_int).is_some() {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
@@ -5762,7 +5777,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if *p as ::core::ffi::c_int == '\0' as i32 {
-        colour_palette_clear((*ictx).palette.as_mut());
+        let _ = (*ictx).palette.with_mut(|palette| colour_palette_clear(Some(palette)));
         screen_write_fullredraw(&mut (*ictx).ctx);
         return;
     }
@@ -5777,11 +5792,10 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
             bad = 1 as ::core::ffi::c_int;
             break;
         } else {
-            if colour_palette_set(
-                (*ictx).palette.as_mut(),
-                idx as ::core::ffi::c_int,
-                -(1 as ::core::ffi::c_int),
-            ) != 0
+            if (*ictx).palette.with_mut(|palette| {
+                colour_palette_set(Some(palette), idx as ::core::ffi::c_int,
+                    -(1 as ::core::ffi::c_int))
+            }).unwrap_or(0) != 0
             {
                 redraw = 1 as ::core::ffi::c_int;
             }

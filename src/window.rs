@@ -2839,7 +2839,7 @@ pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
     (*wp).ictx = Some(input_init(
         Some(&pane_owner),
         stream,
-        &raw mut (*wp).palette,
+        crate::src::shared::input::InputPalette::Pane((*wp).observer.clone()),
         None,
     ));
     let _ = (*wp).event.with_ptr(|event| unsafe {

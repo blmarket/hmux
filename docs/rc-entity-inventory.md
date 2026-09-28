@@ -2458,3 +2458,12 @@ removed. The ABI callback adapter
 captures its pointer in the callback closure, while the error callback owns
 the error string in its closure. Removing the unused field leaves callback
 dispatch unchanged and reduces the inventory to 57 in-scope raw fields.
+
+## Implemented input palette source resolution
+
+`input_ctx.palette` now records `InputPalette::Pane`, `Popup`, or `None`.
+Pane palettes are embedded in Rc panes; popup palettes have a separate
+`RefBox` owner. Each parser operation resolves its source and ends the borrow
+before a reply, request callback or redraw. A regression checks both sources
+and expiration after each owner is dropped. The inventory now counts 56
+remaining in-scope raw fields.
