@@ -2217,7 +2217,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         &raw mut (*tty).key_timer,
                         -(1 as ::core::ffi::c_int),
                         0 as ::core::ffi::c_short,
-                        move |_, _| unsafe { tty_keys_callback(tty as *mut ::core::ffi::c_void) },
+                        crate::src::tty::tty_client_callback(&terminal_client_owner, tty_keys_callback),
                     );
                     event_add(&raw mut (*tty).key_timer, &raw mut tv);
                     (*tty).flags |= TTY_TIMER;
@@ -2227,8 +2227,8 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         }
     }
 }
-unsafe fn tty_keys_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut tty: *mut tty = data as *mut tty;
+unsafe fn tty_keys_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let tty = &raw mut (*owner.get()).tty;
     if (*tty).flags & TTY_TIMER != 0 {
         while tty_keys_next(tty) != 0 {}
     }
@@ -3460,6 +3460,26 @@ unsafe fn tty_keys_palette(
 #[cfg(test)]
 mod key_tree_tests {
     use super::*;
+
+    #[test]
+    fn key_timer_callback_does_not_retain_or_access_expired_client() {
+        unsafe {
+            let owner = client::new();
+            let observer = std::rc::Rc::downgrade(&owner);
+            event_set(
+                &raw mut (*owner.get()).tty.key_timer, -1, 0,
+                crate::src::tty::tty_client_callback(&owner, tty_keys_callback),
+            );
+            let callback = (*owner.get()).tty.key_timer.callback.clone().unwrap();
+            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
+            // A cancelled ambiguity timer does not parse input.
+            callback.borrow_mut()(-1, 0);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            callback.borrow_mut()(-1, 0);
+        }
+    }
+
 
     fn lookup(tree: &Option<Box<tty_key>>, bytes: &[u8]) -> (Option<key_code>, size_t) {
         let mut size = 0;

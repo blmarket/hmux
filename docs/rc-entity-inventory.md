@@ -954,3 +954,14 @@ Expired clients are skipped before terminal memory is accessed.
 checks nonownership, live clipboard-query flag clearing and invocation of all five
 callbacks after client expiration. Terminal key timers, other terminal APIs and
 internal model projections remain pending.
+
+## Implemented weak client capture for the terminal key timer
+
+The ambiguous-key timer uses the terminal weak-client dispatch helper. Its callback
+borrows the upgraded Rc client and derives the terminal, removing the stored raw
+terminal address and erased callback argument. A client can expire while a detached
+callback survives; invoking that callback then skips dispatch.
+
+`cargo test --workspace` and `git diff --check` passed. The regression checks a
+cancelled timer callback, nonownership and invocation after client expiration.
+Other terminal APIs and internal model projections remain pending.

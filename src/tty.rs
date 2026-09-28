@@ -388,7 +388,7 @@ unsafe fn tty_write_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>)
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
-fn tty_client_callback(
+pub(crate) fn tty_client_callback(
     owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     callback: unsafe fn(&std::rc::Rc<std::cell::UnsafeCell<client>>),
 ) -> impl FnMut(::core::ffi::c_int, ::core::ffi::c_short) {
