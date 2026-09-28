@@ -473,8 +473,8 @@ mod input_request_ownership_tests {
             (*ictx).request_count = 1;
 
             input_reply(ictx, 1, |out| out.write_all(b"queued"));
-            let mut reply = input_request_palette_data { idx: 7, c: -1 };
-            input_request_reply(c, INPUT_REQUEST_PALETTE, (&raw mut reply).cast());
+            let reply = input_request_palette_data { idx: 7, c: -1 };
+            input_request_reply(c, InputRequestReply::Palette(&reply));
 
             assert!(input_ctx_requests(ictx).is_empty());
             assert!(input_client_requests(&mut *c).is_empty());
@@ -6013,25 +6013,23 @@ unsafe fn input_add_request(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn input_request_palette_reply(
-    mut ir: *mut input_request,
-    mut data: *mut ::core::ffi::c_void,
+    ir: *mut input_request,
+    pd: &input_request_palette_data,
 ) {
-    let mut pd: *mut input_request_palette_data = data as *mut input_request_palette_data;
     input_osc_colour_reply(
         (*ir).ictx,
         0 as ::core::ffi::c_int,
         4 as u_int,
-        (*pd).idx,
-        (*pd).c,
+        pd.idx,
+        pd.c,
         (*ir).end,
     );
 }
 unsafe fn input_request_clipboard_reply(
-    mut ir: *mut input_request,
-    mut data: *mut ::core::ffi::c_void,
+    ir: *mut input_request,
+    cd: &input_request_clipboard_data,
 ) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
-    let cd = &*data.cast::<input_request_clipboard_data>();
     let mut state: ::core::ffi::c_int = 0;
     state = options_get_number(
         global_options,
@@ -6066,13 +6064,18 @@ unsafe fn input_request_clipboard_reply(
         });
     };
 }
-pub unsafe fn input_request_reply(
-    mut c: *mut client,
-    mut type_0: input_request_type,
-    mut data: *mut ::core::ffi::c_void,
-) {
+#[derive(Clone, Copy)]
+pub enum InputRequestReply<'a> {
+    Palette(&'a input_request_palette_data),
+    Clipboard(&'a input_request_clipboard_data),
+}
+
+pub unsafe fn input_request_reply(c: *mut client, reply: InputRequestReply<'_>) {
     let mut found: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut pd: *mut input_request_palette_data = data as *mut input_request_palette_data;
+    let type_0 = match reply {
+        InputRequestReply::Palette(_) => INPUT_REQUEST_PALETTE,
+        InputRequestReply::Clipboard(_) => INPUT_REQUEST_CLIPBOARD,
+    };
     let mut complete: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     for ir in input_client_requests(&mut *c).clone() {
         if (*ir).type_0 as ::core::ffi::c_uint != type_0 as ::core::ffi::c_uint {
@@ -6080,7 +6083,7 @@ pub unsafe fn input_request_reply(
         } else if type_0 as ::core::ffi::c_uint
             == INPUT_REQUEST_PALETTE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if (*pd).idx != (*ir).idx {
+            if !matches!(reply, InputRequestReply::Palette(pd) if pd.idx == (*ir).idx) {
                 input_free_request(ir);
             } else {
                 found = ir;
@@ -6124,14 +6127,9 @@ pub unsafe fn input_request_reply(
                     .as_ptr(),
             );
         } else if ir == found {
-            if (*ir).type_0 as ::core::ffi::c_uint
-                == INPUT_REQUEST_PALETTE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                input_request_palette_reply(ir, data);
-            } else if (*ir).type_0 as ::core::ffi::c_uint
-                == INPUT_REQUEST_CLIPBOARD as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                input_request_clipboard_reply(ir, data);
+            match reply {
+                InputRequestReply::Palette(pd) => input_request_palette_reply(ir, pd),
+                InputRequestReply::Clipboard(cd) => input_request_clipboard_reply(ir, cd),
             }
             complete = 1 as ::core::ffi::c_int;
         }

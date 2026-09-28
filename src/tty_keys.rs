@@ -7,7 +7,7 @@ use crate::src::ffi::libc::{
     __ctype_b_loc, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
 };
 use crate::src::ffi::resolv::__b64_pton;
-use crate::src::input::{input_client_has_requests, input_request_reply};
+use crate::src::input::{input_client_has_requests, input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::{options_array_get_index, options_get, options_get_number};
@@ -2669,12 +2669,8 @@ unsafe fn tty_keys_clipboard(
             outlen
         )
     ));
-    let mut cd = input_request_clipboard_data { data: out, clip };
-    input_request_reply(
-        c,
-        INPUT_REQUEST_CLIPBOARD,
-        &raw mut cd as *mut ::core::ffi::c_void,
-    );
+    let cd = input_request_clipboard_data { data: out, clip };
+    input_request_reply(c, InputRequestReply::Clipboard(&cd));
     if (*tty).flags & TTY_OSC52QUERY != 0 {
         paste_add_owned(None, cd.data.into_boxed_slice());
         event_del(&raw mut (*tty).clipboard_timer);
@@ -3453,11 +3449,7 @@ unsafe fn tty_keys_palette(
         return 0 as ::core::ffi::c_int;
     }
     pd.idx = idx;
-    input_request_reply(
-        c,
-        INPUT_REQUEST_PALETTE,
-        &raw mut pd as *mut ::core::ffi::c_void,
-    );
+    input_request_reply(c, InputRequestReply::Palette(&pd));
     return 0 as ::core::ffi::c_int;
 }
 
