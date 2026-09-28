@@ -1623,8 +1623,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         drop(owner);
     }
 }
-unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
+unsafe fn window_panes_timer_callback(wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     window_pane_reset_mode(&mode_pane_owner);
@@ -1735,7 +1734,7 @@ unsafe fn window_panes_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_panes_timer_callback(wme as *mut ::core::ffi::c_void) },
+        move |_, _| unsafe { window_panes_timer_callback(wme) },
     );
     if (*data).delay != 0 as u_int {
         tv.tv_sec = (*data).delay.wrapping_div(1000 as u_int) as __time_t;

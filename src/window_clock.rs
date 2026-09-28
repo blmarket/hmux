@@ -621,8 +621,7 @@ unsafe fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
     }
     event_add(&raw mut (*data).timer, &raw mut tv);
 }
-unsafe fn window_clock_timer_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
+unsafe fn window_clock_timer_callback(wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
@@ -688,7 +687,7 @@ unsafe fn window_clock_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_clock_timer_callback(wme as *mut ::core::ffi::c_void) },
+        move |_, _| unsafe { window_clock_timer_callback(wme) },
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;
