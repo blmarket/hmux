@@ -52,7 +52,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
-        tc: None,
+        tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: None,
@@ -71,7 +71,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.upgrade();
     sc.set_wl(wl);
-    sc.tc = tc_owner.clone();
+    sc.tc = tc_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());

@@ -161,7 +161,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
-        tc: None,
+        tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: None,
@@ -566,7 +566,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         sc.item = (*item).observer.clone();
                                                         sc.s = Some(session_owner.clone());
                                                         if detached == 0 {
-                                                            sc.tc = c_owner.clone();
+                                                            sc.tc = c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
                                                         }
                                                         sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
                                                         argv_owner = args_to_vector(&*args);

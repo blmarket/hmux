@@ -767,18 +767,17 @@ live ID/width output, selected-owner retention, final expiration and missing out
 afterward. All four Rc model fields in format contexts now use weak handles.
 Winlink/queue views, internal raw projections and checked borrowing remain pending.
 
-## Implemented spawn-context target-client owner
+## Implemented spawn-context target-client observer
 
-`spawn_context.tc` now owns an optional client `Rc` for the operation's duration.
-Command contexts clone their existing retained target/client handles; editor
-startup upgrades its caller's observer. Pane spawning keeps a local owner when
-using the context client, and window latest-client state receives only a weak
-observer. Context destruction releases its temporary ownership.
+`spawn_context.tc` now stores a client `Weak`. Command contexts derive it from
+their existing retained client handles; editor startup borrows its caller's
+owner. Window and pane spawning keep a local upgrade while using the client,
+and window latest-client state receives only the weak identity. Context
+destruction does not release a client reference.
 
-`cargo test --workspace` passed, including a new regression proving that a context
-retains its target after the external owner is dropped and releases it when the
-context ends. Spawn session/source-pane fields and legacy model projections remain
-pending.
+`cargo test --workspace` passed, including a regression proving that a context
+does not retain its target after the external owner drops. Spawn session
+ownership and legacy model projections remain under review.
 
 ## Implemented spawn-context source-pane observer
 
@@ -788,8 +787,8 @@ removing it from ordering, rebuilding the layout and reinserting it; pane spawni
 keeps a local upgraded owner throughout reset, callback and creation work.
 
 `cargo test --workspace` passed. The context-lifetime regression verifies that
-the source pane expires when its independent owner drops, while the context
-continues to retain its client. Spawn session/client ownership, layout views and
+the source pane and client expire when their independent owners drop. Spawn
+session ownership, layout views and
 legacy raw projections remain pending.
 
 ## Implemented spawn-context session owner
@@ -799,9 +798,9 @@ Command/editor contexts retain their session, and window/pane spawning keeps a
 local owner throughout access. Context destruction releases this temporary owner.
 
 `cargo test --workspace` passed. The context-lifetime regression verifies
-session and client retention after external owners drop. The source pane is a
-weak observer. Session/client ownership, layout views and legacy raw projections
-remain under review.
+session retention after the external owner drops. Client and source pane are
+weak observers. Session ownership, layout views and legacy raw projections remain
+under review.
 
 ## Implemented mode source-pane observer
 

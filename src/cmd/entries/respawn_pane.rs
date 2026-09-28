@@ -53,7 +53,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
-        tc: None,
+        tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: None,
