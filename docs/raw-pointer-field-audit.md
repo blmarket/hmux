@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **50 raw fields in
+fields and their lifecycle decisions. The current scanner finds **49 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-184 explicitly record a migration and fourteen record
-removal. The remaining 50 comprise 11 weak queue-item candidates, 8 needing
+185 explicitly record a migration and fourteen record
+removal. The remaining 49 comprise 10 weak queue-item candidates, 8 needing
 an access or teardown design, and 31 retained raw under current ownership.
 
-The remaining 50 fields have audit dispositions. Candidate and design entries
+The remaining 49 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.

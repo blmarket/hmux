@@ -2523,3 +2523,11 @@ retains an upgrade through command insertion, error reporting and continuation.
 An expired wait stops before those operations. A separate wait flag preserves
 the distinct background job path, which appends commands and reports errors to
 the client. The raw-field count is 50.
+
+## Implemented weak command-prompt wait item
+
+`cmd_command_prompt_cdata.item` now observes its waiting queue item weakly.
+Prompt input and Drop retain an upgrade while continuing the queue. An expired
+wait closes the prompt; a separate flag preserves background command insertion.
+The existing close-path test now uses a production detached queue item, and a
+regression covers an expired wait. The raw-field count is 49.
