@@ -1008,3 +1008,16 @@ parser. Error reporting derives its client view from the retained owner.
 
 `cargo test --workspace` and `git diff --check` passed. Outer mode callback client
 arguments, saved model associations and local raw projections remain pending.
+
+## Implemented retained client argument in mode key callbacks
+
+The `window_mode.key` interface now borrows an Rc client. Clock, tree, client,
+buffer, customize, panes and switch modes use the typed signature. Menu callbacks
+pass their existing owners directly; pane key dispatch retains the client before
+calling the mode. Tree/client/switch key handlers pass that owner directly to
+command runners rather than upgrading a raw view again.
+
+`cargo test --workspace` and `git diff --check` passed. The compiler verifies all
+mode registrations and call sites against the typed callback interface. Mode
+command callbacks, session arguments and internal raw model projections remain
+pending.

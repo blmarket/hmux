@@ -114,7 +114,7 @@ pub static window_switch_mode: window_mode = {
             window_switch_key
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
                     *mut session,
                     *mut winlink,
                     key_code,
@@ -673,12 +673,13 @@ unsafe fn window_switch_prompt_callback(
 }
 unsafe fn window_switch_key(
     mut wme: *mut window_mode_entry,
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     _s: *mut session,
     _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
+    let c = client_owner.get();
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut current_block: u64;
@@ -746,7 +747,7 @@ unsafe fn window_switch_key(
                 }
                 window_switch_set_current(data, (*data).offset.wrapping_add(y));
                 if key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
-                    if window_switch_run_command(data, c.as_ref().map(|client| client.observer.upgrade().expect("switch command client is live")).as_ref()) != 0 {
+                    if window_switch_run_command(data, Some(client_owner)) != 0 {
                         window_pane_reset_mode(wp);
                     }
                     return;
@@ -766,7 +767,7 @@ unsafe fn window_switch_key(
         }
         match key {
             13 => {
-                if window_switch_run_command(data, c.as_ref().map(|client| client.observer.upgrade().expect("switch command client is live")).as_ref()) != 0 {
+                if window_switch_run_command(data, Some(client_owner)) != 0 {
                     window_pane_reset_mode(wp);
                 }
                 return;

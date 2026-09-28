@@ -198,7 +198,7 @@ pub struct window_mode {
     pub key: Option<
         unsafe fn(
             *mut window_mode_entry,
-            *mut client,
+            &std::rc::Rc<std::cell::UnsafeCell<client>>,
             *mut session,
             *mut winlink,
             key_code,

@@ -225,7 +225,7 @@ pub static window_client_mode: window_mode = {
             window_client_key
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
                     *mut session,
                     *mut winlink,
                     key_code,
@@ -665,7 +665,7 @@ unsafe fn window_client_menu(
     }
     window_client_key(
         wme,
-        crate::src::shared::rc::as_ptr(c),
+        c,
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),
         key,
@@ -861,12 +861,13 @@ unsafe fn window_client_do_detach(
 }
 unsafe fn window_client_key(
     mut wme: *mut window_mode_entry,
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     _s: *mut session,
     _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
+    let c = client_owner.get();
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
@@ -918,7 +919,7 @@ unsafe fn window_client_key(
         13 => {
             let item_owner = mode_tree_get_current(&*mtd);
             if let Some(item) = item_owner.as_client() {
-                mode_tree_run_command(c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(), None, &(*data).command, &item.ttyname);
+                mode_tree_run_command(Some(client_owner), None, &(*data).command, &item.ttyname);
             }
             finished = 1 as ::core::ffi::c_int;
         }

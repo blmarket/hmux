@@ -369,7 +369,7 @@ pub static window_customize_mode: window_mode = {
             window_customize_key
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
                     *mut session,
                     *mut winlink,
                     key_code,
@@ -2894,7 +2894,7 @@ unsafe fn window_customize_menu(
     }
     window_customize_key(
         wme,
-        crate::src::shared::rc::as_ptr(c),
+        c,
         ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),
         key,
@@ -4811,12 +4811,13 @@ unsafe fn window_customize_add_current(
 }
 unsafe fn window_customize_key(
     mut wme: *mut window_mode_entry,
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     _s: *mut session,
     _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
+    let c = client_owner.get();
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;

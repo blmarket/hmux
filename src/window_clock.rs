@@ -60,7 +60,7 @@ pub static window_clock_mode: window_mode = {
             window_clock_key
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
                     *mut session,
                     *mut winlink,
                     key_code,
@@ -704,7 +704,7 @@ unsafe fn window_clock_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mu
 }
 unsafe fn window_clock_key(
     mut wme: *mut window_mode_entry,
-    _c: *mut client,
+    _client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     _s: *mut session,
     _wl: *mut winlink,
     _key: key_code,

@@ -118,7 +118,7 @@ pub static window_panes_mode: window_mode = {
             window_panes_key
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
                     *mut session,
                     *mut winlink,
                     key_code,
@@ -1892,12 +1892,13 @@ unsafe fn window_panes_get_target(
 }
 unsafe fn window_panes_key(
     mut wme: *mut window_mode_entry,
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     _s: *mut session,
     _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
+    let c = client_owner.get();
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
