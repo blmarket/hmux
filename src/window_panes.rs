@@ -201,7 +201,7 @@ unsafe fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     let mut src: *mut screen = &raw mut (*wp).base;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -1536,7 +1536,7 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

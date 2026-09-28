@@ -464,7 +464,7 @@ unsafe fn prompt_redraw_quote(
     };
     if pr.flags & PROMPT_QUOTENEXT != 0
         && pcursor >= offset
-        && (*ctx.s).cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
+        && (*ctx.screen_ptr()).cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
     {
         utf8_set(&mut ud, '^' as i32 as u_char);
         return prompt_redraw_character(ctx, offset, pw, w, gc, &ud);
@@ -734,7 +734,7 @@ unsafe fn prompt_mouse_complete(
     return PROMPT_KEY_HANDLED;
 }
 pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
-    let mut s: *mut screen = ctx.s;
+    let mut s: *mut screen = ctx.screen_ptr();
     let mut ax: u_int = pd.area_x;
     let mut py: u_int = pd.prompt_line;
     let mut aw: u_int = pd.area_width;

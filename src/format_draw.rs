@@ -288,7 +288,7 @@ unsafe fn format_draw_left(
     let mut width_abs_centre: u_int = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -448,7 +448,7 @@ unsafe fn format_draw_centre(
     let mut width_abs_centre: u_int = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -601,7 +601,7 @@ unsafe fn format_draw_right(
     let mut width_abs_centre: u_int = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -929,13 +929,13 @@ pub unsafe fn format_draw(
         b"AFTER\0" as *const u8 as *const ::core::ffi::c_char,
     ];
     let mut size: size_t = strlen(expanded);
-    let mut os: *mut screen = (*octx).s;
+    let mut os: *mut screen = (*octx).screen_ptr();
     let mut s: [screen; 8] = std::array::from_fn(|_| screen::empty());
     let hl = (*os).hyperlinks.clone();
     let mut ctx: [screen_write_ctx; 8] = [const {
         screen_write_ctx {
             wp: std::rc::Weak::new(),
-            s: ::core::ptr::null_mut::<screen>(),
+            target: crate::src::shared::screen_write::ScreenWriteTarget::none(),
             flags: 0,
             init_ctx_cb: None,
             item: None,

@@ -2701,3 +2701,12 @@ raw-field count is 33.
 the write item. The long-lived input parser therefore does not retain a screen
 address between parse calls. The active write target still needs a typed
 representation, so the raw-field count remains 33.
+
+## Implemented screen write target
+
+`screen_write_ctx.s` is now a private `ScreenWriteTarget`. Pane base writes
+resolve through a weak pane owner. Other active writes hold a bounded
+`NonNull<screen>` borrow under the existing unsafe start/stop contract; stop
+clears it, including in persistent input parsers. The borrow remains an unsafe
+caller obligation rather than a compiler-checked lifetime. The raw-field count
+is 32.

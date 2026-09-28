@@ -1691,7 +1691,7 @@ unsafe fn redraw_draw_pane_prompt(dctx: &mut redraw_draw_ctx<'_>, mut wp: *mut w
     let mut screen: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

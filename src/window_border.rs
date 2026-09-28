@@ -45,7 +45,7 @@ unsafe fn window_set_fill_cell(
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -269,7 +269,7 @@ pub unsafe fn window_make_pane_status(
     let mut sle: *mut style_line_entry = &raw mut (*wp).border_status_line;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

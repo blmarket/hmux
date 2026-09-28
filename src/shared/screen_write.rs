@@ -37,14 +37,60 @@ pub const CLEAR: screen_write_item_type = 1;
 
 #[derive(Default)]
 pub struct screen_write_ctx {
-    /// Optional pane observer; the caller separately guarantees the screen borrow.
+    /// Optional pane observer for redraw and terminal output.
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub s: *mut screen,
+    pub(crate) target: ScreenWriteTarget,
     pub flags: ::core::ffi::c_int,
     pub init_ctx_cb: screen_write_init_ctx_cb,
     pub item: Option<Box<screen_write_citem>>,
     pub scrolled: u_int,
     pub bg: u_int,
+}
+
+/// The active write target. A borrowed target is valid only between start and
+/// stop; a pane base target is resolved from its owner on each access.
+#[derive(Default)]
+pub(crate) struct ScreenWriteTarget(ScreenWriteTargetKind);
+
+#[derive(Default)]
+enum ScreenWriteTargetKind {
+    #[default]
+    None,
+    PaneBase(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Borrowed(std::ptr::NonNull<screen>),
+}
+
+impl screen_write_ctx {
+    pub fn screen_ptr(&self) -> *mut screen {
+        match &self.target.0 {
+            ScreenWriteTargetKind::None => std::ptr::null_mut(),
+            ScreenWriteTargetKind::PaneBase(observer) => {
+                let owner = observer.upgrade().expect("active pane base write has an owner");
+                unsafe { &raw mut (*owner.get()).base }
+            }
+            ScreenWriteTargetKind::Borrowed(screen) => screen.as_ptr(),
+        }
+    }
+
+    pub fn use_pane_base(&mut self, pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+        self.target = ScreenWriteTarget(ScreenWriteTargetKind::PaneBase(
+            std::rc::Rc::downgrade(pane),
+        ));
+    }
+
+    /// # Safety
+    /// The screen must remain allocated until this context stops or changes target.
+    pub unsafe fn borrow_screen(&mut self, screen: *mut screen) {
+        self.target = ScreenWriteTarget(ScreenWriteTargetKind::Borrowed(
+            std::ptr::NonNull::new(screen).expect("screen write target"),
+        ));
+    }
+}
+
+impl ScreenWriteTarget {
+    pub(crate) const fn none() -> Self {
+        Self(ScreenWriteTargetKind::None)
+    }
 }
 
 pub type screen_write_init_ctx_cb = Option<Box<dyn FnMut(&mut tty_ctx)>>;

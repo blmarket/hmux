@@ -420,7 +420,7 @@ unsafe fn window_client_draw_info(
     mut sy: u_int,
 ) {
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut w: *mut window = (*(*(*c).session_ptr()).curw_ptr()).window_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -527,7 +527,7 @@ unsafe fn window_client_draw(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut session: *mut session = (*c).session_ptr();
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {

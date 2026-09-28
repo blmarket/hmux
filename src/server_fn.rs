@@ -434,7 +434,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     let mut w: *mut window = (*wp).window_ptr();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

@@ -733,7 +733,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_clock_mode_data = window_clock_data(wme);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

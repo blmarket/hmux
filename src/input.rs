@@ -120,7 +120,7 @@ impl input_ctx {
             event: Default::default(),
             ctx: screen_write_ctx {
                 wp: std::rc::Weak::new(),
-                s: ::core::ptr::null_mut(),
+                target: Default::default(),
                 flags: 0,
                 init_ctx_cb: None,
                 item: None,
@@ -2283,7 +2283,7 @@ unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
 }
 unsafe fn input_save_state(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).s;
+    let mut s: *mut screen = (*sctx).screen_ptr();
     memcpy(
         &raw mut (*ictx).old_cell as *mut ::core::ffi::c_void,
         &raw mut (*ictx).cell as *const ::core::ffi::c_void,
@@ -2715,7 +2715,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = input_pane;
-    let mut s: *mut screen = (*sctx).s;
+    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2832,7 +2832,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
 }
 unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).s;
+    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut entry: *const input_table_entry = ::core::ptr::null::<input_table_entry>();
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return 0 as ::core::ffi::c_int;
@@ -2921,7 +2921,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).s;
+    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut entry: *const input_table_entry = ::core::ptr::null::<input_table_entry>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut i: ::core::ffi::c_int = 0;
@@ -3926,7 +3926,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).s;
+    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut wp: *mut window_pane = input_pane;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut x: u_int = (*s).grid().sx;
@@ -4035,7 +4035,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 ) {
                     -1 => return,
                     0 | 2 => {
-                        screen_push_title(&mut *(*sctx).s);
+                        screen_push_title(&mut *(*sctx).screen_ptr());
                     }
                     _ => {}
                 }
@@ -4051,9 +4051,9 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 ) {
                     -1 => return,
                     0 | 2 => {
-                        screen_pop_title(&mut *(*sctx).s);
+                        screen_pop_title(&mut *(*sctx).screen_ptr());
                         if !wp.is_null() {
-                            input_fire_pane_title_changed(wp, (*(*sctx).s).title.as_ptr());
+                            input_fire_pane_title_changed(wp, (*(*sctx).screen_ptr()).title.as_ptr());
                             server_redraw_window_borders(&*(w));
                             server_status_window(&*(w));
                         }
@@ -4560,7 +4560,7 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
-    let mut s: *mut screen = (*sctx).s;
+    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut ps: ::core::ffi::c_int = 0;
     let mut opt_ps: ::core::ffi::c_int = 0;
     let mut blinking: ::core::ffi::c_int = 0;
@@ -4757,7 +4757,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                     b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
                 ) != 0
                 && screen_set_title(
-                    &mut *(*sctx).s,
+                    &mut *(*sctx).screen_ptr(),
                     CStr::from_ptr(p.cast()),
                     1 as ::core::ffi::c_int,
                 ) != 0
@@ -4771,7 +4771,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             input_osc_4(ictx, p as *const ::core::ffi::c_char);
         }
         7 => {
-            if !wp.is_null() && screen_set_path(&mut *(*sctx).s, CStr::from_ptr(p.cast())) != 0 {
+            if !wp.is_null() && screen_set_path(&mut *(*sctx).screen_ptr(), CStr::from_ptr(p.cast())) != 0 {
                 server_redraw_window_borders(&*((*wp).window_ptr()));
                 server_status_window(&*((*wp).window_ptr()));
             }
@@ -4843,7 +4843,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
             b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         && screen_set_title(
-            &mut *(*sctx).s,
+            &mut *(*sctx).screen_ptr(),
             CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer has a terminator"),
             1 as ::core::ffi::c_int,
         ) != 0
@@ -5089,7 +5089,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
 }
 unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut current_block: u64;
-    let hl = (*(*ictx).ctx.s)
+    let hl = (*(*ictx).ctx.screen_ptr())
         .hyperlinks
         .as_ref()
         .expect("screen hyperlink table");
@@ -5167,7 +5167,7 @@ unsafe fn input_set_progress_bar(
 ) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
-    screen_set_progress_bar(&mut *(*ictx).ctx.s, state, p);
+    screen_set_progress_bar(&mut *(*ictx).ctx.screen_ptr(), state, p);
     if !input_pane.is_null() {
         server_redraw_window_borders(&*((*input_pane).window_ptr()));
         server_status_window(&*((*input_pane).window_ptr()));
@@ -5361,9 +5361,9 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     let mut c: ::core::ffi::c_int = 0;
     if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         if !wp.is_null() {
-            c = (*(*ictx).ctx.s).ccolour;
+            c = (*(*ictx).ctx.screen_ptr()).ccolour;
             if c == -(1 as ::core::ffi::c_int) {
-                c = (*(*ictx).ctx.s).default_ccolour;
+                c = (*(*ictx).ctx.screen_ptr()).default_ccolour;
             }
             input_osc_colour_reply(
                 ictx,
@@ -5381,11 +5381,11 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         log_debug(format_args!("bad OSC 12: {}", log_cstr((p) as *const _)));
         return;
     }
-    screen_set_cursor_colour(&mut *(*ictx).ctx.s, c);
+    screen_set_cursor_colour(&mut *(*ictx).ctx.screen_ptr(), c);
 }
 unsafe fn input_osc_112(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     if *p as ::core::ffi::c_int == '\0' as i32 {
-        screen_set_cursor_colour(&mut *(*ictx).ctx.s, -(1 as ::core::ffi::c_int));
+        screen_set_cursor_colour(&mut *(*ictx).ctx.screen_ptr(), -(1 as ::core::ffi::c_int));
     }
 }
 unsafe fn input_osc_133_exit_status(p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
@@ -5536,7 +5536,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut s: *mut screen = (*ictx).ctx.s;
+    let mut s: *mut screen = (*ictx).ctx.screen_ptr();
     let mut gd: *mut grid = (*s).grid_mut();
     let mut line: u_int = (*s).cy.wrapping_add((*gd).hsize);
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -5744,7 +5744,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     let mut wp: *mut window_pane = input_pane;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

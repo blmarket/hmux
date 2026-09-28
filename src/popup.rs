@@ -487,7 +487,7 @@ unsafe fn popup_draw(c: *mut client, popup: &PopupGuard) {
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

@@ -291,8 +291,8 @@ unsafe fn window_buffer_draw(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let cx = (*(*ctx).s).cx;
-    let cy = (*(*ctx).s).cy;
+    let cx = (*(*ctx).screen_ptr()).cx;
+    let cy = (*(*ctx).screen_ptr()).cy;
     let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
@@ -599,7 +599,7 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

@@ -837,7 +837,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

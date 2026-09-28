@@ -693,7 +693,7 @@ unsafe fn window_copy_init(
     let mut base: *mut screen = &raw mut (*wp).base;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -804,7 +804,7 @@ pub unsafe fn window_copy_add(
     let mut backing: *mut screen = (*data).backing_mut();
     let mut backing_ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -813,7 +813,7 @@ pub unsafe fn window_copy_add(
     };
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -1452,7 +1452,7 @@ unsafe fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -6214,7 +6214,7 @@ unsafe fn window_copy_search(
     let mut ss: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -6509,7 +6509,7 @@ unsafe fn window_copy_search_marks(
     let mut ss: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -6986,7 +6986,7 @@ unsafe fn window_copy_write_one(
         if fx.wrapping_add(gc.data.width as u_int) <= nx {
             window_copy_update_style(wme, fx, fy, &raw mut gc, mgc, cgc, mkgc, clgc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-                if (*(*ctx).s).cy == py && (*(*ctx).s).cx <= px.wrapping_add(fx) {
+                if (*(*ctx).screen_ptr()).cy == py && (*(*ctx).screen_ptr()).cx <= px.wrapping_add(fx) {
                     gc.flags = (gc.flags as ::core::ffi::c_int & !GRID_FLAG_PADDING) as u_char;
                     screen_write_cursormove(
                         &mut *ctx,
@@ -7517,7 +7517,7 @@ unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_in
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -7671,7 +7671,7 @@ unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_i
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -8152,7 +8152,7 @@ unsafe fn window_copy_copy_buffer(
     let mut wp: *mut window_pane = mode_pane;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -8263,7 +8263,7 @@ unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     let mut bufname: Option<CString> = None;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -9172,7 +9172,7 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -9284,7 +9284,7 @@ unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,

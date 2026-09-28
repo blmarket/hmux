@@ -760,8 +760,8 @@ unsafe fn window_tree_draw_session(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut cx: u_int = (*(*ctx).s).cx;
-    let mut cy: u_int = (*(*ctx).s).cy;
+    let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
+    let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
     let mut loop_0: u_int = 0;
     let mut total: u_int = 0;
     let mut visible: u_int = 0;
@@ -1018,8 +1018,8 @@ unsafe fn window_tree_draw_window(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut cx: u_int = (*(*ctx).s).cx;
-    let mut cy: u_int = (*(*ctx).s).cy;
+    let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
+    let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
     let mut loop_0: u_int = 0;
     let mut total: u_int = 0;
     let mut visible: u_int = 0;
@@ -1275,7 +1275,7 @@ unsafe fn window_tree_draw_info(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();

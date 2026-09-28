@@ -575,7 +575,7 @@ unsafe fn window_customize_write_value(
     mut label: *const ::core::ffi::c_char,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -637,7 +637,7 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
-        s: ::core::ptr::null_mut::<screen>(),
+        target: Default::default(),
         flags: 0,
         init_ctx_cb: None,
         item: None,
@@ -1812,7 +1812,7 @@ unsafe fn window_customize_draw_key(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*s).cy;
     let mut note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1943,7 +1943,7 @@ unsafe fn window_customize_draw_option(
 ) {
     let data = mode_owner.get();
     let mut current_block: u64;
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*s).cy;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -2703,7 +2703,7 @@ unsafe fn window_customize_draw_environment(
         return;
     };
 
-    let mut s: *mut screen = (*ctx).s;
+    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*s).cy;
     let mut envent: Option<&environ_entry> = None;
