@@ -1241,3 +1241,16 @@ either through raw model pointers. With no client, menu display returns early.
 `cargo test --workspace` and `git diff --check` passed, including existing menu
 callback lifetime and expired-parent key-dispatch coverage. Prompt setup and its
 client callback adapters still use raw client projections and remain pending.
+
+## Implemented retained clients for mode-tree prompt setup
+
+Prompt setup borrows an optional Rc client, downgrades it for prompt callback
+storage, and passes the same owner to queued acceptance. Key dispatch and tree
+mode callers pass their existing owners. Legacy customize helpers upgrade at the
+setup boundary. Setup additionally retains the client's session across old-prompt
+cleanup before reading prompt options; the client/session association itself is
+still raw and remains pending.
+
+`cargo test --workspace` and `git diff --check` passed, including existing prompt
+cleanup and queued acceptance tests. Customize helper arguments, client callback
+adapters and internal raw projections still require migration.

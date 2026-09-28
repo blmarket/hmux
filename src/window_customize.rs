@@ -3309,7 +3309,7 @@ unsafe fn window_customize_set_environment(
         window_customize_prompt_callbacks(owner, window_customize_set_environment_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c,
+        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
         &prompt,
         Some(&value),
         PROMPT_TYPE_COMMAND,
@@ -3441,7 +3441,7 @@ unsafe fn window_customize_add_option(
         window_customize_prompt_callbacks(owner, window_customize_add_option_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c,
+        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
         prompt,
         Some(c"@"),
         PROMPT_TYPE_COMMAND,
@@ -3544,7 +3544,7 @@ unsafe fn window_customize_add_environment(
         window_customize_prompt_callbacks(owner, window_customize_add_environment_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c,
+        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
         c"New environment: ",
         Some(c""),
         PROMPT_TYPE_COMMAND,
@@ -3908,7 +3908,7 @@ unsafe fn window_customize_set_option(
             window_customize_prompt_callbacks(owner, window_customize_set_option_callback);
         mode_tree_set_prompt(
             (*data).data.as_ref().expect("mode tree owner").clone(),
-            c,
+            c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
             &prompt,
             Some(&value),
             PROMPT_TYPE_COMMAND,
@@ -4046,7 +4046,7 @@ unsafe fn window_customize_set_array_key(
         window_customize_prompt_callbacks(owner, window_customize_set_array_key_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c,
+        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
         &prompt,
         item.array_key.as_deref(),
         PROMPT_TYPE_COMMAND,
@@ -4283,7 +4283,7 @@ unsafe fn window_customize_set_key(
         drop(kt);
         mode_tree_set_prompt(
             (*data).data.as_ref().expect("mode tree owner").clone(),
-            c,
+            c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
             &prompt,
             Some(&value),
             PROMPT_TYPE_COMMAND,
@@ -4312,7 +4312,7 @@ unsafe fn window_customize_set_key(
         drop(kt);
         mode_tree_set_prompt(
             (*data).data.as_ref().expect("mode tree owner").clone(),
-            c,
+            c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
             &prompt,
             Some(&note),
             PROMPT_TYPE_COMMAND,
@@ -4449,7 +4449,7 @@ unsafe fn window_customize_add_key(
         window_customize_prompt_callbacks(owner, window_customize_add_key_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c,
+        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
         &prompt,
         Some(c""),
         PROMPT_TYPE_COMMAND,
@@ -4951,7 +4951,7 @@ unsafe fn window_customize_key(
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data.as_ref().expect("mode tree owner").clone(),
-                        c,
+                        Some(client_owner),
                         &reset_prompt,
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
@@ -4976,7 +4976,7 @@ unsafe fn window_customize_key(
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data.as_ref().expect("mode tree owner").clone(),
-                        c,
+                        Some(client_owner),
                         &reset_prompt,
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
@@ -5024,7 +5024,7 @@ unsafe fn window_customize_key(
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data.as_ref().expect("mode tree owner").clone(),
-                        c,
+                        Some(client_owner),
                         &prompt,
                         Some(c""),
                         PROMPT_TYPE_COMMAND,
@@ -5048,7 +5048,7 @@ unsafe fn window_customize_key(
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data.as_ref().expect("mode tree owner").clone(),
-                        c,
+                        Some(client_owner),
                         &prompt,
                         Some(c""),
                         PROMPT_TYPE_COMMAND,

@@ -1408,7 +1408,7 @@ unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptOwner) {
 }
 pub unsafe fn mode_tree_set_prompt(
     tree: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     prompt: &CStr,
     input: Option<&CStr>,
     mut type_0: prompt_type,
@@ -1424,24 +1424,22 @@ pub unsafe fn mode_tree_set_prompt(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut pd = prompt_create_data::default();
-    if !c.is_null() && !(*c).session.is_null() {
-        s = (*c).session;
-        oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
+    let session_owner = client_owner.and_then(|client| {
+        (*client.get()).session.as_ref().map(|session| {
+            session.observer.upgrade().expect("prompt client session is live")
+        })
+    });
+    let s = session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let oo = if let Some(session) = s.as_mut() {
+        options_owner_ptr(&mut session.options).map_or(std::ptr::null_mut(), |options| options)
     } else {
-        s = ::core::ptr::null_mut::<session>();
-        oo = global_s_options;
-    }
+        global_s_options
+    };
+    let mut pd = prompt_create_data::default();
     mode_tree_clear_prompt(&tree);
     let mtp = refbox::RefBox::new(mode_tree_prompt {
         mtd: Some(tree.clone()),
-        c: if c.is_null() {
-            Weak::new()
-        } else {
-            (*c).observer.clone()
-        },
+        c: client_owner.map(Rc::downgrade).unwrap_or_default(),
         inputcb,
         freecb,
     });
@@ -1468,13 +1466,13 @@ pub unsafe fn mode_tree_set_prompt(
     (*mtd).prompt_data = Some(identity);
     mode_tree_draw(&tree);
     (*mode_pane).flags |= PANE_REDRAW;
-    if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
+    if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && client_owner.is_some() {
             let tree = tree.clone();
         let item = cmdq_get_callback_owned(
             c"mode_tree_prompt_accept".as_ptr(),
             mode_tree_prompt_accept(tree),
         );
-        cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
+        cmdq_append(client_owner, item);
     }
 }
 unsafe fn mode_tree_search_backward(mtd: *mut mode_tree_data) -> Option<ModeTreeItemRef> {
@@ -1912,7 +1910,6 @@ pub unsafe fn mode_tree_key(
     mut xp: *mut u_int,
     mut yp: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mtd = crate::src::shared::rc::as_ptr(&tree);
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         *key = KEYC_NONE;
@@ -2265,7 +2262,7 @@ pub unsafe fn mode_tree_key(
             (*mtd).search_dir = MODE_TREE_SEARCH_FORWARD;
             mode_tree_set_prompt(
                 tree.clone(),
-                c,
+                client_owner,
                 c"(search) ",
                 Some(c""),
                 PROMPT_TYPE_SEARCH,
@@ -2285,7 +2282,7 @@ pub unsafe fn mode_tree_key(
         102 => {
             mode_tree_set_prompt(
                 tree.clone(),
-                c,
+                client_owner,
                 c"(filter) ",
                 Some((*mtd).filter.as_deref().unwrap_or(c"")),
                 PROMPT_TYPE_SEARCH,
@@ -2639,7 +2636,7 @@ mod pane_observer_tests {
             let calls = frees.clone();
             mode_tree_set_prompt(
                 tree_owner.clone(),
-                std::ptr::null_mut(),
+                None,
                 c"prompt",
                 None,
                 PROMPT_TYPE_COMMAND,

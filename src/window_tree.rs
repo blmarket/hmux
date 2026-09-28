@@ -2287,7 +2287,7 @@ unsafe fn window_tree_key(
                 let mode = (*data).observer.upgrade().expect("live tree mode");
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
-                    c,
+                    Some(client_owner),
                     &prompt,
                     Some(c""),
                     PROMPT_TYPE_COMMAND,
@@ -2311,7 +2311,7 @@ unsafe fn window_tree_key(
                 let mode = (*data).observer.upgrade().expect("live tree mode");
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
-                    c,
+                    Some(client_owner),
                     &prompt,
                     Some(c""),
                     PROMPT_TYPE_COMMAND,
@@ -2338,7 +2338,7 @@ unsafe fn window_tree_key(
             let mode = (*data).observer.upgrade().expect("live tree mode");
             mode_tree_set_prompt(
                 (*data).data.as_ref().expect("mode tree owner").clone(),
-                c,
+                Some(client_owner),
                 &prompt,
                 Some(c""),
                 PROMPT_TYPE_COMMAND,
