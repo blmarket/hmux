@@ -672,8 +672,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
         drop(client);
     }
 }
-unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
-    let mut ms: *mut monitor_set = data as *mut monitor_set;
+unsafe fn monitor_timer(ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
     if monitor_has_client(ms) && c.is_null() {
@@ -917,7 +916,7 @@ pub unsafe fn monitor_add(
             &raw mut (*ms).timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |_, _| unsafe { monitor_timer(ms as *mut ::core::ffi::c_void) },
+            move |_, _| unsafe { monitor_timer(ms) },
         );
     }
     if event_pending(
