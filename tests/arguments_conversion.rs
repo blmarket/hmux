@@ -10,7 +10,7 @@ use hmux2::src::arguments::{
     ArgumentValueError,
 };
 use hmux2::src::cmd::queue::{
-    cmdq_free_detached, cmdq_get_callback1, cmdq_get_error, cmdq_get_name,
+    cmdq_free_detached, cmdq_get_callback1, cmdq_get_name,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::ffi::libc::snprintf;
@@ -137,21 +137,6 @@ fn callback_queue_name_keeps_non_utf8_label_and_item_pointer() {
         assert_eq!(
             cmdq_get_name(&*item).expect("queue item name").to_bytes(),
             CStr::from_ptr(expected.as_ptr()).to_bytes()
-        );
-        cmdq_free_detached(item);
-    }
-}
-
-#[test]
-fn detached_error_callback_keeps_its_message_after_input_changes() {
-    unsafe {
-        let mut source = b"raw\xff error\0".to_vec();
-        let item = cmdq_get_error(source.as_ptr().cast());
-        source.fill(0);
-
-        assert_eq!(
-            CStr::from_ptr((*item).data.cast()).to_bytes(),
-            b"raw\xff error"
         );
         cmdq_free_detached(item);
     }

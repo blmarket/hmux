@@ -2449,3 +2449,12 @@ client's embedded `tty`. Terminal creation clones the existing `tty.client`
 observer, and the three readers upgrade it directly for client access. The
 terminal-owner regression checks identity and expiration. The inventory now
 counts 58 remaining in-scope raw fields.
+
+## Removed unused queue callback payload field
+
+`cmdq_item.data` had two production writes and no production readers. The
+sole test read inspected the field without dispatching the callback and was
+removed. The ABI callback adapter
+captures its pointer in the callback closure, while the error callback owns
+the error string in its closure. Removing the unused field leaves callback
+dispatch unchanged and reduces the inventory to 57 in-scope raw fields.

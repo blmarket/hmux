@@ -800,22 +800,17 @@ pub unsafe fn cmdq_get_callback1(
         Box::new(move |item: std::ptr::NonNull<cmdq_item>| unsafe { callback(item.as_ptr(), data) })
             as Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>
     });
-    let item = cmdq_get_callback_owned(name, callback);
-    (*item).data = data;
-    item
+    cmdq_get_callback_owned(name, callback)
 }
 pub unsafe fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
     let error = CStr::from_ptr(error).to_owned();
-    let data = error.as_ptr().cast_mut().cast();
-    let item = cmdq_get_callback_owned(
+    cmdq_get_callback_owned(
         b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
             cmdq_error(item.as_ptr(), |out| write_cstr(out, error.as_ptr()));
             CMD_RETURN_NORMAL
         })),
-    );
-    (*item).data = data;
-    item
+    )
 }
 unsafe fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     (*item).flags |= CMDQ_FIRED;

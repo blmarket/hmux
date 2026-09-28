@@ -155,7 +155,6 @@ pub struct cmdq_item {
     pub cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     pub cmd: refbox::Weak<cmd>,
     pub cb: cmdq_cb,
-    pub data: *mut ::core::ffi::c_void,
     pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(crate) wait_file: Option<std::rc::Weak<std::cell::UnsafeCell<super::client::client_file>>>,
 }
@@ -189,7 +188,6 @@ impl cmdq_item {
             cmdlist: Default::default(),
             cmd: Default::default(),
             cb: Default::default(),
-            data: Default::default(),
             cancel_data: Default::default(),
             wait_file: Default::default(),
         }
