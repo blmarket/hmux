@@ -2118,3 +2118,17 @@ borrows and retained pane handles rather than raw tree and pane locals.
 `cargo test --workspace` and `git diff --check` passed, including search-order and
 callback row-removal coverage. Rendering, swap/menu interactions, remaining tree
 projections and broader raw model relationships remain pending.
+
+## Implemented tree borrows for row swapping and expansion
+
+Row swapping selects payloads through a scoped tree borrow, takes its callback
+out, and dispatches with local sort criteria. It checks logical destruction before
+restoring state or rebuilding and preserves callback replacements. Expansion
+uses shared tree borrows to select rows before rebuilding. This migration uses
+only existing refcounted entity holders; no new Rc-managed data type is added.
+
+A regression test uses the existing tree holder to verify that a swap callback
+can logically destroy the tree without a subsequent rebuild or ownership cycle.
+`cargo test --workspace` and `git diff --check` passed. Rendering, menus and other
+raw model access remain pending. The reverted test-helper migration remains
+reverted.

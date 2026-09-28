@@ -358,42 +358,56 @@ pub fn mode_tree_down(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn mode_tree_swap(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, direction: i32) {
-    let mtd = tree_owner.get();
-    if (*mtd).swapcb.is_none() {
-        return;
+    let (mut callback, current, other, mut sort, swap_with) = {
+        let mtd = &mut *tree_owner.get();
+        if mtd.swapcb.is_none() {
+            return;
+        }
+        let depth = (&mtd.lines)[mtd.current as usize].depth;
+        let mut swap_with = mtd.current;
+        loop {
+            if direction < 0 && swap_with < -direction as u_int {
+                return;
+            }
+            let next = swap_with.wrapping_add(direction as u_int);
+            if direction > 0 && next >= mode_tree_line_count(&*mtd) {
+                return;
+            }
+            swap_with = next;
+            let other_depth = (&mtd.lines)[swap_with as usize].depth;
+            if other_depth > depth {
+                continue;
+            }
+            if other_depth != depth {
+                return;
+            }
+            break;
+        }
+        let current = (&mtd.lines)[mtd.current as usize]
+            .item
+            .borrow()
+            .itemdata
+            .clone();
+        let other = (&mtd.lines)[swap_with as usize]
+            .item
+            .borrow()
+            .itemdata
+            .clone();
+        (mtd.swapcb.take().unwrap(), current, other, mtd.sort_crit, swap_with)
+    };
+    let swapped = callback(&current, &other, &mut sort);
+    {
+        let tree = &mut *tree_owner.get();
+        if tree.dead != 0 { return; }
+        tree.sort_crit = sort;
+        if tree.swapcb.is_none() {
+            tree.swapcb = Some(callback);
+        }
+        if swapped {
+            tree.current = swap_with;
+        }
     }
-    let depth = (&(*mtd).lines)[(*mtd).current as usize].depth;
-    let mut swap_with = (*mtd).current;
-    loop {
-        if direction < 0 && swap_with < -direction as u_int {
-            return;
-        }
-        let next = swap_with.wrapping_add(direction as u_int);
-        if direction > 0 && next >= mode_tree_line_count(&*mtd) {
-            return;
-        }
-        swap_with = next;
-        let other_depth = (&(*mtd).lines)[swap_with as usize].depth;
-        if other_depth > depth {
-            continue;
-        }
-        if other_depth != depth {
-            return;
-        }
-        break;
-    }
-    let current = (&(*mtd).lines)[(*mtd).current as usize]
-        .item
-        .borrow()
-        .itemdata
-        .clone();
-    let other = (&(*mtd).lines)[swap_with as usize]
-        .item
-        .borrow()
-        .itemdata
-        .clone();
-    if (*mtd).swapcb.as_mut().unwrap()(&current, &other, &mut (*mtd).sort_crit) {
-        (*mtd).current = swap_with;
+    if swapped {
         mode_tree_build(tree_owner);
     }
 }
@@ -413,8 +427,8 @@ pub fn mode_tree_get_current_name(mtd: &mode_tree_data) -> CString {
         .map_or_else(CString::default, |row| row.name.clone())
 }
 pub unsafe fn mode_tree_expand_current(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
-    let mtd = tree_owner.get();
-    let item = (&(*mtd).lines)[(*mtd).current as usize].item.clone();
+    let mtd = &*tree_owner.get();
+    let item = (&mtd.lines)[mtd.current as usize].item.clone();
     if item.borrow().expanded == 0 {
         item.borrow_mut().expanded = 1;
         mode_tree_build(tree_owner);
@@ -427,11 +441,11 @@ fn mode_tree_get_tag(mtd: &mode_tree_data, tag: uint64_t) -> Option<u_int> {
         .map(|index| index as u_int)
 }
 pub unsafe fn mode_tree_expand(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, tag: uint64_t) {
-    let mtd = tree_owner.get();
+    let mtd = &*tree_owner.get();
     let Some(index) = mode_tree_get_tag(&*mtd, tag) else {
         return;
     };
-    let item = (&(*mtd).lines)[index as usize].item.clone();
+    let item = (&mtd.lines)[index as usize].item.clone();
     if item.borrow().expanded == 0 {
         item.borrow_mut().expanded = 1;
         mode_tree_build(tree_owner);
@@ -2635,6 +2649,31 @@ mod mode_tree_tests {
             drop(owner);
             assert!(observer.upgrade().is_none());
             assert!(!row.is_alive());
+        }
+    }
+
+    #[test]
+    fn swap_callback_can_destroy_its_tree_without_rebuilding() {
+        unsafe {
+            let owner = mode_tree_alloc_data();
+            let observer = Rc::downgrade(&owner);
+            let first = mode_tree_test_row(owner.get());
+            let second = mode_tree_test_row(owner.get());
+            mode_tree_build_lines(&owner, &[first, second], 0);
+            let callback_tree = observer.clone();
+            (&mut *owner.get()).swapcb = Some(Box::new(move |_, _, _| {
+                let owner = callback_tree.upgrade().unwrap();
+                let tree = &mut *owner.get();
+                assert!(tree.swapcb.is_none());
+                tree.dead = 1;
+                true
+            }));
+            // No build callback: rebuilding after logical destruction would panic.
+            mode_tree_swap(&owner, 1);
+            assert_eq!((&*owner.get()).current, 0);
+            assert!((&*owner.get()).swapcb.is_none());
+            drop(owner);
+            assert!(observer.upgrade().is_none());
         }
     }
 
