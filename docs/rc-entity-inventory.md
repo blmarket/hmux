@@ -1420,3 +1420,16 @@ strong references or changing row ownership.
 `cargo test --workspace` and `git diff --check` passed. Internal UnsafeCell
 projections, customization action helpers, and raw model access through find-state
 compatibility methods remain pending.
+
+## Implemented retained customization action arguments
+
+Nine prompt/editor actions (set environment, add option/environment, start edit,
+set option/array key/key, add key, and add current) borrow the customization-mode
+Rc. Prompt records clone that owner directly instead of recovering ownership
+through a raw mode pointer. Key dispatch downcasts and retains the mode entry's
+owning payload before invoking tree callbacks, and checks logical closure before
+accessing the resulting selection.
+
+`cargo test --workspace` and `git diff --check` passed. Reset/unset helpers,
+validation helpers, mode lifecycle callbacks, and internal raw model projections
+remain pending.
