@@ -2679,3 +2679,10 @@ Customize mode now resolves its Rc-owned payload directly through the entry's
 typed owner. Its menu callback compares the resolved allocation with the
 active mode, and cleanup no longer clears a mirrored raw address. Other modes
 still use `window_mode_entry.data`; the raw-field count remains 35.
+
+## Removed erased mode payload pointer
+
+Copy and view modes now own their data in the mode entry's typed Box slot,
+including the inline snapshot fixture. All production modes resolve payloads
+through typed Box or Rc owners. The erased `window_mode_entry.data` field is
+gone. The raw-field count is 34.

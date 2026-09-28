@@ -170,10 +170,9 @@ pub struct window_mode_entry {
     /// Non-owning source; copy mode keeps an independent screen snapshot.
     pub swp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub mode: &'static window_mode,
-    pub data: *mut ::core::ffi::c_void,
     /// Owns mode payloads that need a stable address but no shared ownership.
     pub boxed_data: Option<Box<dyn std::any::Any>>,
-    /// Typed owner for mode data; `data` is only a borrowed callback view.
+    /// Owns payloads shared with callbacks that can outlive their mode entry.
     pub data_owner: Option<std::rc::Rc<dyn std::any::Any>>,
     pub prefix: u_int,
     pub kill: ::core::ffi::c_int,
