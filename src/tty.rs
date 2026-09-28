@@ -1302,7 +1302,7 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
     let w = (*(*c.session).curw_ptr()).window_ptr();
-    let wp = (*w).active;
+    let wp = (*w).active_ptr();
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
         c.pan_window = std::rc::Weak::new();
@@ -3341,7 +3341,7 @@ pub unsafe fn tty_default_colours(wp: *mut window_pane) -> (grid_cell, u_int) {
     if (*wp).flags & PANE_STYLECHANGED != 0 {
         tty_style_changed(wp);
     }
-    let active = wp == (*(*wp).window).active;
+    let active = wp == (*(*wp).window).active_ptr();
     let mut gc = grid_default_cell;
     gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
         (*wp).cached_active_gc.fg

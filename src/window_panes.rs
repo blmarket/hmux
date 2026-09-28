@@ -1306,7 +1306,7 @@ unsafe fn window_panes_draw_number(
             wl = (*s).curw_ptr();
         }
     }
-    if (*w).active == wp {
+    if (*w).active_ptr() == wp {
         name = b"display-panes-active-colour\0" as *const u8 as *const ::core::ffi::c_char;
     } else {
         name = b"display-panes-colour\0" as *const u8 as *const ::core::ffi::c_char;

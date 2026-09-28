@@ -2405,7 +2405,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
     {
         key = KEYC_MOUSEMOVE_PANE as ::core::ffi::c_ulong as key_code;
         if !wp.is_null()
-            && wp != (*w).active
+            && wp != (*w).active_ptr()
             && options_get_number(
                 options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
                 b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3276,7 +3276,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(c);
-        wp = (*(*(*s).curw_ptr()).window_ptr()).active;
+        wp = (*(*(*s).curw_ptr()).window_ptr()).active_ptr();
         let active_pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
@@ -3318,8 +3318,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         let prompt_window = (*(*s).curw_ptr()).window_ptr();
-        let mut prompt_pane = (*prompt_window).active.as_ref()
-            .and_then(|pane| pane.observer.upgrade());
+        let mut prompt_pane = (*prompt_window).active.upgrade();
         if !prompt_pane.as_ref().is_some_and(|pane| window_pane_has_prompt(&*pane.get()) != 0) {
             prompt_pane = window_pane_first(prompt_window.as_ref());
             while let Some(pane_owner) = prompt_pane.as_ref() {
@@ -3861,7 +3860,7 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
     let w = window_owner.as_ptr();
     let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let active_owner = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
+    let active_owner = (*w).active.upgrade();
     let wp = active_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *const screen = std::ptr::null();
     let mut oo: *mut options = options_owner_ptr(&mut (*session_owner.get()).options).map_or(std::ptr::null_mut(), |options| options);
@@ -4465,7 +4464,7 @@ unsafe fn server_client_active_pane(c: &client) -> Option<std::rc::Rc<std::cell:
     let session = c.session.as_ref()?;
     let link = session.curw_ptr().as_ref()?;
     let window = &*link.window_owner.as_ref()?.as_rc().get();
-    window.active.as_ref()?.observer.upgrade()
+    window.active.upgrade()
 }
 
 unsafe fn server_client_set_path(c: &mut client) {
@@ -5396,7 +5395,7 @@ pub unsafe fn server_client_print(
                 });
             }
         } else {
-            wp = (*(*(*(*c).session).curw_ptr()).window_ptr()).active;
+            wp = (*(*(*(*c).session).curw_ptr()).window_ptr()).active_ptr();
             let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
             wme = (*wp).modes.active_ptr();
             if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {

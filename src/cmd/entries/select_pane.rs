@@ -254,9 +254,9 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(args, 'l' as i32 as u_char) != 0 {
         lastwp = window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if lastwp.is_null() && window_count_panes(&*w, 1 as ::core::ffi::c_int) == 2 as u_int {
-            lastwp = window_pane_previous(((*w).active).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            lastwp = window_pane_previous(((*w).active_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if lastwp.is_null() {
-                lastwp = window_pane_next(((*w).active).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                lastwp = window_pane_next(((*w).active_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if lastwp.is_null() {
@@ -397,7 +397,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
         return CMD_RETURN_NORMAL;
     }
-    if wp == (*w).active {
+    if wp == (*w).active_ptr() {
         return CMD_RETURN_NORMAL;
     }
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {

@@ -364,7 +364,7 @@ unsafe fn screen_write_initctx(
     }
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
         if !write_pane.is_null()
-            && (write_pane != (*(*write_pane).window).active || (*write_pane).screen != &raw mut (*write_pane).base)
+            && (write_pane != (*(*write_pane).window).active_ptr() || (*write_pane).screen != &raw mut (*write_pane).base)
         {
             ttyctx.flags |= TTY_CTX_SYNC;
         } else {

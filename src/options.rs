@@ -1643,9 +1643,9 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
             w = window_owner.as_ptr();
-            if !(*w).active.is_null() {
+            if !(*w).active_ptr().is_null() {
                 if options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), name) != 0 {
-                    (*(*w).active).flags |= PANE_CHANGED;
+                    (*(*w).active_ptr()).flags |= PANE_CHANGED;
                 }
             }
             window_cursor = windows_next(&*w);

@@ -203,7 +203,7 @@ unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
             return -1;
         };
         wp = pane_owner.get();
-        if wp == (*(*wp).window).active {
+        if wp == (*(*wp).window).active_ptr() {
             ls.extend_from_slice(b",\"a\":true");
         } else if window_pane_last_index(&*wp).map(|value| { i = value; }).is_some() {
             ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());

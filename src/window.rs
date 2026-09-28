@@ -1078,7 +1078,7 @@ pub unsafe fn window_create(
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
     (*w).last_panes = window_pane_history::default();
-    (*w).active = ::core::ptr::null_mut::<window_pane>();
+    (*w).set_active(::core::ptr::null_mut::<window_pane>());
     (*w).lastlayout = -(1 as ::core::ffi::c_int);
     (*w).layout_root = None;
     (*w).sx = sx;
@@ -1356,14 +1356,14 @@ pub unsafe fn window_update_focus(mut w: *mut window) {
             "window_update_focus",
             ((*w).id) as u32
         ));
-        window_pane_update_focus((*w).active);
+        window_pane_update_focus((*w).active_ptr());
     }
 }
 pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut focused: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if !wp.is_null() && !(*wp).flags & PANE_EXITED != 0 {
-        if wp != (*(*wp).window).active {
+        if wp != (*(*wp).window).active_ptr() {
             focused = 0 as ::core::ffi::c_int;
         } else {
             let mut registry_c_owner = clients.first();
@@ -1442,7 +1442,7 @@ pub unsafe fn window_set_active_pane(
         "window_set_active_pane",
         ((*wp).id) as u32
     ));
-    if wp == (*w).active {
+    if wp == (*w).active_ptr() {
         return 0 as ::core::ffi::c_int;
     }
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
@@ -1451,26 +1451,26 @@ pub unsafe fn window_set_active_pane(
     if (*w).flags & WINDOW_ZOOMED != 0 && window_pane_is_visible(&*wp) == 0 {
         window_unzoom(w, 1 as ::core::ffi::c_int);
     }
-    lastwp = (*w).active;
+    lastwp = (*w).active_ptr();
     window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     window_pane_stack_push(&raw mut (*w).last_panes, lastwp);
-    (*w).active = wp;
+    (*w).set_active(wp);
     let fresh1 = next_active_point;
     next_active_point = next_active_point.wrapping_add(1);
-    (*(*w).active).active_point = fresh1;
-    (*(*w).active).flags |= PANE_CHANGED;
+    (*(*w).active_ptr()).active_point = fresh1;
+    (*(*w).active_ptr()).flags |= PANE_CHANGED;
     if options_get_number(
         global_options,
         b"focus-events\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
         window_pane_update_focus(lastwp);
-        window_pane_update_focus((*w).active);
+        window_pane_update_focus((*w).active_ptr());
     }
     tty_update_window_offset(w);
     server_redraw_window(&*(w));
     if notify != 0 {
-        window_fire_pane_changed(w, (*w).active, lastwp);
+        window_fire_pane_changed(w, (*w).active_ptr(), lastwp);
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -1491,7 +1491,7 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         return;
     }
-    if wp == (*w).active {
+    if wp == (*w).active_ptr() {
         return;
     }
     loop {
@@ -1514,7 +1514,7 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
                 }
             }
         }
-        if wp == (*w).active {
+        if wp == (*w).active_ptr() {
             break;
         }
         if window_pane_is_floating(&*wp) != 0 {
@@ -1523,7 +1523,7 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
             (*wp).flags |= PANE_REDRAW;
             redraw_invalidate_scene(w);
         }
-        wp = (*w).active;
+        wp = (*w).active_ptr();
         if wp.is_null() {
             break;
         }
@@ -1696,10 +1696,10 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
     if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         return -(1 as ::core::ffi::c_int);
     }
-    if (*w).active != wp
-        && ((*w).active.is_null()
-            || !(*(*w).active).flags & PANE_FLOATOVERZOOM != 0
-            || window_pane_is_floating(&*(*w).active) == 0)
+    if (*w).active_ptr() != wp
+        && ((*w).active_ptr().is_null()
+            || !(*(*w).active_ptr()).flags & PANE_FLOATOVERZOOM != 0
+            || window_pane_is_floating(&*(*w).active_ptr()) == 0)
     {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
@@ -1801,7 +1801,7 @@ unsafe fn window_unzoom_internal(
     if let Some(zoomed_owner) = zoomed_owner.filter(|owner| window_pane_is_floating(&*owner.get()) != 0) {
         let zoomed = zoomed_owner.get();
         window_pane_z_remove(&mut *w, &*zoomed);
-        if zoomed == (*w).active {
+        if zoomed == (*w).active_ptr() {
             window_pane_z_insert_front(&mut *w, &*zoomed);
         } else {
             let mut before = window_pane_z_first(w.as_ref());
@@ -1847,13 +1847,13 @@ pub unsafe fn window_active_pane_is_over_zoom(mut w: *mut window) -> ::core::ffi
     if !(*w).flags & WINDOW_ZOOMED != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if (*w).active.is_null() {
+    if (*w).active_ptr().is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if !(*(*w).active).flags & PANE_FLOATOVERZOOM != 0 {
+    if !(*(*w).active_ptr()).flags & PANE_FLOATOVERZOOM != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return window_pane_is_floating(&*(*w).active);
+    return window_pane_is_floating(&*(*w).active_ptr());
 }
 pub unsafe fn window_push_zoom(
     mut w: *mut window,
@@ -1891,7 +1891,7 @@ pub unsafe fn window_pop_zoom(mut w: *mut window) -> ::core::ffi::c_int {
     if (*w).flags & WINDOW_WASZOOMED != 0 {
         (*w).flags &= !WINDOW_WASZOOMED;
         (*w).was_zoomed = std::rc::Weak::new();
-        let active = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
+        let active = (*w).active.upgrade();
         if active.as_ref().is_some_and(|owner| {
             (*owner.get()).flags & PANE_FLOATOVERZOOM == 0
                 || window_pane_is_floating(&*owner.get()) == 0
@@ -1915,7 +1915,7 @@ pub unsafe fn window_add_pane(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if other.is_null() {
-        other = (*w).active;
+        other = (*w).active_ptr();
     }
     wp = window_pane_create(w, (*w).sx, (*w).sy, hlimit);
     if window_pane_first(w.as_ref()).is_none() {
@@ -1977,7 +1977,7 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
         (*w).was_zoomed = std::rc::Weak::new();
     }
     window_pane_stack_remove(&raw mut (*w).last_panes, wp);
-    if wp == (*w).active {
+    if wp == (*w).active_ptr() {
         let mut replacement = if (*w).modal.ptr_eq(&(*wp).observer) {
             (*w).modal = std::rc::Weak::new();
             std::mem::take(&mut (*w).modal_last).upgrade()
@@ -1991,11 +1991,11 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
             replacement = (*w).panes.previous(&(*wp).observer)
                 .or_else(|| (*w).panes.next(&(*wp).observer));
         }
-        (*w).active = replacement.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if !(*w).active.is_null() {
-            window_pane_stack_remove(&raw mut (*w).last_panes, (*w).active);
-            (*(*w).active).flags |= PANE_CHANGED;
-            window_fire_pane_changed(w, (*w).active, wp);
+        (*w).set_active(replacement.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
+        if !(*w).active_ptr().is_null() {
+            window_pane_stack_remove(&raw mut (*w).last_panes, (*w).active_ptr());
+            (*(*w).active_ptr()).flags |= PANE_CHANGED;
+            window_fire_pane_changed(w, (*w).active_ptr(), wp);
             window_update_focus(w);
         }
     } else if (*w).modal.ptr_eq(&(*wp).observer) {
@@ -2155,7 +2155,7 @@ pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> std::ffi:
     let mut w: *mut window = (*wp).window as *mut window;
     let mut flags: [::core::ffi::c_char; 32] = [0; 32];
     let mut pos: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if wp == (*w).active {
+    if wp == (*w).active_ptr() {
         let fresh12 = pos;
         pos = pos + 1;
         flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
@@ -3943,8 +3943,8 @@ pub unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int
     if wp.base.saved_grid.is_some() {
         return 0 as ::core::ffi::c_int;
     }
-    if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active.is_null() {
-        wme = (*(*w).active).modes.active_ptr();
+    if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active_ptr().is_null() {
+        wme = (*(*w).active_ptr()).modes.active_ptr();
         if !wme.is_null() && (*(*wme).mode).flags & WINDOW_MODE_HIDE_SCROLLBARS != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -4799,7 +4799,7 @@ mod zoom_teardown_tests {
         (*pane).base.grid = Some(grid_create(80, 24, 0));
         (*pane).screen = &raw mut (*pane).base;
         (*pane).flags = PANE_ZOOMED;
-        (*w).active = pane;
+        (*w).set_active(pane);
         (*w).panes.push_back((*pane).observer.clone());
         (*w).z_index.push_back((*pane).observer.clone());
         let mut saved = layout_create_cell();
@@ -4820,7 +4820,7 @@ mod zoom_teardown_tests {
         unsafe {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
-            let pane = (*w).active;
+            let pane = (*w).active_ptr();
             let tree_owner = std::rc::Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
                 observer: observer.clone(),
                 wp: window_pane_weak(pane),
@@ -4847,7 +4847,7 @@ mod zoom_teardown_tests {
                 let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
                 let observer = (*w).observer.clone();
-                let pane_observer = (*(*w).active).observer.clone();
+                let pane_observer = (*(*w).active_ptr()).observer.clone();
                 let resized = Rc::new(Cell::new(0));
                 let resize_count = resized.clone();
                 let resize_sink = events_add_sink(
@@ -4890,7 +4890,7 @@ mod zoom_teardown_tests {
         unsafe {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
-            let pane = (*w).active;
+            let pane = (*w).active_ptr();
             let notifications = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
             for name in [c"pane-resized", c"window-unzoomed", c"window-closed"] {

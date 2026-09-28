@@ -314,7 +314,7 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
     };
     let Some(link) = wl.as_ref() else { return WindowTreeTarget::default(); };
     let pane = if item.type_0 == WINDOW_TREE_SESSION || item.type_0 == WINDOW_TREE_WINDOW {
-        (*link.window_ptr()).active.as_ref().and_then(|pane| pane.observer.upgrade())
+        (*link.window_ptr()).active.upgrade()
     } else {
         let pane = window_pane_find_by_id(item.pane as u_int);
         if !pane.as_ref().is_some_and(|owner| window_has_pane(&*link.window_ptr(), &Rc::downgrade(owner))) {
@@ -435,8 +435,8 @@ unsafe fn window_tree_build_window(
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !(*wl).window_ptr().is_null() && !(*(*wl).window_ptr()).active.is_null() {
-        tag = (FORMAT_PANE | (*(*(*wl).window_ptr()).active).id) as uint64_t;
+    if !(*wl).window_ptr().is_null() && !(*(*wl).window_ptr()).active_ptr().is_null() {
+        tag = (FORMAT_PANE | (*(*(*wl).window_ptr()).active_ptr()).id) as uint64_t;
     }
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
@@ -518,8 +518,8 @@ unsafe fn window_tree_build_session(
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !wl.is_null() && !(*wl).window_ptr().is_null() && !(*(*wl).window_ptr()).active.is_null() {
-        tag = (FORMAT_PANE | (*(*(*wl).window_ptr()).active).id) as uint64_t;
+    if !wl.is_null() && !(*wl).window_ptr().is_null() && !(*(*wl).window_ptr()).active_ptr().is_null() {
+        tag = (FORMAT_PANE | (*(*(*wl).window_ptr()).active_ptr()).id) as uint64_t;
     }
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
@@ -965,7 +965,7 @@ unsafe fn window_tree_draw_session(
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_preview(&mut *ctx, &(*(*w).active).base, width, sy);
+            screen_write_preview(&mut *ctx, &(*(*w).active_ptr()).base, width, sy);
             format = options_get_string(
                 oo,
                 b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1082,7 +1082,7 @@ unsafe fn window_tree_draw_window(
     wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
-            if wp == (*w).active {
+            if wp == (*w).active_ptr() {
                 break;
             }
             current = current.wrapping_add(1);

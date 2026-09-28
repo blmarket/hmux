@@ -255,7 +255,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 template = NEW_WINDOW_TEMPLATE.as_ptr();
             }
             let cp =
-                format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window_ptr()).active);
+                format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window_ptr()).active_ptr());
             cmdq_print(item, |out| out.write_all(cp.as_bytes()));
         }
         cmd_find_from_winlink(&raw mut fs, new_wl, 0 as ::core::ffi::c_int);

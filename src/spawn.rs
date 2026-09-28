@@ -313,7 +313,7 @@ pub unsafe fn spawn_window(
         window_pane_z_insert_back(&mut *w, &*source_pane);
         window_pane_resize(&source_pane_owner, (*w).sx, (*w).sy);
         layout_init(w, source_pane);
-        (*w).active = ::core::ptr::null_mut::<window_pane>();
+        (*w).set_active(::core::ptr::null_mut::<window_pane>());
         window_set_active_pane(w, source_pane, 0 as ::core::ffi::c_int);
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
@@ -934,7 +934,7 @@ pub unsafe fn spawn_pane(
         return new_wp;
     }
     if (*sc).flags & SPAWN_MODAL != 0 {
-        (*w).modal_last = (*w).active.as_ref().map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
+        (*w).modal_last = (*w).active.clone();
         (*w).modal = (*new_wp).observer.clone();
         window_redraw_active_switch(w, new_wp);
         if (*sc).flags & SPAWN_NONOTIFY != 0 {
@@ -942,7 +942,7 @@ pub unsafe fn spawn_pane(
         } else {
             window_set_active_pane(w, new_wp, 1 as ::core::ffi::c_int);
         }
-    } else if (!(*sc).flags & SPAWN_DETACHED != 0 || (*w).active.is_null()) && (*w).modal.upgrade().is_none()
+    } else if (!(*sc).flags & SPAWN_DETACHED != 0 || (*w).active_ptr().is_null()) && (*w).modal.upgrade().is_none()
     {
         if (*sc).flags & SPAWN_NONOTIFY != 0 {
             window_set_active_pane(w, new_wp, 0 as ::core::ffi::c_int);
@@ -1164,7 +1164,7 @@ pub(crate) unsafe fn spawn_editor(
     sc.s = Some(session_owner.clone());
     sc.set_wl(wl);
     sc.tc = Some(client_owner.clone());
-    sc.wp0 = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
+    sc.wp0 = (*w).active.upgrade();
     sc.lc = lc;
     sc.argv = vec![cmd];
     sc.environ = Some(environ_create());

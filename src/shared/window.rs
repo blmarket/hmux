@@ -83,7 +83,8 @@ pub struct window {
     pub offset_timer: event,
     pub activity_time: timeval,
     pub creation_time: timeval,
-    pub active: *mut window_pane,
+    /// Current pane identity; the pane index owns the allocation.
+    pub active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     /// Current modal pane is observed; the pane index owns its lifetime.
     pub modal: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     /// Pane to restore after modal dismissal; does not own that pane.
@@ -262,6 +263,19 @@ pub struct windows {
 }
 
 impl window {
+    /// Legacy pointer view. The caller must keep the pane indexed or retain
+    /// an Rc through its use; this liveness check is not a borrow guard.
+    pub fn active_ptr(&self) -> *mut window_pane {
+        self.active
+            .upgrade()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+    }
+
+    /// The caller supplies a live Rc-backed pane.
+    pub unsafe fn set_active(&mut self, pane: *mut window_pane) {
+        self.active = pane.as_ref().map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
+    }
+
     pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
         std::rc::Rc::new_cyclic(|observer| {
             let mut value = Self::default();

@@ -555,7 +555,7 @@ unsafe fn window_client_draw(
         return;
     }
     w = (*(*session).curw_ptr()).window_ptr();
-    wp = (*w).active;
+    wp = (*w).active_ptr();
     if (*data).hide_preview_this_pane != 0 && wp == mode_pane {
         if !window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
             wp = window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

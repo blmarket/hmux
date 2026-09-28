@@ -502,7 +502,7 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
     let mut type_0: ::core::ffi::c_int = 0;
     let mut current: ::core::ffi::c_int = 0;
     let mut changed: ::core::ffi::c_int = 0;
-    if (*w).active.is_null() {
+    if (*w).active_ptr().is_null() {
         return;
     }
     log_debug(format_args!(

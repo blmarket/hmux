@@ -1665,8 +1665,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     let s = (*c).session;
     let mut dctx = redraw_draw_ctx {
         scene,
-        active: (*window_owner.get()).active.as_ref()
-            .map_or_else(std::rc::Weak::new, |pane| pane.observer.clone()),
+        active: (*window_owner.get()).active.clone(),
         marked: std::rc::Weak::new(),
         status_lines: status_line_size(&*c),
         pane_lines: PANE_LINES_SINGLE,

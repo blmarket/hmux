@@ -634,7 +634,7 @@ pub unsafe fn cmd_mouse_pane(
     }
     let pane_owner;
     if (*m).wp == -(1 as ::core::ffi::c_int) {
-        pane_owner = (*(*wl).window_ptr()).active.as_ref().and_then(|pane| pane.observer.upgrade());
+        pane_owner = (*(*wl).window_ptr()).active.upgrade();
         wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         pane_owner = window_pane_find_by_id((*m).wp as u_int);

@@ -190,10 +190,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 window_set_active_pane(src_w, dst_wp, 1 as ::core::ffi::c_int);
             }
         } else {
-            if (*src_w).active == src_wp {
+            if (*src_w).active_ptr() == src_wp {
                 window_set_active_pane(src_w, dst_wp, 1 as ::core::ffi::c_int);
             }
-            if (*dst_w).active == dst_wp {
+            if (*dst_w).active_ptr() == dst_wp {
                 window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
             }
         }

@@ -524,7 +524,7 @@ unsafe fn layout_resize_check(
 ) -> u_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut root: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
-    let mut sb_style: *mut style = &raw mut (*(*w).active).scrollbar_style;
+    let mut sb_style: *mut style = &raw mut (*(*w).active_ptr()).scrollbar_style;
     let mut available: u_int = 0;
     let mut minimum: u_int = 0;
     let mut status: ::core::ffi::c_int = 0;

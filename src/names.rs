@@ -55,7 +55,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         tv_usec: 0,
     };
     let mut left: ::core::ffi::c_int = 0;
-    if (*w).active.is_null() {
+    if (*w).active_ptr().is_null() {
         return;
     }
     if options_get_number(
@@ -65,7 +65,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
     {
         return;
     }
-    if !(*(*w).active).flags & PANE_CHANGED != 0 {
+    if !(*(*w).active_ptr()).flags & PANE_CHANGED != 0 {
         log_debug(format_args!(
             "@{} active pane not changed",
             ((*w).id) as u32
@@ -116,7 +116,7 @@ pub unsafe fn check_window_name(mut w: *mut window) {
     if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
     }
-    (*(*w).active).flags &= !PANE_CHANGED;
+    (*(*w).active_ptr()).flags &= !PANE_CHANGED;
     let name = format_window_name(w);
     if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut()) != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
@@ -138,15 +138,15 @@ pub unsafe fn check_window_name(mut w: *mut window) {
 }
 
 pub(crate) unsafe fn default_window_name_cstring(w: &window) -> CString {
-    if w.active.is_null() {
+    if w.active_ptr().is_null() {
         return c"".to_owned();
     }
-    let cmd = cmd_stringify_argv_cstring(&(*w.active).argv);
+    let cmd = cmd_stringify_argv_cstring(&(*w.active_ptr()).argv);
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         parse_window_name_cstring(cmd)
     } else {
         parse_window_name_cstring(CStr::from_ptr(
-            (*w.active)
+            (*w.active_ptr())
                 .shell
                 .as_ref()
                 .map_or(::core::ptr::null(), |value| value.as_ptr()),
@@ -163,7 +163,7 @@ unsafe fn format_window_name(w: *mut window) -> CString {
         0 as ::core::ffi::c_int,
     );
     format_defaults_window(ft, w);
-    format_defaults_pane(ft, (*w).active);
+    format_defaults_pane(ft, (*w).active_ptr());
     fmt = options_get_string(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,

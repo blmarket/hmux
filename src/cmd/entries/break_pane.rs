@@ -216,7 +216,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         window_pane_list_insert_front(&mut *w, &*wp);
         window_pane_z_insert_front(&mut *w, &*wp);
-        (*w).active = wp;
+        (*w).set_active(wp);
         (*w).latest = tc.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         if name.is_null() {
             drop(window_replace_name(w, default_window_name_cstring(&*w)));

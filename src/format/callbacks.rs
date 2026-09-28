@@ -1907,7 +1907,7 @@ unsafe fn format_cb_pane_active(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
-        if format_pane == (*(*format_pane).window).active {
+        if format_pane == (*(*format_pane).window).active_ptr() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

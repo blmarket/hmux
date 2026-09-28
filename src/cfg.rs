@@ -334,7 +334,7 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
         if s.is_null() || (*s).attached == 0 as u_int {
             return;
         }
-        wp = (*(*(*s).curw_ptr()).window_ptr()).active;
+        wp = (*(*(*s).curw_ptr()).window_ptr()).active_ptr();
         let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
         wme = (*wp).modes.active_ptr();
         if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {

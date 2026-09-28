@@ -118,7 +118,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
     let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = event_payload_get_window(ep);
-    if w.is_null() || (*w).active.is_null() {
+    if w.is_null() || (*w).active_ptr().is_null() {
         return;
     }
     let mut registry_c_owner = clients.first();
@@ -134,7 +134,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
                     out,
                     "%window-pane-changed @{} %{}",
                     ((*w).id) as u32,
-                    ((*(*w).active).id) as u32
+                    ((*(*w).active_ptr()).id) as u32
                 )
             });
         }

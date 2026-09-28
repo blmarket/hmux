@@ -92,7 +92,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(&cursor, sx, sy);
-        window_pane_previous(((*w).active).as_ref())
+        window_pane_previous(((*w).active_ptr()).as_ref())
             .or_else(|| window_pane_last(Some(&*w)))
     } else {
         let moved_owner = window_pane_first(Some(&*w)).expect("rotation window has panes");
@@ -128,7 +128,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(&cursor, sx, sy);
-        window_pane_next(((*w).active).as_ref())
+        window_pane_next(((*w).active_ptr()).as_ref())
             .or_else(|| window_pane_first(Some(&*w)))
     }.expect("rotation window has an active candidate");
     let wp = selected_pane.get();

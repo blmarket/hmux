@@ -1273,7 +1273,7 @@ pub(super) unsafe fn format_loop_panes(
             b"format_loop_panes\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "pane loop: %{}", ((*wp).id) as u32),
         );
-        let use_0 = if active.is_some() && wp == (*format_window).active {
+        let use_0 = if active.is_some() && wp == (*format_window).active_ptr() {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
