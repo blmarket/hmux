@@ -4692,15 +4692,14 @@ unsafe fn window_customize_change_tagged_callback(
         return PROMPT_CLOSE;
     }
     mode_tree_each_tagged(
-        (*data).data_ptr(),
-        |row, _, _| unsafe {
+        (*data).data.clone().as_ref().expect("live mode tree"),
+        |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
             window_customize_change_each(
                 data,
                 &itemdata.as_customize().expect("tagged customize row"),
             )
         },
-        c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         0 as ::core::ffi::c_int,
     );

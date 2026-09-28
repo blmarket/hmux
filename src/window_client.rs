@@ -889,8 +889,8 @@ unsafe fn window_client_key(
         }
         68 | 88 | 90 => {
             mode_tree_each_tagged(
-                mtd,
-                |row, _, key| unsafe {
+                (*data).data.clone().as_ref().expect("live mode tree"),
+                |row, key| unsafe {
                     let itemdata = row.borrow().itemdata.clone();
                     window_client_do_detach(
                         data,
@@ -898,7 +898,6 @@ unsafe fn window_client_key(
                         key,
                     )
                 },
-                c,
                 key,
                 0 as ::core::ffi::c_int,
             );

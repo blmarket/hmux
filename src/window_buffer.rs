@@ -572,10 +572,10 @@ unsafe fn window_buffer_do_delete(
 unsafe fn window_buffer_do_paste(
     mut data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
 ) {
     if paste_get_name(&item.name).is_some() {
-        mode_tree_run_command(c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(), None, &(*data).command, &item.name);
+        mode_tree_run_command(Some(client_owner), None, &(*data).command, &item.name);
     }
 }
 unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
@@ -831,15 +831,14 @@ unsafe fn window_buffer_key(
             }
             68 => {
                 mode_tree_each_tagged(
-                    mtd,
-                    |row, _, _| unsafe {
+                    (*data).data.clone().as_ref().expect("live mode tree"),
+                    |row, _| unsafe {
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_delete(
                             data,
                             &itemdata.as_buffer().expect("buffer row payload"),
                         )
                     },
-                    c,
                     key,
                     0 as ::core::ffi::c_int,
                 );
@@ -847,16 +846,15 @@ unsafe fn window_buffer_key(
             }
             80 => {
                 mode_tree_each_tagged(
-                    mtd,
-                    |row, c, _| unsafe {
+                    (*data).data.clone().as_ref().expect("live mode tree"),
+                    |row, _| unsafe {
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_paste(
                             data,
                             &itemdata.as_buffer().expect("buffer row payload"),
-                            c,
+                            client_owner,
                         )
                     },
-                    c,
                     key,
                     0 as ::core::ffi::c_int,
                 );
@@ -865,7 +863,7 @@ unsafe fn window_buffer_key(
             112 | 13 => {
                 let item_owner = mode_tree_get_current(&*mtd);
                 if let Some(item) = item_owner.as_buffer() {
-                    window_buffer_do_paste(data, &item, c);
+                    window_buffer_do_paste(data, &item, client_owner);
                 }
                 finished = 1 as ::core::ffi::c_int;
             }

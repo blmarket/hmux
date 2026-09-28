@@ -1163,3 +1163,17 @@ before interpreting mode data.
 cover the offset query for copy/view modes and absent/unrelated modes. The public
 copy-mode functions no longer take raw refcounted model arguments; private mode
 callbacks, erased mode data and internal raw model projections remain pending.
+
+## Implemented retained mode trees for tagged dispatch
+
+`mode_tree_each_tagged` borrows an Rc tree and no longer forwards a raw client
+argument. Callers retain a local tree handle across dispatch so callbacks may
+clear rows or destroy the mode without invalidating the iteration's storage.
+Callbacks capture their own context: buffer paste borrows its key handler's
+client owner, and tree commands retain the prompt client before iterating. Pane
+command execution also borrows its client owner and reads its target through a
+pane borrow instead of raw model arguments.
+
+`cargo test --workspace` and `git diff --check` passed, including callback-driven
+tree destruction and row clearing tests. Prompt callback client adapters, other
+mode-tree APIs and internal raw projections remain pending.

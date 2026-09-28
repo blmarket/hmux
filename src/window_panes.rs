@@ -1768,11 +1768,11 @@ unsafe fn window_panes_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mu
 }
 unsafe fn window_panes_run_command(
     mut data: *mut window_panes_modedata,
-    mut c: *mut client,
-    mut wp: *mut window_pane,
+    client_owner: &Rc<UnsafeCell<client>>,
+    pane: &window_pane,
 ) {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let expanded = CString::new(format!("%{}", (*wp).id)).expect("pane ID contains NUL");
+    let expanded = CString::new(format!("%{}", pane.id)).expect("pane ID contains NUL");
     match args_make_commands(
         (*data)
             .state
@@ -1782,7 +1782,7 @@ unsafe fn window_panes_run_command(
     ) {
         Err(error) => {
             cmdq_append(
-                c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
+                Some(client_owner),
                 cmdq_get_error(
                     error
                         .as_ref()
@@ -1794,7 +1794,7 @@ unsafe fn window_panes_run_command(
             let cmdlist = commands;
             new_item =
                 cmdq_get_command(&cmdlist, None);
-            cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
+            cmdq_append(Some(client_owner), new_item);
             drop(cmdlist);
         }
     }
@@ -1927,7 +1927,7 @@ unsafe fn window_panes_key(
     if (*(*wp).window).flags & WINDOW_ZOOMED != 0 {
         window_unzoom((*wp).window as *mut window, 1 as ::core::ffi::c_int);
     }
-    window_panes_run_command(data, c, target);
+    window_panes_run_command(data, client_owner, &*target);
     window_pane_reset_mode(&mode_pane_owner);
 }
 

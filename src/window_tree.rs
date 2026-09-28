@@ -1872,7 +1872,7 @@ unsafe fn window_tree_get_target(
 unsafe fn window_tree_command_each(
     mut data: *mut window_tree_modedata,
     item: &window_tree_itemdata,
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -1885,7 +1885,7 @@ unsafe fn window_tree_command_each(
     };
     if let Some(name) = window_tree_get_target(item, &mut fs) {
         mode_tree_run_command(
-            c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live")).as_ref(),
+            client_owner,
             Some(&fs),
             (*data).entered.as_deref().expect("entered tree command"),
             &name,
@@ -1927,14 +1927,14 @@ unsafe fn window_tree_command_callback(
     if (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
+    let command_client = c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live"));
     (*data).entered = Some(s.to_owned());
     mode_tree_each_tagged(
-        (*data).data_ptr(),
-        |row, c, _| unsafe {
+        (*data).data.clone().as_ref().expect("live mode tree"),
+        |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
-            window_tree_command_each(data, &itemdata.as_tree().expect("tree row payload"), c)
+            window_tree_command_each(data, &itemdata.as_tree().expect("tree row payload"), command_client.as_ref())
         },
-        c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
     );
@@ -2063,12 +2063,11 @@ unsafe fn window_tree_kill_tagged_callback(
         return PROMPT_CLOSE;
     }
     mode_tree_each_tagged(
-        mtd,
-        |row, _, _| unsafe {
+        (*data).data.clone().as_ref().expect("live mode tree"),
+        |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
             window_tree_kill_each(&itemdata.as_tree().expect("tree row payload"))
         },
-        c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
     );

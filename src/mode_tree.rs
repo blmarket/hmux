@@ -463,29 +463,26 @@ pub unsafe fn mode_tree_count_tagged(mtd: *mut mode_tree_data) -> u_int {
         .count() as u_int
 }
 pub unsafe fn mode_tree_each_tagged(
-    mtd: *mut mode_tree_data,
-    mut cb: impl FnMut(&ModeTreeItemRef, *mut client, key_code),
-    c: *mut client,
+    tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
+    mut cb: impl FnMut(&ModeTreeItemRef, key_code),
     key: key_code,
     current: i32,
 ) {
-    let _tree = (*mtd).observer
-        .upgrade()
-        .expect("live mode tree");
+    let mtd = tree_owner.get();
     let mut fired = false;
     let mut index = 0;
     while (*mtd).dead == 0 && index < (*mtd).lines.len() {
         let item = (&(*mtd).lines)[index].item.clone();
         if item.try_borrow().is_some_and(|row| row.tagged != 0) {
             fired = true;
-            cb(&item, c, key);
+            cb(&item, key);
         }
         index += 1;
     }
     if (*mtd).dead == 0 && !fired && current != 0 && !(*mtd).lines.is_empty() {
         let item = (&(*mtd).lines)[(*mtd).current as usize].item.clone();
         if item.is_alive() {
-            cb(&item, c, key);
+            cb(&item, key);
         }
     }
 }
@@ -2935,13 +2932,12 @@ mod row_owner_tests {
             let mut calls = 0;
             let mut tree_owner = Some(tree_owner);
             mode_tree_each_tagged(
-                tree,
-                |row, _, _| {
+                &observer.upgrade().expect("live tree"),
+                |row, _| {
                     calls += 1;
                     mode_tree_free(tree_owner.take().unwrap());
                     assert!(!row.is_alive());
                 },
-                std::ptr::null_mut(),
                 KEYC_NONE,
                 1,
             );
@@ -2968,8 +2964,8 @@ mod row_owner_tests {
                 drop(second);
                 let mut calls = 0;
                 mode_tree_each_tagged(
-                    tree,
-                    |row, _, _| {
+                    &owner,
+                    |row, _| {
                         calls += 1;
                         row.borrow_mut().tagged = 0;
                         let name = row.borrow().name.clone();
@@ -2980,7 +2976,6 @@ mod row_owner_tests {
                         assert!(row.try_borrow().is_none());
                         assert_eq!(name.as_c_str(), c"first");
                     },
-                    std::ptr::null_mut(),
                     KEYC_NONE,
                     1,
                 );
