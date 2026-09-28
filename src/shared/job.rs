@@ -22,7 +22,7 @@ pub struct job {
     pub tty: [::core::ffi::c_char; 32],
     pub status: ::core::ffi::c_int,
     pub fd: ::core::ffi::c_int,
-    pub event: *mut bufferevent,
+    pub event: crate::src::reactor::StreamHandle,
     pub updatecb: job_update_cb,
     pub completecb: job_complete_cb,
     pub freecb: job_free_cb,

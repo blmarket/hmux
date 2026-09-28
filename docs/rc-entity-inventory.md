@@ -2395,3 +2395,12 @@ stream state. Each reply borrows the live stream slot while writing, and an
 expired stream makes the reply a no-op. A focused regression frees the stream
 before the input parser sends a reply. The field inventory now counts 65
 remaining in-scope raw fields.
+
+## Implemented weak job stream
+
+`job.event` now stores a `StreamHandle`. Completion and callbacks borrow the
+live stream slot for their synchronous work; job teardown frees it at the
+existing point before closing the file descriptor. The legacy event accessor
+still projects a checked raw view. A focused regression verifies output
+collection and expiration after free. The field inventory now counts 64
+remaining in-scope raw fields.

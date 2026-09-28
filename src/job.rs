@@ -15,7 +15,7 @@ use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::options::options_get_string;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_get_output,
+    bufferevent_disable, bufferevent_enable, bufferevent_get_output,
     bufferevent_new, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
@@ -54,8 +54,14 @@ pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
 
 unsafe fn job_completion(job: *mut job) -> JobCompletion {
-    let input = &mut *(*(*job).event).input;
-    let output = evbuffer_pullup(input, -1).unwrap_or_default().to_vec();
+    let output = (*job)
+        .event
+        .with_ptr(|stream| unsafe {
+            evbuffer_pullup(&mut *(*stream).input, -1)
+                .unwrap_or_default()
+                .to_vec()
+        })
+        .unwrap_or_default();
     JobCompletion {
         status: JobExitStatus::from_wait_status((*job).status),
         output,
@@ -364,7 +370,7 @@ pub unsafe fn job_run(
                         (*job).fd = master;
                     }
                     setblocking((*job).fd, 0 as ::core::ffi::c_int);
-                    (*job).event = bufferevent_new(
+                    let stream = bufferevent_new(
                         (*job).fd,
                         bufferevent_data_callback(move |_| unsafe {
                             job_read_callback(job as *mut ::core::ffi::c_void)
@@ -376,10 +382,11 @@ pub unsafe fn job_run(
                             job_error_callback(job as *mut ::core::ffi::c_void)
                         }),
                     );
-                    if (*job).event.is_null() {
+                    if stream.is_null() {
                         fatalx(|out| out.write_all(b"out of memory"));
                     }
-                    bufferevent_enable((*job).event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
+                    (*job).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                    bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
                     log_debug(format_args!(
                         "run job {}: {}, pid {}",
                         log_pointer((job) as *const ::core::ffi::c_void),
@@ -426,9 +433,7 @@ pub unsafe fn job_free(mut job: *mut job) {
     if (*job).pid != -(1 as ::core::ffi::c_int) {
         kill((*job).pid as __pid_t, SIGTERM);
     }
-    if !(*job).event.is_null() {
-        bufferevent_free((*job).event);
-    }
+    (*job).event.free();
     if (*job).fd != -(1 as ::core::ffi::c_int) {
         close((*job).fd);
     }
@@ -479,7 +484,9 @@ unsafe fn job_read_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut job: *mut job = data as *mut job;
-    let mut len: size_t = evbuffer_get_length(&*(bufferevent_get_output(&mut *(*job).event)));
+    let Some(len) = (*job).event.with_ptr(|stream| unsafe {
+        evbuffer_get_length(&*(bufferevent_get_output(&mut *stream)))
+    }) else { return };
     log_debug(format_args!(
         "job write {}: {}, pid {}, output left {}",
         log_pointer((job) as *const ::core::ffi::c_void),
@@ -494,7 +501,9 @@ unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
     ));
     if len == 0 as size_t && !(*job).flags & JOB_KEEPWRITE != 0 {
         shutdown((*job).fd, SHUT_WR as ::core::ffi::c_int);
-        bufferevent_disable((*job).event, EV_WRITE as ::core::ffi::c_short);
+        let _ = (*job).event.with_ptr(|stream| unsafe {
+            bufferevent_disable(stream, EV_WRITE as ::core::ffi::c_short)
+        });
     }
 }
 unsafe fn job_error_callback(mut data: *mut ::core::ffi::c_void) {
@@ -517,7 +526,9 @@ unsafe fn job_error_callback(mut data: *mut ::core::ffi::c_void) {
         }
         job_free(job);
     } else {
-        bufferevent_disable((*job).event, EV_READ as ::core::ffi::c_short);
+        let _ = (*job).event.with_ptr(|stream| unsafe {
+            bufferevent_disable(stream, EV_READ as ::core::ffi::c_short)
+        });
         (*job).state = JOB_CLOSED;
     };
 }
@@ -567,7 +578,32 @@ pub unsafe fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     };
 }
 pub unsafe fn job_get_event(mut job: *mut job) -> *mut bufferevent {
-    return (*job).event;
+    return (*job).event.ptr();
+}
+
+#[cfg(test)]
+mod job_stream_tests {
+    use super::*;
+
+    #[test]
+    fn completion_reads_a_live_stream_and_skips_one_after_free() {
+        unsafe {
+            let stream = bufferevent_new(-1, None, None, None);
+            let mut job = job::empty();
+            job.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            assert_eq!(job_get_event(&mut job), stream);
+            crate::src::reactor::evbuffer_add(
+                &mut *(*stream).input,
+                b"output".as_ptr().cast(),
+                6,
+            );
+            assert_eq!(job_completion(&mut job).output, b"output");
+            job.event.free();
+            assert!(job_get_event(&mut job).is_null());
+            assert!(job_completion(&mut job).output.is_empty());
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 }
 pub unsafe fn job_kill_all() {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();

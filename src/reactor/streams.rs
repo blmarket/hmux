@@ -53,6 +53,18 @@ impl StreamHandle {
     pub fn is_alive(&self) -> bool {
         self.with_ptr(|_| ()).is_some()
     }
+
+    /// Legacy pointer view. The caller must keep the stream registered through use.
+    pub fn ptr(&self) -> *mut bufferevent {
+        self.with_ptr(|stream| stream).unwrap_or(std::ptr::null_mut())
+    }
+
+    /// Free this registered stream at the existing teardown point.
+    pub fn free(&mut self) {
+        let stream = self.ptr();
+        *self = Self::default();
+        unsafe { bufferevent_free(stream) };
+    }
 }
 thread_local! {
     static STREAMS: RefCell<HashMap<usize, Rc<StreamState>>> = RefCell::new(HashMap::new());
