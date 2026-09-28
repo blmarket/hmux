@@ -7,6 +7,11 @@ matching model-reference lifecycle; a local upgrade used only to guard access
 does not make its `Weak` field an owning holder. The full inventory remains in
 `rc-entity-inventory.md`.
 
+All stored `Option<Weak<T>>` handles in `src/`, including `refbox::Weak`
+back-links, prompt identities, and mode-tree parent identities, now use an
+empty weak handle for absence. Optional borrowed weak parameters and optional
+containers of weak handles are separate contracts.
+
 ## Completed field reviews
 
 | Holder | Result | Evidence |
@@ -56,5 +61,3 @@ not finish the review of every creation site.
   borrow while preserving scoped guards for access.
 - Review ordinary `Rc` clones in code paths that transfer ownership into those
   holders; distinguish a new reference from a temporary guard or moved owner.
-- Keep `src/` free of `Option<Weak<T>>` fields. Empty `Weak` is the absent case;
-  use allocation identity where an expired explicit target must stay distinct.
