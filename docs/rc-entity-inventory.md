@@ -1371,3 +1371,15 @@ captures while preserving cleanup-before-final-release ordering.
 input retention, rejection of closed modes, cleanup release, and cached input
 invocation after mode expiration. Preview helpers, key-dispatch model access and
 other internal raw projections remain pending.
+
+## Implemented retained models for tree previews and builders
+
+Session/window/info preview helpers borrow the tree-mode Rc. Session/window
+previews also borrow the session owner already returned by target resolution.
+The nested builders carry retained sessions and panes from sorted collections,
+and pane filtering takes retained handles through format evaluation. These
+synchronous arguments borrow existing ownership without adding persistent links.
+
+`cargo test --workspace` and `git diff --check` passed. Target resolution still
+uses raw output parameters, and preview/formatting internals and winlink access
+remain pending.

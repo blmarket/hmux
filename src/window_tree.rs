@@ -365,12 +365,14 @@ unsafe fn window_tree_remove_last_item(
     (*data).item_list.pop();
 }
 unsafe fn window_tree_build_pane(
-    mut s: *mut session,
+    session_owner: &Rc<UnsafeCell<session>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    pane_owner: &Rc<UnsafeCell<window_pane>>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     parent: &ModeTreeItemRef,
 ) {
+    let s = session_owner.get();
+    let wp = pane_owner.get();
     let data = mode_owner.get();
     let mut idx: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -406,9 +408,9 @@ unsafe fn window_tree_build_pane(
     mode_tree_align(&mti);
 }
 unsafe fn window_tree_filter_pane(
-    mut s: *mut session,
+    session_owner: &Rc<UnsafeCell<session>>,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    pane_owner: &Rc<UnsafeCell<window_pane>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut result: ::core::ffi::c_int = 0;
@@ -419,21 +421,22 @@ unsafe fn window_tree_filter_pane(
         ::core::ptr::null_mut::<cmdq_item>(),
         filter,
         ::core::ptr::null_mut::<client>(),
-        s,
+        session_owner.get(),
         wl,
-        wp,
+        pane_owner.get(),
     );
     result = format_true(cp.as_ptr());
     return result;
 }
 unsafe fn window_tree_build_window(
-    mut s: *mut session,
+    session_owner: &Rc<UnsafeCell<session>>,
     mut wl: *mut winlink,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
     parent: &ModeTreeItemRef,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let s = session_owner.get();
     let data = mode_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return 0;
@@ -496,10 +499,10 @@ unsafe fn window_tree_build_window(
     found = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        if !(window_tree_filter_pane(s, wl, l[i as usize].get(), filter) == 0) {
+        if !(window_tree_filter_pane(session_owner, wl, &l[i as usize], filter) == 0) {
             found = found.wrapping_add(1);
             if !((*data).hide_preview_this_pane != 0 && l[i as usize].get() == mode_pane) {
-                window_tree_build_pane(s, wl, l[i as usize].get(), mode_owner, &mti);
+                window_tree_build_pane(session_owner, wl, &l[i as usize], mode_owner, &mti);
             }
         }
         i = i.wrapping_add(1);
@@ -511,11 +514,12 @@ unsafe fn window_tree_build_window(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_tree_build_session(
-    mut s: *mut session,
+    session_owner: &Rc<UnsafeCell<session>>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
     mut filter: *const ::core::ffi::c_char,
 ) {
+    let s = session_owner.get();
     let data = mode_owner.get();
     let mut wl: *mut winlink = (*s).curw;
     let mut i: u_int = 0;
@@ -571,7 +575,7 @@ unsafe fn window_tree_build_session(
     empty = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        if window_tree_build_window(s, l[i as usize], mode_owner, sort_crit, &mti, filter) == 0 {
+        if window_tree_build_window(session_owner, l[i as usize], mode_owner, sort_crit, &mti, filter) == 0 {
             empty = empty.wrapping_add(1);
         }
         i = i.wrapping_add(1);
@@ -631,7 +635,7 @@ unsafe fn window_tree_build(
         }
         match current_block_12 {
             4166486009154926805 => {
-                window_tree_build_session(s, mode_owner, sort_crit, filter);
+                window_tree_build_session(&l[i as usize], mode_owner, sort_crit, filter);
             }
             _ => {}
         }
@@ -756,12 +760,14 @@ unsafe fn window_tree_border_cell(
     );
 }
 unsafe fn window_tree_draw_session(
-    mut data: *mut window_tree_modedata,
-    mut s: *mut session,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    session_owner: &Rc<UnsafeCell<session>>,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let data = mode_owner.get();
+    let s = session_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -1011,13 +1017,15 @@ unsafe fn window_tree_draw_session(
     }
 }
 unsafe fn window_tree_draw_window(
-    mut data: *mut window_tree_modedata,
-    mut s: *mut session,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    session_owner: &Rc<UnsafeCell<session>>,
     mut wl: *mut winlink,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let data = mode_owner.get();
+    let s = session_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -1270,12 +1278,13 @@ unsafe fn window_tree_draw_window(
     }
 }
 unsafe fn window_tree_draw_info(
-    mut data: *mut window_tree_modedata,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     item: &window_tree_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let data = mode_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -1447,20 +1456,20 @@ unsafe fn window_tree_draw(
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let _target_owners_2 = window_tree_pull_item(item, &raw mut sp, &raw mut wl, &raw mut wp);
+    let target_owners = window_tree_pull_item(item, &raw mut sp, &raw mut wl, &raw mut wp);
     if wp.is_null() {
         return;
     }
     if (*data).preview_is_info != 0 {
-        window_tree_draw_info(data, item, ctx, sx, sy);
+        window_tree_draw_info(mode_owner, item, ctx, sx, sy);
         return;
     }
     match item.type_0 as ::core::ffi::c_uint {
         1 => {
-            window_tree_draw_session(data, sp, ctx, sx, sy);
+            window_tree_draw_session(mode_owner, target_owners.0.as_ref().expect("resolved preview session"), ctx, sx, sy);
         }
         2 => {
-            window_tree_draw_window(data, sp, wl, ctx, sx, sy);
+            window_tree_draw_window(mode_owner, target_owners.0.as_ref().expect("resolved preview session"), wl, ctx, sx, sy);
         }
         3 => {
             if (*data).hide_preview_this_pane == 0 || wp != mode_pane {
