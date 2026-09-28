@@ -129,15 +129,14 @@ unsafe fn file_set_cmdq_wait(
 /// Stop a file-backed command wait without delivering its file callback.
 /// The scheduled terminal event still owns and frees the file itself.
 pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = file_owner.get();
-    let owner = &mut *cf;
+    let owner = &mut *file_owner.get();
     if owner.wait_item.is_null() {
         return;
     }
     cmdq_clear_wait_file(&mut *owner.wait_item, &owner.observer);
     owner.wait_item = std::ptr::null_mut();
     owner.wait_client = None;
-    (*cf).cb = None;
+    owner.cb = None;
     let cancel_cb = owner.cancel_data.take();
     if let Some(cancel_cb) = cancel_cb {
         cancel_cb();
@@ -201,9 +200,10 @@ unsafe fn file_destroy(cf: &mut client_file) {
     cf.path = Default::default();
 }
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = owner.get();
-    let client_owner = (*cf).c.clone();
-    let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
+    let (client_owner, wait_client) = {
+        let file = &*owner.get();
+        (file.c.clone(), file.wait_client.as_ref().map(Weak::upgrade))
+    };
     let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
             (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
@@ -211,7 +211,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     if dead {
         file_cancel_cmdq_wait(owner);
     } else {
-        let owner = &mut *cf;
+        let owner = &mut *owner.get();
         if !owner.wait_item.is_null() {
             cmdq_clear_wait_file(&mut *owner.wait_item, &owner.observer);
             owner.wait_item = std::ptr::null_mut();
@@ -219,22 +219,23 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
             owner.cancel_data = None;
         }
     }
-    let mut callback = (*cf).cb.take();
+    let mut callback = (&mut *owner.get()).cb.take();
     if !dead {
         if let Some(callback) = callback.as_mut() {
+            let file = &mut *owner.get();
             callback(client_file_event {
                 client: client_owner.as_ref(),
-                path: (*cf).path.as_deref(),
-                error: (*cf).error,
+                path: file.path.as_deref(),
+                error: file.error,
                 closed: true,
-                buffer: Some(&mut *(*cf).buffer),
+                buffer: Some(&mut *file.buffer),
             });
         }
     }
     drop(callback);
     // Completion retires the stream even if a lookup guard still retains its
     // allocation. Final Drop remains an idempotent unlink fallback.
-    client_files_remove(&mut *cf);
+    client_files_remove(&mut *owner.get());
 }
 /// Own completion until dispatch or cancellation. Both paths retire the index
 /// entry while a typed owner still keeps the file and its callback data alive.
@@ -247,11 +248,11 @@ impl Drop for FileCompletion {
 }
 
 pub unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = owner.get();
-    if (*cf).terminal_scheduled {
+    let cf = &mut *owner.get();
+    if cf.terminal_scheduled {
         return;
     }
-    (*cf).terminal_scheduled = true;
+    cf.terminal_scheduled = true;
     let mut completion = Some(FileCompletion(owner.clone()));
     event_once(move |_, _| {
         let completion = completion.take().expect("one terminal dispatch");
@@ -259,21 +260,21 @@ pub unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     });
 }
 pub unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = file_owner.get();
-    let client_owner = (*cf).c.clone();
-    let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
+    let cf = &mut *file_owner.get();
+    let client_owner = cf.c.clone();
+    let wait_client = cf.wait_client.as_ref().map(Weak::upgrade);
     let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
             (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
         }));
     if !dead {
-        if let Some(callback) = (*cf).cb.as_mut() {
+        if let Some(callback) = cf.cb.as_mut() {
             callback(client_file_event {
                 client: client_owner.as_ref(),
-                path: (*cf).path.as_deref(),
-                error: (*cf).error,
+                path: cf.path.as_deref(),
+                error: cf.error,
                 closed: false,
-                buffer: Some(&mut *(*cf).buffer),
+                buffer: Some(&mut *cf.buffer),
             });
         }
     }
@@ -1196,8 +1197,8 @@ pub unsafe fn file_read_cancel(files: &client_files, imsg: &imsg) {
     let Some(file_owner) = client_files_find(files, &find) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
-    let cf = file_owner.get();
-    log_debug(format_args!("cancel file {}", ((*cf).stream) as i32));
+    let cf = &*file_owner.get();
+    log_debug(format_args!("cancel file {}", (cf.stream) as i32));
     file_read_error_callback(0, &file_owner);
 }
 pub unsafe fn file_write_ready(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
@@ -1211,9 +1212,9 @@ pub unsafe fn file_write_ready(files: &client_files, imsg: &imsg) -> ::core::ffi
     let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
     };
-    let cf = file_owner.get();
+    let cf = &mut *file_owner.get();
     if msg.error != 0 as ::core::ffi::c_int {
-        (*cf).error = msg.error;
+        cf.error = msg.error;
         file_fire_done(&file_owner);
     } else {
         file_push(&file_owner);
@@ -1231,15 +1232,15 @@ pub unsafe fn file_write_done(files: &client_files, imsg: &imsg) -> ::core::ffi:
     let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
     };
-    let cf = file_owner.get();
-    if (*cf).c.as_ref().is_none_or(|owner| {
+    let cf = &mut *file_owner.get();
+    if cf.c.as_ref().is_none_or(|owner| {
         let client = &*owner.get();
         client.flags & CLIENT_WRITE_ACK as uint64_t == 0
     }) {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(format_args!("file {} write done", ((*cf).stream) as i32));
-    (*cf).error = msg.error;
+    log_debug(format_args!("file {} write done", (cf.stream) as i32));
+    cf.error = msg.error;
     file_fire_done(&file_owner);
     return 0 as ::core::ffi::c_int;
 }
@@ -1258,15 +1259,15 @@ pub unsafe fn file_read_data(files: &client_files, imsg: &imsg) -> ::core::ffi::
     let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
     };
-    let cf = file_owner.get();
+    let cf = &mut *file_owner.get();
     log_debug(format_args!(
         "file {} read {} bytes",
-        ((*cf).stream) as i32,
+        (cf.stream) as i32,
         (bsize) as usize
     ));
-    if (*cf).error == 0 as ::core::ffi::c_int && (*cf).closed == 0 {
-        if evbuffer_add(&mut *(*cf).buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
-            (*cf).error = ENOMEM;
+    if cf.error == 0 as ::core::ffi::c_int && cf.closed == 0 {
+        if evbuffer_add(&mut *cf.buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
+            cf.error = ENOMEM;
             file_fire_done(&file_owner);
         } else {
             file_fire_read(&file_owner);
@@ -1285,9 +1286,9 @@ pub unsafe fn file_read_done(files: &client_files, imsg: &imsg) -> ::core::ffi::
     let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
     };
-    let cf = file_owner.get();
-    log_debug(format_args!("file {} read done", ((*cf).stream) as i32));
-    (*cf).error = msg.error;
+    let cf = &mut *file_owner.get();
+    log_debug(format_args!("file {} read done", (cf.stream) as i32));
+    cf.error = msg.error;
     file_fire_done(&file_owner);
     return 0 as ::core::ffi::c_int;
 }

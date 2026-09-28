@@ -2007,3 +2007,18 @@ projections in other operations still require migration.
 
 `cargo test --workspace` and `git diff --check` passed, including existing file
 completion and cancellation tests. The broader model migration remains pending.
+
+## Implemented file borrows for completion and message dispatch
+
+Terminal scheduling, read delivery, wait cancellation and incoming file messages
+access file fields through borrows from retained Rc handles. Terminal dispatch
+copies the client handles before cancellation, borrows callback event fields only
+for delivery, and reacquires a file borrow for index retirement after callback
+destruction. Message handlers finish field access before handing their retained
+file to read delivery, completion scheduling or output processing. Read-cancel
+logging needs only a shared file borrow. Existing ownership and delivery order
+remain unchanged.
+
+`cargo test --workspace` and `git diff --check` passed. These operations still use
+UnsafeCell at borrow acquisition; other file operations and the broader model
+relationships remain to be migrated.
