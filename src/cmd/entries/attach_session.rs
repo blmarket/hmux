@@ -56,11 +56,11 @@ pub static cmd_attach_session_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_STARTSERVER | CMD_READONLY,
-        exec: Some(cmd_attach_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_attach_session_exec),
     }
 };
 pub unsafe fn cmd_attach_session(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut tflag: *const ::core::ffi::c_char,
     mut dflag: ::core::ffi::c_int,
     mut xflag: ::core::ffi::c_int,
@@ -69,7 +69,8 @@ pub unsafe fn cmd_attach_session(
     mut Eflag: ::core::ffi::c_int,
     mut fflag: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let current = cmdq_get_state_owned(item);
+    let item = item_handle.get();
+    let current = cmdq_get_state_owned(&*(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -80,7 +81,7 @@ pub unsafe fn cmd_attach_session(
     };
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c_loop: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -89,14 +90,14 @@ pub unsafe fn cmd_attach_session(
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
     if sessions.storage.is_none() {
-        cmdq_error(item, |out| out.write_all(b"no sessions"));
+        cmdq_error(item_handle, |out| out.write_all(b"no sessions"));
         return CMD_RETURN_ERROR;
     }
     if c.is_null() {
         return CMD_RETURN_NORMAL;
     }
     if server_client_check_nested(&*(c)) != 0 {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"sessions should be nested with care, unset $TMUX to force")
         });
         return CMD_RETURN_ERROR;
@@ -113,7 +114,7 @@ pub unsafe fn cmd_attach_session(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if cmd_find_target(&raw mut target, item, tflag, type_0, flags) != 0 as ::core::ffi::c_int {
+    if cmd_find_target(&raw mut target, Some(item_handle), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CMD_RETURN_ERROR;
     }
     s = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -133,7 +134,7 @@ pub unsafe fn cmd_attach_session(
     if !cflag.is_null() {
         session_set_cwd(
             &mut *s,
-            Some(format_single_cstring(item, cflag, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref())),
+            Some(format_single_cstring(Some(item_handle), cflag, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref())),
         );
     }
     if !fflag.is_null() {
@@ -143,7 +144,7 @@ pub unsafe fn cmd_attach_session(
         if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
             uid = proc_get_peer_uid((*c).peer);
             if uid != getuid() {
-                cmdq_error(item, |out| out.write_all(b"client is read-only"));
+                cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
                 return CMD_RETURN_ERROR;
             }
         }
@@ -175,12 +176,12 @@ pub unsafe fn cmd_attach_session(
             );
         }
         server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-        if !cmdq_get_flags(item) & CMDQ_STATE_REPEAT != 0 {
+        if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
             server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
         }
     } else {
         if let Err(cause) = server_client_open(c_owner.as_ref().expect("terminal client")) {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"open terminal failed: ")?;
                 write_cstr(out, cause.as_ptr())
             });
@@ -231,10 +232,10 @@ pub unsafe fn cmd_attach_session(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_attach_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_attach_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     return cmd_attach_session(
-        item,
+        item_handle,
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
         args_has(args, 'd' as i32 as u_char),
         args_has(args, 'x' as i32 as u_char),

@@ -48,7 +48,7 @@ pub static cmd_swap_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_swap_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_swap_pane_exec),
     }
 };
 unsafe fn cmd_swap_pane_next_tiled_pane(
@@ -75,7 +75,8 @@ unsafe fn cmd_swap_pane_prev_tiled_pane(
     }
     pane
 }
-unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -99,7 +100,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         let src_wp = src_pane_owner.get();
         src_idx = (*(*source).wl_ptr()).idx;
         if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
-            cmdq_error(item, |out| out.write_all(b"pane is modal"));
+            cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
         if window_push_zoom(
@@ -112,7 +113,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
         if args_has(args, 'D' as i32 as u_char) != 0 {
             if window_pane_is_floating(&*dst_wp) != 0 {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"cannot swap down on floating pane")
                 });
                 return CMD_RETURN_ERROR;
@@ -125,7 +126,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 .expect("tiled swap target remains in its window");
         } else if args_has(args, 'U' as i32 as u_char) != 0 {
             if window_pane_is_floating(&*dst_wp) != 0 {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"cannot swap up on floating pane")
                 });
                 return CMD_RETURN_ERROR;

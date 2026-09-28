@@ -91,7 +91,7 @@ unsafe fn monitor_create_formats(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         0 as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );

@@ -55,7 +55,7 @@ pub static cmd_send_keys_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG | CMD_CLIENT_CANFAIL | CMD_READONLY,
-        exec: Some(cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_send_keys_exec),
     }
 };
 pub static cmd_send_prefix_entry: cmd_entry = {
@@ -80,58 +80,60 @@ pub static cmd_send_prefix_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_send_keys_exec),
     }
 };
 unsafe fn cmd_send_keys_inject_key(
-    mut item: *mut cmdq_item,
-    mut after: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut args: *mut args,
     mut key: key_code,
-) -> *mut cmdq_item {
+) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+    let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut new_after: *mut cmdq_item = after;
+    let mut new_after = after.clone();
     if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_null() {
-            return item;
+            return std::rc::Rc::downgrade(item_handle);
         }
         let event = key_event::new(
             (key as ::core::ffi::c_ulonglong | KEYC_SENT) as key_code,
             Default::default(),
             None,
         );
-        if after.is_null() {
+        if after.strong_count() == 0 {
             if server_client_handle_key(tc_owner.as_ref().expect("key target client"), event) != 0 as ::core::ffi::c_int {
-                return item;
+                return std::rc::Rc::downgrade(item_handle);
             }
-        } else if server_client_handle_key_after(tc_owner.as_ref().expect("key target client"), event, after, &raw mut new_after)
+        } else if server_client_handle_key_after(tc_owner.as_ref().expect("key target client"), event, after.upgrade().as_ref(), Some(&mut new_after))
             != 0 as ::core::ffi::c_int
         {
             return new_after;
         }
-        return item;
+        return std::rc::Rc::downgrade(item_handle);
     }
     wme = (*wp).modes.active_ptr();
     if wme.is_null() || (*(*wme).mode).key_table.is_none() {
         if window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl, key, ::core::ptr::null_mut::<mouse_event>())
             != 0 as ::core::ffi::c_int
         {
-            return ::core::ptr::null_mut::<cmdq_item>();
+            return std::rc::Weak::new();
         }
-        return item;
+        return std::rc::Rc::downgrade(item_handle);
     }
     let table = key_bindings_get_table(std::ffi::CStr::from_ptr((*(*wme).mode).key_table.expect("non-null function pointer")(wme)), 1 as ::core::ffi::c_int).expect("created key table");
     let command = key_bindings_get(&table.borrow(), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
         after = key_bindings_dispatch(
             command,
-            after,
+            after.upgrade().as_ref(),
             (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             ::core::ptr::null_mut::<key_event>(),
             target,
@@ -140,11 +142,13 @@ unsafe fn cmd_send_keys_inject_key(
     return after;
 }
 unsafe fn cmd_send_keys_inject_string(
-    mut item: *mut cmdq_item,
-    mut after: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut args: *mut args,
     mut i: ::core::ffi::c_int,
-) -> *mut cmdq_item {
+) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+    let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    let item = item_handle.get();
     let mut s: *const ::core::ffi::c_char = args_string(&mut *(args), i as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
@@ -158,9 +162,9 @@ unsafe fn cmd_send_keys_inject_string(
             || n > 0xff as ::core::ffi::c_long
             || *endptr as ::core::ffi::c_int != '\0' as i32
         {
-            return item;
+            return std::rc::Rc::downgrade(item_handle);
         }
-        return cmd_send_keys_inject_key(item, after, args, KEYC_LITERAL | n as key_code);
+        return cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, KEYC_LITERAL | n as key_code);
     }
     literal = args_has(args, 'l' as i32 as u_char);
     if literal == 0 {
@@ -168,8 +172,8 @@ unsafe fn cmd_send_keys_inject_string(
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
             && key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         {
-            after = cmd_send_keys_inject_key(item, after, args, key);
-            if !after.is_null() {
+            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
+            if after.strong_count() != 0 {
                 return after;
             }
         }
@@ -195,7 +199,7 @@ unsafe fn cmd_send_keys_inject_string(
             }
             match current_block_20 {
                 12147880666119273379 => {
-                    after = cmd_send_keys_inject_key(item, after, args, key);
+                    after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
                 }
                 _ => {}
             }
@@ -203,20 +207,21 @@ unsafe fn cmd_send_keys_inject_string(
     }
     return after;
 }
-unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mouse_pane_owner;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut event_snapshot = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut wme: *mut window_mode_entry = (*wp).modes.active_ptr();
-    let mut after: *mut cmdq_item = item;
+    let mut after = std::rc::Rc::downgrade(item_handle);
     let mut key: key_code = 0;
     let mut i: u_int = 0;
     let mut np: u_int = 1 as u_int;
@@ -225,7 +230,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         && (*tc).flags & CLIENT_READONLY as uint64_t != 0
         && args_has(args, 'X' as i32 as u_char) == 0
     {
-        cmdq_error(item, |out| out.write_all(b"client is read-only"));
+        cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'N' as i32 as u_char) != 0 {
@@ -234,11 +239,11 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             'N' as i32 as u_char,
             1 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"repeat count ")?;
                     write_cstr(out, error.message().as_ptr())
                 });
@@ -247,7 +252,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         };
         if !wme.is_null() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
             if (*(*wme).mode).command.is_none() {
-                cmdq_error(item, |out| out.write_all(b"not in a mode"));
+                cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
                 return CMD_RETURN_ERROR;
             }
             (*wme).prefix = np;
@@ -255,7 +260,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     if args_has(args, 'X' as i32 as u_char) != 0 {
         if wme.is_null() || (*(*wme).mode).command.is_none() {
-            cmdq_error(item, |out| out.write_all(b"not in a mode"));
+            cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CMD_RETURN_ERROR;
         }
         if (*m).valid == 0 {
@@ -270,7 +275,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
-            cmdq_error(item, |out| out.write_all(b"no mouse target"));
+            cmdq_error(item_handle, |out| out.write_all(b"no mouse target"));
             return CMD_RETURN_ERROR;
         }
         window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl, (*m).key, m);
@@ -288,7 +293,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
             ) as key_code;
         }
-        cmd_send_keys_inject_key(item, item, args, key);
+        cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
@@ -301,12 +306,12 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return CMD_RETURN_NORMAL;
         }
         after = if args_has(args, 'K' as i32 as u_char) != 0 {
-            item
+            std::rc::Rc::downgrade(item_handle)
         } else {
-            ::core::ptr::null_mut::<cmdq_item>()
+            std::rc::Weak::new()
         };
         while np != 0 as u_int {
-            after = cmd_send_keys_inject_key(item, after, args, (*event).key);
+            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, (*event).key);
             np = np.wrapping_sub(1);
         }
         return CMD_RETURN_NORMAL;
@@ -314,7 +319,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     while np != 0 as u_int {
         i = 0 as u_int;
         while i < count {
-            after = cmd_send_keys_inject_string(item, after, args, i as ::core::ffi::c_int);
+            after = cmd_send_keys_inject_string(item_handle, after.upgrade().as_ref(), args, i as ::core::ffi::c_int);
             i = i.wrapping_add(1);
         }
         np = np.wrapping_sub(1);

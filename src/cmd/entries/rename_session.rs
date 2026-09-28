@@ -46,10 +46,11 @@ pub static cmd_rename_session_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_rename_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_rename_session_exec),
     }
 };
-unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -61,9 +62,9 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         wp: Default::default(),
         idx: 0,
     };
-    let tmp = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    let tmp = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if !check_name(&tmp) {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"invalid session name: ")?;
             out.write_all(tmp.as_bytes())
         });
@@ -75,7 +76,7 @@ unsafe fn cmd_rename_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         return CMD_RETURN_NORMAL;
     }
     if !session_find(std::ffi::CStr::from_ptr(newname.as_ptr())).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"duplicate session: ")?;
             out.write_all(newname.as_bytes())
         });

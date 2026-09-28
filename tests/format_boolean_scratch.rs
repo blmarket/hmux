@@ -5,7 +5,7 @@ use std::ffi::CStr;
 #[test]
 fn boolean_operands_expand_in_order_and_preserve_bytes() {
     unsafe {
-        let tree = format_create(None, core::ptr::null_mut(), 0, 0);
+        let tree = format_create(None, None, 0, 0);
         for (expression, expected) in [
             (b"#{&&:1,1,0}\0".as_slice(), b"0".as_slice()),
             (b"#{||:0,0,1}\0".as_slice(), b"1".as_slice()),

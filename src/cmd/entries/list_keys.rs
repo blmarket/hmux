@@ -67,7 +67,7 @@ pub static cmd_list_keys_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_STARTSERVER | CMD_AFTERHOOK,
-        exec: Some(cmd_list_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_list_keys_exec),
     }
 };
 unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
@@ -203,10 +203,11 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         |out| write_cstr(out, command.as_ptr()),
     );
 }
-unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut table = None;
@@ -227,7 +228,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !keystr.is_null() {
         only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid key: ")?;
                 write_cstr(out, keystr)
             });
@@ -240,7 +241,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
+        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
@@ -248,7 +249,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !tablename.is_null() {
         table = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int);
         if table.is_none() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
@@ -280,7 +281,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);
     }
     if filter_key != 0 && bindings.is_empty() {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"unknown key: ")?;
             write_cstr(out, keystr)
         });
@@ -291,7 +292,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     ft = format_create_with_client(
         queue_client.as_ref(),
-        item,
+        Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -335,7 +336,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 |out| write_cstr(out, line.as_ptr()),
             );
         } else if !line.is_empty() {
-            cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
         }
         if single != 0 {
             break;

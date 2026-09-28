@@ -342,7 +342,7 @@ pub static window_customize_mode: window_mode = {
             window_customize_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -1343,7 +1343,7 @@ unsafe fn window_customize_build_keys(
     mode_tree_no_tag(&top);
     drop(title);
     ft = format_create_from_state(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         &*fs,
     );
@@ -1663,7 +1663,7 @@ unsafe fn window_customize_build(
         cmd_find_from_pane(&raw mut fs, &(*(mode_pane)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
     ft = format_create_from_state(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         &fs,
     );
@@ -1779,7 +1779,7 @@ unsafe fn window_customize_build(
     );
     format_free(Box::from_raw(ft));
     ft = format_create_from_state(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         &fs,
     );
@@ -2007,7 +2007,7 @@ unsafe fn window_customize_draw_option(
         unit = (*oe).unit_ptr();
     }
     ft = format_create_from_state(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         &fs,
     );
@@ -2913,7 +2913,7 @@ fn window_customize_help() -> mode_tree_help_info {
 }
 unsafe fn window_customize_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

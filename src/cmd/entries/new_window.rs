@@ -64,18 +64,16 @@ pub static cmd_new_window_entry: cmd_entry = {
             flags: CMD_FIND_WINDOW_INDEX,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_new_window_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_new_window_exec),
     }
 };
-unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let current = cmdq_get_state_owned(item);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let current = cmdq_get_state_owned(&*(item));
+    let target = cmdq_get_target(&*item).clone();
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -91,12 +89,13 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let session_owner = target.session_handle().expect("new-window target session");
+    let s = session_owner.get();
+    let mut wl: *mut winlink = target.wl_ptr();
     let mut new_wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut idx: ::core::ffi::c_int = (*target).idx;
+    let mut idx: ::core::ffi::c_int = target.idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
     let mut cause: Option<std::ffi::CString> = None;
@@ -117,7 +116,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         && (count != 1 as ::core::ffi::c_int
             || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int != '\0' as i32)
     {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"command cannot be given for empty pane")
         });
         return CMD_RETURN_ERROR;
@@ -125,15 +124,15 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     name = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !name.is_null() {
         let expanded = format_single_cstring(
-            item,
+            Some(item_handle),
             name,
-            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            c_owner.as_ref(),
+            Some(&session_owner),
             ::core::ptr::null_mut::<winlink>(),
             None,
         );
         if !check_name(&expanded) {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(expanded.as_bytes())
             });
@@ -153,10 +152,10 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             new_wl = winlink_find_by_index(&raw mut (*s).windows, idx);
         } else if !wname.is_null() {
             let expanded = format_single_cstring(
-                item,
+                Some(item_handle),
                 wname,
-                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                c_owner.as_ref(),
+                Some(&session_owner),
                 ::core::ptr::null_mut::<winlink>(),
                 None,
             );
@@ -168,7 +167,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                     if new_wl.is_null() {
                         new_wl = wl;
                     } else {
-                        cmdq_error(item, |out| {
+                        cmdq_error(item_handle, |out| {
                             out.write_all(b"multiple windows named ")?;
                             write_cstr(out, wname)
                         });
@@ -194,12 +193,12 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-        idx = winlink_shuffle_up(&(*(s)).observer.upgrade().expect("live session"), wl, before);
+        idx = winlink_shuffle_up(&session_owner, wl, before);
         if idx == -(1 as ::core::ffi::c_int) {
-            idx = (*target).idx;
+            idx = target.idx;
         }
     }
-    sc.item = (*item).observer.clone();
+    sc.item = std::rc::Rc::downgrade(item_handle);
     sc.s = (*s).observer.clone();
     sc.tc = tc_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
@@ -230,7 +229,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     new_wl = spawn_window(&raw mut sc, &raw mut cause);
     if new_wl.is_null() {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"create window failed: ")?;
             write_cstr(
                 out,
@@ -254,11 +253,11 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
                 template = NEW_WINDOW_TEMPLATE.as_ptr();
             }
             let cp =
-                format_single_cstring(item, template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), new_wl, ((*(*new_wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-            cmdq_print(item, |out| out.write_all(cp.as_bytes()));
+                format_single_cstring(Some(item_handle), template, tc_owner.as_ref(), Some(&session_owner), new_wl, ((*(*new_wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
         }
         cmd_find_from_winlink(&raw mut fs, new_wl, 0 as ::core::ffi::c_int);
-        cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, &raw mut fs, |out| {
+        cmdq_insert_hook(Some(&session_owner), item_handle, &raw mut fs, |out| {
             out.write_all(b"after-new-window")
         });
         drop(sc.environ.take());

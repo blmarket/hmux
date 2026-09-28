@@ -34,7 +34,7 @@ pub static cmd_show_environment_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_show_environment_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_show_environment_exec),
     }
 };
 unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
@@ -57,7 +57,7 @@ unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
 }
 unsafe fn cmd_show_environment_print(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
@@ -69,7 +69,7 @@ unsafe fn cmd_show_environment_print(
     }
     if args_has(args, 's' as i32 as u_char) == 0 {
         if !(*envent).value.is_none() {
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
                 out.write_all(b"=")?;
                 write_cstr(
@@ -80,7 +80,7 @@ unsafe fn cmd_show_environment_print(
                 )
             });
         } else {
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 out.write_all(b"-")?;
                 write_cstr(out, ((*envent).name).as_ptr().cast_mut())
             });
@@ -89,7 +89,7 @@ unsafe fn cmd_show_environment_print(
     }
     if !(*envent).value.is_none() {
         let escaped = cmd_show_environment_escape(&*envent);
-        cmdq_print(item, |out| {
+        cmdq_print(item_handle, |out| {
             write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
             out.write_all(b"=\"")?;
             write_cstr(out, escaped.as_ptr())?;
@@ -98,14 +98,15 @@ unsafe fn cmd_show_environment_print(
             out.write_all(b";")
         });
     } else {
-        cmdq_print(item, |out| {
+        cmdq_print(item_handle, |out| {
             out.write_all(b"unset ")?;
             write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
             out.write_all(b";")
         });
     };
 }
-unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let env: &environ;
@@ -115,7 +116,7 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tflag.is_null() {
         if (*target).session_handle().is_none() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"no such session: ")?;
                 write_cstr(out, tflag)
             });
@@ -128,12 +129,12 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
         if (*target).session_handle().is_none() {
             tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !tflag.is_null() {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"no such session: ")?;
                     write_cstr(out, tflag)
                 });
             } else {
-                cmdq_error(item, |out| out.write_all(b"no current session"));
+                cmdq_error(item_handle, |out| out.write_all(b"no current session"));
             }
             return CMD_RETURN_ERROR;
         }
@@ -142,18 +143,18 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_it
     if !name.is_null() {
         envent = environ_find(env, name);
         if envent.is_none() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown variable: ")?;
                 write_cstr(out, name)
             });
             return CMD_RETURN_ERROR;
         }
-        cmd_show_environment_print(self_0, item, envent.unwrap());
+        cmd_show_environment_print(self_0, item_handle, envent.unwrap());
         return CMD_RETURN_NORMAL;
     }
     for entry in environ_iter(&*env) {
         let envent = entry;
-        cmd_show_environment_print(self_0, item, envent);
+        cmd_show_environment_print(self_0, item_handle, envent);
     }
     return CMD_RETURN_NORMAL;
 }

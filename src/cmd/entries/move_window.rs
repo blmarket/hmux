@@ -39,7 +39,7 @@ pub static cmd_move_window_entry: cmd_entry = {
             flags: 0,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_move_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_move_window_exec),
     }
 };
 pub static cmd_link_window_entry: cmd_entry = {
@@ -64,10 +64,11 @@ pub static cmd_link_window_entry: cmd_entry = {
             flags: 0,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_move_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_move_window_exec),
     }
 };
-unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: cmd_find_state = cmd_find_state {
@@ -90,7 +91,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'r' as i32 as u_char) != 0 {
         if cmd_find_target(
             &raw mut target,
-            item,
+            Some(item_handle),
             tflag,
             CMD_FIND_SESSION,
             CMD_FIND_QUIET,
@@ -105,7 +106,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     if cmd_find_target(
         &raw mut target,
-        item,
+        Some(item_handle),
         tflag,
         CMD_FIND_WINDOW,
         CMD_FIND_WINDOW_INDEX,
@@ -132,7 +133,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if let Err(cause) =
         server_link_window(&(*(src)).observer.upgrade().expect("live session"), wl, &(*(dst)).observer.upgrade().expect("live session"), idx, kflag, (dflag == 0) as ::core::ffi::c_int)
     {
-        cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
+        cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
         return CMD_RETURN_ERROR;
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_window_entry) {

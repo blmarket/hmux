@@ -321,7 +321,7 @@ unsafe fn format_log1(
         log_cstr((s.as_ptr()) as *const _)
     ));
     if let Some(item) = (*ft).item.upgrade().filter(|_| (*ft).flags & FORMAT_VERBOSE != 0) {
-        cmdq_print(item.get(), |out| {
+        cmdq_print(&(*(item.get())).observer.upgrade().expect("live command queue item"), |out| {
             out.write_all(b"#")?;
             write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
             write_cstr(out, s.as_ptr())
@@ -345,25 +345,26 @@ unsafe fn format_copy_state(
     (*to).start_time = (*from).start_time;
 }
 pub unsafe fn format_create_defaults(
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: *mut winlink,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> *mut format_tree {
-    let queue_client = cmdq_get_client(item);
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if !item.is_null() {
         ft = format_create_with_client(
             queue_client.as_ref(),
-            item,
+            item_handle,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
     } else {
         ft = format_create(
             None,
-            item,
+            item_handle,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
@@ -372,16 +373,17 @@ pub unsafe fn format_create_defaults(
     return ft;
 }
 pub unsafe fn format_create_from_state(
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: &cmd_find_state,
 ) -> *mut format_tree {
-    return format_create_defaults(item, c_owner, fs.s.upgrade().as_ref(), fs.wl_ptr(), fs.wp.upgrade().as_ref());
+    return format_create_defaults(item_handle, c_owner, fs.s.upgrade().as_ref(), fs.wl_ptr(), fs.wp.upgrade().as_ref());
 }
-pub unsafe fn format_create_from_target(mut item: *mut cmdq_item) -> *mut format_tree {
-    let tc_owner = cmdq_get_target_client(item);
+pub unsafe fn format_create_from_target(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> *mut format_tree {
+    let item = item_handle.get();
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    return format_create_from_state(item, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item));
+    return format_create_from_state(Some(item_handle), (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item));
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,

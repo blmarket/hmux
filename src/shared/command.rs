@@ -140,8 +140,10 @@ pub struct cmdq_item {
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
-    /// Detached-item chain link; each linked item has its own sole owner.
-    pub next: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
+    /// Own the remaining detached chain until enqueue consumes it.
+    pub next: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    /// Runtime destruction marker: only cmdq_remove may set this to true.
+    pub(crate) removed: bool,
     /// Nonowning execution context, which can temporarily differ from the queue owner.
     pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub client_owner: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
@@ -162,16 +164,13 @@ pub struct cmdq_item {
     pub(crate) wait_file: std::rc::Weak<std::cell::UnsafeCell<super::client::client_file>>,
 }
 
-impl cmdq_item {
-    /// Compatibility view while a detached item still owns itself.
-    pub fn next_ptr(&self) -> *mut cmdq_item {
-        if self.next.strong_count() == 0 {
-            std::ptr::null_mut()
-        } else {
-            self.next.as_ptr().cast_mut().cast()
-        }
+impl Drop for cmdq_item {
+    fn drop(&mut self) {
+        assert!(self.removed, "command item dropped without cmdq_remove");
     }
+}
 
+impl cmdq_item {
     /// Project a legacy command pointer while its list owner remains live.
     pub fn cmd_ptr(&self) -> *mut cmd {
         if self.cmd.is_alive() {
@@ -187,6 +186,7 @@ impl cmdq_item {
             name: Default::default(),
             queue: Default::default(),
             next: Default::default(),
+            removed: false,
             client: Default::default(),
             client_owner: None,
             target_client: Default::default(),
@@ -211,20 +211,20 @@ impl cmdq_item {
 /// Box-owned by a client until client destruction; the lazy global queue lives for
 /// the process. The deque owns stable command item allocations.
 pub struct cmdq_list {
-    /// Current execution position; the deque remains its sole owner.
+    /// Current execution position, observed without retaining the item.
     pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 }
 
 impl cmdq_list {
-    pub fn first_ptr(&self) -> *mut cmdq_item {
-        self.list.front().map_or(std::ptr::null_mut(), |item| item.get())
+    pub fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>> {
+        self.list.front().cloned()
     }
 
-    pub fn position(&self, item: *mut cmdq_item) -> usize {
+    pub fn position(&self, item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> usize {
         self.list
             .iter()
-            .position(|owner| std::ptr::eq(owner.get(), item))
+            .position(|owner| std::rc::Rc::ptr_eq(owner, item))
             .expect("command item belongs to queue")
     }
 }
@@ -342,7 +342,7 @@ pub struct cmd_entry {
     pub source: cmd_entry_flag,
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
-    pub exec: Option<unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
+    pub exec: Option<unsafe fn(*mut cmd, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>,
 }
 
 #[repr(C)]
@@ -361,7 +361,7 @@ impl cmdq_state {
     }
 }
 
-pub type cmdq_cb = Option<Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>>;
+pub type cmdq_cb = Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
 
 pub type cmdq_type = ::core::ffi::c_uint;
 
@@ -384,8 +384,8 @@ pub struct cmd_parse_input {
 }
 
 impl cmd_parse_input {
-    pub unsafe fn set_item(&mut self, item: *mut cmdq_item) {
-        self.item = item.as_ref().map_or_else(std::rc::Weak::new, |item| item.observer.clone());
+    pub fn set_item(&mut self, item: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>) {
+        self.item = item.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
     pub fn file_ptr(&self) -> *const ::core::ffi::c_char {

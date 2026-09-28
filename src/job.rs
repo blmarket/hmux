@@ -627,18 +627,18 @@ pub unsafe fn job_still_running() -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn job_print_summary(mut item: *mut cmdq_item, mut blank: ::core::ffi::c_int) {
+pub unsafe fn job_print_summary(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, mut blank: ::core::ffi::c_int) {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
     let mut n: u_int = 0 as u_int;
     job = all_jobs.lh_first;
     while !job.is_null() {
         if blank != 0 {
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
             });
             blank = 0 as ::core::ffi::c_int;
         }
-        cmdq_print(item, |out| {
+        cmdq_print(item_handle, |out| {
             write!(out, "Job {}: ", (n) as u32)?;
             write_cstr(
                 out,

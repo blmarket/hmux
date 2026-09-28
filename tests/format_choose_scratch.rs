@@ -17,7 +17,7 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
         global_s_options = s_options;
         global_w_options = w_options;
 
-        let tree = format_create(None, std::ptr::null_mut(), 0, 0);
+        let tree = format_create(None, None, 0, 0);
         for (expression, expected) in [
             (b"#{==:a#,b,a#,b}\0".as_slice(), b"1".as_slice()),
             (b"#{==:#{e|+:1,2},3}\0", b"1"),

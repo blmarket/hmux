@@ -58,7 +58,7 @@ pub unsafe fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], client_ow
         menu_add_item(
             menu,
             Some(item),
-            std::ptr::null_mut(),
+            None,
             client_owner,
             std::ptr::null_mut(),
         );
@@ -67,7 +67,7 @@ pub unsafe fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], client_ow
 pub unsafe fn menu_add_item(
     menu: &mut menu,
     item: Option<&menu_item<'_>>,
-    qitem: *mut cmdq_item,
+    qitem_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     client_owner: Option<&Rc<UnsafeCell<client>>>,
     fs: *mut cmd_find_state,
 ) {
@@ -79,10 +79,10 @@ pub unsafe fn menu_add_item(
     };
     let index = menu.push_empty();
     let expanded = if !fs.is_null() {
-        format_single_from_state_cstring(qitem, item.name.as_ptr(), client_owner, fs)
+        format_single_from_state_cstring(qitem_handle, item.name.as_ptr(), client_owner, fs)
     } else {
         format_single_cstring(
-            qitem,
+            qitem_handle,
             item.name.as_ptr(),
             client_owner,
             None,
@@ -130,10 +130,10 @@ pub unsafe fn menu_add_item(
     menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
     menu.items[index].command = item.command.map(|command| {
         if !fs.is_null() {
-            format_single_from_state_cstring(qitem, command.as_ptr(), client_owner, fs)
+            format_single_from_state_cstring(qitem_handle, command.as_ptr(), client_owner, fs)
         } else {
             format_single_cstring(
-                qitem,
+                qitem_handle,
                 command.as_ptr(),
                 client_owner,
                 None,
@@ -167,7 +167,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     };
     let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options).map_or(std::ptr::null_mut(), |options| options);
     let ft = format_create_defaults(
-        std::ptr::null_mut(),
+        None,
         None,
         (md.fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         md.fs.wl_ptr(),

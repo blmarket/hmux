@@ -1961,7 +1961,7 @@ pub unsafe fn layout_spread_out(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<win
     }
 }
 pub unsafe fn layout_get_tiled_cell(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
     w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -2003,7 +2003,7 @@ pub unsafe fn layout_get_tiled_cell(
             0 as ::core::ffi::c_longlong,
             INT_MAX as ::core::ffi::c_longlong,
             curval as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
@@ -2018,7 +2018,7 @@ pub unsafe fn layout_get_tiled_cell(
             'p' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             100 as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => curval
                 .wrapping_mul(value as u_int)
@@ -2042,7 +2042,7 @@ pub unsafe fn layout_get_tiled_cell(
     Ok(lc)
 }
 pub unsafe fn layout_get_floating_cell(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
     mut lines: pane_lines,
     w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
@@ -2063,7 +2063,7 @@ pub unsafe fn layout_get_floating_cell(
     if flags & SPAWN_SPLIT != 0 {
         layout_split_floating_cell(lc, w_owner, &raw mut fg, lines, flags)?;
     } else {
-        layout_floating_args_parse(item, args, lines, w_owner, &raw mut fg)?;
+        layout_floating_args_parse(item_handle, args, lines, w_owner, &raw mut fg)?;
     }
     if flags & SPAWN_FLOATOVERZOOM != 0 {
         window_push_zoom(
@@ -2094,7 +2094,7 @@ fn layout_position_error(message: &CStr) -> CString {
 }
 
 pub unsafe fn layout_floating_args_parse(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
     mut lines: pane_lines,
     w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
@@ -2124,7 +2124,7 @@ pub unsafe fn layout_floating_args_parse(
             0 as ::core::ffi::c_longlong,
             PANE_MAXIMUM as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
@@ -2144,7 +2144,7 @@ pub unsafe fn layout_floating_args_parse(
             0 as ::core::ffi::c_longlong,
             PANE_MAXIMUM as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
@@ -2164,7 +2164,7 @@ pub unsafe fn layout_floating_args_parse(
             -sx as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
@@ -2179,7 +2179,7 @@ pub unsafe fn layout_floating_args_parse(
             -sy as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {

@@ -844,19 +844,19 @@ pub unsafe fn key_bindings_init() {
         ),
     );
 }
-unsafe fn key_bindings_read_only(mut item: *mut cmdq_item) -> cmd_retval {
-    cmdq_error(item, |out| out.write_all(b"client is read-only"));
+unsafe fn key_bindings_read_only(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     return CMD_RETURN_ERROR;
 }
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut event: *mut key_event,
     mut fs: *mut cmd_find_state,
-) -> *mut cmdq_item {
+) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let new_item_allocation;
     let new_state;
     let mut readonly: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -866,10 +866,10 @@ pub unsafe fn key_bindings_dispatch(
         readonly = cmd_list_all_have(&bd.cmdlist().borrow());
     }
     if readonly == 0 {
-        new_item = cmdq_get_callback_owned(
+        new_item_allocation = cmdq_get_callback_owned(
             b"key_bindings_read_only\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|item| unsafe {
-                key_bindings_read_only(item.as_ptr())
+                key_bindings_read_only(item)
             })),
         );
     } else {
@@ -877,16 +877,16 @@ pub unsafe fn key_bindings_dispatch(
             flags |= CMDQ_STATE_REPEAT;
         }
         new_state = cmdq_new_state(fs, event, flags);
-        new_item = cmdq_get_command(&bd.commands, Some(&new_state));
+        new_item_allocation = cmdq_get_command(&bd.commands, Some(&new_state));
 
     }
-    if !item.is_null() {
-        new_item = cmdq_insert_after(item, new_item);
+    if let Some(item) = item_handle {
+        cmdq_insert_after(item, new_item_allocation)
     } else {
-        new_item = cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
+        cmdq_append(c_owner, new_item_allocation)
     }
-    return new_item;
 }
+
 pub fn key_bindings_has_repeat(bindings: &[&key_binding]) -> bool {
     bindings.iter().any(|bd| bd.flags & KEY_BINDING_REPEAT != 0)
 }

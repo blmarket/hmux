@@ -168,7 +168,7 @@ unsafe fn format_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>
     let mut fmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );

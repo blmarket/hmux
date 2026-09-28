@@ -41,7 +41,7 @@ pub static cmd_kill_window_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_kill_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_kill_window_exec),
     }
 };
 pub static cmd_unlink_window_entry: cmd_entry = {
@@ -66,10 +66,11 @@ pub static cmd_unlink_window_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_kill_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_kill_window_exec),
     }
 };
-unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -77,12 +78,12 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
-        cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
+        cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_unlink_window_entry) {
         if args_has(args, 'k' as i32 as u_char) == 0 && session_is_linked(s.as_ref(), &*w) == 0 {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"window only linked to one session")
             });
             return CMD_RETURN_ERROR;
@@ -92,15 +93,16 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_window_all(item, filter);
+        return cmd_kill_window_all(item_handle, filter);
     }
     server_kill_window((*wl).window_owner.as_ref().expect("winlink window").clone(), 1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_window_all(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
+    let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -115,7 +117,7 @@ unsafe fn cmd_kill_window_all(
         loop_0 = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !loop_0.is_null() {
             if (*loop_0).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())
-                && cmd_kill_window_filter(item, &(*(s)).observer.upgrade().expect("live session"), loop_0, filter) != 0
+                && cmd_kill_window_filter(item_handle, &(*(s)).observer.upgrade().expect("live session"), loop_0, filter) != 0
             {
                 server_kill_window((*loop_0).window_owner.as_ref().expect("winlink window").clone(), 0 as ::core::ffi::c_int);
                 found = found.wrapping_add(1);
@@ -134,7 +136,7 @@ unsafe fn cmd_kill_window_all(
     while !loop_0.is_null() {
         if (*loop_0).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             found = found.wrapping_add(1);
-            if cmd_kill_window_filter(item, &(*(s)).observer.upgrade().expect("live session"), loop_0, filter) != 0 {
+            if cmd_kill_window_filter(item_handle, &(*(s)).observer.upgrade().expect("live session"), loop_0, filter) != 0 {
                 kill_current = 1 as u_int;
             }
         }
@@ -147,13 +149,14 @@ unsafe fn cmd_kill_window_all(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_window_filter(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut wl: *mut winlink,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.get();
     let mut s = s_owner.get();
-    let queue_client = cmdq_get_client(item);
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
@@ -161,7 +164,7 @@ unsafe fn cmd_kill_window_filter(
     }
     ft = format_create_with_client(
         queue_client.as_ref(),
-        item,
+        Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );

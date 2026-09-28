@@ -77,7 +77,7 @@ unsafe fn window_set_fill_cell(
     utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_NONE as usize] as u_char);
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );
@@ -239,7 +239,7 @@ pub unsafe fn window_pane_get_border_style(
         option = b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if *flag == 0 {
-        ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), Some(c_owner), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*s).curw_ptr(), Some(wp_owner));
+        ft = format_create_defaults(None, Some(c_owner), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*s).curw_ptr(), Some(wp_owner));
         style_apply(saved, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), option, ft);
         format_free(Box::from_raw(ft));
         *flag = 1 as ::core::ffi::c_int;
@@ -296,7 +296,7 @@ pub unsafe fn window_make_pane_status(
     }
     ft = format_create(
         Some(c_owner),
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         FORMAT_STATUS,
     );

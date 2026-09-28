@@ -39,7 +39,7 @@ pub static cmd_save_buffer_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_save_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_save_buffer_exec),
     }
 };
 pub static cmd_show_buffer_entry: cmd_entry = {
@@ -64,11 +64,11 @@ pub static cmd_show_buffer_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_save_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_save_buffer_exec),
     }
 };
 unsafe fn cmd_save_buffer_done(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
@@ -77,18 +77,19 @@ unsafe fn cmd_save_buffer_done(
         return;
     }
     if error != 0 as ::core::ffi::c_int {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             write_cstr(out, strerror(error))?;
             out.write_all(b": ")?;
             write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
         });
     }
-    cmdq_continue(item);
+    cmdq_continue(item_handle);
 }
-unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pb;
     let mut flags: ::core::ffi::c_int = 0;
@@ -96,13 +97,13 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if bufname.is_null() {
         pb = paste_get_top(None);
         if pb.is_none() {
-            cmdq_error(item, |out| out.write_all(b"no buffers"));
+            cmdq_error(item_handle, |out| out.write_all(b"no buffers"));
             return CMD_RETURN_ERROR;
         }
     } else {
         pb = paste_get_name(CStr::from_ptr(bufname));
         if pb.is_none() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"no buffer ")?;
                 write_cstr(out, bufname)
             });
@@ -119,12 +120,12 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
                 evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
             }
-            cmdq_print_data(item, &mut *evb);
+            cmdq_print_data(item_handle, &mut *evb);
             return CMD_RETURN_NORMAL;
         }
     }
     let expanded_path = (!show_buffer)
-        .then(|| format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())));
+        .then(|| format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())));
     let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
     let path: *const ::core::ffi::c_char = expanded_path
         .as_ref()
@@ -136,6 +137,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     let buffer = pb.borrow();
     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
+    let waiting_item = std::rc::Rc::downgrade(item_handle);
     file_write_with_cmdq_wait(
         queue_client.as_ref(),
         path,
@@ -144,13 +146,13 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         bufdata.len(),
         Some(Box::new(move |event| unsafe {
             cmd_save_buffer_done(
-                item,
+                &waiting_item.upgrade().expect("file wait retains command item"),
                 event.path,
                 event.error,
                 event.closed as ::core::ffi::c_int,
             )
         })),
-        item,
+        item_handle,
     );
     return CMD_RETURN_WAIT;
 }

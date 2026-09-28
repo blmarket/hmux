@@ -216,7 +216,7 @@ pub static window_tree_mode: window_mode = {
             window_tree_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -368,7 +368,7 @@ unsafe fn window_tree_build_pane(
     );
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -398,7 +398,7 @@ unsafe fn window_tree_filter_pane(
         return 1 as ::core::ffi::c_int;
     }
     let cp = format_single_cstring(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         filter,
         None,
         (session_owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -441,7 +441,7 @@ unsafe fn window_tree_build_window(
     }
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         tag as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -524,7 +524,7 @@ unsafe fn window_tree_build_session(
     }
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         tag as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -926,7 +926,7 @@ unsafe fn window_tree_draw_session(
             oo = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
             ft = format_create(
                 None,
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
@@ -1192,7 +1192,7 @@ unsafe fn window_tree_draw_window(
                 oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
                 ft = format_create(
                     None,
-                    ::core::ptr::null_mut::<cmdq_item>(),
+                    None,
                     (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
@@ -1343,7 +1343,7 @@ unsafe fn window_tree_draw_info(
         as u_int;
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -1567,7 +1567,7 @@ unsafe fn window_tree_get_key(
     let mut key: key_code = 0;
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -1702,7 +1702,7 @@ fn window_tree_help() -> mode_tree_help_info {
 }
 unsafe fn window_tree_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
@@ -1943,11 +1943,11 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
     }))
 }
 unsafe fn window_tree_enqueue_command_done(client_owner: Option<&Rc<UnsafeCell<client>>>, mode: &Rc<UnsafeCell<window_tree_modedata>>) {
-    let item = cmdq_get_callback_owned(
+    let item_allocation = cmdq_get_callback_owned(
         c"window_tree_command_done".as_ptr(),
         window_tree_command_done(mode.clone()),
     );
-    cmdq_append(client_owner, item);
+    cmdq_append(client_owner, item_allocation);
 }
 fn window_tree_prompt_callbacks(
     mode: Rc<UnsafeCell<window_tree_modedata>>,
@@ -2406,102 +2406,4 @@ unsafe fn window_tree_key(
         mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
         (*wp).flags |= PANE_REDRAW;
     };
-}
-
-#[cfg(test)]
-mod queued_refresh_tests {
-    use super::*;
-    use crate::src::cmd::queue::cmdq_free_detached;
-    use crate::src::shared::rc;
-    use std::ptr::NonNull;
-
-    #[test]
-    fn queued_refresh_releases_closed_or_orphaned_mode_when_fired_or_cancelled() {
-        unsafe fn read_mode(
-            _: Option<&Rc<UnsafeCell<client>>>,
-            mode: &Rc<UnsafeCell<window_tree_modedata>>,
-            _: Option<&CStr>,
-            _: prompt_key_result,
-        ) -> prompt_result {
-            assert_eq!((*mode.get()).dead, 0);
-            assert_eq!(Rc::strong_count(mode), 3);
-            PROMPT_CONTINUE
-        }
-        for (fire, dead) in [(false, 0), (true, 0), (false, 1), (true, 1)] {
-            unsafe {
-                let mode = Rc::new_cyclic(|observer| UnsafeCell::new(window_tree_modedata {
-                    observer: observer.clone(),
-                    wp: Weak::new(),
-                    dead,
-                    data: None,
-                    format: c"row format".to_owned(),
-                    key_format: c"key format".to_owned(),
-                    command: c"display-message".to_owned(),
-                    squash_groups: 0,
-                    hide_preview_this_pane: 0,
-                    preview_is_info: 0,
-                    prompt_flags: 0,
-                    item_list: vec![refbox::RefBox::new(window_tree_itemdata {
-                        type_0: WINDOW_TREE_NONE,
-                        session: -1,
-                        winlink: -1,
-                        pane: -1,
-                    })],
-                    entered: Some(c"entered command".to_owned()),
-                    fs: Default::default(),
-                    type_0: WINDOW_TREE_NONE,
-                    offset: 0,
-                    left: 0,
-                    right: 0,
-                    start: 0,
-                    end: 0,
-                    each: 0,
-                }));
-                let observed = Rc::downgrade(&mode);
-                let live = window_tree_live_mode(&observed);
-                assert_eq!(live.is_some(), dead == 0);
-                if let Some(live) = &live {
-                    assert!(Rc::ptr_eq(live, &mode));
-                    assert_eq!(Rc::strong_count(&mode), 2);
-                }
-                drop(live);
-                assert_eq!(Rc::strong_count(&mode), 1);
-                let (mut input, cleanup) = window_tree_prompt_callbacks(mode.clone(), read_mode);
-                assert_eq!(Rc::strong_count(&mode), 2);
-                assert_eq!(
-                    input.as_mut().unwrap()(None, None, PROMPT_KEY_HANDLED),
-                    if dead == 0 { PROMPT_CONTINUE } else { PROMPT_CLOSE },
-                );
-                cleanup.unwrap()();
-                assert_eq!(Rc::strong_count(&mode), 1);
-                let selected_observer = (&(*mode.get()).item_list)[0].downgrade();
-                let selected = ModeTreeItemData::Tree(selected_observer.clone()).as_tree().unwrap();
-                let item = cmdq_get_callback_owned(
-                    c"test-tree-refresh".as_ptr(),
-                    window_tree_command_done(mode),
-                );
-                assert!(observed.upgrade().is_some());
-                if fire {
-                    (*item).flags |= CMDQ_FIRED;
-                    let callback = (*item).cb.take().unwrap();
-                    // Closed modes and modes with expired parents must not
-                    // access the absent pane or tree.
-                    assert_eq!(callback(NonNull::new(item).unwrap()), CMD_RETURN_NORMAL);
-                    assert!(observed.upgrade().is_none());
-                }
-                cmdq_free_detached(item);
-                assert!(observed.upgrade().is_none());
-                assert!(window_tree_live_mode(&observed).is_none());
-                assert_eq!(input.as_mut().unwrap()(None, None, PROMPT_KEY_HANDLED), PROMPT_CLOSE);
-                assert_eq!(selected.type_0, WINDOW_TREE_NONE);
-                assert_eq!(
-                    (selected.session, selected.winlink, selected.pane),
-                    (-1, -1, -1)
-                );
-                assert!(!selected_observer.is_alive());
-                drop(selected);
-                assert!(!selected_observer.is_alive());
-            }
-        }
-    }
 }

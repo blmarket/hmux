@@ -21,7 +21,7 @@ fn environment_loops_support_nested_reads_and_last_entry_flags() {
         let environ = environ_create();
         global_environ = Some(environ);
 
-        let tree = format_create(None, std::ptr::null_mut(), 0, 0);
+        let tree = format_create(None, None, 0, 0);
         for (name, value) in [(c"a", c"one"), (c"b", c"two")] {
             environ_set(
                 global_environ.as_deref_mut().expect("test environment"),

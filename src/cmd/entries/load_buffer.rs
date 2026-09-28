@@ -65,7 +65,7 @@ pub static cmd_load_buffer_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG | CMD_CLIENT_CANFAIL,
-        exec: Some(cmd_load_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_load_buffer_exec),
     }
 };
 unsafe fn cmd_load_buffer_done(
@@ -90,7 +90,7 @@ unsafe fn cmd_load_buffer_done(
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         if !item.is_null() {
-            cmdq_error(item, |out| {
+            cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
                 write_cstr(out, strerror(error))?;
                 out.write_all(b": ")?;
                 write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
@@ -105,7 +105,7 @@ unsafe fn cmd_load_buffer_done(
         ) != 0 as ::core::ffi::c_int
         {
             if !item.is_null() {
-                cmdq_error(item, |out| {
+                cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
                     write_cstr(out, cause.as_ref().unwrap().as_ptr())
                 });
             }
@@ -122,13 +122,14 @@ unsafe fn cmd_load_buffer_done(
     }
     cdata.release_client();
     if !item.is_null() {
-        cmdq_continue(item);
+        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
     }
 }
-unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut cdata = Box::new(cmd_load_buffer_data {
         client: None,
@@ -142,7 +143,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
         cdata.client = client_retain((tc).as_ref());
     }
-    let path = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    let path = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     file_read_with_cmdq_wait(
         queue_client.as_ref(),
         path.as_ptr(),
@@ -155,7 +156,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 event.buffer.expect("read callback buffer"),
             )
         })),
-        item,
+        item_handle,
         None,
     );
     return CMD_RETURN_WAIT;

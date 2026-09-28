@@ -317,7 +317,7 @@ pub unsafe fn status_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
     if (*c).flags & CLIENT_STATUSFORCE as uint64_t != 0 {
         flags |= FORMAT_FORCE;
     }
-    ft = format_create(Some(c_owner), ::core::ptr::null_mut::<cmdq_item>(), FORMAT_NONE, flags);
+    ft = format_create(Some(c_owner), None, FORMAT_NONE, flags);
     format_defaults(
         ft,
         Some(c_owner),
@@ -622,7 +622,7 @@ pub unsafe fn status_message_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<
     }
     let (ax, aw) = status_message_area(&*c);
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         Some(c_owner),
         None,
         ::core::ptr::null_mut::<winlink>(),

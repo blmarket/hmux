@@ -67,7 +67,7 @@ pub static cmd_show_options_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_show_options_exec),
     }
 };
 pub static cmd_show_window_options_entry: cmd_entry = {
@@ -92,7 +92,7 @@ pub static cmd_show_window_options_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_show_options_exec),
     }
 };
 pub static cmd_show_hooks_entry: cmd_entry = {
@@ -117,10 +117,11 @@ pub static cmd_show_hooks_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_show_options_exec),
     }
 };
-unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -143,7 +144,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 return CMD_RETURN_NORMAL;
             }
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 write_cstr(out, cause.as_ref().unwrap().as_ptr())
             });
             return CMD_RETURN_ERROR;
@@ -155,14 +156,14 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
             o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
             while !o.is_null() {
-                cmd_show_hooks_print_monitor(self_0, item, o);
+                cmd_show_hooks_print_monitor(self_0, item_handle, o);
                 o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
             }
             return CMD_RETURN_NORMAL;
         }
-        return cmd_show_options_all(self_0, item, scope, oo);
+        return cmd_show_options_all(self_0, item_handle, scope, oo);
     }
-    argument = format_single_from_target_cstring(item, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    argument = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     let matched = options_match_owned(argument.as_c_str());
     if let Ok(parsed) = &matched {
         name = parsed.name.as_ptr();
@@ -181,12 +182,12 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             current_block = 9776955515550960483;
         } else {
             if ambiguous != 0 {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"ambiguous option: ")?;
                     write_cstr(out, argument.as_ptr())
                 });
             } else {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"invalid option: ")?;
                     write_cstr(out, argument.as_ptr())
                 });
@@ -199,7 +200,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 current_block = 9776955515550960483;
             } else {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     write_cstr(out, cause.as_ref().unwrap().as_ptr())
                 });
                 current_block = 18040240512796061664;
@@ -216,7 +217,7 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_hooks_entry)
                     && args_has(args, 'B' as i32 as u_char) != 0
                 {
-                    cmd_show_hooks_print_monitor(self_0, item, o);
+                    cmd_show_hooks_print_monitor(self_0, item_handle, o);
                 } else {
                     print_parent = parent;
                     if array_key.is_null()
@@ -225,14 +226,14 @@ unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                     {
                         print_parent = 0 as ::core::ffi::c_int;
                     }
-                    cmd_show_options_print(self_0, item, o, array_key, print_parent);
+                    cmd_show_options_print(self_0, item_handle, o, array_key, print_parent);
                 }
                 current_block = 9776955515550960483;
             } else if *name as ::core::ffi::c_int == '@' as i32 {
                 if args_has(args, 'q' as i32 as u_char) != 0 {
                     current_block = 9776955515550960483;
                 } else {
-                    cmdq_error(item, |out| {
+                    cmdq_error(item_handle, |out| {
                         out.write_all(b"invalid option: ")?;
                         write_cstr(out, argument.as_ptr())
                     });
@@ -257,7 +258,7 @@ unsafe fn cmd_show_options_value(
 
 unsafe fn cmd_show_options_print(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut o: *mut options_entry,
     mut array_key: *const ::core::ffi::c_char,
     mut parent: ::core::ffi::c_int,
@@ -287,7 +288,7 @@ unsafe fn cmd_show_options_print(
         if !a.is_null() {
             while !a.is_null() {
                 array_key = options_array_item_key(&*(a)).as_ptr();
-                cmd_show_options_print(self_0, item, o, array_key, parent);
+                cmd_show_options_print(self_0, item_handle, o, array_key, parent);
                 a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             }
             return;
@@ -308,7 +309,7 @@ unsafe fn cmd_show_options_print(
     } else if oe.is_null() {
         is_user = 1 as ::core::ffi::c_int;
     }
-    ft = format_create_from_target(item);
+    ft = format_create_from_target(item_handle);
     format_add(
         ft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -396,12 +397,12 @@ unsafe fn cmd_show_options_print(
     }
     let line = format_expand_cstring(ft, template);
     format_free(Box::from_raw(ft));
-    cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
+    cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
     drop(value);
 }
 unsafe fn cmd_show_hooks_print_monitor(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut o: *mut options_entry,
 ) {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
@@ -433,7 +434,7 @@ unsafe fn cmd_show_hooks_print_monitor(
         MONITOR_ALL_WINDOWS => Some(CString::new("@*").unwrap()),
         _ => None,
     };
-    ft = format_create_from_target(item);
+    ft = format_create_from_target(item_handle);
     format_add(
         ft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -521,12 +522,12 @@ unsafe fn cmd_show_hooks_print_monitor(
     }
     let line = format_expand_cstring(ft, template);
     format_free(Box::from_raw(ft));
-    cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
+    cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
     drop(target);
 }
 unsafe fn cmd_show_options_all(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut scope: ::core::ffi::c_int,
     mut oo: *mut options,
 ) -> cmd_retval {
@@ -552,7 +553,7 @@ unsafe fn cmd_show_options_all(
                 if is_user_hook == 0 || args_has(args, 'H' as i32 as u_char) != 0 {
                     cmd_show_options_print(
                         self_0,
-                        item,
+                        item_handle,
                         o,
                         ::core::ptr::null::<::core::ffi::c_char>(),
                         0 as ::core::ffi::c_int,
@@ -561,7 +562,7 @@ unsafe fn cmd_show_options_all(
             } else if is_user_hook != 0 {
                 cmd_show_options_print(
                     self_0,
-                    item,
+                    item_handle,
                     o,
                     ::core::ptr::null::<::core::ffi::c_char>(),
                     0 as ::core::ffi::c_int,
@@ -602,7 +603,7 @@ unsafe fn cmd_show_options_all(
                     _ => {
                         cmd_show_options_print(
                             self_0,
-                            item,
+                            item_handle,
                             o,
                             ::core::ptr::null::<::core::ffi::c_char>(),
                             parent,

@@ -66,7 +66,7 @@ pub static cmd_select_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_select_pane_exec),
     }
 };
 pub static cmd_last_pane_entry: cmd_entry = {
@@ -91,7 +91,7 @@ pub static cmd_last_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_select_pane_exec),
     }
 };
 unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
@@ -118,8 +118,9 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
 }
 unsafe fn cmd_select_pane_marked_pane(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
@@ -227,10 +228,11 @@ unsafe fn cmd_select_pane_marked_pane(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let entry = cmd_get_entry(&*self_0);
-    let current = cmdq_get_state_owned(item);
+    let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -259,7 +261,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             }
         }
         if lastwp.is_null() {
-            cmdq_error(item, |out| out.write_all(b"no last pane"));
+            cmdq_error(item_handle, |out| out.write_all(b"no last pane"));
             return CMD_RETURN_ERROR;
         }
         if args_has(args, 'e' as i32 as u_char) != 0 {
@@ -291,7 +293,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'm' as i32 as u_char) != 0 || args_has(args, 'M' as i32 as u_char) != 0 {
-        return cmd_select_pane_marked_pane(self_0, item);
+        return cmd_select_pane_marked_pane(self_0, item_handle);
     }
     style = args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !style.is_null() {
@@ -302,7 +304,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             |out| write_cstr(out, style),
         );
         if o.is_null() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"bad style: ")?;
                 write_cstr(out, style)
             });
@@ -317,7 +319,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         (*wp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
     }
     if args_has(args, 'g' as i32 as u_char) != 0 {
-        cmdq_print(item, |out| {
+        cmdq_print(item_handle, |out| {
             write_cstr(
                 out,
                 options_get_string(
@@ -367,7 +369,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        let title = format_single_from_target_cstring(item, args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+        let title = format_single_from_target_cstring(item_handle, args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
         if screen_set_title(&mut (*wp).base, &title, 0 as ::core::ffi::c_int) != 0 {
             let mut ep = event_payload_create();
             cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
@@ -411,7 +413,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int) != 0 {
         cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
-    cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
+    cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item_handle, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
     cmd_select_pane_redraw(&(*(w)).observer.upgrade().expect("live window"));
     if visible == 0 && window_pop_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0 {
         server_redraw_window(&*(w));

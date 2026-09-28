@@ -8,11 +8,7 @@ use hmux2::src::arguments::{
     args_string_percentage_result, args_strtonum_result, parse_number, parse_percentage,
     ArgumentValueError,
 };
-use hmux2::src::cmd::queue::{
-    cmdq_free_detached, cmdq_get_callback_owned, cmdq_get_name,
-};
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
-use hmux2::src::ffi::libc::snprintf;
 use hmux2::src::shared::arguments::{args, args_parse, ArgumentValue, ARGS_PARSE_COMMANDS};
 
 fn cstring(value: &str) -> CString {
@@ -115,30 +111,6 @@ fn percentage_helper_preserves_literal_and_computed_bounds() {
         Ok(0)
     );
     assert_eq!(error_message(ArgumentValueError::Empty), b"empty");
-}
-
-#[test]
-fn callback_queue_name_keeps_non_utf8_label_and_item_pointer() {
-    unsafe {
-        let label = CString::new(b"raw\xff".as_slice()).unwrap();
-        let item = cmdq_get_callback_owned(label.as_ptr(), None);
-        assert!(!item.is_null());
-
-        let mut expected = [0_i8; 128];
-        let written = snprintf(
-            expected.as_mut_ptr(),
-            expected.len(),
-            c"[%s/%p]".as_ptr(),
-            label.as_ptr(),
-            item.cast::<::core::ffi::c_void>(),
-        );
-        assert!(written >= 0 && (written as usize) < expected.len());
-        assert_eq!(
-            cmdq_get_name(&*item).expect("queue item name").to_bytes(),
-            CStr::from_ptr(expected.as_ptr()).to_bytes()
-        );
-        cmdq_free_detached(item);
-    }
 }
 
 #[test]

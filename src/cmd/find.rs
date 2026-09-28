@@ -334,7 +334,7 @@ unsafe fn cmd_find_get_session(
         return 0 as ::core::ffi::c_int;
     }
     let matched_client_owner = cmd_find_client(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         session,
         1 as ::core::ffi::c_int,
     );
@@ -1114,13 +1114,14 @@ pub unsafe fn cmd_find_from_client(
 }
 pub unsafe fn cmd_find_target(
     mut fs: *mut cmd_find_state,
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut target: *const ::core::ffi::c_char,
     mut type_0: cmd_find_type,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mouse_pane_owner;
-    let queue_client = cmdq_get_client(item);
+    let queue_client = cmdq_get_client((item).as_ref());
     let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current_block: u64;
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
@@ -1234,8 +1235,8 @@ pub unsafe fn cmd_find_target(
         log_pointer((item) as *const ::core::ffi::c_void),
         log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
     ));
-    let queue_current = cmdq_get_state_owned(item).current_snapshot();
-    let mut queue_event = cmdq_get_event(item);
+    let queue_current = cmdq_get_state_owned(&*(item)).current_snapshot();
+    let mut queue_event = cmdq_get_event(&*(item));
     let mut current_context: Option<cmd_find_state> = None;
     cmd_find_clear_state(fs, flags);
     if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
@@ -1260,7 +1261,7 @@ pub unsafe fn cmd_find_target(
         current_block = 1836292691772056875;
     } else {
         if !flags & CMD_FIND_QUIET != 0 {
-            cmdq_error(item, |out| out.write_all(b"no current target"));
+            cmdq_error(item_handle.expect("command queue item"), |out| out.write_all(b"no current target"));
         }
         current_block = 5193823237153215208;
     }
@@ -1285,7 +1286,7 @@ pub unsafe fn cmd_find_target(
             {
                 c = queue_client_ptr;
                 if c.is_null() || (*c).session_handle().is_none() {
-                    cmdq_error(item, |out| out.write_all(b"no current client"));
+                    cmdq_error(item_handle.expect("command queue item"), |out| out.write_all(b"no current client"));
                     current_block = 5193823237153215208;
                 } else {
                     (*fs).set_wl((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr());
@@ -1351,7 +1352,7 @@ pub unsafe fn cmd_find_target(
                 }
                 if (*fs).pane_handle().is_none() {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item, |out| out.write_all(b"no mouse target"));
+                        cmdq_error(item_handle.expect("command queue item"), |out| out.write_all(b"no mouse target"));
                     }
                     current_block = 5193823237153215208;
                 } else {
@@ -1366,7 +1367,7 @@ pub unsafe fn cmd_find_target(
             {
                 if server_check_marked() == 0 {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item, |out| out.write_all(b"no marked target"));
+                        cmdq_error(item_handle.expect("command queue item"), |out| out.write_all(b"no marked target"));
                     }
                     current_block = 5193823237153215208;
                 } else {
@@ -1515,14 +1516,14 @@ pub unsafe fn cmd_find_target(
                 }
                 if !pane.is_null() && flags & CMD_FIND_WINDOW_INDEX != 0 {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item, |out| out.write_all(b"can't specify pane here"));
+                        cmdq_error(item_handle.expect("command queue item"), |out| out.write_all(b"can't specify pane here"));
                     }
                     current_block = 5193823237153215208;
                 } else {
                     if !session.is_null() {
                         if cmd_find_get_session(fs, session) != 0 as ::core::ffi::c_int {
                             if !flags & CMD_FIND_QUIET != 0 {
-                                cmdq_error(item, |out| {
+                                cmdq_error(item_handle.expect("command queue item"), |out| {
                                     out.write_all(b"can't find session: ")?;
                                     write_cstr(out, session)
                                 });
@@ -1602,7 +1603,7 @@ pub unsafe fn cmd_find_target(
                             match current_block {
                                 2743676411188200708 => {
                                     if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(item, |out| {
+                                        cmdq_error(item_handle.expect("command queue item"), |out| {
                                             out.write_all(b"can't find window: ")?;
                                             write_cstr(out, window)
                                         });
@@ -1610,7 +1611,7 @@ pub unsafe fn cmd_find_target(
                                 }
                                 _ => {
                                     if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(item, |out| {
+                                        cmdq_error(item_handle.expect("command queue item"), |out| {
                                             out.write_all(b"can't find pane: ")?;
                                             write_cstr(out, pane)
                                         });
@@ -1653,9 +1654,10 @@ pub unsafe fn cmd_find_target(
     return -(1 as ::core::ffi::c_int);
 }
 unsafe fn cmd_find_current_client(
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let inside_pane_owner;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut found = None;
@@ -1671,7 +1673,7 @@ unsafe fn cmd_find_current_client(
     };
     let mut c_owner = None;
     if !item.is_null() {
-        c_owner = cmdq_get_client(item);
+        c_owner = cmdq_get_client((item).as_ref());
         c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     if !c.is_null() && !(*c).session_handle().is_none() {
@@ -1696,7 +1698,7 @@ unsafe fn cmd_find_current_client(
         }
     }
     if found.is_none() && !item.is_null() && quiet == 0 {
-        cmdq_error(item, |out| out.write_all(b"no current client"));
+        cmdq_error(item_handle.expect("command queue item"), |out| out.write_all(b"no current client"));
     }
     log_debug(format_args!(
         "{}: no target, return {}",
@@ -1706,13 +1708,13 @@ unsafe fn cmd_find_current_client(
     return found;
 }
 pub unsafe fn cmd_find_client(
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut target: *const ::core::ffi::c_char,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if target.is_null() {
-        return cmd_find_current_client(item, quiet);
+        return cmd_find_current_client(item_handle, quiet);
     }
     let target_bytes = CStr::from_ptr(target).to_bytes();
     let trimmed = target_bytes.strip_suffix(b":").unwrap_or(target_bytes);
@@ -1770,7 +1772,7 @@ pub unsafe fn cmd_find_client(
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if c.is_null() && quiet == 0 {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle.expect("command queue item"), |out| {
             out.write_all(b"can't find client: ")?;
             write_cstr(out, copy_ptr)
         });

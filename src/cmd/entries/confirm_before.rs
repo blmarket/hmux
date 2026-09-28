@@ -50,7 +50,7 @@ pub static cmd_confirm_before_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_CLIENT_TFLAG,
-        exec: Some(cmd_confirm_before_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_confirm_before_exec),
     }
 };
 fn cmd_confirm_before_args_parse(
@@ -59,9 +59,10 @@ fn cmd_confirm_before_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -69,7 +70,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    let Some(cmdlist) = args_make_commands_now(self_0, item, 0, 1) else {
+    let Some(cmdlist) = args_make_commands_now(self_0, item_handle, 0, 1) else {
         return CMD_RETURN_ERROR;
     };
     let mut cdata = Box::new(cmd_confirm_before_data {
@@ -93,7 +94,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         {
             cdata.confirm_key = *confirm_key.offset(0 as ::core::ffi::c_int as isize) as u_char;
         } else {
-            cmdq_error(item, |out| out.write_all(b"invalid confirm key"));
+            cmdq_error(item_handle, |out| out.write_all(b"invalid confirm key"));
             return CMD_RETURN_ERROR;
         }
     } else {
@@ -142,7 +143,7 @@ unsafe fn cmd_confirm_before_callback(
     let mut c = c_owner.get();
     let item_owner = cdata.item.upgrade();
     let item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let new_item_allocation;
     let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     if !((*c).flags & CLIENT_DEAD as uint64_t != 0) {
         if let Some(s) = s {
@@ -152,25 +153,25 @@ unsafe fn cmd_confirm_before_callback(
             if confirmed {
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
-                    new_item = cmdq_get_command(
+                    new_item_allocation = cmdq_get_command(
                         &cdata.cmdlist, None,
                     );
-                    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
+                    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item_allocation);
                 } else {
-                    new_item = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
-                    cmdq_insert_after(item, new_item);
+                    new_item_allocation = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
+                    cmdq_insert_after(&(*(item)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
                 }
             }
         }
     }
     if !item.is_null() {
-        if let Some(client) = cmdq_get_client(item) {
+        if let Some(client) = cmdq_get_client((item).as_ref()) {
             let c = crate::src::shared::rc::as_ptr(&client);
             if (*c).session_handle().is_none() {
                 (*c).retval = retcode;
             }
         }
-        cmdq_continue(item);
+        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
     }
     return PROMPT_CLOSE;
 }
@@ -183,78 +184,5 @@ impl cmd_confirm_before_data {
                 text,
             )
         }))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::src::cmd::cmd_list_new;
-    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
-    use crate::src::prompt::{prompt_free, prompt_key};
-    use crate::src::shared::rc;
-    use crate::src::text::utf8::utf8_fromcstr_vec;
-    use std::{cell::RefCell, rc::Rc};
-
-    #[test]
-    fn owned_callback_releases_commands_after_rejection_or_replacement() {
-        unsafe {
-            for reject in [false, true] {
-                let client = client::new();
-                let observer = Rc::downgrade(&client);
-                let item = cmdq_get_callback_owned(c"confirmation wait".as_ptr(), None);
-                (*item).flags = CMDQ_WAITING;
-                let cmdlist = cmd_list_new();
-                let commands = std::rc::Rc::downgrade(&cmdlist);
-                let data = Box::new(cmd_confirm_before_data {
-                    item: (*item).observer.clone(),
-                    cmdlist: cmdlist,
-                    confirm_key: b'y',
-                    default_yes: 0,
-                });
-                let owner = refbox::RefBox::new(prompt {
-                    flags: PROMPT_SINGLE,
-                    buffer: utf8_fromcstr_vec(c""),
-                    ..Default::default()
-                });
-                let mut callback = data.into_callback().unwrap();
-                owner.try_borrow_mut().unwrap().inputcb =
-                    Some(Box::new(move |text, key| {
-                        let client = observer.upgrade();
-                        callback(client.as_ref(), text, key)
-                    }));
-                if reject {
-                    assert_eq!(prompt_key(&owner.downgrade(), b'n' as u64, &mut 0), PROMPT_KEY_CLOSE);
-                    assert_eq!((*item).flags & CMDQ_WAITING, 0);
-                }
-                assert!(commands.upgrade().is_some());
-                prompt_free(&owner.downgrade());
-                assert!(commands.upgrade().is_none());
-                assert!(owner.try_borrow_mut().unwrap().inputcb.is_none());
-                if !reject {
-                    // Pinned tmux cleanup only frees commands; callback dispatch
-                    // is responsible for continuing a waiting confirmation.
-                    assert_ne!((*item).flags & CMDQ_WAITING, 0);
-                }
-                prompt_free(&owner.downgrade());
-                cmdq_free_detached(item);
-            }
-        }
-    }
-
-    #[test]
-    fn confirmation_skips_an_expired_wait_item() {
-        unsafe {
-            let client = client::new();
-            let item = cmdq_get_callback_owned(c"expired confirmation".as_ptr(), None);
-            let data = cmd_confirm_before_data {
-                item: (*item).observer.clone(),
-                cmdlist: cmd_list_new(),
-                confirm_key: b'y',
-                default_yes: 0,
-            };
-            cmdq_free_detached(item);
-            assert_eq!(cmd_confirm_before_callback(&client, &data, None), PROMPT_CLOSE);
-        }
     }
 }

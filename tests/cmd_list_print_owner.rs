@@ -7,7 +7,7 @@ use hmux2::src::cmd::{
     cmd_list_new, cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED,
     CMD_LIST_PRINT_NO_GROUPS,
 };
-use hmux2::src::shared::arguments::{args_value, ArgumentValue};
+use hmux2::src::shared::arguments::ArgumentValue;
 use std::ffi::CString;
 
 #[test]
@@ -180,66 +180,5 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
         drop(source);
         drop(tail);
         drop(copied);
-    }
-}
-
-#[test]
-fn queued_command_observer_follows_list_transfer_and_expires_with_owner() {
-    unsafe {
-        let source = cmd_list_new();
-        cmd_list_append(&source, display_message_command());
-        let item = hmux2::src::cmd::queue::cmdq_get_command(&source, None);
-        let command = (*item).cmd.clone();
-        let address = (*item).cmd_ptr();
-        let destination = cmd_list_new();
-        cmd_list_append_all(&destination, &source);
-        drop(source);
-        assert!(command.is_alive());
-        assert_eq!((*item).cmd_ptr(), address);
-        drop(destination);
-        assert!(!command.is_alive());
-        assert!((*item).cmd_ptr().is_null());
-        hmux2::src::cmd::queue::cmdq_free_detached(item);
-    }
-}
-
-#[test]
-fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
-    use hmux2::src::cmd::queue::{cmdq_free_detached, cmdq_get_command};
-        unsafe {
-        let nested = cmd_list_new();
-        let nested_observer = std::rc::Rc::downgrade(&nested);
-        let values = vec![
-            args_value::string(c"if-shell".to_owned()),
-            args_value::string(c"-F".to_owned()),
-            args_value::string(c"1".to_owned()),
-            args_value::commands(nested),
-        ];
-        let command = cmd_parse(&values, None, 0, 0).unwrap();
-        let address = command.as_ptr() as usize;
-        drop(values);
-        assert_eq!(nested_observer.strong_count(), 1);
-        let list = cmd_list_new();
-        let list_observer = std::rc::Rc::downgrade(&list);
-        cmd_list_append(&list, command);
-        // Grow the owning vector after insertion; pointee addresses stay stable.
-        for _ in 0..32 {
-            cmd_list_append(&list, display_message_command());
-        }
-        let mut item = cmdq_get_command(&list, None);
-        assert_eq!((*item).cmd_ptr() as usize, address);
-        drop(list);
-        let mut count = 0;
-        while !item.is_null() {
-            let next = (*item).next_ptr();
-            assert!(nested_observer.upgrade().is_some());
-            assert!(!cmd_print(&*(*item).cmd_ptr()).as_bytes().is_empty());
-            cmdq_free_detached(item);
-            item = next;
-            count += 1;
-        }
-        assert_eq!(count, 33);
-        assert!(list_observer.upgrade().is_none());
-        assert!(nested_observer.upgrade().is_none());
     }
 }

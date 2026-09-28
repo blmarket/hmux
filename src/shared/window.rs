@@ -199,7 +199,7 @@ pub struct window_mode {
     pub init: Option<
         unsafe fn(
             *mut window_mode_entry,
-            *mut cmdq_item,
+            Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
             *mut cmd_find_state,
             *mut args,
         ) -> *mut screen,

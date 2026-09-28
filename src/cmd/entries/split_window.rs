@@ -87,10 +87,7 @@ pub static cmd_new_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_split_window_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_split_window_exec),
     }
 };
 pub static cmd_split_window_entry: cmd_entry = {
@@ -115,16 +112,14 @@ pub static cmd_split_window_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_split_window_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_split_window_exec),
     }
 };
-unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let current = cmdq_get_state_owned(item);
+    let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
@@ -141,7 +136,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -157,7 +152,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         wp: Default::default(),
         idx: 0,
     };
-    let mut event_snapshot = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut input: ::core::ffi::c_int = 0;
     let mut empty: ::core::ffi::c_int = 0;
@@ -189,11 +184,11 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     }
     if args_has(args, 'O' as i32 as u_char) != 0 {
         if is_floating == 0 {
-            cmdq_error(item, |out| out.write_all(b"modal pane must be floating"));
+            cmdq_error(item_handle, |out| out.write_all(b"modal pane must be floating"));
             return CMD_RETURN_ERROR;
         }
         if (*w).modal.upgrade().is_some() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"window already has a modal pane")
             });
             return CMD_RETURN_ERROR;
@@ -245,7 +240,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         && (count != 1 as u_int
             || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int != '\0' as i32)
     {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"command cannot be given for empty pane")
         });
         return CMD_RETURN_ERROR;
@@ -260,7 +255,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         oe = options_search(b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
         lines = options_find_choice(oe, value, &raw mut choice_cause) as pane_lines;
         if let Some(cause) = choice_cause.as_ref() {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"pane-border-lines ")?;
                 write_cstr(out, cause.as_ptr())
             });
@@ -268,10 +263,10 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
     }
     if flags & SPAWN_FLOATING != 0 {
-        lc = match layout_get_floating_cell(item, args, lines, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), flags) {
+        lc = match layout_get_floating_cell(item_handle, args, lines, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), flags) {
             Ok(cell) => cell,
             Err(error) => {
-                cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                 if restore_zoom != 0 {
                     window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
                 }
@@ -279,10 +274,10 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             }
         };
     } else {
-        lc = match layout_get_tiled_cell(item, args, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), flags) {
+        lc = match layout_get_tiled_cell(item_handle, args, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), flags) {
             Ok(cell) => cell,
             Err(error) => {
-                cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                 if restore_zoom != 0 {
                     window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
                 }
@@ -311,7 +306,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
     new_wp = spawned_pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if new_wp.is_null() {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"create pane failed: ")?;
             write_cstr(
                 out,
@@ -340,7 +335,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             )
             .is_null()
             {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"bad style: ")?;
                     write_cstr(out, style)
                 });
@@ -371,7 +366,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                     )
                     .is_null()
                     {
-                        cmdq_error(item, |out| {
+                        cmdq_error(item_handle, |out| {
                             out.write_all(b"bad active border style: ")?;
                             write_cstr(out, style)
                         });
@@ -395,7 +390,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                             )
                             .is_null()
                             {
-                                cmdq_error(item, |out| {
+                                cmdq_error(item_handle, |out| {
                                     out.write_all(b"bad inactive border style: ")?;
                                     write_cstr(out, style)
                                 });
@@ -443,7 +438,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                 }
                                 if args_has(args, 'T' as i32 as u_char) != 0 {
                                     let title = format_single_from_target_cstring(
-                                        item,
+                                        item_handle,
                                         args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                                     );
                                     screen_set_title(
@@ -480,9 +475,9 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                     );
                                 }
                                 if input != 0 {
-                                    match window_pane_start_input(&(*(new_wp)).observer.upgrade().expect("live window_pane"), item) {
+                                    match window_pane_start_input(&(*(new_wp)).observer.upgrade().expect("live window_pane"), item_handle) {
                                         Err(error) => {
-                                            cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                                            cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                                             current_block = 9814746494299271243;
                                         }
                                         Ok(1) => {
@@ -532,9 +527,9 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                                 template = SPLIT_WINDOW_TEMPLATE.as_ptr();
                                             }
                                             let cp = format_single_cstring(
-                                                item, template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (new_wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                                                Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (new_wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                                             );
-                                            cmdq_print(item, |out| write_cstr(out, cp.as_ptr()));
+                                            cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
                                         }
                                         cmd_find_from_winlink_pane(
                                             &raw mut fs,
@@ -542,7 +537,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                             &(*(new_wp)).observer.upgrade().expect("live window_pane"),
                                             0 as ::core::ffi::c_int,
                                         );
-                                        cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item, &raw mut fs, |out| {
+                                        cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item_handle, &raw mut fs, |out| {
                                             out.write_all(b"after-split-window")
                                         });
                                         drop(sc.environ.take());

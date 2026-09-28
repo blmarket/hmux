@@ -535,7 +535,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
                     ::core::mem::size_of::<grid_cell>() as size_t,
                 );
                 let expanded = format_single_cstring(
-                    ::core::ptr::null_mut::<cmdq_item>(),
+                    None,
                     s,
                     None,
                     None,

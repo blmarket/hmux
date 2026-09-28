@@ -86,10 +86,7 @@ pub static cmd_run_shell_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_run_shell_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_run_shell_exec),
     }
 };
 fn cmd_run_shell_args_parse(
@@ -123,7 +120,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
     }
     if wp.is_null() {
         if let Some(item) = item_owner.as_ref() {
-            cmdq_print(item.get(), |out| write_cstr(out, msg));
+            cmdq_print(&(*(item.get())).observer.upgrade().expect("live command queue item"), |out| write_cstr(out, msg));
             return;
         }
         if cdata.client.is_some() && !(*client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get())).session_handle().is_none() {
@@ -146,7 +143,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             &pane_owner,
             None,
             &window_view_mode,
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             ::core::ptr::null_mut::<cmd_find_state>(),
             ::core::ptr::null_mut::<args>(),
         );
@@ -164,12 +161,13 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
     CString::new(message).expect("run-shell command and status text contain no NUL")
 }
 
-unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -190,7 +188,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !delay.is_null() {
         d = strtod(delay, &raw mut end);
         if *end as ::core::ffi::c_int != '\0' as i32 {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid delay time: ")?;
                 write_cstr(out, delay)
             });
@@ -219,7 +217,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'C' as i32 as u_char) == 0 {
         cmd = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         if !cmd.is_null() {
-            ft = format_create_from_target(item);
+            ft = format_create_from_target(item_handle);
             i = 1 as u_int;
             while i < args_count(args) {
                 xformat(&mut key, format_args!("{}", i as u32));
@@ -234,7 +232,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     } else {
         cdata.state = Some(args_make_commands_prepare(
             self_0,
-            item,
+            item_handle,
             0 as u_int,
             ::core::ptr::null::<::core::ffi::c_char>(),
             wait,
@@ -286,11 +284,11 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     let mut c: *mut client = client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
     let cmd = cdata.cmd.as_deref();
     let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let new_item_allocation;
     if cdata.state.is_none() {
         if cmd.is_none() {
             if cdata.wait {
-                cmdq_continue(item);
+                cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
             }
             return;
         }
@@ -321,11 +319,11 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     },
                 );
             } else {
-                cmdq_error(item, |out| {
+                cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
                     out.write_all(b"failed to run command: ")?;
                     write_cstr(out, cmd.unwrap().as_ptr())
                 });
-                cmdq_continue(item);
+                cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
             }
         } else {
             // job_run does not dispatch callbacks before returning. Transfer the
@@ -358,23 +356,22 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     |out| write_cstr(out, error_ptr),
                 );
             } else {
-                cmdq_error(item, |out| write_cstr(out, error_ptr));
+                cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| write_cstr(out, error_ptr));
             }
         }
         Ok(commands) if !cdata.wait => {
-            new_item =
-                cmdq_get_command(&commands, None);
-            cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
+            new_item_allocation = cmdq_get_command(&commands, None);
+            cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item_allocation);
             drop(commands);
         }
         Ok(commands) => {
-            new_item = cmdq_get_command(&commands, (*item).state.as_ref());
-            cmdq_insert_after(item, new_item);
+            new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
+            cmdq_insert_after(&(*(item)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
             drop(commands);
         }
     }
     if cdata.wait {
-        cmdq_continue(item);
+        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
     }
 }
 unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shell_data) {
@@ -435,13 +432,13 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
         cmd_run_shell_print(cdata, msg.as_ptr());
     }
     if cdata.wait {
-        if let Some(client) = cmdq_get_client(item) {
+        if let Some(client) = cmdq_get_client((item).as_ref()) {
             let c = crate::src::shared::rc::as_ptr(&client);
             if (*c).session_handle().is_none() {
                 (*c).retval = retcode;
             }
         }
-        cmdq_continue(item);
+        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
     }
 }
 impl Drop for cmd_run_shell_data {

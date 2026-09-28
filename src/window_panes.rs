@@ -104,7 +104,7 @@ pub static window_panes_mode: window_mode = {
             window_panes_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -335,7 +335,7 @@ unsafe fn window_panes_get_border_cell(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() },
@@ -1154,7 +1154,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     let expanded = format_single_cstring(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         format,
         None,
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1294,7 +1294,7 @@ unsafe fn window_panes_draw_number(
         name = b"display-panes-colour\0" as *const u8 as *const ::core::ffi::c_char;
     }
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         wl,
@@ -1608,10 +1608,11 @@ unsafe fn window_panes_timer_callback(wme: *mut window_mode_entry) {
 }
 unsafe fn window_panes_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
@@ -1631,7 +1632,7 @@ unsafe fn window_panes_init(
     if item.is_null() {
         return ::core::ptr::null_mut::<screen>();
     }
-    self_0 = cmdq_get_cmd(item);
+    self_0 = cmdq_get_cmd(&*(item));
     if self_0.is_null() {
         return ::core::ptr::null_mut::<screen>();
     }
@@ -1652,7 +1653,7 @@ unsafe fn window_panes_init(
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle.expect("command queue item"), |out| {
                     out.write_all(b"delay ")?;
                     write_cstr(out, error.message().as_ptr())
                 });
@@ -1682,7 +1683,7 @@ unsafe fn window_panes_init(
     (*data).screen.mode &= !MODE_CURSOR;
     (*data).state = Some(args_make_commands_prepare(
         self_0,
-        item,
+        (item_handle).expect("command queue item"),
         0 as u_int,
         b"select-pane -t \"%%%\"\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_int,
@@ -1767,7 +1768,7 @@ unsafe fn window_panes_run_command(
     client_owner: &Rc<UnsafeCell<client>>,
     pane: &window_pane,
 ) {
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let new_item_allocation;
     let expanded = CString::new(format!("%{}", pane.id)).expect("pane ID contains NUL");
     match args_make_commands(
         (*data)
@@ -1788,9 +1789,8 @@ unsafe fn window_panes_run_command(
         }
         Ok(commands) => {
             let cmdlist = commands;
-            new_item =
-                cmdq_get_command(&cmdlist, None);
-            cmdq_append(Some(client_owner), new_item);
+            new_item_allocation = cmdq_get_command(&cmdlist, None);
+            cmdq_append(Some(client_owner), new_item_allocation);
             drop(cmdlist);
         }
     }

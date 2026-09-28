@@ -199,7 +199,7 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
             ..Default::default()
         };
         format_create_defaults(
-            std::ptr::null_mut(),
+            None,
             None,
             (fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             fs.wl_ptr(),
@@ -208,7 +208,7 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
     } else {
         cmd_find_clear_state(&mut pr.state, 0);
         format_create_defaults(
-            std::ptr::null_mut(),
+            None,
             None,
             None,
             std::ptr::null_mut(),
@@ -378,10 +378,10 @@ fn prompt_incremental_input(pr: &prompt, prefix: u8) -> CString {
 }
 pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     let ft = if cmd_find_valid_state(&pr.state) != 0 {
-        format_create_from_state(std::ptr::null_mut(), None, &pr.state)
+        format_create_from_state(None, None, &pr.state)
     } else {
         format_create_defaults(
-            std::ptr::null_mut(),
+            None,
             None,
             None,
             std::ptr::null_mut(),
@@ -515,13 +515,13 @@ unsafe fn prompt_format_tree(pr: &prompt) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if cmd_find_valid_state(&pr.state) != 0 {
         ft = format_create_from_state(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             None,
             &pr.state,
         );
     } else {
         ft = format_create_defaults(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             None,
             None,
             ::core::ptr::null_mut::<winlink>(),

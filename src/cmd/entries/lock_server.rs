@@ -30,7 +30,7 @@ pub static cmd_lock_server_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_lock_server_exec),
     }
 };
 pub static cmd_lock_session_entry: cmd_entry = {
@@ -55,7 +55,7 @@ pub static cmd_lock_session_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_lock_server_exec),
     }
 };
 pub static cmd_lock_client_entry: cmd_entry = {
@@ -80,12 +80,13 @@ pub static cmd_lock_client_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG,
-        exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_lock_server_exec),
     }
 };
-unsafe fn cmd_lock_server_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_lock_server_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_server_entry) {
         server_lock();
     } else if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_lock_session_entry) {

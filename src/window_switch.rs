@@ -101,7 +101,7 @@ pub static window_switch_mode: window_mode = {
             window_switch_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -153,7 +153,7 @@ unsafe fn window_switch_add_session(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -184,7 +184,7 @@ unsafe fn window_switch_add_window(
     let Some(session_owner) = (*wl).session.upgrade() else { return; };
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -466,7 +466,7 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_switch_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

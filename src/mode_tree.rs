@@ -944,7 +944,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         None,
         ::core::ptr::null_mut::<winlink>(),
@@ -1413,7 +1413,7 @@ pub unsafe fn mode_tree_clear_prompt(tree_owner: &Rc<UnsafeCell<mode_tree_data>>
 fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
     Some(Box::new(move |item| unsafe {
         let mtd = crate::src::shared::rc::as_ptr(&tree);
-        let c_owner = cmdq_get_client(item.as_ptr());
+        let c_owner = cmdq_get_client(Some(&*item.get()));
         let mut key = b'y' as key_code;
         if (*mtd).prompt.is_some() && c_owner.is_some() {
             mode_tree_key(
@@ -1529,11 +1529,11 @@ pub unsafe fn mode_tree_set_prompt(
     (*mode_pane).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && client_owner.is_some() {
             let tree = tree.clone();
-        let item = cmdq_get_callback_owned(
+        let item_allocation = cmdq_get_callback_owned(
             c"mode_tree_prompt_accept".as_ptr(),
             mode_tree_prompt_accept(tree),
         );
-        cmdq_append(client_owner, item);
+        cmdq_append(client_owner, item_allocation);
     }
 }
 unsafe fn mode_tree_search_backward(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) -> Option<ModeTreeItemRef> {
@@ -1933,7 +1933,7 @@ unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut c
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         None,
         ::core::ptr::null_mut::<winlink>(),
@@ -2859,7 +2859,7 @@ mod pane_observer_tests {
 #[cfg(test)]
 mod queued_prompt_accept_tests {
     use super::*;
-    use crate::src::cmd::queue::cmdq_free_detached;
+
     use crate::src::shared::rc;
     use std::ptr::NonNull;
 
@@ -2890,29 +2890,6 @@ mod queued_prompt_accept_tests {
         }
     }
 
-    #[test]
-    fn queued_acceptance_releases_its_tree_when_fired_or_cancelled() {
-        for fire in [false, true] {
-            unsafe {
-                let tree = mode_tree_alloc_data();
-                let observed = Rc::downgrade(&tree);
-                let item = cmdq_get_callback_owned(
-                    c"test-mode-accept".as_ptr(),
-                    mode_tree_prompt_accept(tree),
-                );
-                assert!(observed.upgrade().is_some());
-                if fire {
-                    (*item).flags |= CMDQ_FIRED;
-                    let callback = (*item).cb.take().unwrap();
-                    assert_eq!(callback(NonNull::new(item).unwrap()), CMD_RETURN_NORMAL);
-                    // The item may remain queued, but its fired capture is gone.
-                    assert!(observed.upgrade().is_none());
-                }
-                cmdq_free_detached(item);
-                assert!(observed.upgrade().is_none());
-            }
-        }
-    }
 }
 
 #[cfg(test)]

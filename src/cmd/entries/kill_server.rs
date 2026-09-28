@@ -27,7 +27,7 @@ pub static cmd_kill_server_entry: cmd_entry = {
             flags: 0,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_kill_server_exec),
     }
 };
 pub static cmd_start_server_entry: cmd_entry = {
@@ -52,10 +52,10 @@ pub static cmd_start_server_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_STARTSERVER,
-        exec: Some(cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_kill_server_exec),
     }
 };
-unsafe fn cmd_kill_server_exec(mut self_0: *mut cmd, _item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_kill_server_exec(mut self_0: *mut cmd, _item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_kill_server_entry) {
         kill(getpid(), SIGTERM);
     }

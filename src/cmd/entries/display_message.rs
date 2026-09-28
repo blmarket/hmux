@@ -61,14 +61,15 @@ pub static cmd_display_message_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG | CMD_CLIENT_CANFAIL,
-        exec: Some(cmd_display_message_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_display_message_exec),
     }
 };
-unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -86,9 +87,9 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
         }
-        match window_pane_start_input(&(*(wp)).observer.upgrade().expect("live window_pane"), item) {
+        match window_pane_start_input(&(*(wp)).observer.upgrade().expect("live window_pane"), item_handle) {
             Err(error) => {
-                cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                 return CMD_RETURN_ERROR;
             }
             Ok(1) => return CMD_RETURN_NORMAL,
@@ -97,7 +98,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         }
     }
     if args_has(args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"only one of -F or argument must be given")
         });
         return CMD_RETURN_ERROR;
@@ -111,7 +112,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"delay ")?;
                     write_cstr(out, error.message().as_ptr())
                 });
@@ -143,11 +144,11 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     } else {
         flags = 0 as ::core::ffi::c_int;
     }
-    ft = format_create_with_client(queue_client.as_ref(), item, FORMAT_NONE, flags);
+    ft = format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
     format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 write_cstr(out, key.as_ptr())?;
                 out.write_all(b"=")?;
                 write_cstr(out, value.as_ptr())
@@ -163,7 +164,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     };
     if args_has(args, 'j' as i32 as u_char) != 0 {
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 write_cstr(
                     out,
                     cause
@@ -177,10 +178,10 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         };
         msg = json_to_string(&jn);
     }
-    if cmdq_get_client(item).is_none() {
-        cmdq_error(item, |out| write_cstr(out, msg.as_ptr()));
+    if cmdq_get_client((item).as_ref()).is_none() {
+        cmdq_error(item_handle, |out| write_cstr(out, msg.as_ptr()));
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        cmdq_print(item, |out| write_cstr(out, msg.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, msg.as_ptr()));
     } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
         let mut evb = evbuffer_new();
         evbuffer_add_formatted(&mut *evb, |out| {

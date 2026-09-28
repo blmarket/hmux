@@ -61,14 +61,15 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_pipe_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_pipe_pane_exec),
     }
 };
-unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
@@ -84,7 +85,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     if window_pane_exited(&*wp) != 0 {
-        cmdq_error(item, |out| out.write_all(b"target pane has exited"));
+        cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
     old_fd = (*wp).pipe_fd;
@@ -119,7 +120,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         &raw mut pipe_fd as *mut ::core::ffi::c_int,
     ) != 0 as ::core::ffi::c_int
     {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"socketpair error: ")?;
             write_cstr(out, strerror(*__errno_location()))
         });
@@ -127,7 +128,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     }
     ft = format_create_with_client(
         queue_client.as_ref(),
-        item,
+        Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -144,7 +145,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 &raw mut oldset,
                 ::core::ptr::null_mut::<sigset_t>(),
             );
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"fork error: ")?;
                 write_cstr(out, strerror(*__errno_location()))
             });

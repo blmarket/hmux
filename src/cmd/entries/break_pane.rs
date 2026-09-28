@@ -75,14 +75,11 @@ pub static cmd_break_pane_entry: cmd_entry = {
             flags: CMD_FIND_WINDOW_INDEX,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_break_pane_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_break_pane_exec),
     }
 };
 unsafe fn cmd_break_pane_float(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
     w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -93,17 +90,17 @@ unsafe fn cmd_break_pane_float(
     let mut lines: pane_lines = window_get_pane_lines(&*w);
     let mut fg: *mut layout_geometry = &raw mut (*lc).fg;
     if window_pane_is_floating(&*wp) != 0 {
-        cmdq_error(item, |out| out.write_all(b"pane is already floating"));
+        cmdq_error(item_handle, |out| out.write_all(b"pane is already floating"));
         return CMD_RETURN_ERROR;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"can't float a pane while window is zoomed")
         });
         return CMD_RETURN_ERROR;
     }
-    if let Err(cause) = layout_floating_args_parse(item, args, lines, w_owner, fg) {
-        cmdq_error(item, |out| {
+    if let Err(cause) = layout_floating_args_parse(item_handle, args, lines, w_owner, fg) {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"failed to float pane: ")?;
             write_cstr(out, cause.as_ptr())
         });
@@ -126,12 +123,13 @@ unsafe fn cmd_break_pane_float(
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let current = cmdq_get_state_owned(item);
+    let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: *mut winlink = (*source).wl_ptr();
     let mut src_s: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -146,14 +144,14 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if (*w).modal.ptr_eq(&(*wp).observer) {
-        cmdq_error(item, |out| out.write_all(b"pane is modal"));
+        cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'W' as i32 as u_char) != 0 {
-        return cmd_break_pane_float(item, args, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"));
+        return cmd_break_pane_float(item_handle, args, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"));
     }
     if !name.is_null() && !check_name(CStr::from_ptr(name)) {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"invalid window name: ")?;
             write_cstr(out, name)
         });
@@ -180,7 +178,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             0 as ::core::ffi::c_int,
             (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
         ) {
-            cmdq_error(item, |out| write_cstr(out, link_error.as_ptr()));
+            cmdq_error(item_handle, |out| write_cstr(out, link_error.as_ptr()));
             return CMD_RETURN_ERROR;
         }
         if !name.is_null() {
@@ -201,7 +199,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if idx != -(1 as ::core::ffi::c_int)
             && !winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_null()
         {
-            cmdq_error(item, |out| write!(out, "index in use: {}", (idx) as i32));
+            cmdq_error(item_handle, |out| write!(out, "index in use: {}", (idx) as i32));
             return CMD_RETURN_ERROR;
         }
         server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
@@ -243,7 +241,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         wl = match session_attach(&(*dst_s).observer.upgrade().expect("live session"), &window, idx) {
             Ok(wl) => wl,
             Err(error) => {
-                cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                 crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
                 return CMD_RETURN_ERROR;
             }
@@ -275,8 +273,8 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if template.is_null() {
             template = BREAK_PANE_TEMPLATE.as_ptr();
         }
-        let cp = format_single_cstring(item, template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (dst_s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-        cmdq_print(item, |out| write_cstr(out, cp.as_ptr()));
+        let cp = format_single_cstring(Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (dst_s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
     }
     return CMD_RETURN_NORMAL;
 }

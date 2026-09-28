@@ -1109,11 +1109,12 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
     window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.offset, SIZE_MAX as size_t);
     window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.queued, SIZE_MAX as size_t);
 }
-unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd_retval {
-    let c_owner = cmdq_get_client(item);
+unsafe fn control_error(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, error: Option<CString>) -> cmd_retval {
+    let item = item_handle.get();
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     cmdq_guard(
-        item,
+        item_handle,
         b"begin\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     );
@@ -1127,7 +1128,7 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
         )
     });
     cmdq_guard(
-        item,
+        item_handle,
         b"error\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     );
@@ -1173,13 +1174,13 @@ unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
                 Some(owner), Some(&state),
             ) {
                 Err(error) => {
-                    let error_item = cmdq_get_callback_owned(
+                    let error_item_allocation = cmdq_get_callback_owned(
                         b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
                         Some(Box::new(move |item| unsafe {
-                            control_error(item.as_ptr(), error)
+                            control_error(item, error)
                         })),
                     );
-                    cmdq_append(Some(owner), error_item);
+                    cmdq_append(Some(owner), error_item_allocation);
                 }
                 Ok(_) => {}
             }

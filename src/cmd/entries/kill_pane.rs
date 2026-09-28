@@ -41,32 +41,34 @@ pub static cmd_kill_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_kill_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_kill_pane_exec),
     }
 };
-unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let pane_owner = (*target).wp.upgrade();
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
-        cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
+        cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_pane_all(item, filter);
+        return cmd_kill_pane_all(item_handle, filter);
     }
     let Some(pane_owner) = pane_owner else {
-        cmdq_error(item, |out| out.write_all(b"no active pane to kill"));
+        cmdq_error(item_handle, |out| out.write_all(b"no active pane to kill"));
         return CMD_RETURN_ERROR;
     };
     server_kill_pane(&pane_owner);
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_pane_all(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
+    let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -76,7 +78,7 @@ unsafe fn cmd_kill_pane_all(
     while let Some(pane_owner) = cursor {
         cursor = window_pane_next((pane_owner.get()).as_ref());
         if pane_owner.get() != wp
-            && cmd_kill_pane_filter(item, &(*(s)).observer.upgrade().expect("live session"), wl, &pane_owner, filter) != 0
+            && cmd_kill_pane_filter(item_handle, &(*(s)).observer.upgrade().expect("live session"), wl, &pane_owner, filter) != 0
         {
             server_client_remove_pane(&pane_owner);
             layout_close_pane(&pane_owner);
@@ -87,14 +89,15 @@ unsafe fn cmd_kill_pane_all(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_pane_filter(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut wl: *mut winlink,
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.get();
     let mut s = s_owner.get();
-    let queue_client = cmdq_get_client(item);
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
@@ -102,7 +105,7 @@ unsafe fn cmd_kill_pane_filter(
     }
     ft = format_create_with_client(
         queue_client.as_ref(),
-        item,
+        Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );

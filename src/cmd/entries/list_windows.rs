@@ -50,14 +50,15 @@ pub static cmd_list_windows_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_list_windows_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_list_windows_exec),
     }
 };
-unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -79,7 +80,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
+        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
@@ -105,7 +106,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         s = session_owner.get();
         ft = format_create_with_client(
             queue_client.as_ref(),
-            item,
+            Some(item_handle),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
@@ -123,7 +124,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
         if flag != 0 {
             let line = format_expand_cstring(ft, template);
-            cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
         }
         format_free(Box::from_raw(ft));
         i = i.wrapping_add(1);

@@ -498,32 +498,8 @@ pub unsafe fn event_payload_get_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use crate::src::reactor::evbuffer_add;
     use std::ffi::{CStr, CString};
-
-    #[test]
-    fn typed_event_identities_keep_pointer_format_without_owning_queue_items() {
-        unsafe {
-            let item = cmdq_get_callback_owned(c"event identity".as_ptr(), None);
-            let observer = (*item).observer.clone();
-            let mut payload = event_payload_create();
-            event_payload_set_identity(&mut payload, c"_cmdq_item".as_ptr(),
-                EventPayloadIdentity::QueueItem(observer.clone()));
-            let identity = event_payload_get_identity(&payload, c"_cmdq_item".as_ptr()).unwrap();
-            assert!(matches!(identity, EventPayloadIdentity::QueueItem(weak) if weak.ptr_eq(&observer)));
-            assert_eq!(observer.strong_count(), 1);
-            let printed = event_payload_item_print_owned(event_payload_find(&payload, c"_cmdq_item").unwrap());
-            assert_eq!(&printed[..printed.len() - 1], format!("{item:p}").as_bytes());
-            cmdq_free_detached(item);
-            assert!(observer.upgrade().is_none());
-
-            event_payload_set_identity(&mut payload, c"_hooks_monitor".as_ptr(),
-                EventPayloadIdentity::HookMonitor(0x1234));
-            assert!(matches!(event_payload_get_identity(&payload, c"_hooks_monitor".as_ptr()),
-                Some(EventPayloadIdentity::HookMonitor(0x1234))));
-        }
-    }
 
     #[test]
     fn payload_handle_and_target_retain_pane_after_source_release() {

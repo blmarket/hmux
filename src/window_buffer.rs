@@ -166,7 +166,7 @@ pub static window_buffer_mode: window_mode = {
             window_buffer_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -247,7 +247,7 @@ unsafe fn window_buffer_build(
         if let Some(pb) = paste_get_name(&item.name) {
             ft = format_create(
                 None,
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 FORMAT_NONE,
                 0 as ::core::ffi::c_int,
             );
@@ -397,7 +397,7 @@ unsafe fn window_buffer_get_key(
     };
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -454,7 +454,7 @@ unsafe fn window_buffer_data(wme: *mut window_mode_entry) -> *mut window_buffer_
 
 unsafe fn window_buffer_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

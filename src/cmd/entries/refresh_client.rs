@@ -53,10 +53,7 @@ pub static cmd_refresh_client_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG,
-        exec: Some(
-            cmd_refresh_client_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_refresh_client_exec),
     }
 };
 unsafe fn cmd_refresh_client_update_subscription(
@@ -78,10 +75,11 @@ unsafe fn cmd_refresh_client_update_subscription(
 }
 unsafe fn cmd_refresh_client_control_client_size(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut size: *const ::core::ffi::c_char = args_get(&*(args), 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut w: u_int = 0;
@@ -100,7 +98,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             || y < WINDOW_MINIMUM as u_int
             || y > WINDOW_MAXIMUM as u_int
         {
-            cmdq_error(item, |out| out.write_all(b"size too small or too big"));
+            cmdq_error(item_handle, |out| out.write_all(b"size too small or too big"));
             return CMD_RETURN_ERROR;
         }
         log_debug(format_args!(
@@ -156,7 +154,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             &raw mut y,
         ) != 2 as ::core::ffi::c_int
     {
-        cmdq_error(item, |out| out.write_all(b"bad size argument"));
+        cmdq_error(item_handle, |out| out.write_all(b"bad size argument"));
         return CMD_RETURN_ERROR;
     }
     if x < WINDOW_MINIMUM as u_int
@@ -164,7 +162,7 @@ unsafe fn cmd_refresh_client_control_client_size(
         || y < WINDOW_MINIMUM as u_int
         || y > WINDOW_MAXIMUM as u_int
     {
-        cmdq_error(item, |out| out.write_all(b"size too small or too big"));
+        cmdq_error(item_handle, |out| out.write_all(b"size too small or too big"));
         return CMD_RETURN_ERROR;
     }
     tty_set_size(&raw mut (*tc).tty, x, y, 0 as u_int, 0 as u_int);
@@ -237,9 +235,10 @@ unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
     }
 }
 
-unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -261,7 +260,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
                 &raw mut errstr,
             ) as u_int;
             if !errstr.is_null() {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"adjustment ")?;
                     write_cstr(out, errstr)
                 });
@@ -334,7 +333,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         }
     } else if args_has(args, 'C' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
-            return cmd_refresh_client_control_client_size(self_0, item);
+            return cmd_refresh_client_control_client_size(self_0, item_handle);
         }
     } else {
         if args_has(args, 'S' as i32 as u_char) != 0 {
@@ -346,7 +345,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         }
         return CMD_RETURN_NORMAL;
     }
-    cmdq_error(item, |out| out.write_all(b"not a control client"));
+    cmdq_error(item_handle, |out| out.write_all(b"not a control client"));
     return CMD_RETURN_ERROR;
 }
 

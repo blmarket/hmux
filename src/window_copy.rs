@@ -392,7 +392,7 @@ pub static window_copy_mode: window_mode = {
             window_copy_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -435,7 +435,7 @@ pub static window_view_mode: window_mode = {
             window_copy_view_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -693,7 +693,7 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
 }
 unsafe fn window_copy_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
@@ -764,7 +764,7 @@ unsafe fn window_copy_init(
 }
 unsafe fn window_copy_view_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     _args: *mut args,
 ) -> *mut screen {
@@ -1563,7 +1563,7 @@ unsafe fn window_copy_expand_search_string(
     }
     if (*cs).format_search {
         let expanded = format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             ss,
             None,
             None,
@@ -1681,7 +1681,7 @@ unsafe fn window_copy_do_copy_end_of_line(
     if pipe != 0 {
         if count == 2 as u_int {
             prefix = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 arg1,
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1691,7 +1691,7 @@ unsafe fn window_copy_do_copy_end_of_line(
         }
         if !s.is_null() && count > 0 as u_int && *arg0 as ::core::ffi::c_int != '\0' as i32 {
             command = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 arg0,
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1701,7 +1701,7 @@ unsafe fn window_copy_do_copy_end_of_line(
         }
     } else if count == 1 as u_int {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             arg0,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1801,7 +1801,7 @@ unsafe fn window_copy_do_copy_line(
     if pipe != 0 {
         if count == 2 as u_int {
             prefix = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 arg1,
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1811,7 +1811,7 @@ unsafe fn window_copy_do_copy_line(
         }
         if !s.is_null() && count > 0 as u_int && *arg0 as ::core::ffi::c_int != '\0' as i32 {
             command = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 arg0,
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1821,7 +1821,7 @@ unsafe fn window_copy_do_copy_line(
         }
     } else if count == 1 as u_int {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             arg0,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -1910,7 +1910,7 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
         (args_has((*cs).parsed_args(), 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg0.is_null() {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             arg0,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -3164,7 +3164,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
         (args_has((*cs).parsed_args(), 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg1.is_null() {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             arg1,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -3174,7 +3174,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
     }
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
         command = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             arg0,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -3224,7 +3224,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
         command = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             arg0,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -7326,7 +7326,7 @@ unsafe fn window_copy_write_line(
         0 as ::core::ffi::c_int,
     );
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         None,
         ::core::ptr::null_mut::<winlink>(),
@@ -7983,7 +7983,7 @@ unsafe fn window_copy_set_selection(
         return 0 as ::core::ffi::c_int;
     }
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         None,
         None,
         ::core::ptr::null_mut::<winlink>(),

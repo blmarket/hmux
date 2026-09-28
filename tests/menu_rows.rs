@@ -29,9 +29,9 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             key: KEYC_NONE,
             command: None,
         };
-        menu_add_item(&mut *menu, None, null_mut(), Some(&owner), null_mut());
+        menu_add_item(&mut *menu, None, None, Some(&owner), null_mut());
         menu_add_items(&mut *menu, &[], Some(&owner));
-        menu_add_item(&mut *menu, Some(&separator), null_mut(), Some(&owner), null_mut());
+        menu_add_item(&mut *menu, Some(&separator), None, Some(&owner), null_mut());
         assert_eq!((*menu).count, 0);
 
         for index in 0..64 {
@@ -45,7 +45,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             menu_add_item(
                 &mut *menu,
                 Some(&definition),
-                null_mut(),
+                None,
                 Some(&owner),
                 null_mut(),
             );
@@ -59,13 +59,13 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         menu_add_item(
             &mut *menu,
             Some(&suppressed),
-            null_mut(),
+            None,
             Some(&owner),
             null_mut(),
         );
         assert_eq!((*menu).count, 64);
-        menu_add_item(&mut *menu, Some(&separator), null_mut(), Some(&owner), null_mut());
-        menu_add_item(&mut *menu, Some(&separator), null_mut(), Some(&owner), null_mut());
+        menu_add_item(&mut *menu, Some(&separator), None, Some(&owner), null_mut());
+        menu_add_item(&mut *menu, Some(&separator), None, Some(&owner), null_mut());
         assert_eq!((*menu).count, 65);
         for (index, row) in (&(*menu).items)[..64].iter().enumerate() {
             assert_eq!(

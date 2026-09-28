@@ -27,7 +27,7 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         global_w_options = w_options;
         global_s_options = s_options;
 
-        let ft = format_create(None, core::ptr::null_mut(), 0, 0);
+        let ft = format_create(None, None, 0, 0);
         let key = b"zz_test_format_value\0".as_ptr().cast();
         let expression = b"#{zz_test_format_value}\0".as_ptr().cast();
         format_add_owned_cb(ft, std::ffi::CStr::from_ptr(key), callback);

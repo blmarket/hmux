@@ -100,7 +100,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
             if !wl.is_null() {
                 ft = format_create(
                     (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                    ::core::ptr::null_mut::<cmdq_item>(),
+                    None,
                     FORMAT_NONE,
                     0 as ::core::ffi::c_int,
                 );

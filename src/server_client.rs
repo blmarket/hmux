@@ -2543,7 +2543,7 @@ pub unsafe fn server_client_update_theme_colours(c_owner: Option<&std::rc::Rc<st
     }
     ft = format_create(
         c_owner,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         FORMAT_NOJOBS,
     );
@@ -2765,9 +2765,10 @@ unsafe fn server_client_handle_dead_key(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_client_key_callback(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut owned: QueuedKeyEvent,
 ) -> cmd_retval {
+    let item = item_handle.get();
     let mut current_block: u64;
     // The queued callback owns the event and its bytes until this call returns.
     let mut event: *mut key_event = &raw mut *owned.0;
@@ -2800,7 +2801,7 @@ unsafe fn server_client_key_callback(
     let mut key0: key_code = 0;
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
-    let c_owner = (*event).resolve_client(|| cmdq_get_client(item));
+    let c_owner = (*event).resolve_client(|| cmdq_get_client((item).as_ref()));
     let Some(c_owner) = c_owner else { return CMD_RETURN_NORMAL; };
     c = crate::src::shared::rc::as_ptr(&c_owner);
     s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -3114,7 +3115,7 @@ unsafe fn server_client_key_callback(
                                             );
                                         }
                                         server_status_client(&mut *(c));
-                                        key_bindings_dispatch(bd, item, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), event, &raw mut fs);
+                                        key_bindings_dispatch(bd, Some(item_handle), (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), event, &raw mut fs);
                                         current_block = 1578459965781631232;
                                         break;
                                     }
@@ -3261,12 +3262,14 @@ unsafe fn server_client_handle_menu_key(
 unsafe fn server_client_handle_key0(
     owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut owned: Box<key_event>,
-    mut after: *mut cmdq_item,
-    mut next: *mut *mut cmdq_item,
+    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    next: Option<&mut std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
+    let after = after_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let c = owner.get();
     let event: *mut key_event = &raw mut *owned;
     let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let item_allocation;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
@@ -3385,20 +3388,21 @@ unsafe fn server_client_handle_key0(
         Some(owner.clone())
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
-    item = cmdq_get_callback_owned(
+    item_allocation = cmdq_get_callback_owned(
         b"server_client_key_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
-            server_client_key_callback(item.as_ptr(), queued_event)
+            server_client_key_callback(item, queued_event)
         })),
     );
-    if !after.is_null() {
-        item = cmdq_insert_after(after, item);
-        if !next.is_null() {
-            *next = item;
+    item = item_allocation.get();
+    if let Some(after) = after_handle {
+        let inserted = cmdq_insert_after(after, item_allocation);
+        if let Some(next) = next {
+            *next = inserted;
         }
-        return 1 as ::core::ffi::c_int;
+        return 1;
     }
-    cmdq_append(Some(owner), item);
+    cmdq_append(Some(owner), item_allocation);
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn server_client_handle_key(
@@ -3408,17 +3412,17 @@ pub unsafe fn server_client_handle_key(
     return server_client_handle_key0(
         owner,
         event,
-        ::core::ptr::null_mut::<cmdq_item>(),
-        ::core::ptr::null_mut::<*mut cmdq_item>(),
+        None,
+        None,
     );
 }
 pub unsafe fn server_client_handle_key_after(
     owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     event: Box<key_event>,
-    mut after: *mut cmdq_item,
-    mut next: *mut *mut cmdq_item,
+    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    next: Option<&mut std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
-    return server_client_handle_key0(owner, event, after, next);
+    return server_client_handle_key0(owner, event, after_handle, next);
 }
 pub unsafe fn server_client_loop() {
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
@@ -4482,7 +4486,7 @@ unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCe
     );
     ft = crate::src::format::format_create_with_client(
         Some(client_owner),
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -4695,30 +4699,32 @@ unsafe fn server_client_dispatch(
         }
     };
 }
-unsafe fn server_client_read_only(mut item: *mut cmdq_item) -> cmd_retval {
-    cmdq_error(item, |out| out.write_all(b"client is read-only"));
+unsafe fn server_client_read_only(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     return CMD_RETURN_ERROR;
 }
-unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval {
-    let c_owner = cmdq_get_client(item);
+unsafe fn server_client_default_command(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let new_item_allocation;
     let cmdlist = options_get_command(global_options);
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(&cmdlist.borrow()) == 0 {
-        new_item = cmdq_get_callback_owned(
+        new_item_allocation = cmdq_get_callback_owned(
             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|item| unsafe {
-                server_client_read_only(item.as_ptr())
+                server_client_read_only(item)
             })),
         );
     } else {
-        new_item = cmdq_get_command(&cmdlist, None);
+        new_item_allocation = cmdq_get_command(&cmdlist, None);
     }
-    cmdq_insert_after(item, new_item);
+    cmdq_insert_after(item_handle, new_item_allocation);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn server_client_command_done(mut item: *mut cmdq_item) -> cmd_retval {
-    let c_owner = cmdq_get_client(item);
+unsafe fn server_client_command_done(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !(*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         (*c).flags |= CLIENT_EXIT as uint64_t;
@@ -4741,7 +4747,7 @@ unsafe fn server_client_dispatch_command(
     let mut argv = Vec::new();
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cause: Option<CString> = None;
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let mut new_item_allocation = None;
     if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
@@ -4766,12 +4772,12 @@ unsafe fn server_client_dispatch_command(
         argv = decoded;
         argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
         if argc == 0 as ::core::ffi::c_int {
-            new_item = cmdq_get_callback_owned(
+            new_item_allocation = Some(cmdq_get_callback_owned(
                 b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
                 Some(Box::new(|item| unsafe {
-                    server_client_default_command(item.as_ptr())
+                    server_client_default_command(item)
                 })),
-            );
+            ));
             current_block = 13472856163611868459;
         } else {
             cmd_log_argv(&argv, c"cmd_unpack_argv");
@@ -4785,15 +4791,14 @@ unsafe fn server_client_dispatch_command(
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
                         && cmd_list_all_have(&pr.cmdlist.as_ref().expect("parsed command list").borrow()) == 0
                     {
-                        new_item = cmdq_get_callback_owned(
+                        new_item_allocation = Some(cmdq_get_callback_owned(
                             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
                             Some(Box::new(|item| unsafe {
-                                server_client_read_only(item.as_ptr())
+                                server_client_read_only(item)
                             })),
-                        );
+                        ));
                     } else {
-                        new_item =
-                            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None);
+                        new_item_allocation = Some(cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None));
                     }
                     drop(pr.cmdlist.take());
                     current_block = 13472856163611868459;
@@ -4803,13 +4808,13 @@ unsafe fn server_client_dispatch_command(
         match current_block {
             12680788052841528405 => {}
             _ => {
-                cmdq_append(Some(owner), new_item);
+                cmdq_append(Some(owner), new_item_allocation.take().expect("parsed command item"));
                 cmdq_append(
                     Some(owner),
                     cmdq_get_callback_owned(
                         b"server_client_command_done\0" as *const u8 as *const ::core::ffi::c_char,
                         Some(Box::new(|item| unsafe {
-                            server_client_command_done(item.as_ptr())
+                            server_client_command_done(item)
                         })),
                     ),
                 );
@@ -5453,7 +5458,7 @@ pub unsafe fn server_client_print(
                     &pane_owner,
                     None,
                     &window_view_mode,
-                    ::core::ptr::null_mut::<cmdq_item>(),
+                    None,
                     ::core::ptr::null_mut::<cmd_find_state>(),
                     ::core::ptr::null_mut::<args>(),
                 );

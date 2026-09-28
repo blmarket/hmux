@@ -58,12 +58,13 @@ pub static cmd_switch_client_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_READONLY | CMD_CLIENT_CFLAG,
-        exec: Some(cmd_switch_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_switch_client_exec),
     }
 };
-unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let current = cmdq_get_state_owned(item);
+    let current = cmdq_get_state_owned(&*(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -77,9 +78,9 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut flags: ::core::ffi::c_int = 0;
     let mut visible: ::core::ffi::c_int = 0;
     let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let last_session_owner;
     let adjacent_session_owner;
@@ -108,7 +109,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if cmd_find_target(&raw mut target, item, tflag, type_0, flags) != 0 as ::core::ffi::c_int {
+    if cmd_find_target(&raw mut target, Some(item_handle), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CMD_RETURN_ERROR;
     }
     s = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -118,7 +119,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
             uid = proc_get_peer_uid((*c).peer);
             if uid != getuid() {
-                cmdq_error(item, |out| out.write_all(b"client is read-only"));
+                cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
                 return CMD_RETURN_ERROR;
             }
         }
@@ -131,7 +132,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tablename.is_null() {
         let Some(table) = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0) else {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
@@ -146,7 +147,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
+        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
@@ -154,14 +155,14 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         adjacent_session_owner = session_next_session((*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref(), &sort_crit);
         s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
-            cmdq_error(item, |out| out.write_all(b"can't find next session"));
+            cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         adjacent_session_owner = session_previous_session((*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref(), &sort_crit);
         s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
-            cmdq_error(item, |out| out.write_all(b"can't find previous session"));
+            cmdq_error(item_handle, |out| out.write_all(b"can't find previous session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -171,11 +172,11 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         );
         s = last_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
-            cmdq_error(item, |out| out.write_all(b"can't find last session"));
+            cmdq_error(item_handle, |out| out.write_all(b"can't find last session"));
             return CMD_RETURN_ERROR;
         }
     } else {
-        if cmdq_get_client(item).is_none() {
+        if cmdq_get_client((item).as_ref()).is_none() {
             return CMD_RETURN_NORMAL;
         }
         if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
@@ -207,7 +208,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         );
     }
     server_client_set_session(&(*(tc)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    if !cmdq_get_flags(item) & CMDQ_STATE_REPEAT != 0 {
+    if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
         server_client_set_key_table(&(*(tc)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
     }
     return CMD_RETURN_NORMAL;

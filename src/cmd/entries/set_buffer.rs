@@ -35,7 +35,7 @@ pub static cmd_set_buffer_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG | CMD_CLIENT_CANFAIL,
-        exec: Some(cmd_set_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_set_buffer_exec),
     }
 };
 pub static cmd_delete_buffer_entry: cmd_entry = {
@@ -60,12 +60,13 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_set_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_set_buffer_exec),
     }
 };
-unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let name = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
@@ -75,7 +76,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
     if deleting || args_has(args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"unknown buffer: ")?;
                     out.write_all(name.as_bytes())
                 });
@@ -84,7 +85,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             pb = paste_get_top(Some(&mut bufname));
         }
         let Some(pb) = pb else {
-            cmdq_error(item, |out| out.write_all(b"no buffer"));
+            cmdq_error(item_handle, |out| out.write_all(b"no buffer"));
             return CMD_RETURN_ERROR;
         };
         if deleting {
@@ -97,7 +98,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             Some(&mut cause),
         ) != 0
         {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(cause.as_ref().unwrap().as_bytes())
             });
             return CMD_RETURN_ERROR;
@@ -105,7 +106,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         return CMD_RETURN_NORMAL;
     }
     if args_count(args) != 1 {
-        cmdq_error(item, |out| out.write_all(b"no data specified"));
+        cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
         return CMD_RETURN_ERROR;
     }
     let new_data = CStr::from_ptr(args_string(&mut *(args), 0).map_or(std::ptr::null(), |value| value.as_ptr())).to_bytes();
@@ -126,7 +127,7 @@ unsafe fn cmd_set_buffer_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         Some(&mut cause),
     ) != 0
     {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(cause.as_ref().unwrap().as_bytes())
         });
         return CMD_RETURN_ERROR;

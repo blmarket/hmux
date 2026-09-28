@@ -34,9 +34,7 @@ pub static cmd_show_prompt_history_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_show_prompt_history_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_show_prompt_history_exec),
     }
 };
 pub static cmd_clear_prompt_history_entry: cmd_entry = {
@@ -61,14 +59,12 @@ pub static cmd_clear_prompt_history_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_show_prompt_history_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_show_prompt_history_exec),
     }
 };
 unsafe fn cmd_show_prompt_history_exec(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let typestr: *const ::core::ffi::c_char = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -87,7 +83,7 @@ unsafe fn cmd_show_prompt_history_exec(
             if type_0 as ::core::ffi::c_uint
                 == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"invalid type: ")?;
                     write_cstr(out, typestr)
                 });
@@ -101,7 +97,7 @@ unsafe fn cmd_show_prompt_history_exec(
         t = 0 as u_int;
         while t < PROMPT_NTYPES as u_int {
             let type_name = prompt_type_string(t as prompt_type);
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 out.write_all(b"History for ")?;
                 out.write_all(type_name.to_bytes())?;
                 out.write_all(b":\n")
@@ -110,13 +106,13 @@ unsafe fn cmd_show_prompt_history_exec(
             while h < prompt_history_size(t as prompt_type) {
                 let value =
                     prompt_history_get(t as prompt_type, h).expect("existing history entry");
-                cmdq_print(item, |out| {
+                cmdq_print(item_handle, |out| {
                     write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
                     out.write_all(value.to_bytes())
                 });
                 h = h.wrapping_add(1);
             }
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
             });
             t = t.wrapping_add(1);
@@ -126,13 +122,13 @@ unsafe fn cmd_show_prompt_history_exec(
         if type_0 as ::core::ffi::c_uint
             == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid type: ")?;
                 write_cstr(out, typestr)
             });
             return CMD_RETURN_ERROR;
         }
-        cmdq_print(item, |out| {
+        cmdq_print(item_handle, |out| {
             out.write_all(b"History for ")?;
             out.write_all(prompt_type_string(type_0).to_bytes())?;
             out.write_all(b":\n")
@@ -140,13 +136,13 @@ unsafe fn cmd_show_prompt_history_exec(
         h = 0 as u_int;
         while h < prompt_history_size(type_0) {
             let value = prompt_history_get(type_0, h).expect("existing history entry");
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
                 out.write_all(value.to_bytes())
             });
             h = h.wrapping_add(1);
         }
-        cmdq_print(item, |out| {
+        cmdq_print(item_handle, |out| {
             write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
         });
     }

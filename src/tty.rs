@@ -3313,7 +3313,7 @@ unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     (*wp).flags &= !PANE_STYLECHANGED;
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );

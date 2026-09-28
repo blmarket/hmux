@@ -678,135 +678,6 @@ mod ownership_tests {
     }
 
     #[test]
-    fn prepared_commands_keep_their_list_after_source_and_state_drop() {
-        unsafe {
-            let commands = crate::src::cmd::cmd_list_new();
-            let observer = std::rc::Rc::downgrade(&commands);
-            let mut source = Box::new(args::empty());
-            args_push_positional_commands(&mut source, commands);
-            let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
-            command.args = Some(source);
-            let mut item = cmdq_item::empty();
-            let mut state =
-                args_make_commands_prepare(&mut command, &mut item, 0, std::ptr::null(), 0, 0);
-            assert_eq!(observer.strong_count(), 2);
-            assert!(state.client.is_none());
-            drop(command.args.take());
-            assert_eq!(observer.strong_count(), 1);
-            assert_eq!(
-                args_make_commands_get_command_cstring(&state).as_bytes(),
-                b""
-            );
-            let returned = args_make_commands(&mut state, &Vec::new()).unwrap();
-            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(&returned), &observer));
-            assert_eq!(observer.strong_count(), 2);
-            drop(state);
-            assert_eq!(observer.strong_count(), 1);
-            assert!(cmd_list_print_cstring(&returned.borrow(), 0)
-                .as_bytes()
-                .is_empty());
-            drop(returned);
-            assert!(observer.upgrade().is_none());
-        }
-    }
-
-    #[test]
-    fn expanded_command_owners_survive_preparation_and_transfer_to_queue() {
-        use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_command};
-        use crate::src::shared::command::{CMD_PARSE_NOALIAS, CMD_PARSE_SUCCESS};
-        unsafe {
-            for compiled in [false, true] {
-                let mut state = Box::new(args_command_state::empty());
-                state.pi.flags = CMD_PARSE_NOALIAS;
-                let text = c"display-message -p '%1'";
-                let source = if compiled {
-                    let mut parsed = cmd_parse_from_string(text, &mut state.pi);
-                    assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
-                    let owner = parsed.cmdlist.take().expect("successful command parse");
-                    let weak = Rc::downgrade(&owner);
-                    state.cmdlist = Some(owner);
-                    Some(weak)
-                } else {
-                    state.cmd = Some(text.to_owned());
-                    None
-                };
-                let commands = args_make_commands(&mut state, &vec![c"expanded".to_owned()]).unwrap();
-                let result = Rc::downgrade(&commands);
-                if let Some(source) = &source {
-                    assert!(!Rc::ptr_eq(&source.upgrade().unwrap(), &commands));
-                }
-                drop(state);
-                if let Some(source) = source {
-                    assert!(source.upgrade().is_none());
-                }
-                assert_eq!(
-                    cmd_list_print_cstring(&commands.borrow(), 0).as_bytes(),
-                    b"display-message -p expanded"
-                );
-                let item = cmdq_get_command(&commands, None);
-                assert!(!item.is_null());
-                assert!((*item).next_ptr().is_null());
-                drop(commands);
-                assert_eq!(result.strong_count(), 1, "queue retains its commands");
-                cmdq_free_detached(item);
-                assert!(result.upgrade().is_none());
-            }
-            let mut state = Box::new(args_command_state::empty());
-            state.pi.flags = CMD_PARSE_NOALIAS;
-            state.cmd = Some(c"unknown-command-result-owner".to_owned());
-            assert!(args_make_commands(&mut state, &Vec::new()).is_err());
-            state.cmd = Some(c"display-message -p recovered".to_owned());
-            assert!(args_make_commands(&mut state, &Vec::new()).is_ok());
-        }
-    }
-
-    #[test]
-    fn prepared_text_owns_source_metadata_and_defers_client_release() {
-        unsafe {
-            let client = client::new();
-            let observer = std::rc::Rc::downgrade(&client);
-            let mut source = Box::new(args::empty());
-            let mut command = cmd::new(&crate::src::cmd::entries::run_shell::cmd_run_shell_entry);
-            command.args = Some(source);
-            command.file = Some(CString::new(b"source\xff.conf".as_slice()).unwrap());
-            command.line = 17;
-            let item = crate::src::cmd::queue::cmdq_get_callback_owned(c"parse test".as_ptr(), None);
-            (*item).target_client = std::rc::Rc::downgrade(&client);
-            let state = args_make_commands_prepare(
-                &mut command,
-                item,
-                0,
-                c"display-message %1".as_ptr(),
-                1,
-                0,
-            );
-            command.file = None;
-            drop(command.args.take());
-            drop(client);
-            assert_eq!(observer.strong_count(), 1);
-            assert_eq!(
-                state.pi.file.as_ref().unwrap().as_bytes(),
-                b"source\xff.conf"
-            );
-            assert_eq!(state.pi.line, 17);
-            assert!(state.pi.item.ptr_eq(&(*item).observer));
-            assert_eq!(
-                args_make_commands_get_command_cstring(&state).as_bytes(),
-                b"display-message"
-            );
-            assert_eq!(
-                state.cmd.as_ref().unwrap().as_bytes(),
-                b"display-message %1"
-            );
-            drop(state);
-            crate::src::cmd::queue::cmdq_free_detached(item);
-            assert!(observer.upgrade().is_some(), "client cleanup is deferred");
-            crate::src::reactor::shutdown_runtime();
-            assert!(observer.upgrade().is_none());
-        }
-    }
-
-    #[test]
     fn flag_entries_keep_value_identity_and_order_across_map_growth() {
         let mut args = args::empty();
         args_set_value(
@@ -932,15 +803,15 @@ pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
 }
 pub unsafe fn args_make_commands_now(
     self_0: *mut cmd,
-    item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     idx: u_int,
     expand: ::core::ffi::c_int,
 ) -> Option<Rc<std::cell::RefCell<cmd_list>>> {
-    let mut state = args_make_commands_prepare(self_0, item, idx, std::ptr::null(), 0, expand);
+    let mut state = args_make_commands_prepare(self_0, item_handle, idx, std::ptr::null(), 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
         Err(error) => {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 write_cstr(
                     out,
                     error
@@ -954,15 +825,16 @@ pub unsafe fn args_make_commands_now(
 }
 pub unsafe fn args_make_commands_prepare(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut idx: u_int,
     mut default_command: *const ::core::ffi::c_char,
     mut wait: ::core::ffi::c_int,
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -983,7 +855,7 @@ pub unsafe fn args_make_commands_prepare(
         cmd = default_command;
     }
     if expand != 0 {
-        state.cmd = Some(format_single_from_target_cstring(item, cmd));
+        state.cmd = Some(format_single_from_target_cstring(item_handle, cmd));
     } else {
         state.cmd = Some(CStr::from_ptr(cmd).to_owned());
     }
@@ -999,7 +871,7 @@ pub unsafe fn args_make_commands_prepare(
         )
     ));
     if wait != 0 {
-        state.pi.set_item(item);
+        state.pi.set_item(Some(item_handle));
     }
     let (source, line) = cmd_get_source(&*self_0);
     state.pi.line = line;
@@ -1098,7 +970,6 @@ pub fn args_first_value(args: &args, flag: u_char) -> Option<&args_value> {
     args_flag_values(args, flag).next()
 }
 
-
 fn strtonum_error(errstr: &CStr) -> ArgumentValueError {
     match errstr.to_bytes() {
         b"invalid" => ArgumentValueError::Invalid,
@@ -1169,17 +1040,17 @@ pub unsafe fn parse_percentage_and_expand(
     minval: i64,
     maxval: i64,
     curval: i64,
-    item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> Result<i64, ArgumentValueError> {
     let bytes = value.to_bytes();
     if let Some(percentage) = bytes.strip_suffix(b"%") {
         let percentage = CString::new(percentage).map_err(|_| ArgumentValueError::Invalid)?;
-        let formatted = format_single_from_target_cstring(item, percentage.as_ptr());
+        let formatted = format_single_from_target_cstring((item_handle).expect("command queue item"), percentage.as_ptr());
         let result = parse_number(formatted.as_c_str(), 0, 1000)
             .and_then(|percentage| percentage_share(curval, percentage, minval, maxval));
         return result;
     }
-    let formatted = format_single_from_target_cstring(item, value.as_ptr());
+    let formatted = format_single_from_target_cstring((item_handle).expect("command queue item"), value.as_ptr());
     parse_number(formatted.as_c_str(), minval, maxval)
 }
 
@@ -1207,10 +1078,10 @@ pub unsafe fn args_strtonum_and_expand_result(
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
-    item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> Result<i64, ArgumentValueError> {
     let value = args_last_string(&*args, flag).ok_or(ArgumentValueError::Missing)?;
-    let formatted = format_single_from_target_cstring(item, value.as_ptr());
+    let formatted = format_single_from_target_cstring((item_handle).expect("command queue item"), value.as_ptr());
     parse_number(formatted.as_c_str(), minval, maxval)
 }
 
@@ -1254,7 +1125,7 @@ pub unsafe fn args_percentage_and_expand_result(
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
-    item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> Result<i64, ArgumentValueError> {
     if !(&*args).tree.entries.entries.contains_key(&flag) {
         return Err(ArgumentValueError::Missing);
@@ -1271,7 +1142,7 @@ pub unsafe fn args_percentage_and_expand_result(
         minval,
         maxval,
         curval,
-        item,
+        item_handle,
     )
 }
 

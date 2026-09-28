@@ -79,10 +79,7 @@ pub static cmd_new_session_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_STARTSERVER,
-        exec: Some(
-            cmd_new_session_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_new_session_exec),
     }
 };
 pub static cmd_has_session_entry: cmd_entry = {
@@ -107,17 +104,18 @@ pub static cmd_has_session_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_new_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_new_session_exec),
     }
 };
-unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let current = cmdq_get_state_owned(item);
+    let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
@@ -187,7 +185,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 't' as i32 as u_char) != 0
         && (count != 0 as u_int || args_has(args, 'n' as i32 as u_char) != 0)
     {
-        cmdq_error(item, |out| {
+        cmdq_error(item_handle, |out| {
             out.write_all(b"command or window name given with target")
         });
         return CMD_RETURN_ERROR;
@@ -195,7 +193,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     tmp = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tmp.is_null() {
         let ename = format_single_cstring(
-            item,
+            Some(item_handle),
             tmp,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             None,
@@ -203,7 +201,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             None,
         );
         if !check_name(&ename) {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(ename.as_bytes())
             });
@@ -220,7 +218,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     tmp = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tmp.is_null() {
         let ename = format_single_cstring(
-            item,
+            Some(item_handle),
             tmp,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             None,
@@ -228,7 +226,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             None,
         );
         if !check_name(&ename) {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid session name: ")?;
                 out.write_all(ename.as_bytes())
             });
@@ -257,7 +255,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 }
                 if !as_0.is_null() {
                     retval = cmd_attach_session(
-                        item,
+                        item_handle,
                         ((*as_0).name).as_ptr().cast_mut(),
                         args_has(args, 'D' as i32 as u_char),
                         args_has(args, 'X' as i32 as u_char),
@@ -270,7 +268,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 }
             }
             if !sname.is_null() && !session_find(std::ffi::CStr::from_ptr(sname)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"duplicate session: ")?;
                     write_cstr(out, sname)
                 });
@@ -291,7 +289,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                         prefix = Some((*groupwith).name.clone());
                         current_block = 6717214610478484138;
                     } else if !check_name(CStr::from_ptr(group)) {
-                        cmdq_error(item, |out| {
+                        cmdq_error(item_handle, |out| {
                             out.write_all(b"invalid session group name: ")?;
                             write_cstr(out, group)
                         });
@@ -322,7 +320,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                         tmp = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                         if !tmp.is_null() {
                             formatted_cwd = Some(format_single_cstring(
-                                item,
+                                Some(item_handle),
                                 tmp,
                                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                                 None,
@@ -344,7 +342,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             && !(*c).flags & CLIENT_CONTROL as uint64_t != 0
                         {
                             if server_client_check_nested(&*(queue_client_ptr)) != 0 {
-                                cmdq_error(item, |out| {
+                                cmdq_error(item_handle, |out| {
                                     out.write_all(b"sessions should be nested with care, unset $TMUX to force")
                                 });
                                 current_block = 5193972633326621385;
@@ -364,7 +362,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             _ => {
                                 if detached == 0 && already_attached == 0 {
                                     if let Err(open_error) = server_client_open(c_owner.as_ref().expect("terminal client")) {
-                                        cmdq_error(item, |out| {
+                                        cmdq_error(item_handle, |out| {
                                             out.write_all(b"open terminal failed: ")?;
                                             out.write_all(open_error.as_bytes())
                                         });
@@ -400,7 +398,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                 )
                                                     as u_int;
                                                 if !errstr.is_null() {
-                                                    cmdq_error(item, |out| {
+                                                    cmdq_error(item_handle, |out| {
                                                         out.write_all(b"width ")?;
                                                         write_cstr(out, errstr)
                                                     });
@@ -439,7 +437,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         )
                                                             as u_int;
                                                         if !errstr.is_null() {
-                                                            cmdq_error(item, |out| {
+                                                            cmdq_error(item_handle, |out| {
                                                                 out.write_all(b"height ")?;
                                                                 write_cstr(out, errstr)
                                                             });
@@ -584,7 +582,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                     as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                             );
-                                                            cmdq_error(item, |out| {
+                                                            cmdq_error(item_handle, |out| {
                                                                 out.write_all(
                                                                     b"create window failed: ",
                                                                 )?;
@@ -658,7 +656,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                     (*c).last_session = (*c).session.clone();
                                                                 }
                                                                 server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-                                                                if !cmdq_get_flags(item)
+                                                                if !cmdq_get_flags(&*(item))
                                                                     & CMDQ_STATE_REPEAT
                                                                     != 0
                                                                 {
@@ -680,14 +678,14 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                         .as_ptr();
                                                                 }
                                                                 let cp = format_single_cstring(
-                                                                    item,
+                                                                    Some(item_handle),
                                                                     template,
                                                                     (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                                                                     (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                                                                     (*s).curw_ptr(),
                                                                     None,
                                                                 );
-                                                                cmdq_print(item, |out| {
+                                                                cmdq_print(item_handle, |out| {
                                                                     out.write_all(cp.as_bytes())
                                                                 });
                                                             }
@@ -711,7 +709,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                             );
                                                             cmdq_insert_hook(
                                                                 (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                                                                item,
+                                                                item_handle,
                                                                 &raw mut fs,
                                                                 |out| {
                                                                     out.write_all(

@@ -34,10 +34,10 @@ pub static cmd_unbind_key_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_unbind_key_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_unbind_key_exec),
     }
 };
-unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -46,7 +46,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     if args_has(args, 'a' as i32 as u_char) != 0 {
         if !keystr.is_null() {
             if quiet == 0 {
-                cmdq_error(item, |out| out.write_all(b"key given with -a"));
+                cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
             }
             return CMD_RETURN_ERROR;
         }
@@ -60,7 +60,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         }
         if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"table ")?;
                     write_cstr(out, tablename)?;
                     out.write_all(b" doesn't exist")
@@ -73,7 +73,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     }
     if keystr.is_null() {
         if quiet == 0 {
-            cmdq_error(item, |out| out.write_all(b"missing key"));
+            cmdq_error(item_handle, |out| out.write_all(b"missing key"));
         }
         return CMD_RETURN_ERROR;
     }
@@ -82,7 +82,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         if quiet == 0 {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown key: ")?;
                 write_cstr(out, keystr)
             });
@@ -93,7 +93,7 @@ unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
-                cmdq_error(item, |out| {
+                cmdq_error(item_handle, |out| {
                     out.write_all(b"table ")?;
                     write_cstr(out, tablename)?;
                     out.write_all(b" doesn't exist")

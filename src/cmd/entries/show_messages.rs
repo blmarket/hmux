@@ -47,16 +47,17 @@ pub static cmd_show_messages_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG | CMD_CLIENT_CANFAIL,
-        exec: Some(cmd_show_messages_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_show_messages_exec),
     }
 };
 unsafe fn cmd_show_messages_terminals(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
     let mut i: u_int = 0;
@@ -66,12 +67,12 @@ unsafe fn cmd_show_messages_terminals(
     while !term.is_null() {
         if !(args_has(args, 't' as i32 as u_char) != 0 && !tc.is_null() && term != tty_term_owner_ptr(&(*tc).tty.term).map_or(std::ptr::null(), |term| term)) {
             if blank != 0 {
-                cmdq_print(item, |out| {
+                cmdq_print(item_handle, |out| {
                     write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
                 });
                 blank = 0 as ::core::ffi::c_int;
             }
-            cmdq_print(item, |out| {
+            cmdq_print(item_handle, |out| {
                 let owner = (*term).client.upgrade().expect("terminal client");
                 write!(out, "Terminal {}: ", (n) as u32)?;
                 write_cstr(out, ((*term).name).as_ptr().cast_mut())?;
@@ -87,7 +88,7 @@ unsafe fn cmd_show_messages_terminals(
             n = n.wrapping_add(1);
             i = 0 as u_int;
             while i < tty_term_ncodes() {
-                cmdq_print(item, |out| {
+                cmdq_print(item_handle, |out| {
                     out.write_all(tty_term_describe(term, i as tty_code_code).as_bytes())
                 });
                 i = i.wrapping_add(1);
@@ -97,7 +98,7 @@ unsafe fn cmd_show_messages_terminals(
     }
     return (n != 0 as u_int) as ::core::ffi::c_int;
 }
-unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
@@ -105,17 +106,17 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     blank = 0 as ::core::ffi::c_int;
     done = blank;
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        blank = cmd_show_messages_terminals(self_0, item, blank);
+        blank = cmd_show_messages_terminals(self_0, item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }
     if args_has(args, 'J' as i32 as u_char) != 0 {
-        job_print_summary(item, blank);
+        job_print_summary(item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }
     if done != 0 {
         return CMD_RETURN_NORMAL;
     }
-    ft = format_create_from_target(item);
+    ft = format_create_from_target(item_handle);
     for msg in message_log.iter_rev() {
         format_add(
             ft,
@@ -134,7 +135,7 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             &raw mut msg_time,
         );
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
-        cmdq_print(item, |out| write_cstr(out, s.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, s.as_ptr()));
     }
     format_free(Box::from_raw(ft));
     return CMD_RETURN_NORMAL;

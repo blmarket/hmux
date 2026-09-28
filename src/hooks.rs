@@ -111,13 +111,13 @@ pub struct hooks_monitor {
 
 static mut hooks_events: HooksEvents = HooksEvents { events: Vec::new() };
 unsafe fn hooks_insert_one(
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut hd: *mut hooks_data,
     commands: Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     state: &std::rc::Rc<cmdq_state>,
-) -> *mut cmdq_item {
-    let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let Some(commands) = commands else { return item; };
+) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+    let new_item_allocation;
+    let Some(commands) = commands else { return item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade); };
     if log_get_level() != 0 as ::core::ffi::c_int {
         let s = cmd_list_print_cstring(&commands.borrow(), 0 as ::core::ffi::c_int);
         log_debug(format_args!(
@@ -127,11 +127,11 @@ unsafe fn hooks_insert_one(
             log_cstr((s.as_ptr()) as *const _)
         ));
     }
-    new_item = cmdq_get_command(commands, Some(state));
-    if !item.is_null() {
-        return cmdq_insert_after(item, new_item);
+    new_item_allocation = cmdq_get_command(commands, Some(state));
+    if let Some(item) = item_handle {
+        return cmdq_insert_after(item, new_item_allocation);
     }
-    return cmdq_append(None, new_item);
+    return cmdq_append(None, new_item_allocation);
 }
 unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -140,7 +140,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     }
     let client_owner = (*hd).client.upgrade();
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         (fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         fs.wl_ptr(),
@@ -156,7 +156,9 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     drop(client_owner);
     return pr;
 }
-unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
+unsafe fn hooks_insert(item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>, mut hd: *mut hooks_data) {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
+    let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -217,7 +219,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
             CMDQ_STATE_NOHOOKS,
         );
     } else {
-        state = cmdq_new_state(&raw mut fs, &mut cmdq_get_event(item), CMDQ_STATE_NOHOOKS);
+        state = cmdq_new_state(&raw mut fs, &mut cmdq_get_event(&*(item)), CMDQ_STATE_NOHOOKS);
     }
     cmdq_add_formats(&state, &raw mut *(*hd).formats);
     if *(*hd).name.as_ptr() as ::core::ffi::c_int == '@' as i32 {
@@ -238,7 +240,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 ));
             }
             1 => {
-                hooks_insert_one(item, hd, pr.cmdlist.as_ref(), &state);
+                hooks_insert_one(after.upgrade().as_ref(), hd, pr.cmdlist.as_ref(), &state);
             }
             _ => {}
         }
@@ -253,17 +255,17 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
                 match pr.status as ::core::ffi::c_uint {
                     0 => {
                         if let Some(error) = pr.error.as_ref() {
-                            cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                            cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| write_cstr(out, error.as_ptr()));
                         }
                     }
                     1 => {
-                        item = hooks_insert_one(item, hd, pr.cmdlist.as_ref(), &state);
+                        after = hooks_insert_one(after.upgrade().as_ref(), hd, pr.cmdlist.as_ref(), &state);
                     }
                     _ => {}
                 }
             } else {
                 let cmdlist = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).commands();
-                item = hooks_insert_one(item, hd, cmdlist, &state);
+                after = hooks_insert_one(after.upgrade().as_ref(), hd, cmdlist, &state);
             }
             a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         }
@@ -271,17 +273,18 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
 
 }
 unsafe fn hooks_insert_event(
-    item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     name: *const ::core::ffi::c_char,
     ep: &event_payload,
     oo: *mut options,
     expand: ::core::ffi::c_int,
 ) {
-    if !item.is_null() && cmdq_get_flags(item) & CMDQ_STATE_NOHOOKS != 0 {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
+    if !item.is_null() && cmdq_get_flags(&*(item)) & CMDQ_STATE_NOHOOKS != 0 {
         return;
     }
     let c = event_payload_get_client(ep);
-    let mut formats = format_create_owned(c, item, FORMAT_NONE, FORMAT_NOJOBS);
+    let mut formats = format_create_owned(c, item_handle, FORMAT_NONE, FORMAT_NOJOBS);
     let ft = &raw mut *formats;
     event_payload_add_formats(ep, ft, c"hook_".as_ptr());
     format_add(ft, c"hook".as_ptr(), |out| write_cstr(out, name));
@@ -295,13 +298,12 @@ unsafe fn hooks_insert_event(
         expand,
     };
     event_payload_get_target(ep, &mut hd.fs);
-    hooks_insert(item, &raw mut hd);
+    hooks_insert(item_handle, &raw mut hd);
     format_free(hd.formats);
 }
 unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     let name = name.as_ptr();
     let ep = &*payload;
-    let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if matches!(event_payload_get_identity(ep, c"_hooks_monitor".as_ptr()),
         Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(_))) {
         return;
@@ -309,9 +311,8 @@ unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     if let Some(crate::src::shared::events::EventPayloadIdentity::QueueItem(observer)) =
         event_payload_get_identity(ep, c"_cmdq_item".as_ptr()) {
         let Some(item_owner) = observer.upgrade() else { return };
-        item = item_owner.get();
         hooks_insert_event(
-            item,
+            Some(&item_owner),
             name,
             ep,
             ::core::ptr::null_mut::<options>(),
@@ -319,10 +320,10 @@ unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
         );
         return;
     }
-    item = cmdq_running();
-    if item.is_null() || !cmdq_get_flags(item) & CMDQ_STATE_NOHOOKS != 0 {
+    let running = cmdq_running().upgrade();
+    if running.as_ref().is_none_or(|item| cmdq_get_flags(&*item.get()) & CMDQ_STATE_NOHOOKS == 0) {
         hooks_insert_event(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             name,
             ep,
             ::core::ptr::null_mut::<options>(),
@@ -366,13 +367,14 @@ pub unsafe fn hooks_build_events() {
         oe = oe.offset(1);
     }
 }
-pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) {
+pub unsafe fn hooks_run(item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>, name: *const ::core::ffi::c_char) {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut hd = hooks_data {
         name: CStr::from_ptr(name),
         fs: cmd_find_state::default(),
         formats: format_create_owned(
-            None, std::ptr::null_mut(), 0, FORMAT_NOJOBS,
+            None, None, 0, FORMAT_NOJOBS,
         ),
         oo: std::ptr::null_mut(),
         client: (*item).client.clone(),
@@ -381,7 +383,7 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
     cmd_find_copy_state(&raw mut hd.fs, target);
     format_add(&raw mut *hd.formats, c"hook".as_ptr(), |out| write_cstr(out, name));
     format_log_debug(&raw mut *hd.formats, c"hooks_run".as_ptr());
-    hooks_insert(item, &raw mut hd);
+    hooks_insert(item_handle, &raw mut hd);
     format_free(hd.formats);
 }
 impl Drop for hooks_monitor {
@@ -411,7 +413,7 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
     if matches!(event_payload_get_identity(ep, c"_hooks_monitor".as_ptr()),
         Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(address))
             if *address == hm.addr()) {
-        hooks_insert_event(cmdq_running(), name, ep, (*hm).oo, 1 as ::core::ffi::c_int);
+        hooks_insert_event(cmdq_running().upgrade().as_ref(), name, ep, (*hm).oo, 1 as ::core::ffi::c_int);
     }
 }
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {

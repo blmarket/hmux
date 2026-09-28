@@ -976,7 +976,7 @@ pub unsafe fn style_add(
     if ft.is_null() {
         ft0 = format_create(
             None,
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             0 as ::core::ffi::c_int,
             FORMAT_NOJOBS,
         );
@@ -1073,7 +1073,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     }
     oe = crate::src::options::options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let style = format_single_cstring(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (*oe).default_str_ptr(),
         None,
         None,
@@ -1091,7 +1091,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     );
     if !s.is_null() {
         let expanded = format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             s,
             None,
             None,

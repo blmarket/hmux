@@ -48,14 +48,14 @@ pub static cmd_list_commands_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_STARTSERVER | CMD_AFTERHOOK,
-        exec: Some(cmd_list_commands as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_list_commands),
     }
 };
 unsafe fn cmd_list_single_command(
     entry: &cmd_entry,
     mut ft: *mut format_tree,
     mut template: *const ::core::ffi::c_char,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     format_add(
         ft,
@@ -74,11 +74,12 @@ unsafe fn cmd_list_single_command(
     );
     let line = format_expand_cstring(ft, template);
     if !line.is_empty() {
-        cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
     }
 }
-unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let queue_client = cmdq_get_client(item);
+unsafe fn cmd_list_commands(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -89,7 +90,7 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     ft = format_create_with_client(
         queue_client.as_ref(),
-        item,
+        Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -103,15 +104,15 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     command = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if command.is_null() {
         for &entry in &cmd_table {
-            cmd_list_single_command(entry, ft, template, item);
+            cmd_list_single_command(entry, ft, template, item_handle);
         }
     } else {
         match cmd_find(CStr::from_ptr(command)) {
             Ok(found) => {
-                cmd_list_single_command(found, ft, template, item);
+                cmd_list_single_command(found, ft, template, item_handle);
             }
             Err(cause) => {
-                cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
                 format_free(Box::from_raw(ft));
                 return CMD_RETURN_ERROR;
             }

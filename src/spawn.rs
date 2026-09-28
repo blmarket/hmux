@@ -486,7 +486,7 @@ pub unsafe fn spawn_pane(
     let c_owner;
     if !item.is_null() {
         ts = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        c_owner = cmdq_get_client(item);
+        c_owner = cmdq_get_client((item).as_ref());
         c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     } else {
         ts = s;
@@ -510,7 +510,7 @@ pub unsafe fn spawn_pane(
     if let Some(requested_cwd) = (*sc).cwd.as_ref() {
         if !item.is_null() {
             cwd = Some(format_single_cstring(
-                item,
+                (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
                 requested_cwd.as_ptr(),
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 (ts).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),

@@ -228,7 +228,7 @@ pub static window_client_mode: window_mode = {
             window_client_init
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut cmdq_item,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -389,7 +389,7 @@ unsafe fn window_client_build(
         c = crate::src::shared::rc::as_ptr(item.client());
         if !filter.is_null() {
             let cp = format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 filter,
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 None,
@@ -407,7 +407,7 @@ unsafe fn window_client_build(
         match current_block_21 {
             12147880666119273379 => {
                 let text = format_single_cstring(
-                    ::core::ptr::null_mut::<cmdq_item>(),
+                    None,
                     (*data).format.as_ptr(),
                     (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                     None,
@@ -457,7 +457,7 @@ unsafe fn window_client_draw_info(
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         None,
         ::core::ptr::null_mut::<winlink>(),
@@ -694,7 +694,7 @@ unsafe fn window_client_get_key(
     let mut key: key_code = 0;
     ft = format_create(
         None,
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -751,7 +751,7 @@ unsafe fn window_client_data(wme: *mut window_mode_entry) -> *mut window_client_
 
 unsafe fn window_client_init(
     mut wme: *mut window_mode_entry,
-    _item: *mut cmdq_item,
+    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

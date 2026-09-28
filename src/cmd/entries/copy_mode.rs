@@ -41,7 +41,7 @@ pub static cmd_copy_mode_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK | CMD_READONLY,
-        exec: Some(cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_copy_mode_exec),
     }
 };
 pub static cmd_clock_mode_entry: cmd_entry = {
@@ -66,16 +66,17 @@ pub static cmd_clock_mode_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_copy_mode_exec),
     }
 };
-unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut event_snapshot = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
@@ -107,7 +108,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             &pane_owner,
             None,
             &window_clock_mode,
-            item,
+            Some(item_handle),
             ::core::ptr::null_mut::<cmd_find_state>(),
             ::core::ptr::null_mut::<args>(),
         );
@@ -135,7 +136,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         &pane_owner,
         source_owner.as_ref(),
         &window_copy_mode,
-        item,
+        Some(item_handle),
         ::core::ptr::null_mut::<cmd_find_state>(),
         args,
     ) == 0

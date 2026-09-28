@@ -148,7 +148,7 @@ pub unsafe fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::
     return (server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags)
         != NULL as *mut server_acl_entry) as ::core::ffi::c_int;
 }
-pub unsafe fn server_acl_display(mut item: *mut cmdq_item) {
+pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let mut loop_0: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let mut gr: *mut group = ::core::ptr::null_mut::<group>();
@@ -183,14 +183,14 @@ pub unsafe fn server_acl_display(mut item: *mut cmdq_item) {
         match current_block_12 {
             11050875288958768710 => {
                 if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
-                    cmdq_print(item, |out| {
+                    cmdq_print(item_handle, |out| {
                         write_cstr(out, name)?;
                         out.write_all(b" (")?;
                         out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
                         out.write_all(b",R)")
                     });
                 } else {
-                    cmdq_print(item, |out| {
+                    cmdq_print(item_handle, |out| {
                         write_cstr(out, name)?;
                         out.write_all(b" (")?;
                         out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;

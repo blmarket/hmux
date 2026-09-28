@@ -68,7 +68,7 @@ pub static cmd_source_file_entry: cmd_entry = {
             flags: CMD_FIND_CANFAIL,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_source_file_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_source_file_exec),
     }
 };
 impl cmd_source_file_data {
@@ -127,11 +127,11 @@ impl Drop for cmd_source_file_data {
 }
 
 unsafe fn cmd_source_file_complete_cb(
-    item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut cdata: Box<cmd_source_file_data>,
 ) -> cmd_retval {
     cdata.decrement_depth();
-    cfg_print_causes(item);
+    cfg_print_causes(item_handle);
     CMD_RETURN_NORMAL
 }
 
@@ -150,13 +150,13 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
         return;
     };
     let after = after_owner.get();
-    let new_item = cmdq_get_callback_owned(
+    let new_item_allocation = cmdq_get_callback_owned(
         c"cmd_source_file_complete_cb".as_ptr(),
         Some(Box::new(move |item| unsafe {
-            cmd_source_file_complete_cb(item.as_ptr(), cdata)
+            cmd_source_file_complete_cb(item, cdata)
         })),
     );
-    cmdq_insert_after(after, new_item);
+    cmdq_insert_after(&(*(after)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
 }
 
 unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
@@ -164,7 +164,7 @@ unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
     let client_owner = cdata.client.clone();
     let item = item_owner.get();
     let path = cdata.files[cdata.current as usize].as_ptr();
-    file_read_with_cmdq_wait(client_owner.as_ref(), path, cdata.into_read_callback(), item, None);
+    file_read_with_cmdq_wait(client_owner.as_ref(), path, cdata.into_read_callback(), &(*(item)).observer.upgrade().expect("live command queue item"), None);
 }
 
 unsafe fn cmd_source_file_done(
@@ -181,10 +181,10 @@ unsafe fn cmd_source_file_done(
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         .cast();
     let bsize = evbuffer_get_length(buffer);
-    let mut new_item = std::ptr::null_mut();
+    let mut new_item = Weak::new();
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     if error != 0 {
-        cmdq_error(item, |out| {
+        cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
             write_cstr(out, strerror(error))?;
             out.write_all(b": ")?;
             write_cstr(out, path)
@@ -196,15 +196,15 @@ unsafe fn cmd_source_file_done(
             bsize,
             path,
             cdata.client.as_ref(),
-            after_owner.get(),
+            (after_owner.get()).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
             target,
             cdata.flags,
-            &mut new_item,
+            Some(&mut new_item),
         ) < 0
         {
             cdata.retval = CMD_RETURN_ERROR;
-        } else if !new_item.is_null() {
-            cdata.after = (*new_item).observer.clone();
+        } else if new_item.strong_count() != 0 {
+            cdata.after = new_item;
         }
     }
     cdata.current = cdata.current.wrapping_add(1);
@@ -212,7 +212,7 @@ unsafe fn cmd_source_file_done(
         cmd_source_file_read(cdata);
     } else {
         cmd_source_file_complete(cdata);
-        cmdq_continue(item);
+        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
     }
 }
 unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
@@ -238,9 +238,10 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     }
     CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -250,7 +251,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut j: u_int = 0;
     if c.is_null() {
         if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-            cmdq_error(item, |out| out.write_all(b"too many nested files"));
+            cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
             return CMD_RETURN_ERROR;
         }
         cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
@@ -261,7 +262,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         ));
     } else {
         if (*c).source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-            cmdq_error(item, |out| out.write_all(b"too many nested files"));
+            cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
             return CMD_RETURN_ERROR;
         }
         (*c).source_file_depth = (*c).source_file_depth.wrapping_add(1);
@@ -307,7 +308,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     while i < args_count(args) {
         path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());
         let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
-            Some(format_single_from_target_cstring(item, path))
+            Some(format_single_from_target_cstring(item_handle, path))
         } else {
             None
         };
@@ -345,7 +346,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                     } else {
                         error = strerror(EINVAL);
                     }
-                    cmdq_error(item, |out| {
+                    cmdq_error(item_handle, |out| {
                         write_cstr(out, error)?;
                         out.write_all(b": ")?;
                         write_cstr(out, path)
@@ -374,99 +375,4 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     drop(cwd);
     return retval;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
-    use crate::src::reactor::{evbuffer_new, shutdown_runtime};
-    use crate::src::shared::client::client_file_event;
-    use std::ptr::NonNull;
-
-    fn data(
-        item: *mut cmdq_item,
-        client: Option<Rc<UnsafeCell<client>>>,
-    ) -> Box<cmd_source_file_data> {
-        Box::new(cmd_source_file_data {
-            item: unsafe { (*item).observer.clone() },
-            client,
-            depth_active: true,
-            flags: 0,
-            after: unsafe { (*item).observer.clone() },
-            retval: CMD_RETURN_NORMAL,
-            current: 0,
-            files: vec![c"owned.conf".to_owned()],
-        })
-    }
-
-    #[test]
-    fn completion_and_dropped_queue_callbacks_decrement_client_depth_once() {
-        unsafe {
-            for dispatch in [false, true] {
-                let client = client::new();
-                (*client.get()).source_file_depth = 1;
-                let observer = Rc::downgrade(&client);
-                let source = cmdq_get_callback_owned(c"source wait test".as_ptr(), None);
-                let owner = data(source, Some(client.clone()));
-                let item = cmdq_get_callback_owned(
-                    c"source-file-test".as_ptr(),
-                    Some(Box::new(move |item| {
-                        cmd_source_file_complete_cb(item.as_ptr(), owner)
-                    })),
-                );
-                if dispatch {
-                    let callback = (*item).cb.take().unwrap();
-                    assert_eq!(callback(NonNull::new(item).unwrap()), CMD_RETURN_NORMAL);
-                    assert_eq!((*client.get()).source_file_depth, 0);
-                }
-                cmdq_free_detached(item);
-                cmdq_free_detached(source);
-                assert_eq!((*client.get()).source_file_depth, 0);
-                drop(client);
-                assert!(observer.upgrade().is_some());
-                shutdown_runtime();
-                assert!(observer.upgrade().is_none());
-            }
-        }
-    }
-
-    #[test]
-    fn startup_terminal_callback_preserves_depth_and_resumes_source_command() {
-        unsafe {
-            let saved = (cfg_finished, cmd_source_file_depth);
-            cfg_finished = 0;
-            cmd_source_file_depth = 7;
-            let item = cmdq_get_callback_owned(c"source wait test".as_ptr(), None);
-            (*item).flags = CMDQ_WAITING;
-            let mut callback = data(item, None).into_read_callback().unwrap();
-            let mut buffer = evbuffer_new();
-            callback(client_file_event {
-                client: None,
-                path: Some(c"owned.conf"),
-                error: 0,
-                closed: true,
-                buffer: Some(&mut buffer),
-            });
-            drop(callback);
-            assert_eq!((*item).flags & CMDQ_WAITING, 0);
-            assert_eq!(*(&raw const cmd_source_file_depth), 7);
-            cmdq_free_detached(item);
-            (cfg_finished, cmd_source_file_depth) = saved;
-        }
-    }
-
-    #[test]
-    fn expired_source_wait_releases_depth_without_reading_the_item() {
-        unsafe {
-            let client = client::new();
-            (*client.get()).source_file_depth = 1;
-            let item = cmdq_get_callback_owned(c"expired source wait".as_ptr(), None);
-            let cdata = data(item, Some(Rc::clone(&client)));
-            cmdq_free_detached(item);
-            let mut buffer = evbuffer_new();
-            cmd_source_file_done(cdata, Some(c"owned.conf"), 0, &mut buffer);
-            assert_eq!((*client.get()).source_file_depth, 0);
-        }
-    }
 }

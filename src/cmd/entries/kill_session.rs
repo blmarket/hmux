@@ -45,10 +45,11 @@ pub static cmd_kill_session_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_kill_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_kill_session_exec),
     }
 };
-unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let source = (*target).s.upgrade().expect("live target session");
@@ -59,7 +60,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if !filter.is_null()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
     {
-        cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
+        cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
@@ -71,7 +72,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
         server_redraw_session(&*(s));
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_session_all(item, filter);
+        return cmd_kill_session_all(item_handle, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
         sg = session_group_contains((s).as_ref());
         !sg.is_null()
@@ -96,9 +97,10 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_session_all(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
+    let item = item_handle.get();
     let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sloop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
@@ -106,7 +108,7 @@ unsafe fn cmd_kill_session_all(
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
         if !(sloop == s) {
-            if !(cmd_kill_session_filter(item, &(*(sloop)).observer.upgrade().expect("live session"), filter) == 0) {
+            if !(cmd_kill_session_filter(item_handle, &(*(sloop)).observer.upgrade().expect("live session"), filter) == 0) {
                 server_destroy_session(sloop_owner.as_ref().expect("registered session"));
                 session_destroy(
                     sloop_owner.as_ref().expect("registered session"),
@@ -121,12 +123,13 @@ unsafe fn cmd_kill_session_all(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_session_filter(
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.get();
     let mut s = s_owner.get();
-    let queue_client = cmdq_get_client(item);
+    let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
@@ -134,7 +137,7 @@ unsafe fn cmd_kill_session_filter(
     }
     ft = format_create_with_client(
         queue_client.as_ref(),
-        item,
+        Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );

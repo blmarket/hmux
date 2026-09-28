@@ -4140,7 +4140,7 @@ mod owned_callback_tests {
             (*owner.get()).id = 42;
             (*owner.get()).sx = 80;
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             super::super::format_defaults_pane(ft, &owner.clone());
             assert!(observer.ptr_eq(&(*ft).wp));
             assert_eq!(format_cb_pane_id(ft).unwrap().as_c_str(), c"%42");
@@ -4163,7 +4163,7 @@ mod owned_callback_tests {
             let owner = window::new();
             (*owner.get()).name = c"observed-window".to_owned();
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             super::super::format_defaults_window(ft, (owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             assert!(observer.ptr_eq(&(*ft).w));
             assert_eq!(format_cb_window_name(ft).unwrap().as_c_str(), c"observed-window");
@@ -4184,7 +4184,7 @@ mod owned_callback_tests {
             let owner = session::new();
             (*owner.get()).name = c"observed-session".to_owned();
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             super::super::format_defaults_session(ft, &owner.clone());
             assert!(observer.ptr_eq(&(*ft).s));
             assert_eq!(format_cb_session_name(ft).unwrap().as_c_str(), c"observed-session");
@@ -4202,7 +4202,7 @@ mod owned_callback_tests {
             let owner = session::new();
             let session = owner.get();
             let link = crate::src::window::winlink_add(&raw mut (*session).windows, 7);
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             super::super::format_defaults_winlink(ft, link);
             assert_eq!((*ft).wl_ptr(), link);
             assert_eq!(format_cb_window_index(ft).unwrap().as_c_str(), c"7");
@@ -4219,7 +4219,7 @@ mod owned_callback_tests {
             let owner = client::new();
             (*owner.get()).name = Some(c"observed-client".to_owned());
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             (*ft).c = observer.clone();
             assert_eq!(format_cb_client_name(ft).unwrap().as_c_str(), c"observed-client");
             drop(owner);
@@ -4235,7 +4235,7 @@ mod owned_callback_tests {
         let owner = refbox::RefBox::new(crate::src::shared::paste::paste_buffer::empty());
         let buffer = crate::src::shared::paste::PasteBufferRef::observe(&owner);
         unsafe {
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             (*ft).pb = Some(buffer.clone());
             assert!(paste_buffer_data(&buffer.borrow()).is_none());
             assert!(format_cb_buffer_full(ft).is_none());
@@ -4274,7 +4274,7 @@ mod owned_callback_tests {
                 assert!(std::ptr::eq(format_table_get(entry.key).unwrap(), entry));
             }
             assert!(format_table_get(c"not_a_builtin").is_none());
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             for key in [
                 c"buffer_full",
                 c"client_created",
@@ -4302,7 +4302,7 @@ mod owned_callback_tests {
                 0
             );
             let pb = paste_get_name(name).unwrap();
-            let ft = format_create(None, std::ptr::null_mut(), 0, 0);
+            let ft = format_create(None, None, 0, 0);
             (*ft).pb = Some(pb.clone());
             let full = format_cb_buffer_full(ft).unwrap();
             let sample = format_cb_buffer_sample(ft).unwrap();

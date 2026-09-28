@@ -44,10 +44,7 @@ pub static cmd_choose_tree_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_choose_tree_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_choose_tree_exec),
     }
 };
 pub static cmd_choose_client_entry: cmd_entry = {
@@ -74,10 +71,7 @@ pub static cmd_choose_client_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_choose_tree_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_choose_tree_exec),
     }
 };
 pub static cmd_choose_buffer_entry: cmd_entry = {
@@ -104,10 +98,7 @@ pub static cmd_choose_buffer_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_choose_tree_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_choose_tree_exec),
     }
 };
 pub static cmd_customize_mode_entry: cmd_entry = {
@@ -132,7 +123,7 @@ pub static cmd_customize_mode_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_choose_tree_exec),
     }
 };
 pub static cmd_switch_mode_entry: cmd_entry = {
@@ -157,7 +148,7 @@ pub static cmd_switch_mode_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_choose_tree_exec),
     }
 };
 pub static cmd_display_panes_entry: cmd_entry = {
@@ -182,7 +173,7 @@ pub static cmd_display_panes_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_choose_tree_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_choose_tree_exec),
     }
 };
 fn cmd_choose_tree_args_parse(
@@ -191,7 +182,8 @@ fn cmd_choose_tree_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -201,7 +193,7 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item, |out| out.write_all(b"invalid sort order"));
+        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_choose_buffer_entry) {
@@ -227,7 +219,7 @@ unsafe fn cmd_choose_tree_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         &(*wp).observer.upgrade().expect("mode target pane"),
         None,
         mode,
-        item,
+        Some(item_handle),
         target,
         args,
     );

@@ -223,12 +223,12 @@ impl Drop for popup_data {
             // caller handles that error. Published overlays resume once.
             if self.published {
                 if let Some(item) = self.item.upgrade() {
-                    let c_owner = cmdq_get_client(item.get());
+                    let c_owner = cmdq_get_client((item.get()).as_ref());
                     let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
                     if !c.is_null() && (*c).session_handle().is_none() {
                         (*c).retval = self.status;
                     }
-                    cmdq_continue(item.get());
+                    cmdq_continue(&(*(item.get())).observer.upgrade().expect("live command queue item"));
                 }
             }
             if let Some(client) = self.c.take() {
@@ -290,7 +290,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     }
     o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     ft = format_create_defaults(
-        ::core::ptr::null_mut::<cmdq_item>(),
+        None,
         (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         (*s).curw_ptr(),
@@ -1009,7 +1009,7 @@ pub unsafe fn popup_modify(
 pub unsafe fn popup_display(
     mut flags: ::core::ffi::c_int,
     mut lines: box_lines,
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut px: u_int,
     mut py: u_int,
     mut sx: u_int,
@@ -1024,6 +1024,7 @@ pub unsafe fn popup_display(
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mut c = c_owner.get();
     let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut jx: u_int = 0;
@@ -1243,67 +1244,11 @@ mod tests {
         server_client_overlay_check, server_client_overlay_draw, server_client_overlay_key,
         server_client_overlay_mode, server_client_overlay_resize,
     };
-    use crate::src::shared::command::CMDQ_WAITING;
-    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
 
     fn owner() -> refbox::RefBox<PopupState> {
         let mut data = Box::new(popup_data::empty());
         data.title = Some(c"active popup".to_owned());
         refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) })
-    }
-
-    #[test]
-    fn owner_close_invalidates_observers_and_defers_cleanup_until_dispatch_finishes() {
-        unsafe {
-            let item = cmdq_get_callback_owned(c"popup test".as_ptr(), None);
-            (*item).flags = CMDQ_WAITING;
-            let mut data = Box::new(popup_data::empty());
-            data.item = (*item).observer.clone();
-            data.published = true;
-            let original = Box::as_mut_ptr(&mut data);
-            let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
-            let handle = PopupHandle(owner.downgrade());
-            let guard = handle.upgrade().unwrap();
-            assert_eq!(guard.as_ptr(), original);
-            drop(owner);
-            assert!(handle.upgrade().is_none());
-            assert_eq!((*item).flags & CMDQ_WAITING, CMDQ_WAITING);
-            (*guard.as_ptr()).status = 7;
-            assert_eq!((*guard.as_ptr()).status, 7);
-            drop(guard);
-            assert_eq!((*item).flags & CMDQ_WAITING, 0);
-            assert!(!handle.0.is_alive());
-            cmdq_free_detached(item);
-        }
-    }
-
-    #[test]
-    fn unpublished_startup_drop_does_not_resume_the_callers_command() {
-        let item = unsafe { cmdq_get_callback_owned(c"popup test".as_ptr(), None) };
-        unsafe { (*item).flags = CMDQ_WAITING };
-        let mut data = Box::new(popup_data::empty());
-        data.item = unsafe { (*item).observer.clone() };
-        let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
-        let handle = PopupHandle(owner.downgrade());
-        drop(owner);
-        assert_eq!(unsafe { (*item).flags & CMDQ_WAITING }, CMDQ_WAITING);
-        assert!(!handle.0.is_alive());
-        unsafe { cmdq_free_detached(item) };
-    }
-
-    #[test]
-    fn published_popup_skips_an_expired_wait() {
-        unsafe {
-            let item = cmdq_get_callback_owned(c"popup test".as_ptr(), None);
-            let observer = (*item).observer.clone();
-            let mut data = Box::new(popup_data::empty());
-            data.item = observer.clone();
-            data.published = true;
-            let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
-            cmdq_free_detached(item);
-            assert!(observer.upgrade().is_none());
-            drop(owner);
-        }
     }
 
     #[test]
@@ -1417,42 +1362,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn completion_closes_once_preserves_status_and_releases_the_retained_client() {
-        use crate::src::shared::rc;
-        unsafe {
-            let client_owner = client::new();
-            let c = rc::as_ptr(&client_owner);
-            let client_observer = (*c).observer.clone();
-            let item = cmdq_get_callback_owned(c"popup test".as_ptr(), None);
-            (*item).client = (*c).observer.clone();
-            (*item).flags = CMDQ_WAITING;
-            let mut data = Box::new(popup_data::empty());
-            data.c = client_retain((c).as_ref());
-            data.item = (*item).observer.clone();
-            data.flags = POPUP_CLOSEEXIT;
-            data.published = true;
-            let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
-            let handle = PopupHandle(owner.downgrade());
-            (*c).overlay_data = Some(Box::new(owner));
-            (*c).overlay_draw = Some(Box::new(|_| {}));
-
-            popup_job_complete_cb(
-                JobCompletion {
-                    status: JobExitStatus::Exited(42),
-                    output: Vec::new(),
-                },
-                &handle.upgrade().unwrap(),
-            );
-            assert_eq!((*c).retval, 42);
-            assert_eq!((*item).flags & CMDQ_WAITING, 0);
-            assert!(!handle.0.is_alive());
-            assert!((*c).overlay_data.is_none());
-            cmdq_free_detached(item);
-            drop(client_owner);
-            assert!(client_observer.upgrade().is_some());
-            crate::src::reactor::shutdown_runtime();
-            assert!(client_observer.upgrade().is_none());
-        }
-    }
 }

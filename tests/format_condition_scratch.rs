@@ -22,7 +22,7 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
         let environ = environ_create();
         global_environ = Some(environ);
 
-        let tree = format_create(None, std::ptr::null_mut(), 0, 0);
+        let tree = format_create(None, None, 0, 0);
         format_add(tree, c"yes".as_ptr(), |out| write_cstr(out, c"1".as_ptr()));
         format_add(tree, c"no".as_ptr(), |out| write_cstr(out, c"0".as_ptr()));
 

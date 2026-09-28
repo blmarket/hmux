@@ -39,7 +39,7 @@ pub static mut cfg_finished: ::core::ffi::c_int = 0;
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 #[cfg(test)]
 pub(crate) static CFG_TEST_LOCK: Mutex<()> = Mutex::new(());
-static mut cfg_item: *mut cmdq_item = ::core::ptr::null::<cmdq_item>() as *mut cmdq_item;
+static mut cfg_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> = std::rc::Weak::new();
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 // Startup publishes the list before client_main can start a server. C readers
 // borrow the stable CString storage; the list is never mutated after publication.
@@ -67,8 +67,8 @@ unsafe fn cfg_done() -> cmd_retval {
     }
     cfg_finished = 1 as ::core::ffi::c_int;
     cfg_show_causes(None);
-    if !cfg_item.is_null() {
-        cmdq_continue(cfg_item);
+    if let Some(item) = std::mem::take(&mut *(&raw mut cfg_item)).upgrade() {
+        cmdq_continue(&item);
     }
     prompt_load_history();
     return CMD_RETURN_NORMAL;
@@ -80,11 +80,12 @@ pub unsafe fn start_cfg() {
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     cfg_client = registry_c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     if !c.is_null() {
-        cfg_item = cmdq_get_callback_owned(
+        let item = cmdq_get_callback_owned(
             b"cfg_client_done\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| unsafe { cfg_client_done() })),
         );
-        cmdq_append(registry_c_owner.as_ref(), cfg_item);
+        cfg_item = std::rc::Rc::downgrade(&item);
+        cmdq_append(registry_c_owner.as_ref(), item);
     }
     if cfg_quiet != 0 {
         flags = CMD_PARSE_QUIET;
@@ -105,7 +106,6 @@ pub unsafe fn load_cfg(
     c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
 
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut pi: cmd_parse_input = cmd_parse_input {
@@ -124,7 +124,6 @@ pub unsafe fn load_cfg(
         },
     };
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let state;
 
     log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
@@ -144,7 +143,7 @@ pub unsafe fn load_cfg(
     pi.flags = flags;
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
-    pi.set_item(item);
+    pi.set_item(None);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     pr = cmd_parse_from_file(stream.as_ptr(), &raw mut pi);
     drop(stream);
@@ -178,9 +177,9 @@ pub unsafe fn load_cfg(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
+    let new_item0_allocation = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
 
-    new_item0 = cmdq_append(None, new_item0);
+    cmdq_append(None, new_item0_allocation);
 
     drop(pr.cmdlist.take());
 
@@ -192,11 +191,12 @@ pub unsafe fn load_cfg_from_buffer(
     mut len: size_t,
     mut path: *const ::core::ffi::c_char,
     c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    mut item: *mut cmdq_item,
+    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut current: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
-    mut new_item: *mut *mut cmdq_item,
+    mut new_item: Option<&mut std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -213,16 +213,15 @@ pub unsafe fn load_cfg_from_buffer(
         },
     };
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let state;
-    if !new_item.is_null() {
-        *new_item = ::core::ptr::null_mut::<cmdq_item>();
+    if let Some(new_item) = new_item.as_deref_mut() {
+        *new_item = std::rc::Weak::new();
     }
     log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
     pi.flags = flags;
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
-    pi.set_item(item);
+    pi.set_item(item_handle);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     pr = cmd_parse_from_buffer(buf, len, &raw mut pi);
     if pr.status as ::core::ffi::c_uint
@@ -257,16 +256,16 @@ pub unsafe fn load_cfg_from_buffer(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
-    if !item.is_null() {
-        new_item0 = cmdq_insert_after(item, new_item0);
+    let new_item0_allocation = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
+    let last = if let Some(item) = item_handle {
+        cmdq_insert_after(item, new_item0_allocation)
     } else {
-        new_item0 = cmdq_append(None, new_item0);
-    }
+        cmdq_append(None, new_item0_allocation)
+    };
     drop(pr.cmdlist.take());
 
-    if !new_item.is_null() {
-        *new_item = new_item0;
+    if let Some(new_item) = new_item {
+        *new_item = last;
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -291,8 +290,9 @@ pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
     cfg_drain_causes(|cause| causes.push(cause.to_bytes().to_vec()));
     causes
 }
-pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
-    let c_owner = cmdq_get_client(item);
+pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
+    let item = item_handle.get();
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -301,7 +301,7 @@ pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
                 write_cstr(out, cause.as_ptr())
             });
         } else {
-            cmdq_print(item, |out| write_cstr(out, cause.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, cause.as_ptr()));
         }
     });
 }
@@ -341,7 +341,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
                 &pane_owner,
                 None,
                 &window_view_mode,
-                ::core::ptr::null_mut::<cmdq_item>(),
+                None,
                 ::core::ptr::null_mut::<cmd_find_state>(),
                 ::core::ptr::null_mut::<args>(),
             );

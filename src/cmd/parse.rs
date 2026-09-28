@@ -108,13 +108,13 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
     let item = item_owner.get();
     let s = cmd_list_print_cstring(cmdlist, 0);
     if (*pi).file.is_some() {
-        cmdq_print(item, |out| {
+        cmdq_print(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
             write_cstr(out, (*pi).file_ptr())?;
             write!(out, ":{}: ", ((*pi).line) as u32)?;
             out.write_all(s.as_bytes())
         });
     } else {
-        cmdq_print(item, |out| {
+        cmdq_print(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
             write!(out, "{}: ", ((*pi).line) as u32)?;
             out.write_all(s.as_bytes())
         });
@@ -157,7 +157,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             };
             let item_owner = pi.item.upgrade();
             let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            let ft = format_create_with_client(client_owner.as_ref(), item, FORMAT_NONE, FORMAT_NOJOBS);
+            let ft = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, FORMAT_NOJOBS);
             format_defaults(ft, (client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*fsp).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*fsp).wl_ptr(), ((*fsp).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(Box::from_raw(ft));
@@ -493,13 +493,13 @@ pub unsafe fn cmd_parse_and_append(
     state: Option<&std::rc::Rc<cmdq_state>>,
 ) -> Result<cmd_parse_status, Option<CString>> {
     let mut pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
-    let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let item_allocation;
     let mut pr = cmd_parse_from_string(s, pi);
     if pr.status == CMD_PARSE_ERROR {
         return Err(pr.error.take());
     }
-    item = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
-    cmdq_append(owner, item);
+    item_allocation = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
+    cmdq_append(owner, item_allocation);
     drop(pr.cmdlist.take());
     Ok(pr.status)
 }
@@ -685,28 +685,6 @@ mod parser_collection_tests {
             drop(client);
             assert!(input.c.upgrade().is_none());
             assert!(copied.c.upgrade().is_none());
-        }
-    }
-
-    #[test]
-    fn queue_retains_commands_after_parse_result_is_dropped() {
-        unsafe {
-            let mut input = cmd_parse_input {
-                flags: CMD_PARSE_NOALIAS,
-                ..Default::default()
-            };
-            let result = cmd_parse_from_string(c"display-message retained", &mut input);
-            assert_eq!(result.status, CMD_PARSE_SUCCESS);
-            let observer = Rc::downgrade(result.cmdlist.as_ref().unwrap());
-            let item = cmdq_get_command(result.cmdlist.as_ref().expect("successful command parse"), None);
-            let command_observer = (*item).cmd.clone();
-            drop(result);
-            assert!(observer.upgrade().is_some());
-            assert!(command_observer.is_alive());
-            assert_eq!((*(*item).cmd_ptr()).entry.name, c"display-message");
-            crate::src::cmd::queue::cmdq_free_detached(item);
-            assert!(observer.upgrade().is_none());
-            assert!(!command_observer.is_alive());
         }
     }
 

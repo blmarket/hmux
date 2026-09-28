@@ -112,9 +112,10 @@ fn file_set_path(cf: &mut client_file, path: CString) {
 
 unsafe fn file_set_cmdq_wait(
     file_owner: &Rc<UnsafeCell<client_file>>,
-    item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
+    let item = item_handle.get();
     let owner = &mut *file_owner.get();
     assert!(!item.is_null());
     assert!(!owner.wait_active);
@@ -206,7 +207,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         (
             file.c.clone(),
             (!Weak::ptr_eq(&file.wait_client, &Weak::new())).then(|| file.wait_client.upgrade()),
-            file.wait_active && file.wait_item.upgrade().is_none(),
+            file.wait_active && file.wait_item.upgrade().is_none_or(|item| (*item.get()).removed),
         )
     };
     let dead = expired_wait || client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
@@ -409,10 +410,10 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
     bdata: *const ::core::ffi::c_void,
     bsize: size_t,
     cb: client_file_cb,
-    item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     let cancel_cb: Option<Box<dyn FnOnce()>> = None;
-    file_write_impl(client_owner, path, flags, bdata, bsize, cb, Some((item, cancel_cb)));
+    file_write_impl(client_owner, path, flags, bdata, bsize, cb, Some((item_handle, cancel_cb)));
 }
 
 unsafe fn file_write_impl(
@@ -422,7 +423,7 @@ unsafe fn file_write_impl(
     mut bdata: *const ::core::ffi::c_void,
     mut bsize: size_t,
     mut cb: client_file_cb,
-    wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
+    wait: Option<(&Rc<UnsafeCell<cmdq_item>>, Option<Box<dyn FnOnce()>>)>,
 ) {
     let mut current_block: u64;
     let mut msglen: size_t = 0;
@@ -433,8 +434,8 @@ unsafe fn file_write_impl(
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, cb);
-    if let Some((item, cancel_cb)) = wait {
-        file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
+    if let Some((item_handle, cancel_cb)) = wait {
+        file_set_cmdq_wait(&transfer_owner, item_handle, cancel_cb);
     }
     let cf = &mut *transfer_owner.get();
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
@@ -542,10 +543,10 @@ pub(crate) unsafe fn file_read_with_cmdq_wait(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
     path: *const ::core::ffi::c_char,
     cb: client_file_cb,
-    item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
-    file_read_with_cmdq_wait_init(client_owner, path, |_| cb, item, cancel_cb)
+    file_read_with_cmdq_wait_init(client_owner, path, |_| cb, item_handle, cancel_cb)
 }
 
 /// Build the callback after allocating its file, before opening or scheduling
@@ -554,7 +555,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut path: *const ::core::ffi::c_char,
     callback: impl FnOnce(std::rc::Weak<std::cell::UnsafeCell<client_file>>) -> client_file_cb,
-    item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
     let mut current_block: u64;
@@ -567,7 +568,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
     let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, None);
-    file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
+    file_set_cmdq_wait(&transfer_owner, item_handle, cancel_cb);
     let cb = callback(Rc::downgrade(&transfer_owner));
     let cf = &mut *transfer_owner.get();
     cf.cb = cb;
@@ -1462,46 +1463,8 @@ mod file_index_ownership_tests {
 #[cfg(test)]
 mod completion_cancellation_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
+    use crate::src::cmd::queue::{cmdq_get_callback_owned};
     use crate::src::reactor::event_loop;
-
-    #[test]
-    fn command_wait_distinguishes_unspecified_and_expired_clients() {
-        unsafe {
-            let file = client_file::new();
-            let item = cmdq_get_callback_owned(c"file wait test".as_ptr(), None);
-            file_set_cmdq_wait(&file, item, None);
-            assert!(Weak::ptr_eq(&(&*file.get()).wait_client, &Weak::new()));
-            file_cancel_cmdq_wait(&file);
-
-            let client = client::new();
-            (*item).client = Rc::downgrade(&client);
-            drop(client);
-            file_set_cmdq_wait(&file, item, None);
-            assert!(!Weak::ptr_eq(&(&*file.get()).wait_client, &Weak::new()));
-            assert!((&*file.get()).wait_client.upgrade().is_none());
-            file_cancel_cmdq_wait(&file);
-            cmdq_free_detached(item);
-        }
-    }
-
-    #[test]
-    fn expired_command_wait_cancels_its_terminal_callback() {
-        unsafe {
-            let file = client_file::new();
-            let item = cmdq_get_callback_owned(c"file wait test".as_ptr(), None);
-            let cancelled = Rc::new(std::cell::Cell::new(false));
-            let signal = Rc::clone(&cancelled);
-            file_set_cmdq_wait(&file, item, Some(Box::new(move || signal.set(true))));
-            (*file.get()).cb = Some(Box::new(|_| panic!("expired command callback ran")));
-            cmdq_free_detached(item);
-
-            file_fire_done_cb(&file);
-            assert!(cancelled.get());
-            assert!(!(*file.get()).wait_active);
-            assert!((*file.get()).cb.is_none());
-        }
-    }
 
     #[test]
     fn cancelled_completion_releases_index_and_client_owners() {

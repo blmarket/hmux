@@ -71,10 +71,7 @@ pub static cmd_display_menu_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG,
-        exec: Some(
-            cmd_display_menu_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_display_menu_exec),
     }
 };
 pub static cmd_display_popup_entry: cmd_entry = {
@@ -99,10 +96,7 @@ pub static cmd_display_popup_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG,
-        exec: Some(
-            cmd_display_popup_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_display_popup_exec),
     }
 };
 fn cmd_display_menu_args_parse(
@@ -138,17 +132,18 @@ fn cmd_display_menu_args_parse(
 }
 unsafe fn cmd_display_menu_get_popup_pos(
     tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
     mut px: *mut u_int,
     mut py: *mut u_int,
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.get();
     let mut tc = tc_owner.get();
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event_snapshot = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: *mut session = (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -166,7 +161,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     if w > (*tty).sx || h > (*tty).sy {
         return 0 as ::core::ffi::c_int;
     }
-    ft = format_create_from_target(item);
+    ft = format_create_from_target(item_handle);
     if (*event).m.valid != 0 {
         format_add(
             ft,
@@ -531,16 +526,17 @@ unsafe fn cmd_display_menu_get_popup_pos(
 }
 unsafe fn cmd_display_menu_get_menu_pos(
     tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
     mut px: *mut u_int,
     mut py: *mut u_int,
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
+    let item = item_handle.get();
     let mut tc = tc_owner.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event_snapshot = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: *mut session = (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -570,7 +566,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         0 as u_int
     }) as ::core::ffi::c_long;
     let tty_window_view { ox, oy, sy, .. } = tty_window_offset(&(*tc).tty);
-    ft = format_create_from_target(item);
+    ft = format_create_from_target(item_handle);
     if (*event).m.valid != 0 {
         mouse_x = (*event).m.x.wrapping_add(ox) as ::core::ffi::c_long;
         if (*event).m.statusat == 0 as ::core::ffi::c_int {
@@ -918,12 +914,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
     format_free(Box::from_raw(ft));
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut event_snapshot = cmdq_get_event(item);
+    let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
@@ -937,7 +934,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
             match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
                 Ok(value) => starting_choice = value as i32,
                 Err(error) => {
-                    cmdq_error(item, |out| {
+                    cmdq_error(item_handle, |out| {
                         out.write_all(b"starting choice ")?;
                         write_cstr(out, error.message().as_ptr())
                     });
@@ -948,7 +945,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     }
     let title = if args_has(args, b'T') != 0 {
         Some(format_single_from_target_cstring(
-            item,
+            item_handle,
             args_get(&*(args), b'T').map_or(std::ptr::null(), |value| value.as_ptr()),
         ))
     } else {
@@ -962,11 +959,11 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
         let name = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
         i += 1;
         if name.is_empty() {
-            menu_add_item(&mut menu, None, item, tc_owner.as_ref(), target);
+            menu_add_item(&mut menu, None, Some(item_handle), tc_owner.as_ref(), target);
             continue;
         }
         if count - i < 2 {
-            cmdq_error(item, |out| out.write_all(b"not enough arguments"));
+            cmdq_error(item_handle, |out| out.write_all(b"not enough arguments"));
             return CMD_RETURN_ERROR;
         }
         let key = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
@@ -977,14 +974,14 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
             key: key_string_parse_cstr(key).unwrap_or(KEYC_UNKNOWN),
             command: Some(command),
         };
-        menu_add_item(&mut menu, Some(&definition), item, tc_owner.as_ref(), target);
+        menu_add_item(&mut menu, Some(&definition), Some(item_handle), tc_owner.as_ref(), target);
     }
     let mut px = 0;
     let mut py = 0;
     if menu.count == 0
         || cmd_display_menu_get_menu_pos(
             &(*(tc)).observer.upgrade().expect("live client"),
-            item,
+            item_handle,
             args,
             &mut px,
             &mut py,
@@ -1001,7 +998,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
         let mut cause = None;
         lines = options_find_choice(options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry), value, &mut cause) as box_lines;
         if lines == -1 {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 out.write_all(b"menu-border-lines ")?;
                 write_cstr(out, cause.as_ref().unwrap().as_ptr())
             });
@@ -1032,12 +1029,13 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     );
     CMD_RETURN_NORMAL
 }
-unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1088,7 +1086,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     current_block = 17833034027772472439;
                 }
                 Err(error) => {
-                    cmdq_error(item, |out| {
+                    cmdq_error(item_handle, |out| {
                         out.write_all(b"height ")?;
                         write_cstr(out, error.message().as_ptr())
                     });
@@ -1115,7 +1113,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             current_block = 11042950489265723346;
                         }
                         Err(error) => {
-                            cmdq_error(item, |out| {
+                            cmdq_error(item_handle, |out| {
                                 out.write_all(b"width ")?;
                                 write_cstr(out, error.message().as_ptr())
                             });
@@ -1136,7 +1134,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                         }
                         if cmd_display_menu_get_popup_pos(
                             &(*(tc)).observer.upgrade().expect("live client"),
-                            item,
+                            item_handle,
                             args,
                             &raw mut px,
                             &raw mut py,
@@ -1149,7 +1147,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                             value = args_get(&*(args), 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
                             if !value.is_null() {
                                 formatted_cwd =
-                                    Some(format_single_from_target_cstring(item, value));
+                                    Some(format_single_from_target_cstring(item_handle, value));
                                 cwd = formatted_cwd
                                     .as_ref()
                                     .expect("formatted cwd was set")
@@ -1218,7 +1216,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 lines = options_find_choice(options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry), value, &raw mut cause)
                     as box_lines;
                 if let Some(cause) = cause.as_ref() {
-                    cmdq_error(item, |out| {
+                    cmdq_error(item_handle, |out| {
                         out.write_all(b"popup-border-lines ")?;
                         write_cstr(out, cause.as_ptr())
                     });
@@ -1234,7 +1232,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                 _ => {
                     if args_has(args, 'T' as i32 as u_char) != 0 {
                         formatted_title = Some(format_single_from_target_cstring(
-                            item,
+                            item_handle,
                             args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
                         ));
                         title = formatted_title
@@ -1269,7 +1267,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
                     } else if !(popup_display(
                         flags,
                         lines,
-                        item,
+                        Some(item_handle),
                         px,
                         py,
                         w,

@@ -60,7 +60,7 @@ pub static cmd_capture_pane_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_capture_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_capture_pane_exec),
     }
 };
 pub static cmd_clear_history_entry: cmd_entry = {
@@ -85,7 +85,7 @@ pub static cmd_clear_history_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_capture_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_capture_pane_exec),
     }
 };
 fn cmd_capture_pane_append(buf: &mut Vec<u8>, line: &[u8]) {
@@ -341,7 +341,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
 }
 unsafe fn cmd_capture_pane_history(
     mut args: *mut args,
-    mut item: *mut cmdq_item,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     wp: &window_pane,
 ) -> Option<Vec<u8>> {
     let mut gc = grid_default_cell;
@@ -367,7 +367,7 @@ unsafe fn cmd_capture_pane_history(
     let (gd, s) = if args_has(args, b'a') != 0 {
         let Some(saved) = wp.base.saved_grid.as_deref() else {
             if args_has(args, b'q') == 0 {
-                cmdq_error(item, |out| out.write_all(b"no alternate screen"));
+                cmdq_error(item_handle, |out| out.write_all(b"no alternate screen"));
                 return None;
             }
             return Some(buf);
@@ -397,7 +397,7 @@ unsafe fn cmd_capture_pane_history(
             'S' as i32 as u_char,
             INT_MIN as ::core::ffi::c_longlong,
             SHRT_MAX as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => {
                 n = value as ::core::ffi::c_int;
@@ -427,7 +427,7 @@ unsafe fn cmd_capture_pane_history(
             'E' as i32 as u_char,
             INT_MIN as ::core::ffi::c_longlong,
             SHRT_MAX as ::core::ffi::c_longlong,
-            item,
+            Some(item_handle),
         ) {
             Ok(value) => {
                 n = value as ::core::ffi::c_int;
@@ -570,9 +570,10 @@ unsafe fn cmd_capture_pane_history(
     }
     Some(buf)
 }
-unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).wp.upgrade().expect("capture target pane");
     let wp = pane_owner.get();
@@ -594,7 +595,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     {
         buf = cmd_capture_pane_pending(args, &mut *wp);
     } else {
-        match cmd_capture_pane_history(args, item, &*wp) {
+        match cmd_capture_pane_history(args, item_handle, &*wp) {
             Some(history) => buf = history,
             None => return CMD_RETURN_ERROR,
         }
@@ -618,7 +619,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             });
         } else {
             if file_can_print(c.as_ref()) == 0 {
-                cmdq_error(item, |out| out.write_all(b"can't write to client"));
+                cmdq_error(item_handle, |out| out.write_all(b"can't write to client"));
                 return CMD_RETURN_ERROR;
             }
             file_print_buffer(c_owner.as_ref(), &buf[..len]);
@@ -635,7 +636,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             Some(&mut cause),
         ) != 0 as ::core::ffi::c_int
         {
-            cmdq_error(item, |out| {
+            cmdq_error(item_handle, |out| {
                 write_cstr(out, cause.as_ref().unwrap().as_ptr())
             });
             return CMD_RETURN_ERROR;

@@ -44,7 +44,7 @@ pub static cmd_select_layout_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_select_layout_exec),
     }
 };
 pub static cmd_next_layout_entry: cmd_entry = {
@@ -69,7 +69,7 @@ pub static cmd_next_layout_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_select_layout_exec),
     }
 };
 pub static cmd_previous_layout_entry: cmd_entry = {
@@ -94,14 +94,15 @@ pub static cmd_previous_layout_entry: cmd_entry = {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_select_layout_exec),
     }
 };
-unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_target_client(item);
+    let c_owner = cmdq_get_target_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -169,7 +170,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             _ => {
                 if !layoutname.is_null() {
                     if layout_parse(&(*(w)).observer.upgrade().expect("live window"), layoutname, &raw mut cause) == -(1 as ::core::ffi::c_int) {
-                        cmdq_error(item, |out| {
+                        cmdq_error(item_handle, |out| {
                             write_cstr(
                                 out,
                                 cause

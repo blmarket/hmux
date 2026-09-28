@@ -38,7 +38,7 @@ pub static cmd_detach_client_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_READONLY | CMD_CLIENT_TFLAG,
-        exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_detach_client_exec),
     }
 };
 pub static cmd_suspend_client_entry: cmd_entry = {
@@ -63,15 +63,16 @@ pub static cmd_suspend_client_entry: cmd_entry = {
             flags: 0,
         },
         flags: CMD_CLIENT_TFLAG,
-        exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+        exec: Some(cmd_detach_client_exec),
     }
 };
-unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let c_owner = cmdq_get_client(item);
+    let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let tc_owner = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -86,7 +87,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             || args_has(args, 'a' as i32 as u_char) != 0
             || c != tc
         {
-            cmdq_error(item, |out| out.write_all(b"client is read-only"));
+            cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
             return CMD_RETURN_ERROR;
         }
     }

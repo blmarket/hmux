@@ -1131,7 +1131,7 @@ unsafe fn redraw_get_default_border_style(
     let mut dgc: *mut grid_cell = &mut dctx.default_gc;
     if !dctx.flags & REDRAW_DEFAULT_SET != 0 {
         ft = format_create_defaults(
-            ::core::ptr::null_mut::<cmdq_item>(),
+            None,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (*s).curw_ptr(),
