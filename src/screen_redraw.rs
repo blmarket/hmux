@@ -2156,6 +2156,7 @@ mod menu_observer_tests {
             assert_eq!(bctx.cells.len(), 2);
             assert!(matches!(bctx.cells[0].data, redraw_span_data::Empty));
             assert!(matches!(bctx.cells[1].data, redraw_span_data::Outside));
+            crate::src::window::window_remove_ref(owner, c"test owner".as_ptr());
         }
     }
 
@@ -2172,7 +2173,7 @@ mod menu_observer_tests {
             };
             assert!(scene.w.ptr_eq(&std::rc::Rc::downgrade(&window_owner)));
             assert!(!scene.w.ptr_eq(&std::rc::Rc::downgrade(&other_window)));
-            drop(window_owner);
+            crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
             assert!(observer.upgrade().is_none());
             assert!(redraw_set_draw_context(&scene).is_none());
             redraw_draw_scene(&client_owner, None, REDRAW_ALL, &scene);
@@ -2186,6 +2187,7 @@ mod menu_observer_tests {
             let mut gc = grid_cell::default();
             let mut lines = PANE_LINES_SINGLE;
             redraw_get_default_border_style(&mut dctx, &mut gc, &mut lines);
+            crate::src::window::window_remove_ref(other_window, c"test owner".as_ptr());
         }
     }
 

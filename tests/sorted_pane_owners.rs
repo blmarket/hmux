@@ -23,7 +23,7 @@ fn sorted_panes_survive_removal_of_ordering_and_source_handles() {
         (*window.get()).panes.storage = None;
         drop(first);
         drop(last);
-        drop(window);
+        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
         assert!(first_weak.upgrade().is_some());
         assert!(last_weak.upgrade().is_some());
         drop(sorted);

@@ -185,6 +185,7 @@ fn relative_pane_selection_wraps_and_retains_its_result() {
         assert!(window_pane_next_by_number(&*window.get(), None, 1).is_none());
         drop(selected);
         assert!(observer.upgrade().is_none());
+        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }
 }
 
@@ -204,5 +205,6 @@ fn window_membership_uses_live_allocation_identity() {
         drop(member);
         assert!(!window_has_pane(&*window.get(), &observer));
         (*window.get()).panes.storage = None;
+        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }
 }

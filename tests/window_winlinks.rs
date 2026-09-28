@@ -100,6 +100,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         assert!((*first_window).winlinks.storage.is_none());
         assert!((*second_window).winlinks.storage.is_none());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
+        hmux2::src::window::window_remove_ref(first_owner, c"test owner".as_ptr());
+        hmux2::src::window::window_remove_ref(second_owner, c"test owner".as_ptr());
     }
 }
 
@@ -193,5 +195,6 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
         assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
         winlink_remove(&mut links, link);
         assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
+        hmux2::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
     }
 }

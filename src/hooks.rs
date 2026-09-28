@@ -662,6 +662,7 @@ mod hooks_events_tests {
             assert!(!change.wl.is_empty());
             events_remove_sink(sink);
             crate::src::reactor::shutdown_runtime();
+            crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
         }
     }
 

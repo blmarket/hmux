@@ -1851,7 +1851,7 @@ mod target_observer_tests {
             assert_eq!(Rc::strong_count(&pane), 1);
             let snapshot = state.clone();
             drop(session);
-            drop(window);
+            crate::src::window::window_remove_ref(window, c"test owner".as_ptr());
             drop(pane);
             winlink_remove(&mut links, link);
             assert!(state.s_ptr().is_null());
@@ -1964,6 +1964,7 @@ mod target_observer_tests {
             (*wp).window = std::rc::Weak::new();
             drop(crate::src::session::sessions_remove(&raw mut sessions, s));
             *std::ptr::addr_of_mut!(sessions) = saved;
+            crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
         }
     }
 }

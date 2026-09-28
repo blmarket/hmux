@@ -3859,6 +3859,7 @@ mod prompt_cursor_tests {
                     expected,
                     "status {at}, prompt {has_prompt}, pane {x},{y}, covered {covered}"
                 );
+                crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
             }
         }
     }

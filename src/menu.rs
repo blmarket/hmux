@@ -960,7 +960,7 @@ mod tests {
             assert!(replacement_observer.is((*w).menu.as_ref().unwrap()));
             assert_eq!(closed.get(), 0);
             assert_eq!(Rc::strong_count(&window), 1);
-            drop(window);
+            crate::src::window::window_remove_ref(window, c"test owner".as_ptr());
             assert_eq!(closed.get(), 1);
             assert!(weak_window.upgrade().is_none());
             assert!(!replacement_observer.is_alive());
@@ -1007,6 +1007,8 @@ mod tests {
                     if !destroy_window {
                         (*rc::as_ptr(&window)).menu = Some(intermediate);
                         *callback_slot.borrow_mut() = Some(window);
+                    } else {
+                        crate::src::window::window_remove_ref(window, c"test callback".as_ptr());
                     }
                 }));
                 (*w).menu = Some(first);
@@ -1044,7 +1046,7 @@ mod tests {
                             .as_deref(),
                         Some(c"new")
                     );
-                    drop(slot.borrow_mut().take());
+                    crate::src::window::window_remove_ref(slot.borrow_mut().take().unwrap(), c"test slot".as_ptr());
                 }
                 assert_eq!(cancelled.get(), 1);
                 assert!(observer.upgrade().is_none());

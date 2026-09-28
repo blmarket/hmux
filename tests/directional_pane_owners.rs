@@ -39,6 +39,6 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
         assert!(observer.upgrade().is_none());
         drop(source);
         drop(upper);
-        drop(window);
+        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }
 }

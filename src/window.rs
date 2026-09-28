@@ -120,6 +120,7 @@ use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FLOATING, SPAWN_FULLSIZE};
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
+use crate::src::shared::window::WindowLifecycle;
 pub use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, windows, winlink,
     winlink_entry, winlink_stack, winlinks,
@@ -210,8 +211,7 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
         let mut map = owner
             .try_borrow_mut()
             .expect("window index already borrowed");
-        // Removal also runs during the final Rc drop, when upgrade must fail.
-        // Compare identity without dereferencing the Weak pointer.
+        // Compare allocation identity without creating another strong reference.
         if !map
             .get(&(*elm).id)
             .is_some_and(|weak| weak.as_ptr().cast::<window>() == elm)
@@ -763,10 +763,10 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
 }
 // Keep the field published through the close notification. Its callback can
 // inspect the winlink or retain the window. Detach only after that notification,
-// then drop the consumed Rc without firing the notification twice.
+// then drop the consumed Rc without notifying or cleaning up twice.
 unsafe fn winlink_release_window(wl: *mut winlink, from: &CStr) {
     let w = (*wl).window_ptr();
-    window_notify_before_release(w, from.as_ptr());
+    window_prepare_release(w, from.as_ptr());
     drop((*wl).window_owner.take().expect("winlink window reference"));
 }
 
@@ -1088,47 +1088,12 @@ pub unsafe fn window_create(
     ));
     owner
 }
-thread_local! {
-    static TEARING_DOWN_WINDOW: std::cell::Cell<Option<std::ptr::NonNull<window>>> =
-        const { std::cell::Cell::new(None) };
-}
-
-struct WindowTeardownScope(Option<std::ptr::NonNull<window>>);
-
-impl WindowTeardownScope {
-    fn enter(window: *mut window) -> Self {
-        let current_window = std::ptr::NonNull::new(window).expect("teardown has a window");
-        let previous = TEARING_DOWN_WINDOW.with(|current| current.replace(Some(current_window)));
-        Self(previous)
-    }
-}
-
-impl Drop for WindowTeardownScope {
-    fn drop(&mut self) {
-        TEARING_DOWN_WINDOW.with(|current| current.set(self.0));
-    }
-}
-
-pub(crate) fn window_teardown_ptr(
-    observer: &std::rc::Weak<std::cell::UnsafeCell<window>>,
-) -> *mut window {
-    TEARING_DOWN_WINDOW.with(|current| {
-        current.get().map_or(std::ptr::null_mut(), |parent| {
-            let parent = parent.as_ptr();
-            if parent.cast_const() == observer.as_ptr().cast::<window>() {
-                parent
-            } else {
-                std::ptr::null_mut()
-            }
-        })
-    })
-}
-
 unsafe fn window_destroy(mut w: *mut window) {
-    let _teardown = WindowTeardownScope::enter(w);
+    assert_eq!((*w).lifecycle, WindowLifecycle::Live);
+    (*w).lifecycle = WindowLifecycle::Destroying;
     log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));
-    // The final Rc owner is already being dropped. Restore the layout links,
-    // but do not resize dying panes: their events would retain this window.
+    // The releasing owner keeps weak parent links upgradeable throughout cleanup.
+    // Restore layout links without scheduling resize events for dying panes.
     window_unzoom_internal(w, 0, false);
     if !(*w).entry.owner.is_empty() {
         windows_remove(&raw mut windows, w);
@@ -1148,6 +1113,7 @@ unsafe fn window_destroy(mut w: *mut window) {
         event_del(&raw mut (*w).offset_timer);
     }
     drop((*w).options.take());
+    (*w).lifecycle = WindowLifecycle::Destroyed;
 }
 pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut n: ::core::ffi::c_int = 0;
@@ -1183,19 +1149,26 @@ pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) -
     ));
     owner
 }
-/// Consume a window reference after notifying while that reference is still held.
+/// Consume a window reference, performing final cleanup while it is still held.
+/// Brief upgraded borrows may drop normally only while another owner is guaranteed
+/// to remain. Any owner that may be the final live reference must use this path.
 pub unsafe fn window_remove_ref(
     owner: Rc<std::cell::UnsafeCell<window>>,
     from: *const ::core::ffi::c_char,
 ) {
-    window_notify_before_release(owner.get(), from);
+    window_prepare_release(owner.get(), from);
     drop(owner);
 }
 
-// The caller keeps its existing reference alive and releases it after notification.
-unsafe fn window_notify_before_release(w: *mut window, from: *const ::core::ffi::c_char) {
-    if (*w).observer.strong_count() == 1 {
+// Both ordinary owners and winlinks keep their reference alive through this call.
+// Winlinks keep the field published so close callbacks can still inspect it.
+unsafe fn window_prepare_release(w: *mut window, from: *const ::core::ffi::c_char) {
+    if (*w).lifecycle == WindowLifecycle::Live && (*w).observer.strong_count() == 1 {
         events_fire_window(c"window-closed".as_ptr(), w);
+        // Close callbacks can retain the window. Defer cleanup until their release.
+        if (*w).lifecycle == WindowLifecycle::Live && (*w).observer.strong_count() == 1 {
+            window_destroy(w);
+        }
     }
     log_debug(format_args!(
         "release window @{} ({})",
@@ -4447,7 +4420,13 @@ mod collection_index_tests {
 
 impl Drop for window {
     fn drop(&mut self) {
-        unsafe { window_destroy(self) }
+        // Stack lookup keys have no shared lifecycle. Rc windows must be explicitly
+        // cleaned up before the last owner is dropped; Drop does no model cleanup.
+        assert!(
+            self.observer.ptr_eq(&std::rc::Weak::new())
+                || self.lifecycle == WindowLifecycle::Destroyed,
+            "window must be released through window_remove_ref"
+        );
     }
 }
 
@@ -4835,15 +4814,22 @@ mod zoom_teardown_tests {
     unsafe fn check_parent_during_final_mode_cleanup(wme: *mut window_mode_entry) {
         let pane_owner = (*wme).wp.upgrade().expect("pane is retained during cleanup");
         let pane = &mut *pane_owner.get();
-        assert!(pane.window.upgrade().is_none());
+        let parent_owner = pane.window.upgrade().expect("cleanup retains the parent");
+        assert_eq!((*parent_owner.get()).lifecycle, WindowLifecycle::Destroying);
         let parent = pane.window_ptr();
-        assert!(!parent.is_null(), "destructor scope exposes the dying parent");
+        assert_eq!(parent, parent_owner.get());
+        // Releasing a temporary owner during cleanup must not restart cleanup.
+        window_remove_ref(parent_owner.clone(), c"reentrant mode cleanup".as_ptr());
+        if let Some(slot) = (*wme).boxed_data.as_ref() {
+            let slot = slot.downcast_ref::<Rc<RefCell<Option<Rc<std::cell::UnsafeCell<window>>>>>>().unwrap();
+            *slot.borrow_mut() = Some(parent_owner);
+        }
         assert!(std::ptr::eq((*parent).observer.as_ptr(), parent.cast()));
         pane.sx += 1;
     }
 
     #[test]
-    fn final_window_drop_exposes_parent_during_mode_cleanup() {
+    fn explicit_window_release_retains_parent_during_mode_cleanup() {
         static MODE: std::sync::LazyLock<window_mode> = std::sync::LazyLock::new(|| window_mode {
             free: Some(check_parent_during_final_mode_cleanup),
             ..window_mode::default()
@@ -4853,18 +4839,64 @@ mod zoom_teardown_tests {
             let pane = (*owner.get()).active_ptr();
             let retained = (*pane).observer.upgrade().expect("registered pane");
             let before = (*pane).sx;
+            let late_owner = Rc::new(RefCell::new(None::<Rc<std::cell::UnsafeCell<window>>>));
             let entry = refbox::RefBox::new(window_mode_entry {
                 wp: (*pane).observer.clone(),
                 swp: std::rc::Weak::new(),
                 mode: &MODE,
-                boxed_data: None,
+                boxed_data: Some(Box::new(late_owner.clone())),
                 data_owner: None,
                 prefix: 0,
                 kill: 0,
             });
             window_pane_mode_insert_front(&mut *pane, entry);
-            drop(owner);
+            window_remove_ref(owner, c"test mode cleanup".as_ptr());
             assert_eq!((*retained.get()).sx, before + 1);
+            assert_ne!((*retained.get()).flags & PANE_DESTROYED, 0);
+            let late_owner = late_owner.borrow_mut().take().unwrap();
+            assert_eq!((*late_owner.get()).lifecycle, WindowLifecycle::Destroyed);
+            let observer = Rc::downgrade(&late_owner);
+            let closed = Rc::new(Cell::new(0));
+            let calls = closed.clone();
+            let sink = events_add_sink(c"window-closed", events_callback(move |_, _| {
+                calls.set(calls.get() + 1);
+            }));
+            window_remove_ref(late_owner, c"retained during cleanup".as_ptr());
+            assert!(observer.upgrade().is_none());
+            assert_eq!(closed.get(), 0, "a cleaned window must not close again");
+            assert_eq!((*retained.get()).sx, before + 1, "mode cleanup runs once");
+            events_remove_sink(sink);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "window must be released through window_remove_ref")]
+    fn dropping_the_last_owner_without_explicit_release_is_rejected() {
+        drop(window::new());
+    }
+
+    #[test]
+    fn close_callback_retention_defers_pane_cleanup() {
+        unsafe {
+            let owner = zoomed_window();
+            let observer = Rc::downgrade(&owner);
+            let pane = (*owner.get()).active.upgrade().unwrap();
+            let retained = Rc::new(RefCell::new(None));
+            let slot = retained.clone();
+            let sink = events_add_sink(c"window-closed", events_callback(move |_, payload| {
+                *slot.borrow_mut() = Some(window_add_ref(
+                    event_payload_get_window(payload), c"close callback".as_ptr(),
+                ));
+            }));
+            window_remove_ref(owner, c"initial owner".as_ptr());
+            let owner = retained.borrow_mut().take().expect("callback retained window");
+            assert_eq!((*owner.get()).lifecycle, WindowLifecycle::Live);
+            assert_ne!((*owner.get()).flags & WINDOW_ZOOMED, 0);
+            assert_eq!((*pane.get()).flags & PANE_DESTROYED, 0);
+            events_remove_sink(sink);
+            window_remove_ref(owner, c"close callback owner".as_ptr());
+            assert!(observer.upgrade().is_none());
+            assert_ne!((*pane.get()).flags & PANE_DESTROYED, 0);
         }
     }
 
@@ -4927,52 +4959,46 @@ mod zoom_teardown_tests {
 
             assert!(observed.upgrade().is_none());
             assert_eq!((*w).flags & WINDOW_ZOOMED, 0);
-            drop(w_owner);
+            window_remove_ref(w_owner, c"test mode tree cleanup".as_ptr());
         }
     }
 
     #[test]
-    fn plain_and_notifying_rc_drops_destroy_zoomed_windows_without_resize_events() {
+    fn explicit_release_destroys_zoomed_windows_without_resize_events() {
         unsafe {
-            for typed in [false, true] {
-                let w_owner = zoomed_window();
+            let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
-                let observer = (*w).observer.clone();
-                let pane_observer = (*(*w).active_ptr()).observer.clone();
-                let resized = Rc::new(Cell::new(0));
-                let resize_count = resized.clone();
-                let resize_sink = events_add_sink(
-                    c"pane-resized",
-                    events_callback(move |_, _| {
-                        resize_count.set(resize_count.get() + 1);
-                    }),
-                );
-                let closed = Rc::new(Cell::new(0));
-                let close_count = closed.clone();
-                let live = observer.clone();
-                let close_sink = events_add_sink(
-                    c"window-closed",
-                    events_callback(move |_, payload| {
-                        assert!(live.upgrade().is_some());
-                        assert_ne!(
-                            (*event_payload_get_window(payload)).flags & WINDOW_ZOOMED,
-                            0
-                        );
-                        close_count.set(close_count.get() + 1);
-                    }),
-                );
-                if typed {
-                    drop(w_owner);
-                } else {
-                    window_remove_ref(w_owner, c"test final notifying owner".as_ptr());
-                }
-                assert_eq!(resized.get(), 0);
-                assert_eq!(closed.get(), usize::from(!typed));
-                assert!(observer.upgrade().is_none());
-                assert!(pane_observer.upgrade().is_none());
-                events_remove_sink(resize_sink);
-                events_remove_sink(close_sink);
-            }
+            let observer = (*w).observer.clone();
+            let pane_observer = (*(*w).active_ptr()).observer.clone();
+            let resized = Rc::new(Cell::new(0));
+            let resize_count = resized.clone();
+            let resize_sink = events_add_sink(
+                c"pane-resized",
+                events_callback(move |_, _| {
+                    resize_count.set(resize_count.get() + 1);
+                }),
+            );
+            let closed = Rc::new(Cell::new(0));
+            let close_count = closed.clone();
+            let live = observer.clone();
+            let close_sink = events_add_sink(
+                c"window-closed",
+                events_callback(move |_, payload| {
+                    assert!(live.upgrade().is_some());
+                    assert_ne!(
+                        (*event_payload_get_window(payload)).flags & WINDOW_ZOOMED,
+                        0
+                    );
+                    close_count.set(close_count.get() + 1);
+                }),
+            );
+            window_remove_ref(w_owner, c"test final notifying owner".as_ptr());
+            assert_eq!(resized.get(), 0);
+            assert_eq!(closed.get(), 1);
+            assert!(observer.upgrade().is_none());
+            assert!(pane_observer.upgrade().is_none());
+            events_remove_sink(resize_sink);
+            events_remove_sink(close_sink);
         }
     }
 

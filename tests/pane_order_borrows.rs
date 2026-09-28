@@ -49,5 +49,7 @@ fn order_swaps_preserve_weak_membership_within_and_between_windows() {
         left.z_index.storage = None;
         right.panes.storage = None;
         right.z_index.storage = None;
+        hmux2::src::window::window_remove_ref(left_owner, c"test owner".as_ptr());
+        hmux2::src::window::window_remove_ref(right_owner, c"test owner".as_ptr());
     }
 }

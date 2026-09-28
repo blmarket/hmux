@@ -441,7 +441,9 @@ mod retained_client_tests {
             assert!(client.pan_window_is(first_window));
         }
         assert_eq!(Rc::strong_count(&first), 1);
-        drop(first);
+        unsafe {
+            crate::src::window::window_remove_ref(first, c"test owner".as_ptr());
+        }
         assert!(first_observer.upgrade().is_none());
 
         let second = super::super::window::window::new();
@@ -451,6 +453,9 @@ mod retained_client_tests {
             assert!(client.pan_window_is(&*second.get()));
         }
         assert_eq!(Rc::strong_count(&second), 1);
+        unsafe {
+            crate::src::window::window_remove_ref(second, c"test owner".as_ptr());
+        }
     }
 
     #[test]

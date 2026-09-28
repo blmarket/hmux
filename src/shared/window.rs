@@ -64,12 +64,22 @@ pub struct winlink_entry {
     pub owner: refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
 }
 
+/// Explicit cleanup is separate from the lifetime of retained Rc allocations.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) enum WindowLifecycle {
+    #[default]
+    Live,
+    Destroying,
+    Destroyed,
+}
+
 #[derive(Default)]
 #[repr(C)]
 /// Rc-owned window record; retain/release preserves pre-close notifications.
 pub struct window {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window>>,
+    pub(crate) lifecycle: WindowLifecycle,
     pub id: u_int,
     /// Nonowning identity of the client last active in this window.
     pub latest: std::rc::Weak<std::cell::UnsafeCell<super::client::client>>,

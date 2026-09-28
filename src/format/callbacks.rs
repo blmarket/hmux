@@ -4170,7 +4170,7 @@ mod owned_callback_tests {
             super::super::format_defaults_window(ft, std::ptr::null_mut());
             assert!(format_cb_window_name(ft).is_none());
             super::super::format_defaults_window(ft, owner.get());
-            drop(owner);
+            crate::src::window::window_remove_ref(owner, c"test owner".as_ptr());
             assert!(observer.upgrade().is_none());
             assert!(format_cb_window_name(ft).is_none());
             assert!(format_cb_window_id(ft).is_none());

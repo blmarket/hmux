@@ -53,7 +53,7 @@ fn global_index_observes_windows_and_lookups_retain_them() {
         assert!(first_weak.upgrade().is_none());
         assert!(
             (*head).storage.is_none(),
-            "final drop must unlink expired Weak"
+            "final explicit release must unlink the window"
         );
         assert!(window_find_by_id(123).is_none());
     }

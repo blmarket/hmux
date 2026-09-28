@@ -1759,7 +1759,7 @@ Zoom and unzoom traversal retain the current pane while saving/restoring layout
 links. Unzoom also retains the selected zoomed pane across layout replacement and
 the insertion neighbor while restoring stacking order. Pure field updates use
 scoped mutable pane borrows. The raw window input to internal unzoom remains:
-window final-drop cleanup invokes it after upgrading that window is impossible.
+explicit window cleanup invokes it while retaining the releasing window owner.
 Legacy layout and ordering-mutation boundaries still use raw projections.
 
 `cargo test --workspace` and `git diff --check` passed. Raw model relationships and
@@ -2707,11 +2707,12 @@ gone. The raw-field count is 34.
 
 ## Implemented weak pane parent window
 
-`window_pane.window` now observes its Rc-owned parent weakly. The pane resolves
-that link for ordinary access. Final window destruction uses a scoped parent
-lookup so mode and pane cleanup can still reach the window after its strong
-count reaches zero. A regression exercises that final cleanup path. The
-raw-field count is 33.
+`window_pane.window` observes its Rc-owned parent weakly. Both ordinary access
+and pane cleanup resolve that link through a normal upgrade. Explicit window
+cleanup now keeps the releasing owner alive; the former `WindowTeardownScope`
+and thread-local parent pointer are removed. A regression exercises parent
+upgrades and reentrant release during mode cleanup. The raw-field count at the
+original parent migration was 33.
 
 ## Screen write target lifetime
 
@@ -2785,3 +2786,29 @@ when the environment operation ends. The previous `Drop` cloned that guard into
 deferred release even though the original environment row held no session
 reference. Detached rows remain weak observers, and their lifetime regressions
 verify expiry after the final independent owner and guard drop.
+
+
+## Explicit window cleanup before final Rc release
+
+`window_remove_ref` and winlink release share `window_prepare_release`. The
+releasing owner stays alive while `window-closed` callbacks run. Cleanup starts
+only if the strong count is still one afterward; a close callback that retains
+the window defers cleanup until its later release. Winlinks keep their owner
+field visible throughout notification and cleanup, then take and drop it.
+
+The lifecycle moves from Live to Destroying before cleanup and to Destroyed
+afterward. Pane modes, I/O and timers are cleaned up while their weak parent can
+still be upgraded. Reentrant releases cannot restart cleanup. An owner retained
+during cleanup can keep the allocation alive, but cannot undo logical destruction;
+its later release neither repeats cleanup nor emits another close notification.
+
+Window Drop only asserts that explicit cleanup completed (stack lookup keys with
+no self-observer are exempt). It performs no model cleanup. Brief upgraded borrows
+may still drop normally when another owner is guaranteed to remain throughout the
+operation. Owners that may be the final live reference must use explicit release.
+No owner wrapper or cleanup-through-Drop fallback is introduced.
+
+Regression coverage checks parent upgrades during pane cleanup, callback retention
+before and during cleanup, rejection of a missed final release, live winlink close
+notification, and suppression of resize events during destruction. Test fixtures
+now release their owned windows explicitly.

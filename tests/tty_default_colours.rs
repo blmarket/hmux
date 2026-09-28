@@ -51,5 +51,6 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
         }
         window.set_active(std::ptr::null_mut());
         pane.window = std::rc::Weak::new();
+        hmux2::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
     }
 }

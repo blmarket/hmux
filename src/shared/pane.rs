@@ -224,15 +224,11 @@ pub struct window_pane {
 }
 
 impl window_pane {
-    /// Resolve a live parent or the parent currently destroying this pane.
+    /// Resolve the parent, retained by the caller or by explicit window cleanup.
     /// The returned borrow is bounded by the current operation; it must not
     /// be stored past a callback that can release or detach the window.
     pub unsafe fn window_ptr(&self) -> *mut window {
-        if let Some(owner) = self.window.upgrade() {
-            owner.get()
-        } else {
-            crate::src::window::window_teardown_ptr(&self.window)
-        }
+        self.window.upgrade().map_or(std::ptr::null_mut(), |owner| owner.get())
     }
 
     /// Resolve the displayed screen while the pane and selected mode are live.

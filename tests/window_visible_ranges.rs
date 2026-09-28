@@ -40,6 +40,10 @@ impl Scene {
         }
     }
 
+    unsafe fn free(self) {
+        hmux2::src::window::window_remove_ref(self.window, c"test scene".as_ptr());
+    }
+
     fn add_pane(&mut self, x: i32, y: i32, width: u32, height: u32) -> *mut window_pane {
         // These panes have no display resources requiring model cleanup.
         let mut pane = window_pane::empty();
@@ -86,6 +90,7 @@ fn pane_results_survive_flush_shaped_queries_and_pane_destruction() {
         let line = calculate_ranges(base, 0, 6, 80);
         // A subsequent empty query must not clear either result.
         assert!(calculate_ranges(base, 0, 24, 80).is_empty());
+        scene.free();
         (character, line)
     };
     // Neither result depends on the lifetime of the pane or window.
@@ -118,6 +123,7 @@ fn clips_to_window_and_preserves_split_ranges_and_border_rules() {
         for (x, y, width) in [(80, 0, 1), (0, 24, 1), (0, -1, 1), (-3, 0, 3), (0, 0, 0)] {
             assert!(calculate_ranges(base, x, y, width).is_empty());
         }
+        scene.free();
     }
 }
 
@@ -137,6 +143,7 @@ fn reserved_scrollbar_is_included_in_occlusion() {
         let right = calculate_ranges(base, 10, 5, 20);
         assert_eq!(segments(&right), [(10, 4), (24, 6)]);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);
+        scene.free();
     }
 }
 
@@ -179,5 +186,6 @@ fn reuses_capacity_and_replaces_results_including_empty_queries() {
         assert_eq!(segments(&ranges), [(78, 2)]);
         assert_eq!(ranges.as_ptr(), storage);
         assert_eq!(ranges.capacity(), capacity);
+        scene.free();
     }
 }

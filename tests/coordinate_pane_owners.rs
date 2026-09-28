@@ -69,6 +69,6 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         assert_eq!(range.argument, 4);
         assert!(hmux2::src::window::window_pane_status_get_range(&first, 3, 2).is_none());
         drop(first);
-        drop(window);
+        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }
 }
