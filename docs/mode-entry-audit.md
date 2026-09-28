@@ -9,13 +9,13 @@ up the entry in the owned vector before passing a borrowed pointer to the
 existing callback interface. Immediate read-only queries in copy mode and pane
 status borrow the active entry through its `RefBox`.
 
-The remaining `*mut window_mode_entry` uses are primarily the `window_mode`
-callback table, its mode implementations, and synchronous calls into those
-callbacks. Timer closures in copy, clock, and display-panes modes still capture
-borrowed mode addresses. Review those captures for weak-handle migration while
-preserving reentrant mode callbacks; a held `RefBox` borrow can conflict with
-nested reads of the active entry. Then revisit other `active_ptr()` consumers
-that only inspect mode flags or data and can use a bounded borrow.
+The copy, clock, and display-panes timers now capture weak mode identities and
+borrow their entries only for callback dispatch. Expired modes skip dispatch;
+conflicting nested borrows remain explicit errors. The remaining
+`*mut window_mode_entry` uses are primarily the `window_mode` callback table,
+its mode implementations, and synchronous calls into those callbacks. Revisit
+other `active_ptr()` consumers that only inspect mode flags or data and can use
+a bounded borrow.
 
 Validation so far: workspace tests pass after the active weak accessor,
-owned-stack lookup, and read-only borrow changes.
+owned-stack lookup, read-only borrow changes, and weak timer captures.
