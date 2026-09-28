@@ -3490,12 +3490,12 @@ pub fn window_pane_exited(wp: &window_pane) -> ::core::ffi::c_int {
     (wp.fd == -1 || wp.flags & PANE_EXITED != 0) as ::core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
-    mut wp: *mut window_pane,
+    wp: &window_pane,
     term: &CStr,
     mut regex: ::core::ffi::c_int,
     mut ignore: ::core::ffi::c_int,
 ) -> u_int {
-    let mut s: *mut screen = &raw mut (*wp).base;
+    let grid = wp.base.grid();
     let mut regex_storage = RegexStorage::default();
     let mut i: u_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -3525,8 +3525,8 @@ pub unsafe fn window_pane_search(
         None
     };
     i = 0 as u_int;
-    while i < (*s).grid().sy {
-        let mut line = grid_view_string_cells_bytes((*s).grid(), i, (*s).grid().sx);
+    while i < grid.sy {
+        let mut line = grid_view_string_cells_bytes(grid, i, grid.sx);
         if let Some(nul) = line.iter().position(|&byte| byte == 0) {
             line.truncate(nul);
         }
@@ -3565,7 +3565,7 @@ pub unsafe fn window_pane_search(
         i = i.wrapping_add(1);
     }
     drop(regex_owner);
-    if i == (*s).grid().sy {
+    if i == grid.sy {
         return 0 as u_int;
     }
     return i.wrapping_add(1 as u_int);

@@ -810,7 +810,7 @@ pub(super) fn format_sub(
 
 pub(super) unsafe fn format_search(
     fm: &format_modifier,
-    wp: *mut window_pane,
+    wp: &window_pane,
     s: &CStr,
 ) -> CString {
     let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
@@ -2876,7 +2876,7 @@ pub(super) unsafe fn format_replace(
                         write!(out, "' pane %{}", ((*wp).id) as u32)
                     },
                 );
-                value = format_search(&*search, wp, &new);
+                value = format_search(&*search, &*format_pane_owner.as_ref().expect("search pane owner").get(), &new);
             }
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_REPEAT as uint64_t != 0 {

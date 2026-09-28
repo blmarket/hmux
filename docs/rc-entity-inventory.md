@@ -1600,3 +1600,13 @@ formatting, command, tree-mode and teardown callers supply window borrows.
 `cargo test --workspace` and `git diff --check` passed. Floating-state layout
 access, caller-local raw window projections and other traversal APIs remain
 pending.
+
+## Implemented borrowed pane search
+
+Pane search and its format-expression adapter take shared pane borrows. Search
+reads the base grid directly through that borrow instead of creating a raw
+mutable screen pointer. Format expansion supplies the borrow from its retained
+pane owner; regex/glob behavior and one-based result numbering are unchanged.
+
+`cargo test --workspace` and `git diff --check` passed. Other format-expression
+raw locals, pane model fields and remaining pane helper APIs remain pending.
