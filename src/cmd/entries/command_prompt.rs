@@ -41,7 +41,7 @@ pub struct cmd_command_prompt_cdata {
     pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
-    pub wp: Option<Weak<UnsafeCell<window_pane>>>,
+    pub wp: Weak<UnsafeCell<window_pane>>,
     pub prompts: Vec<cmd_command_prompt_prompt>,
     pub current: u_int,
     pub argv: Vec<CString>,
@@ -154,7 +154,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         state: None,
         flags: 0,
         prompt_type: PROMPT_TYPE_COMMAND,
-        wp: None,
+        wp: Weak::new(),
         prompts: Vec::new(),
         current: 0,
         argv: Vec::new(),
@@ -163,7 +163,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         cdata.item = (*item).observer.clone();
     }
     if pane != 0 {
-        cdata.wp = Some(window_pane_weak(wp));
+        cdata.wp = window_pane_weak(wp);
     }
     cdata.state = Some(args_make_commands_prepare(
         self_0,
@@ -290,8 +290,8 @@ unsafe fn cmd_command_prompt_callback(
                 if (cdata.current as usize) != cdata.prompts.len() {
                     let (prompt_ptr, input_ptr) =
                         (&cdata.prompts)[cdata.current as usize].pointers();
-                    if let Some(pane) = &cdata.wp {
-                        let Some(pane) = window_pane_upgrade(pane) else {
+                    if !Weak::ptr_eq(&cdata.wp, &Weak::new()) {
+                        let Some(pane) = window_pane_upgrade(&cdata.wp) else {
                             return PROMPT_CLOSE;
                         };
                         window_pane_update_prompt(&pane, prompt_ptr, input_ptr);
@@ -406,7 +406,7 @@ mod tests {
                     state: Some(state),
                     flags: 0,
                     prompt_type: PROMPT_TYPE_COMMAND,
-                    wp: None,
+                    wp: Weak::new(),
                     prompts: cmd_command_prompt_rows(b"owner:", None, false, true),
                     current: 0,
                     argv: Vec::new(),
@@ -450,7 +450,7 @@ mod tests {
             state: None,
             flags: 0,
             prompt_type: PROMPT_TYPE_COMMAND,
-            wp: None,
+            wp: Weak::new(),
             prompts: Vec::new(),
             current: 0,
             argv: Vec::new(),

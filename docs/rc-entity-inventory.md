@@ -2747,3 +2747,7 @@ check whether an explicitly selected pane expired.
 `key_event.client` now uses an empty `Weak` for no explicit dispatch target.
 `Weak::ptr_eq` distinguishes that sentinel from an expired explicit target,
 preserving the rule that expiry never redirects input to the queue client.
+
+`cmd_command_prompt_cdata.wp` also uses an empty `Weak` for a status prompt.
+Pane prompts retain a distinct weak allocation identity after expiry, so an
+expired pane closes the prompt instead of switching to the status line.
