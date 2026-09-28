@@ -34,7 +34,6 @@ use crate::src::tmux::find_home_cstr;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
-use crate::src::shared::rc;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -287,18 +286,17 @@ pub unsafe fn file_print(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let Some(client_owner) = client_owner else { return; };
-    let c = client_owner.get();
     let mut find: client_file = client_file::empty();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
         fd: 0,
         flags: 0,
     };
-    if file_can_print(Some(&*c)) == 0 {
+    if file_can_print(Some(&*client_owner.get())) == 0 {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    let file_owner = client_files_find(&(*c).files, &find);
+    let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
     if file_owner.is_none() {
         let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
@@ -308,7 +306,7 @@ pub unsafe fn file_print(
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
         proc_send(
-            (*c).peer,
+            (&*client_owner.get()).peer,
             MSG_WRITE_OPEN,
             -(1 as ::core::ffi::c_int),
             &raw mut msg as *const ::core::ffi::c_void,
@@ -326,18 +324,17 @@ pub unsafe fn file_print_buffer(
     mut size: size_t,
 ) {
     let Some(client_owner) = client_owner else { return; };
-    let c = client_owner.get();
     let mut find: client_file = client_file::empty();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
         fd: 0,
         flags: 0,
     };
-    if file_can_print(Some(&*c)) == 0 {
+    if file_can_print(Some(&*client_owner.get())) == 0 {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    let file_owner = client_files_find(&(*c).files, &find);
+    let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
     if file_owner.is_none() {
         let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
@@ -347,7 +344,7 @@ pub unsafe fn file_print_buffer(
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
         proc_send(
-            (*c).peer,
+            (&*client_owner.get()).peer,
             MSG_WRITE_OPEN,
             -(1 as ::core::ffi::c_int),
             &raw mut msg as *const ::core::ffi::c_void,
@@ -364,18 +361,17 @@ pub unsafe fn file_error(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let Some(client_owner) = client_owner else { return; };
-    let c = client_owner.get();
     let mut find: client_file = client_file::empty();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
         fd: 0,
         flags: 0,
     };
-    if file_can_print(Some(&*c)) == 0 {
+    if file_can_print(Some(&*client_owner.get())) == 0 {
         return;
     }
     find.stream = 2 as ::core::ffi::c_int;
-    let file_owner = client_files_find(&(*c).files, &find);
+    let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
     if file_owner.is_none() {
         let transfer_owner = file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
@@ -385,7 +381,7 @@ pub unsafe fn file_error(
         msg.fd = STDERR_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
         proc_send(
-            (*c).peer,
+            (&*client_owner.get()).peer,
             MSG_WRITE_OPEN,
             -(1 as ::core::ffi::c_int),
             &raw mut msg as *const ::core::ffi::c_void,
@@ -1312,8 +1308,7 @@ pub unsafe fn client_files_insert(
     head: &mut client_files,
     file: Rc<UnsafeCell<client_file>>,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
-    let elm = rc::as_ptr(&file);
-    let key = client_files_key(&*elm);
+    let key = client_files_key(&*file.get());
     let owner = head.storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
@@ -1322,8 +1317,8 @@ pub unsafe fn client_files_insert(
     if let Some(existing) = map.get(&key).cloned() {
         return Some(existing);
     }
+    (&mut *file.get()).entry.owner = Some(observer);
     map.insert(key, file);
-    (*elm).entry.owner = Some(observer);
     None
 }
 
@@ -1394,7 +1389,7 @@ mod file_index_ownership_tests {
 
             assert!(observed.upgrade().is_some());
             assert!(client_files_minmax(&files).is_none());
-            assert!((*rc::as_ptr(&guard)).entry.owner.is_none());
+            assert!((&*guard.get()).entry.owner.is_none());
             drop(guard);
             assert!(observed.upgrade().is_none());
             shutdown_runtime();
@@ -1425,7 +1420,7 @@ mod file_index_ownership_tests {
             let replacement = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
             drop(old);
             let found = client_files_minmax(&files).unwrap();
-            assert_eq!(rc::as_ptr(&found), rc::as_ptr(&replacement));
+            assert!(Rc::ptr_eq(&found, &replacement));
             drop(found);
             client_files_remove(&mut *replacement.get());
             drop(replacement);
@@ -1443,17 +1438,16 @@ mod completion_cancellation_tests {
     fn command_wait_distinguishes_unspecified_and_expired_clients() {
         unsafe {
             let file = client_file::new();
-            let cf = rc::as_ptr(&file);
             let mut item = cmdq_item::empty();
             file_set_cmdq_wait(&file, &mut item, None);
-            assert!((*cf).wait_client.is_none());
+            assert!((&*file.get()).wait_client.is_none());
             file_cancel_cmdq_wait(&file);
 
             let client = client::new();
             item.client = Rc::downgrade(&client);
             drop(client);
             file_set_cmdq_wait(&file, &mut item, None);
-            assert!((*cf).wait_client.as_ref().unwrap().upgrade().is_none());
+            assert!((&*file.get()).wait_client.as_ref().unwrap().upgrade().is_none());
             file_cancel_cmdq_wait(&file);
         }
     }

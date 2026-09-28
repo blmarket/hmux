@@ -2036,3 +2036,17 @@ observers that upgrade for dispatch.
 `cargo test --workspace` and `git diff --check` passed. Raw client locals in
 printing, file index insertion projections, and broader model relationships still
 require migration; UnsafeCell borrow acquisition remains an unsafe boundary.
+
+## Implemented client printing and file index borrows
+
+Printing and error output use short client borrows for eligibility, index lookup
+and peer access. No client borrow spans file creation or formatting callbacks.
+File index insertion borrows the incoming owner to obtain its key and install its
+weak index observer before moving the Rc into the map. Ownership tests use Rc
+identity comparison and fresh borrows instead of raw file aliases across calls.
+The shared raw Rc projection helper is no longer used by file.rs.
+
+`cargo test --workspace` and `git diff --check` passed, including index replacement,
+completion lifetime and wait cancellation coverage. UnsafeCell remains at borrow
+acquisition; this does not establish complete alias safety or finish the broader
+refcounted model migration.
