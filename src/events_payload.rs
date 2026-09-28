@@ -19,7 +19,7 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::event::*;
 use crate::src::shared::events::{
     event_payload, event_payload_item, event_payload_tree, event_payload_tree_storage,
-    event_payload_type, EventPayloadPointer, EventPayloadValue,
+    event_payload_type, EventPayloadIdentity, EventPayloadValue,
 };
 use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
@@ -307,12 +307,12 @@ pub unsafe fn event_payload_set_pane(
     );
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Pane(pane));
 }
-pub unsafe fn event_payload_set_pointer(
+pub unsafe fn event_payload_set_identity(
     ep: &mut event_payload,
     mut name: *const ::core::ffi::c_char,
-    pointer: EventPayloadPointer,
+    identity: EventPayloadIdentity,
 ) {
-    event_payload_set_item(&mut *ep, name, EventPayloadValue::Pointer(pointer));
+    event_payload_set_item(&mut *ep, name, EventPayloadValue::Identity(identity));
 }
 pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
     match event_payload_find(ep, c"paste_buffer").map(|item| &item.value) {
@@ -369,11 +369,11 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
         }
         8 => {
             evbuffer_add_formatted(evb, |out| {
-                let pointer = epi.value.pointer().ptr();
-                if pointer.is_null() {
+                let address = epi.value.identity().address();
+                if address == 0 {
                     out.write_all(b"(nil)")
                 } else {
-                    write!(out, "{:p}", pointer)
+                    write!(out, "{:p}", address as *const ())
                 }
             });
         }
@@ -493,24 +493,48 @@ pub unsafe fn event_payload_get_pane(ep: &event_payload) -> *mut window_pane {
         _ => std::ptr::null_mut(),
     }
 }
-pub unsafe fn event_payload_get_pointer(
+pub unsafe fn event_payload_get_identity(
     ep: &event_payload,
     name: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_void {
+) -> Option<&EventPayloadIdentity> {
     if name.is_null() {
-        return std::ptr::null_mut();
+        return None;
     }
     match event_payload_find(ep, CStr::from_ptr(name)).map(|item| &item.value) {
-        Some(EventPayloadValue::Pointer(value)) => value.ptr(),
-        _ => std::ptr::null_mut(),
+        Some(EventPayloadValue::Identity(value)) => Some(value),
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use crate::src::reactor::evbuffer_add;
     use std::ffi::{CStr, CString};
+
+    #[test]
+    fn typed_event_identities_keep_pointer_format_without_owning_queue_items() {
+        unsafe {
+            let item = cmdq_get_callback_owned(c"event identity".as_ptr(), None);
+            let observer = (*item).observer.clone();
+            let mut payload = event_payload_create();
+            event_payload_set_identity(&mut payload, c"_cmdq_item".as_ptr(),
+                EventPayloadIdentity::QueueItem(observer.clone()));
+            let identity = event_payload_get_identity(&payload, c"_cmdq_item".as_ptr()).unwrap();
+            assert!(matches!(identity, EventPayloadIdentity::QueueItem(weak) if weak.ptr_eq(&observer)));
+            assert_eq!(observer.strong_count(), 1);
+            let printed = event_payload_item_print_owned(event_payload_find(&payload, c"_cmdq_item").unwrap());
+            assert_eq!(&printed[..printed.len() - 1], format!("{item:p}").as_bytes());
+            cmdq_free_detached(item);
+            assert!(observer.upgrade().is_none());
+
+            event_payload_set_identity(&mut payload, c"_hooks_monitor".as_ptr(),
+                EventPayloadIdentity::HookMonitor(0x1234));
+            assert!(matches!(event_payload_get_identity(&payload, c"_hooks_monitor".as_ptr()),
+                Some(EventPayloadIdentity::HookMonitor(0x1234))));
+        }
+    }
 
     #[test]
     fn payload_handle_and_target_retain_pane_after_source_release() {

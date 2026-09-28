@@ -2597,3 +2597,11 @@ through parsing and insertion; an expired anchor falls back to the source
 command. If the source expired, callback state drops and decrements nesting
 depth without dereferencing it. Tests use owned detached commands and cover
 the expired wait. The raw-field count is 39.
+
+## Implemented typed event identities
+
+The erased `EventPayloadPointer::Raw` field is gone. Queue events store a weak
+queue item and hold an upgrade during hook insertion. Monitor events store an
+address identity used only for equality. Typed accessors remove the c_void
+casts while preserving the old pointer-format output. The raw-field count is
+38.

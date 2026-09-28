@@ -21,8 +21,8 @@ use crate::src::cmd::queue::{
 use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
 use crate::src::events_payload::{
     event_payload_add_formats, event_payload_create, event_payload_get_client,
-    event_payload_get_pointer, event_payload_get_target, event_payload_set_client,
-    event_payload_set_int, event_payload_set_pane, event_payload_set_pointer,
+    event_payload_get_identity, event_payload_get_target, event_payload_set_client,
+    event_payload_set_int, event_payload_set_pane, event_payload_set_identity,
     event_payload_set_session, event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
@@ -305,19 +305,14 @@ unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     let name = name.as_ptr();
     let ep = &*payload;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    if !event_payload_get_pointer(
-        ep,
-        b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
-    )
-    .is_null()
-    {
+    if matches!(event_payload_get_identity(ep, c"_hooks_monitor".as_ptr()),
+        Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(_))) {
         return;
     }
-    item = event_payload_get_pointer(
-        ep,
-        b"_cmdq_item\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as *mut cmdq_item;
-    if !item.is_null() {
+    if let Some(crate::src::shared::events::EventPayloadIdentity::QueueItem(observer)) =
+        event_payload_get_identity(ep, c"_cmdq_item".as_ptr()) {
+        let Some(item_owner) = observer.upgrade() else { return };
+        item = item_owner.get();
         hooks_insert_event(
             item,
             name,
@@ -413,11 +408,9 @@ pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core
 unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *mut hooks_monitor) {
     let name = name.as_ptr();
     let ep = &*payload;
-    if event_payload_get_pointer(
-        ep,
-        b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == hm as *mut ::core::ffi::c_void
-    {
+    if matches!(event_payload_get_identity(ep, c"_hooks_monitor".as_ptr()),
+        Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(address))
+            if *address == hm.addr()) {
         hooks_insert_event(cmdq_running(), name, ep, (*hm).oo, 1 as ::core::ffi::c_int);
     }
 }
@@ -439,10 +432,10 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         idx: 0,
     };
     let mut ep = event_payload_create();
-    event_payload_set_pointer(
+    event_payload_set_identity(
         &mut *ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
-        crate::src::shared::events::EventPayloadPointer::Raw(hm.cast()),
+        crate::src::shared::events::EventPayloadIdentity::HookMonitor(hm.addr()),
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if !wl.is_null() && !wp.is_null() && (*wp).window == (*wl).window_ptr() {

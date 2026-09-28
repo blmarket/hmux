@@ -12,7 +12,7 @@ use crate::src::cmd::{
 use crate::src::control::{control_write, control_write_guard};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
-    event_payload_create, event_payload_set_pointer, event_payload_set_string,
+    event_payload_create, event_payload_set_identity, event_payload_set_string,
     event_payload_set_target,
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
@@ -401,10 +401,10 @@ pub unsafe fn cmdq_insert_hook(
     if !current.is_null() {
         event_payload_set_target(&mut *ep, &*current);
     }
-    event_payload_set_pointer(
+    event_payload_set_identity(
         &mut *ep,
         b"_cmdq_item\0" as *const u8 as *const ::core::ffi::c_char,
-        crate::src::shared::events::EventPayloadPointer::Raw(item as *mut ::core::ffi::c_void),
+        crate::src::shared::events::EventPayloadIdentity::QueueItem((*item).observer.clone()),
     );
     let arguments = args_print_cstring(&*args_0);
     event_payload_set_string(

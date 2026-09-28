@@ -2,7 +2,7 @@
 
 use super::abi::{time_t, u_int};
 use super::client::client;
-use super::command::cmd_find_state;
+use super::command::{cmd_find_state, cmdq_item};
 use super::event::evbuffer;
 use super::pane::window_pane;
 use super::session::session;
@@ -79,7 +79,7 @@ pub enum EventPayloadValue {
     Session(std::rc::Rc<std::cell::UnsafeCell<session>>),
     Window(std::rc::Rc<std::cell::UnsafeCell<window>>),
     Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
-    Pointer(EventPayloadPointer),
+    Identity(EventPayloadIdentity),
 }
 impl EventPayloadValue {
     pub fn kind(&self) -> event_payload_type {
@@ -92,7 +92,7 @@ impl EventPayloadValue {
             Self::Session(_) => 5,
             Self::Window(_) => 6,
             Self::Pane(_) => 7,
-            Self::Pointer(_) => 8,
+            Self::Identity(_) => 8,
         }
     }
     pub fn string(&self) -> *const ::core::ffi::c_char {
@@ -143,22 +143,24 @@ impl EventPayloadValue {
         };
         value
     }
-    pub fn pointer(&self) -> &EventPayloadPointer {
-        let Self::Pointer(value) = self else {
+    pub fn identity(&self) -> &EventPayloadIdentity {
+        let Self::Identity(value) = self else {
             panic!("incorrect event payload type")
         };
         value
     }
 }
 
-pub enum EventPayloadPointer {
-    Raw(*mut ::core::ffi::c_void),
+pub enum EventPayloadIdentity {
+    QueueItem(std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>),
+    HookMonitor(usize),
 }
 
-impl EventPayloadPointer {
-    pub fn ptr(&self) -> *mut ::core::ffi::c_void {
+impl EventPayloadIdentity {
+    pub fn address(&self) -> usize {
         match self {
-            Self::Raw(ptr) => *ptr,
+            Self::QueueItem(item) => item.as_ptr().addr(),
+            Self::HookMonitor(address) => *address,
         }
     }
 }
