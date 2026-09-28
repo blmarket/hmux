@@ -100,7 +100,7 @@ use crate::src::spawn::{
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
-use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode, window_pane_upgrade, window_pane_weak};
+use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode, window_pane_upgrade};
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {
@@ -2942,7 +2942,7 @@ unsafe fn window_customize_init(
     };
     let owner = Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(window_customize_modedata {
         observer: observer.clone(),
-        wp: window_pane_weak(wp),
+        wp: std::rc::Rc::downgrade(&mode_pane_owner),
         dead: 0,
         data: None,
         editor: ::core::ptr::null_mut(),
@@ -2962,7 +2962,7 @@ unsafe fn window_customize_init(
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
     (*data).data = Some(mode_tree_start(
-        wp,
+        &mode_pane_owner,
         args,
         Some(Box::new(move |_, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
@@ -2990,7 +2990,7 @@ unsafe fn window_customize_init(
         &window_customize_menu_items,
         &raw mut s,
     ));
-    mode_tree_zoom((*data).data_ptr(), args);
+    mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_build((*data).data_ptr());
     mode_tree_draw((*data).data_ptr());
     return s;

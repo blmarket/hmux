@@ -54,7 +54,7 @@ use crate::src::spawn::{
     spawn_cancel_editor, spawn_editor, spawn_editor_write, spawn_get_editor_pid,
 };
 use crate::src::text::utf8::utf8_strvis;
-use crate::src::window::{window_pane_upgrade, window_pane_weak};
+use crate::src::window::window_pane_upgrade;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
@@ -477,7 +477,7 @@ unsafe fn window_buffer_init(
         CStr::from_ptr(args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
     };
     data = Box::into_raw(Box::new(window_buffer_modedata {
-        wp: window_pane_weak(wp),
+        wp: std::rc::Rc::downgrade(&mode_pane_owner),
         fs: Default::default(),
         data: None,
         editor: ::core::ptr::null_mut(),
@@ -490,7 +490,7 @@ unsafe fn window_buffer_init(
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
     cmd_find_copy_state(&raw mut (*data).fs, fs);
     (*data).data = Some(mode_tree_start(
-        wp,
+        &mode_pane_owner,
         args,
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
@@ -523,7 +523,7 @@ unsafe fn window_buffer_init(
         &window_buffer_menu_items,
         &raw mut s,
     ));
-    mode_tree_zoom((*data).data_ptr(), args);
+    mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_build((*data).data_ptr());
     mode_tree_draw((*data).data_ptr());
     return s;

@@ -1177,3 +1177,15 @@ pane borrow instead of raw model arguments.
 `cargo test --workspace` and `git diff --check` passed, including callback-driven
 tree destruction and row clearing tests. Prompt callback client adapters, other
 mode-tree APIs and internal raw projections remain pending.
+
+## Implemented retained models for mode-tree initialization
+
+`mode_tree_start` borrows the parent pane's Rc and stores its Weak observer
+directly. Buffer, client, customize and tree mode initialization pass their
+already-retained parent and also construct their own parent observers by
+`Rc::downgrade`, removing raw-pointer observer recovery from these constructors.
+Initial zoom borrows a retained mode tree; callers clone its handle across the
+operation. Parent links remain non-owning to avoid pane/mode ownership cycles.
+
+`cargo test --workspace` and `git diff --check` passed. Mode-tree building,
+drawing, callback data and internal raw model projections remain pending.

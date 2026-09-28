@@ -71,7 +71,7 @@ use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_st
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
-use crate::src::window::{window_pane_upgrade, window_pane_weak, window_zoom};
+use crate::src::window::{window_pane_upgrade, window_zoom};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -487,7 +487,7 @@ pub unsafe fn mode_tree_each_tagged(
     }
 }
 pub unsafe fn mode_tree_start(
-    wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     args: *mut args,
     buildcb: mode_tree_build_cb,
     drawcb: mode_tree_draw_cb,
@@ -501,9 +501,10 @@ pub unsafe fn mode_tree_start(
     menu: &'static [menu_item<'static>],
     s: *mut *mut screen,
 ) -> std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>> {
+    let wp = pane_owner.get();
     let owner = mode_tree_alloc_data();
     let mtd = crate::src::shared::rc::as_ptr(&owner);
-    (*mtd).wp = window_pane_weak(wp);
+    (*mtd).wp = std::rc::Rc::downgrade(pane_owner);
     (*mtd).menu = menu;
     if drawcb.is_none() {
         (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
@@ -535,7 +536,8 @@ pub unsafe fn mode_tree_start(
     (**s).mode &= !MODE_CURSOR;
     return owner;
 }
-pub unsafe fn mode_tree_zoom(mut mtd: *mut mode_tree_data, mut args: *mut args) {
+pub unsafe fn mode_tree_zoom(tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>, mut args: *mut args) {
+    let mtd = tree_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };

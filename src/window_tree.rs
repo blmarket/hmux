@@ -70,7 +70,7 @@ use crate::src::sort::{
     sort_would_window_tree_swap,
 };
 use crate::src::style::style_apply;
-use crate::src::window::{window_pane_upgrade, window_pane_weak};
+use crate::src::window::window_pane_upgrade;
 use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_first,
     window_pane_index, window_pane_next, window_pane_reset_mode, window_winlinks_append,
@@ -1741,7 +1741,7 @@ unsafe fn window_tree_init(
     data = crate::src::shared::rc::as_ptr(&owner);
     (*wme).data_owner = Some(owner);
     (*wme).data = data as *mut ::core::ffi::c_void;
-    (*data).wp = window_pane_weak(wp);
+    (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     if args_has(args, 's' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_SESSION;
     } else if args_has(args, 'w' as i32 as u_char) != 0 {
@@ -1757,7 +1757,7 @@ unsafe fn window_tree_init(
     }
     let data_handle = std::ptr::NonNull::new(data).expect("live tree mode data");
     (*data).data = Some(mode_tree_start(
-        wp,
+        &mode_pane_owner,
         args,
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
@@ -1797,7 +1797,7 @@ unsafe fn window_tree_init(
         &window_tree_menu_items,
         &raw mut s,
     ));
-    mode_tree_zoom((*data).data_ptr(), args);
+    mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"preview"));
     mode_tree_build((*data).data_ptr());
     mode_tree_draw((*data).data_ptr());

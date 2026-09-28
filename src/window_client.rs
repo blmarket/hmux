@@ -51,7 +51,7 @@ use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink
 use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::style::style_apply;
-use crate::src::window::{window_pane_upgrade, window_pane_weak};
+use crate::src::window::window_pane_upgrade;
 use crate::src::window::{window_pane_reset_mode, window_pane_stack_first};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -767,13 +767,13 @@ unsafe fn window_client_init(
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live client mode data");
-    (*data).wp = window_pane_weak(wp);
+    (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     (*data).hide_preview_this_pane =
         (!args.is_null() && args_has(args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).preview_is_info =
         (!args.is_null() && args_has(args, 'i' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).data = Some(mode_tree_start(
-        wp,
+        &mode_pane_owner,
         args,
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
@@ -803,7 +803,7 @@ unsafe fn window_client_init(
         &window_client_menu_items,
         &raw mut s,
     ));
-    mode_tree_zoom((*data).data_ptr(), args);
+    mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     if (*data).preview_is_info != 0 {
         mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"info"));
     } else {
