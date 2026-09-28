@@ -2870,7 +2870,8 @@ pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
             retval = ((*wp).status & 0x7f as ::core::ffi::c_int) + 128 as ::core::ffi::c_int;
         }
     }
-    c = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !c.is_null() && (*c).session.is_null() {
         (*c).retval = retval;
     }
@@ -4085,7 +4086,8 @@ pub unsafe fn window_pane_start_input(
     wp: *mut window_pane,
     item: *mut cmdq_item,
 ) -> Result<::core::ffi::c_int, std::ffi::CString> {
-    let c = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if (*wp).flags & PANE_EMPTY == 0 {
         return Err(c"pane is not empty".to_owned());
     }
@@ -4870,7 +4872,7 @@ mod pane_input_owner_tests {
                 // error callback after the initializer has installed its box.
                 (*client).flags = CLIENT_CONTROL as u64;
                 let mut item = cmdq_item::empty();
-                item.client = client;
+                item.client = Rc::downgrade(&owner);
                 item.flags = CMDQ_WAITING;
                 let mut pane = window_pane::empty();
                 pane.flags = PANE_EMPTY;

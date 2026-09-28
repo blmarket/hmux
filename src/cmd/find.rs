@@ -1115,6 +1115,8 @@ pub unsafe fn cmd_find_target(
     mut type_0: cmd_find_type,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current_block: u64;
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -1240,7 +1242,7 @@ pub unsafe fn cmd_find_target(
         (*fs).current = cmdq_get_current(item);
         log_debug(format_args!("{}: current is from queue", "cmd_find_target"));
         current_block = 1836292691772056875;
-    } else if cmd_find_from_client(&raw mut current, cmdq_get_client(item), flags)
+    } else if cmd_find_from_client(&raw mut current, queue_client_ptr, flags)
         == 0 as ::core::ffi::c_int
     {
         (*fs).current = &raw mut current;
@@ -1273,7 +1275,7 @@ pub unsafe fn cmd_find_target(
                     b"{current}\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
             {
-                c = cmdq_get_client(item);
+                c = queue_client_ptr;
                 if c.is_null() || (*c).session.is_null() {
                     cmdq_error(item, |out| out.write_all(b"no current client"));
                     current_block = 5193823237153215208;
@@ -1650,8 +1652,10 @@ unsafe fn cmd_find_current_client(
         wp: Default::default(),
         idx: 0,
     };
+    let c_owner;
     if !item.is_null() {
-        c = cmdq_get_client(item);
+        c_owner = cmdq_get_client(item);
+        c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     if !c.is_null() && !(*c).session.is_null() {
         return c;

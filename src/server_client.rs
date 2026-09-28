@@ -2728,10 +2728,12 @@ unsafe fn server_client_key_callback(
     let mut key0: key_code = 0;
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
+    let c_owner;
     if !ec.is_null() {
         c = ec;
     } else {
-        c = cmdq_get_client(item);
+        c_owner = cmdq_get_client(item);
+        c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     s = (*c).session;
     if !(s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
@@ -4558,7 +4560,8 @@ unsafe fn server_client_read_only(mut item: *mut cmdq_item) -> cmd_retval {
     return CMD_RETURN_ERROR;
 }
 unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval {
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let cmdlist = options_get_command(global_options);
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(crate::src::shared::rc::as_ptr(&cmdlist)) == 0 {
@@ -4575,7 +4578,8 @@ unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval 
     return CMD_RETURN_NORMAL;
 }
 unsafe fn server_client_command_done(mut item: *mut cmdq_item) -> cmd_retval {
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !(*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         (*c).flags |= CLIENT_EXIT as uint64_t;
     } else if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {

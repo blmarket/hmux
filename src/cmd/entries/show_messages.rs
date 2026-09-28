@@ -56,7 +56,8 @@ unsafe fn cmd_show_messages_terminals(
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
     let mut i: u_int = 0;
     let mut n: u_int = 0;

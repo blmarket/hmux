@@ -65,9 +65,12 @@ pub static cmd_display_message_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
@@ -139,7 +142,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
     } else {
         flags = 0 as ::core::ffi::c_int;
     }
-    ft = format_create(cmdq_get_client(item), item, FORMAT_NONE, flags);
+    ft = format_create(queue_client_ptr, item, FORMAT_NONE, flags);
     format_defaults(ft, c, s, wl, wp);
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
@@ -173,7 +176,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         };
         msg = json_to_string(&jn);
     }
-    if cmdq_get_client(item).is_null() {
+    if cmdq_get_client(item).is_none() {
         cmdq_error(item, |out| write_cstr(out, msg.as_ptr()));
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item, |out| write_cstr(out, msg.as_ptr()));

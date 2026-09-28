@@ -469,9 +469,11 @@ pub unsafe fn spawn_pane(
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     let mut key: key_code = 0;
+    let c_owner;
     if !item.is_null() {
         ts = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).s_ptr();
-        c = cmdq_get_client(item);
+        c_owner = cmdq_get_client(item);
+        c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     } else {
         ts = s;
         c = (*sc).tc;

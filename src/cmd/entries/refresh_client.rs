@@ -80,7 +80,8 @@ unsafe fn cmd_refresh_client_control_client_size(
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut size: *const ::core::ffi::c_char = args_get(&*(args), 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut w: u_int = 0;
     let mut x: u_int = 0;
@@ -234,7 +235,8 @@ unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
 
 unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

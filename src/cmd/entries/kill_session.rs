@@ -123,13 +123,15 @@ unsafe fn cmd_kill_session_filter(
     mut s: *mut session,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
     }
     ft = format_create(
-        cmdq_get_client(item),
+        queue_client_ptr,
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

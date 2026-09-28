@@ -72,7 +72,8 @@ pub static cmd_new_window_entry: cmd_entry = {
 };
 unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
@@ -90,7 +91,8 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut new_wl: *mut winlink = ::core::ptr::null_mut::<winlink>();

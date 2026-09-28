@@ -269,7 +269,8 @@ unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).s_ptr();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;

@@ -74,7 +74,8 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut swp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();

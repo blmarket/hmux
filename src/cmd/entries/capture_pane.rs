@@ -572,7 +572,8 @@ unsafe fn cmd_capture_pane_history(
 }
 unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wp: *mut window_pane = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).wp_ptr();
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;

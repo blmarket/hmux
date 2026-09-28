@@ -14,7 +14,7 @@ use crate::src::cmd::find::{
 };
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
-    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command,
+    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command,
     cmdq_get_event, cmdq_get_flags, cmdq_get_target, cmdq_insert_after, cmdq_new_state,
     cmdq_running,
 };
@@ -385,10 +385,7 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
             std::ptr::null_mut(), std::ptr::null_mut(), 0, FORMAT_NOJOBS,
         ),
         oo: std::ptr::null_mut(),
-        client: {
-            let client = cmdq_get_client(item);
-            if client.is_null() { Weak::new() } else { (*client).observer.clone() }
-        },
+        client: (*item).client.clone(),
         expand: 0,
     };
     cmd_find_copy_state(&raw mut hd.fs, target);

@@ -74,10 +74,13 @@ fn cmd_if_shell_args_parse(
     Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).s_ptr();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
@@ -126,7 +129,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         ));
     }
     if wait != 0 {
-        cdata.client = client_retain(cmdq_get_client(item));
+        cdata.client = cmdq_get_client(item);
         cdata.item = item;
     } else {
         cdata.client = client_retain(tc);
@@ -137,7 +140,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         None,
         s,
         {
-            let cwd = server_client_get_cwd(cmdq_get_client(item), s);
+            let cwd = server_client_get_cwd(queue_client_ptr, s);
             (!cwd.is_null()).then(|| std::ffi::CStr::from_ptr(cwd))
         },
         None,

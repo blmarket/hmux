@@ -351,10 +351,12 @@ pub unsafe fn format_create_defaults(
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
 ) -> *mut format_tree {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if !item.is_null() {
         ft = format_create(
-            cmdq_get_client(item),
+            queue_client_ptr,
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
@@ -378,7 +380,8 @@ pub unsafe fn format_create_from_state(
     return format_create_defaults(item, c, fs.s_ptr(), fs.wl_ptr(), fs.wp_ptr());
 }
 pub unsafe fn format_create_from_target(mut item: *mut cmdq_item) -> *mut format_tree {
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     return format_create_from_state(item, tc, &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item));
 }
 pub unsafe fn format_defaults(

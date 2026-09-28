@@ -475,7 +475,8 @@ unsafe fn cmd_join_pane_move(
 unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event: *mut key_event = cmdq_get_event(item);
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();

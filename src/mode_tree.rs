@@ -1340,7 +1340,8 @@ pub unsafe fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
 fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
     Some(Box::new(move |item| unsafe {
         let mtd = crate::src::shared::rc::as_ptr(&tree);
-        let c = cmdq_get_client(item.as_ptr());
+        let c_owner = cmdq_get_client(item.as_ptr());
+        let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         let mut key = b'y' as key_code;
         if (*mtd).prompt.is_some() && !c.is_null() {
             mode_tree_key(

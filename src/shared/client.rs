@@ -1,7 +1,7 @@
+//! Authoritative client objects, file transfers, overlays, and scalar domains.
 use crate::src::server_client::server_client_unref_owned;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
-//! Authoritative client objects, file transfers, overlays, and scalar domains.
 
 use super::abi::{pid_t, size_t, time_t, timeval, u_int, uint64_t};
 use super::colour::client_theme;

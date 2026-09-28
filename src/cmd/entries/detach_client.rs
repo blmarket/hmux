@@ -69,8 +69,10 @@ pub static cmd_suspend_client_entry: cmd_entry = {
 unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let mut c: *mut client = cmdq_get_client(item);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut msgtype: msgtype = 0 as msgtype;

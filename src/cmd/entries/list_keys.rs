@@ -204,8 +204,11 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     );
 }
 unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -286,7 +289,7 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         bindings.truncate(1);
     }
     ft = format_create(
-        cmdq_get_client(item),
+        queue_client_ptr,
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

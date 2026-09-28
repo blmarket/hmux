@@ -211,15 +211,10 @@ unsafe fn monitor_check_session(
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
@@ -245,15 +240,10 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -315,15 +305,10 @@ unsafe fn monitor_check_all_panes_one(
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
@@ -374,15 +359,10 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -449,15 +429,10 @@ unsafe fn monitor_check_all_windows_one(
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut w: *mut window = (*wl).window_ptr();
@@ -517,15 +492,10 @@ unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -583,15 +553,10 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -650,15 +615,10 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     }
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
-
         if let Some(client) = client_owner {
-
             server_client_unref_owned(client);
-
         }
-
         return;
-
     };
     let mut s = rc::as_ptr(&session_owner);
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
@@ -1294,6 +1254,39 @@ pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window 
 #[cfg(test)]
 mod last_owner_tests {
     use super::*;
+
+    #[test]
+    fn client_references_defer_release_on_missing_session_and_dead_client() {
+        use crate::src::reactor::{event_loop, shutdown_runtime};
+
+        unsafe {
+            for cancel in [false, true] {
+                let client = client::new();
+                let c = rc::as_ptr(&client);
+                let observer = Rc::downgrade(&client);
+                let set = monitor_create_client(c, Rc::new(|_| {}));
+
+                // The client exists, but the missing session ends the scan early.
+                monitor_check_sessions(set);
+                assert_eq!(observer.strong_count(), 2);
+                (*c).flags |= CLIENT_DEAD as uint64_t;
+                assert!(monitor_client(set).is_none());
+                assert_eq!(observer.strong_count(), 3);
+
+                drop(client);
+                if cancel {
+                    shutdown_runtime();
+                } else {
+                    event_loop();
+                }
+                assert!(observer.upgrade().is_none());
+                assert!(monitor_client(set).is_none());
+                monitor_check_sessions(set);
+                monitor_destroy(set);
+                shutdown_runtime();
+            }
+        }
+    }
 
     #[test]
     fn session_guards_defer_release_on_early_return_normal_exit_and_teardown() {

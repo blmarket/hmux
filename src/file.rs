@@ -121,7 +121,8 @@ unsafe fn file_set_cmdq_wait(
     assert!(!item.is_null());
     assert!(owner.wait_item.is_null());
     owner.wait_item = item;
-    owner.wait_client = (!(*item).client.is_null()).then(|| (*(*item).client).observer.clone());
+    owner.wait_client = (!Weak::ptr_eq(&(*item).client, &Weak::new()))
+        .then(|| (*item).client.clone());
     owner.cancel_data = cancel_cb;
     cmdq_set_wait_file(&mut *item, cf);
 }
@@ -1452,6 +1453,25 @@ mod file_index_ownership_tests {
 #[cfg(test)]
 mod completion_cancellation_tests {
     use super::*;
+
+    #[test]
+    fn command_wait_distinguishes_unspecified_and_expired_clients() {
+        unsafe {
+            let file = client_file::new();
+            let cf = rc::as_ptr(&file);
+            let mut item = cmdq_item::empty();
+            file_set_cmdq_wait(cf, &mut item, None);
+            assert!((*cf).wait_client.is_none());
+            file_cancel_cmdq_wait(cf);
+
+            let client = client::new();
+            item.client = Rc::downgrade(&client);
+            drop(client);
+            file_set_cmdq_wait(cf, &mut item, None);
+            assert!((*cf).wait_client.as_ref().unwrap().upgrade().is_none());
+            file_cancel_cmdq_wait(cf);
+        }
+    }
 
     #[test]
     fn cancelled_completion_releases_index_and_client_owners() {

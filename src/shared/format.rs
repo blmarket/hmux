@@ -1,6 +1,6 @@
+//! Authoritative format declarations.
 use std::cell::UnsafeCell;
 use std::rc::Rc;
-//! Authoritative format declarations.
 
 use super::abi::{time_t, u_int};
 use super::client::client;

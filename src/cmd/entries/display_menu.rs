@@ -918,7 +918,8 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
     let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let event = cmdq_get_event(item);
-    let tc = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
@@ -1031,7 +1032,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).s_ptr();
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

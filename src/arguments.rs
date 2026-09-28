@@ -772,7 +772,7 @@ mod ownership_tests {
             command.file = Some(CString::new(b"source\xff.conf".as_slice()).unwrap());
             command.line = 17;
             let mut item = cmdq_item::empty();
-            item.target_client = crate::src::shared::rc::as_ptr(&client);
+            item.target_client = std::rc::Rc::downgrade(&client);
             let state = args_make_commands_prepare(
                 &mut command,
                 &mut item,
@@ -962,7 +962,8 @@ pub unsafe fn args_make_commands_prepare(
 ) -> Box<args_command_state> {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

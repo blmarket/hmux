@@ -19,7 +19,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wai
 use crate::src::shared::events::{event_payload, event_payload_item, events_callback, events_sink};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 #[repr(C)]
 pub struct wait_channel {
@@ -223,17 +223,15 @@ unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 
-unsafe fn cmd_wait_for_item_client_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
-    let mut c: *mut client = cmdq_get_client(item);
-    if c.is_null() || (*c).name.is_none() {
-        return b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    return ((*c).name)
+unsafe fn cmd_wait_for_item_client_name(item: *mut cmdq_item) -> CString {
+    let owner = cmdq_get_client(item);
+    owner
         .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+        .and_then(|owner| (*owner.get()).name.clone())
+        .unwrap_or_default()
 }
-unsafe fn cmd_wait_for_client_name(mut wei: *mut wait_event_item) -> *const ::core::ffi::c_char {
-    return cmd_wait_for_item_client_name((*wei).item);
+unsafe fn cmd_wait_for_client_name(wei: *mut wait_event_item) -> CString {
+    cmd_wait_for_item_client_name((*wei).item)
 }
 unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
@@ -247,7 +245,7 @@ unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         return cmd_wait_for_list(item, wc);
     }
     if args_has(args, 'w' as i32 as u_char) != 0 {
-        return cmd_wait_for_wake(name, args, wc);
+        return cmd_wait_for_wake(args, wc);
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         return cmd_wait_for_signal(name, wc);
@@ -279,6 +277,8 @@ unsafe fn cmd_wait_for_event_cb(
     payload: &mut event_payload,
     wei: *mut wait_event_item,
 ) {
+    let queue_client = cmdq_get_client((*wei).item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let ep = &*payload;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -287,7 +287,7 @@ unsafe fn cmd_wait_for_event_cb(
     }
     if !(*wei).filter.is_none() {
         ft = format_create(
-            cmdq_get_client((*wei).item),
+            queue_client_ptr,
             (*wei).item,
             FORMAT_NONE,
             FORMAT_NOJOBS,
@@ -334,7 +334,7 @@ unsafe fn cmd_wait_for_event(
     if args_has(args, 'w' as i32 as u_char) != 0 {
         return cmd_wait_for_event_wake(item, name, args);
     }
-    if cmdq_get_client(item).is_null() {
+    if cmdq_get_client(item).is_none() {
         cmdq_error(item, |out| out.write_all(b"not able to wait"));
         return CMD_RETURN_ERROR;
     }
@@ -365,7 +365,7 @@ unsafe fn cmd_wait_for_event_list(
     for owner in (&raw const wait_event_items).as_ref().unwrap() {
         let wei = std::ptr::from_ref(owner.as_ref()).cast_mut();
         if strcmp(((*wei).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
-            cmdq_print(item, |out| write_cstr(out, cmd_wait_for_client_name(wei)));
+            cmdq_print(item, |out| write_cstr(out, cmd_wait_for_client_name(wei).as_ptr()));
         }
     }
     return CMD_RETURN_NORMAL;
@@ -380,7 +380,7 @@ unsafe fn cmd_wait_for_event_wake(
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
         let wei = wait_event_item_at(&raw mut wait_event_items, index);
         if !(strcmp(((*wei).name).as_ptr().cast_mut(), name) != 0 as ::core::ffi::c_int) {
-            if !(strcmp(cmd_wait_for_client_name(wei), client_name) != 0 as ::core::ffi::c_int) {
+            if !(strcmp(cmd_wait_for_client_name(wei).as_ptr(), client_name) != 0 as ::core::ffi::c_int) {
                 let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
                 cmdq_continue(owner.item);
                 cmd_wait_for_event_free(owner);
@@ -402,18 +402,17 @@ unsafe fn cmd_wait_for_list(mut item: *mut cmdq_item, mut wc: *mut wait_channel)
     }
     for wi in &*wait_channel_waiters(wc) {
         cmdq_print(item, |out| {
-            write_cstr(out, cmd_wait_for_item_client_name(wi.item))
+            write_cstr(out, cmd_wait_for_item_client_name(wi.item).as_ptr())
         });
     }
     for wi in &*wait_channel_lockers(wc) {
         cmdq_print(item, |out| {
-            write_cstr(out, cmd_wait_for_item_client_name(wi.item))
+            write_cstr(out, cmd_wait_for_item_client_name(wi.item).as_ptr())
         });
     }
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_wait_for_wake(
-    mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
     mut wc: *mut wait_channel,
 ) -> cmd_retval {
@@ -423,8 +422,8 @@ unsafe fn cmd_wait_for_wake(
         let mut wi = wait_item_ptr(waiters, 0);
         while !wi.is_null() {
             let wi1 = wait_item_next(waiters, wi);
-            name = cmd_wait_for_item_client_name((*wi).item);
-            if strcmp(name, client_name) != 0 as ::core::ffi::c_int {
+            let name = cmd_wait_for_item_client_name((*wi).item);
+            if strcmp(name.as_ptr(), client_name) != 0 as ::core::ffi::c_int {
                 wi = wi1;
             } else {
                 cmdq_continue((*wi).item);
@@ -437,8 +436,8 @@ unsafe fn cmd_wait_for_wake(
         let mut wi = wait_item_ptr(lockers, 0);
         while !wi.is_null() {
             let wi1 = wait_item_next(lockers, wi);
-            name = cmd_wait_for_item_client_name((*wi).item);
-            if strcmp(name, client_name) != 0 as ::core::ffi::c_int {
+            let name = cmd_wait_for_item_client_name((*wi).item);
+            if strcmp(name.as_ptr(), client_name) != 0 as ::core::ffi::c_int {
                 wi = wi1;
             } else {
                 cmdq_continue((*wi).item);
@@ -485,7 +484,8 @@ unsafe fn cmd_wait_for_wait(
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
 ) -> cmd_retval {
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if c.is_null() {
         cmdq_error(item, |out| out.write_all(b"not able to wait"));
         return CMD_RETURN_ERROR;
@@ -515,7 +515,7 @@ unsafe fn cmd_wait_for_lock(
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
 ) -> cmd_retval {
-    if cmdq_get_client(item).is_null() {
+    if cmdq_get_client(item).is_none() {
         cmdq_error(item, |out| out.write_all(b"not able to lock"));
         return CMD_RETURN_ERROR;
     }

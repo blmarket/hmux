@@ -139,10 +139,11 @@ pub struct cmdq_item {
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
     pub next: *mut cmdq_item,
-    /// Borrowed execution context, which can temporarily differ from the queue owner.
-    pub client: *mut client,
+    /// Nonowning execution context, which can temporarily differ from the queue owner.
+    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub client_owner: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    pub target_client: *mut client,
+    /// Nonowning command target; upgrade before accessing the client.
+    pub target_client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub type_0: cmdq_type,
     pub group: u_int,
     pub number: u_int,

@@ -78,8 +78,10 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     let mut flags: ::core::ffi::c_int = 0;
     let mut visible: ::core::ffi::c_int = 0;
     let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
-    let mut c: *mut client = cmdq_get_client(item);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -170,7 +172,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             return CMD_RETURN_ERROR;
         }
     } else {
-        if cmdq_get_client(item).is_null() {
+        if cmdq_get_client(item).is_none() {
             return CMD_RETURN_NORMAL;
         }
         if !wl.is_null() && !wp.is_null() && wp != (*(*wl).window_ptr()).active {

@@ -239,7 +239,8 @@ impl Drop for popup_data {
             // Startup failure does not resume the command: popup_display's
             // caller handles that error. Published overlays resume once.
             if self.published && !self.item.is_null() {
-                let c = cmdq_get_client(self.item);
+                let c_owner = cmdq_get_client(self.item);
+                let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
                 if !c.is_null() && (*c).session.is_null() {
                     (*c).retval = self.status;
                 }
@@ -1410,7 +1411,7 @@ mod tests {
             let c = rc::as_ptr(&client_owner);
             let client_observer = (*c).observer.clone();
             let mut item = Box::new(cmdq_item::empty());
-            item.client = c;
+            item.client = (*c).observer.clone();
             item.flags = CMDQ_WAITING;
             let mut data = Box::new(popup_data::empty());
             data.c = client_retain(c);

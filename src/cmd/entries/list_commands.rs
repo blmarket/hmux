@@ -78,6 +78,8 @@ unsafe fn cmd_list_single_command(
     }
 }
 unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -87,7 +89,7 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         template = LIST_COMMANDS_TEMPLATE.as_ptr();
     }
     ft = format_create(
-        cmdq_get_client(item),
+        queue_client_ptr,
         item,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,

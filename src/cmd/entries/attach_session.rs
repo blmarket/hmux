@@ -81,7 +81,8 @@ pub unsafe fn cmd_attach_session(
     };
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c_loop: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();

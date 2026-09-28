@@ -160,8 +160,10 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut c: *mut client = cmdq_get_client(item);
-    let mut tc: *mut client = cmdq_get_target_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let tc_owner = cmdq_get_target_client(item);
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).s_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -417,8 +419,11 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
         cmd_run_shell_print(cdata, msg.as_ptr());
     }
     if !item.is_null() {
-        if !cmdq_get_client(item).is_null() && (*cmdq_get_client(item)).session.is_null() {
-            (*cmdq_get_client(item)).retval = retcode;
+        if let Some(client) = cmdq_get_client(item) {
+            let c = crate::src::shared::rc::as_ptr(&client);
+            if (*c).session.is_null() {
+                (*c).retval = retcode;
+            }
         }
         cmdq_continue(item);
     }

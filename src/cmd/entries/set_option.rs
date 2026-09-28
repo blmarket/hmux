@@ -143,7 +143,8 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     }
     let mut ep = event_payload_create();
     event_payload_set_target(&mut *ep, &*target);
-    c = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !c.is_null() {
         event_payload_set_client(&mut *ep, c);
     }

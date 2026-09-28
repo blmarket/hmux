@@ -54,9 +54,12 @@ pub static cmd_list_windows_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut i: u_int = 0;
@@ -101,7 +104,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         wl = winlinks[i as usize];
         s = (*wl).session;
         ft = format_create(
-            cmdq_get_client(item),
+            queue_client_ptr,
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,

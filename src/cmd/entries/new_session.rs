@@ -111,11 +111,14 @@ pub static cmd_has_session_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
+    let queue_client = cmdq_get_client(item);
+    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
     let mut groupwith: *mut session = ::core::ptr::null_mut::<session>();
@@ -338,7 +341,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             && (*c).fd != -(1 as ::core::ffi::c_int)
                             && !(*c).flags & CLIENT_CONTROL as uint64_t != 0
                         {
-                            if server_client_check_nested(cmdq_get_client(item)) != 0 {
+                            if server_client_check_nested(queue_client_ptr) != 0 {
                                 cmdq_error(item, |out| {
                                     out.write_all(b"sessions should be nested with care, unset $TMUX to force")
                                 });

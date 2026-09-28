@@ -293,7 +293,8 @@ pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
     causes
 }
 pub unsafe fn cfg_print_causes(mut item: *mut cmdq_item) {
-    let mut c: *mut client = cmdq_get_client(item);
+    let c_owner = cmdq_get_client(item);
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_notify_write(c, |out| {
