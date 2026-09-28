@@ -2458,11 +2458,3 @@ removed. The ABI callback adapter
 captures its pointer in the callback closure, while the error callback owns
 the error string in its closure. Removing the unused field leaves callback
 dispatch unchanged and reduces the inventory to 57 in-scope raw fields.
-
-## Implemented borrowed log string formatter
-
-`LogCStr` now stores a borrowed reference to the first character, using the
-existing unsafe constructor contract. The formatter still scans only during
-Display, so disabled logging does not scan the string. Bounded precision,
-null and zero-precision behavior remain covered by the logger tests. The
-inventory now counts 56 remaining in-scope raw fields.

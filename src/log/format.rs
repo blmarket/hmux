@@ -40,29 +40,21 @@ fn escaped_byte(byte: u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(std::str::from_utf8(bytes).expect("vis produces ASCII"))
 }
 
-/// Borrowed C string start, scanned and escaped when the message is formatted.
-pub struct LogCStr<'a> {
-    start: Option<&'a c_char>,
+/// A deferred read of a C string, optionally bounded like printf's `%.*s`.
+pub struct LogCStr {
+    ptr: *const c_char,
     precision: Option<c_int>,
     width: c_int,
 }
 
-unsafe fn borrowed_c_start<'a>(ptr: *const c_char, precision: Option<c_int>) -> Option<&'a c_char> {
-    if ptr.is_null() || precision == Some(0) {
-        None
-    } else {
-        Some(&*ptr)
-    }
-}
-
-/// Borrow and later escape a C string.
+/// Escape a C string only when the log message is formatted.
 ///
 /// # Safety
 /// A non-null pointer must remain a readable NUL-terminated string until the
 /// returned argument has been formatted or dropped. Null prints `(null)`.
-pub unsafe fn log_cstr<'a>(ptr: *const c_char) -> LogCStr<'a> {
+pub unsafe fn log_cstr(ptr: *const c_char) -> LogCStr {
     LogCStr {
-        start: borrowed_c_start(ptr, None),
+        ptr,
         precision: None,
         width: 0,
     }
@@ -74,9 +66,9 @@ pub unsafe fn log_cstr<'a>(ptr: *const c_char) -> LogCStr<'a> {
 /// A non-null pointer must be readable up to the first NUL or `precision` bytes,
 /// whichever comes first, until formatting completes. Negative precision
 /// requires NUL termination.
-pub unsafe fn log_cstr_n<'a>(ptr: *const c_char, precision: c_int) -> LogCStr<'a> {
+pub unsafe fn log_cstr_n(ptr: *const c_char, precision: c_int) -> LogCStr {
     LogCStr {
-        start: borrowed_c_start(ptr, Some(precision)),
+        ptr,
         precision: Some(precision),
         width: 0,
     }
@@ -87,32 +79,31 @@ pub unsafe fn log_cstr_n<'a>(ptr: *const c_char, precision: c_int) -> LogCStr<'a
 ///
 /// # Safety
 /// The pointer must satisfy the same requirements as `log_cstr`.
-pub unsafe fn log_cstr_width<'a>(ptr: *const c_char, width: c_int) -> LogCStr<'a> {
+pub unsafe fn log_cstr_width(ptr: *const c_char, width: c_int) -> LogCStr {
     LogCStr {
-        start: borrowed_c_start(ptr, None),
+        ptr,
         precision: None,
         width,
     }
 }
 
-impl fmt::Display for LogCStr<'_> {
+impl fmt::Display for LogCStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let precision = self.precision.filter(|&n| n >= 0).map(|n| n as usize);
-        let bytes = if let Some(start) = self.start {
-            unsafe {
-                let ptr = std::ptr::from_ref(start);
-                let len = match precision {
-                    Some(limit) => libc::strnlen(ptr, limit),
-                    None => CStr::from_ptr(ptr).to_bytes().len(),
-                };
-                std::slice::from_raw_parts(ptr.cast(), len)
-            }
-        } else {
+        let bytes = if self.ptr.is_null() {
             // Match glibc's precision handling of a null %s argument.
             if precision.is_some_and(|n| n < 6) {
                 b"".as_slice()
             } else {
                 b"(null)"
+            }
+        } else {
+            unsafe {
+                let len = match precision {
+                    Some(limit) => libc::strnlen(self.ptr, limit),
+                    None => CStr::from_ptr(self.ptr).to_bytes().len(),
+                };
+                std::slice::from_raw_parts(self.ptr.cast(), len)
             }
         };
         let padding = (self.width.unsigned_abs() as usize).saturating_sub(bytes.len());
