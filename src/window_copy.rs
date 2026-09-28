@@ -5174,9 +5174,7 @@ unsafe fn window_copy_command(
 ) {
     let session_owner = session.cloned();
     window_copy_command_with_session(wme, client_owner, session_owner.as_deref(), wl, args, m);
-    if let Some(owner) = session_owner {
-        crate::src::session::session_remove_ref(owner, c"window_copy_command");
-    }
+    drop(session_owner);
 }
 
 unsafe fn window_copy_command_with_session(
