@@ -2406,6 +2406,24 @@ pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut 
         })
 }
 
+/// Resolve a live mode entry against its pane-owned stack before observing it.
+pub(crate) unsafe fn window_pane_mode_weak(
+    wme: *mut window_mode_entry,
+) -> refbox::Weak<window_mode_entry> {
+    let pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let storage = (*pane_owner.get())
+        .modes
+        .storage
+        .as_ref()
+        .expect("mode belongs to a pane mode stack");
+    storage
+        .entries
+        .iter()
+        .find(|entry| entry.as_ptr() == wme.cast_const())
+        .expect("mode entry belongs to its pane")
+        .downgrade()
+}
+
 unsafe fn window_pane_mode_insert_front(
     wp: &mut window_pane,
     entry: refbox::RefBox<window_mode_entry>,

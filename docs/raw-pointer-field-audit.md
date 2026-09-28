@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **78 raw fields in
+fields and their lifecycle decisions. The current scanner finds **77 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-159 explicitly record a migration and eleven record
-removal. The remaining 78 comprise 7 candidates, 23 needing an access or teardown
+160 explicitly record a migration and eleven record
+removal. The remaining 77 comprise 6 candidates, 23 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 78 fields have audit dispositions. Candidate and design entries
+The remaining 77 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -94,6 +94,7 @@ are now recorded individually in the TSV.
 | `window_copy_cmd_state.args` | Removed the raw argument holder. The command state only needed the original `-F` flag, so dispatch now stores that boolean before calling the command handler. Parsed arguments remain owned by the separate `wargs` Box. |
 | `window_copy_cmd_state.m` | `Option<mouse_event>` snapshots the copyable input event after the initial cursor update. Selection and scroll commands only read it; drag callbacks receive their later events separately. No raw mouse address is retained by the command state. |
 | `WindowPaneModesStorage.entries` | The pane owns stable `RefBox<window_mode_entry>` entries. Insertion returns a weak handle; stack promotion transfers the sole owner, and removal detaches it before mode-specific free callbacks. A weak observer expires when that detached owner is dropped. Existing raw active/callback views still need migration. |
+| `window_copy_cmd_state.wme` | A weak mode-entry observer replaces the raw command-state field. Command dispatch finds the pane-owned RefBox, and callbacks check that it is live before projecting a legacy pointer. Dispatch also stops before using saved mode data if a callback removed the entry. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
 | `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |
