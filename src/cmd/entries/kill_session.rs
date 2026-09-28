@@ -69,7 +69,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             (*wl).flags &= !WINLINK_ALERTFLAGS;
             wl = winlinks_next(&*wl);
         }
-        server_redraw_session(s);
+        server_redraw_session(&*(s));
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_session_all(item, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {

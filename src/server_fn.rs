@@ -131,27 +131,27 @@ pub fn server_redraw_client(c: &mut client) {
 pub fn server_status_client(c: &mut client) {
     c.flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
-pub unsafe fn server_redraw_session(mut s: *mut session) {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if (*c).session == s {
-            server_redraw_client(&mut *(c));
+pub unsafe fn server_redraw_session(session: &session) {
+    let mut next = clients.first();
+    while let Some(client_owner) = next {
+        next = clients.next(&client_owner);
+        let client = &mut *client_owner.get();
+        if client.session.as_ref().is_some_and(|current| {
+            std::rc::Weak::ptr_eq(&current.observer, &session.observer)
+        }) {
+            server_redraw_client(client);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_redraw_session_group(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_group_contains(s);
     if sg.is_null() {
-        server_redraw_session(s);
+        server_redraw_session(&*(s));
     } else {
         for session_owner in crate::src::session::session_group_members(sg) {
             let s = session_owner.get();
-            server_redraw_session(s);
+            server_redraw_session(&*(s));
         }
     };
 }

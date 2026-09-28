@@ -514,7 +514,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                             window_pop_zoom((*wp).window as *mut window);
                                             server_redraw_window((*wp).window as *mut window);
                                         }
-                                        server_redraw_session(s);
+                                        server_redraw_session(&*(s));
                                         if args_has(args, 'M' as i32 as u_char) != 0
                                             && is_floating != 0
                                         {

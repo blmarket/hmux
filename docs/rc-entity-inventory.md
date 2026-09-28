@@ -2241,3 +2241,13 @@ no ownership changes. No new Rc-managed type or persistent owner is introduced.
 `cargo test --workspace` and `git diff --check` passed. Raw client acquisition at
 legacy callers, session/window redraw traversal and other model relationships
 remain pending.
+
+## Implemented borrowed sessions for full redraw
+
+Session-wide full redraw accepts a shared session borrow, traverses retained
+client handles and compares session weak identities. Matching clients are updated
+through the safe borrowed redraw setter. All callers pass session borrows. No
+new Rc-managed type or persistent owner is added.
+
+`cargo test --workspace` and `git diff --check` passed. Group lookup, raw client
+session fields and remaining window redraw interfaces are still pending.

@@ -258,9 +258,9 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             session_select(dst_s, (*wl).idx);
             cmd_find_from_session(&mut *current.current.borrow_mut(), dst_s, 0 as ::core::ffi::c_int);
         }
-        server_redraw_session(src_s);
+        server_redraw_session(&*(src_s));
         if src_s != dst_s {
-            server_redraw_session(dst_s);
+            server_redraw_session(&*(dst_s));
         }
         server_status_session_group(src_s);
         if src_s != dst_s {

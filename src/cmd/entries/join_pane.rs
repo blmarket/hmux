@@ -748,7 +748,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
         session_select(dst_s, dst_idx);
         cmd_find_from_session(&mut *current.current.borrow_mut(), dst_s, 0 as ::core::ffi::c_int);
-        server_redraw_session(dst_s);
+        server_redraw_session(&*(dst_s));
     } else {
         server_status_session(&*(dst_s));
     }

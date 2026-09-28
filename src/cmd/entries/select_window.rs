@@ -157,7 +157,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             return CMD_RETURN_ERROR;
         }
         cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
-        server_redraw_session(s);
+        server_redraw_session(&*(s));
         cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| {
             out.write_all(b"after-select-window")
         });
@@ -170,10 +170,10 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             if current.current.borrow().s_ptr() == s {
                 cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
             }
-            server_redraw_session(s);
+            server_redraw_session(&*(s));
         } else if session_select(s, (*wl).idx) == 0 as ::core::ffi::c_int {
             cmd_find_from_session(&mut *current.current.borrow_mut(), s, 0 as ::core::ffi::c_int);
-            server_redraw_session(s);
+            server_redraw_session(&*(s));
         }
         cmdq_insert_hook(s, item, &mut current.current_snapshot(), |out| {
             out.write_all(b"after-select-window")
