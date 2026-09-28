@@ -2708,7 +2708,7 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     spawn_editor_finish(wp);
     let owner = window_pane_tree_remove(&mut *std::ptr::addr_of_mut!(all_window_panes), &mut *wp).expect("registered pane owner");
     (*wp).flags |= PANE_DESTROYED;
-    window_pane_clear_prompt(wp);
+    window_pane_clear_prompt(&owner);
     window_pane_free_modes(wp);
     screen_write_clear_dirty(wp);
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
@@ -3129,7 +3129,7 @@ pub unsafe fn window_pane_set_prompt(
     let session_owner = client_owner.and_then(|owner| (*owner.get()).session.as_ref())
         .and_then(|session| session.observer.upgrade());
     let mut pd = prompt_create_data::default();
-    window_pane_clear_prompt(wp);
+    window_pane_clear_prompt(pane_owner);
     let wpp = refbox::RefBox::new(window_pane_prompt {
         wp_id: (*wp).id,
         c: client_owner.map(Rc::downgrade).unwrap_or_default(),
@@ -3169,7 +3169,8 @@ pub unsafe fn window_pane_set_prompt(
         type_0,
     );
 }
-pub unsafe fn window_pane_clear_prompt(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = owner.get();
     let prompt = (*wp).prompt.take();
     let wpp = (*wp).prompt_data.clone();
     let mut type_0: prompt_type = PROMPT_TYPE_INVALID;
@@ -3283,7 +3284,7 @@ pub unsafe fn window_pane_prompt_key(
             == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
             || prompt_closed(&prompt.try_borrow_mut().expect("live unborrowed prompt")) != 0)
     {
-        window_pane_clear_prompt(wp);
+        window_pane_clear_prompt(lookup_wp_owner.as_ref().expect("live prompt pane"));
     }
     if redraw != 0
         || !(*wp)
@@ -4538,10 +4539,13 @@ mod pane_prompt_data_tests {
             let next_data = replacement.clone();
             let replacement_observer = replacement_prompt.downgrade();
             let mut next_prompt = Some(replacement_prompt);
+            let callback_pane = Rc::downgrade(&pane);
             old_data.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |_, text, kind| {
+                let pane = callback_pane.upgrade().expect("prompt pane");
+                let wp = pane.get();
                 assert_eq!(text, Some(c"x"));
                 assert_eq!(kind, PROMPT_KEY_CLOSE);
-                window_pane_clear_prompt(wp);
+                window_pane_clear_prompt(&pane);
                 (*wp).prompt = next_prompt.take();
                 (*wp).prompt_data = Some(next_data.clone());
                 PROMPT_CLOSE
@@ -4568,7 +4572,7 @@ mod pane_prompt_data_tests {
             assert!(!old_observer.is_alive());
             drop(old_data);
             assert!(!old_weak.is_alive());
-            window_pane_clear_prompt(wp);
+            window_pane_clear_prompt(&pane);
             assert!((*wp).prompt_data.is_none());
             assert!(!replacement_observer.is_alive());
             drop(replacement);

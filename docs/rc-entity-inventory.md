@@ -1097,3 +1097,14 @@ callback.
 
 `cargo test --workspace` and `git diff --check` passed. Prompt clearing, client
 session storage and local raw model projections remain pending.
+
+## Implemented retained pane argument for prompt clearing
+
+`window_pane_clear_prompt` requires a borrowed Rc pane through prompt cleanup and
+hook callbacks. Pane destruction passes its removed registry owner; setup and key
+dispatch pass their retained pane handles. The prompt-replacement regression's
+callback now captures a weak pane and retains its upgrade while replacing state.
+
+`cargo test --workspace` and `git diff --check` passed, including prompt replacement
+and cleanup coverage. Other pane APIs and local raw model projections remain
+pending.
