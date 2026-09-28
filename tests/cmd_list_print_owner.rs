@@ -231,7 +231,7 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
         drop(list);
         let mut count = 0;
         while !item.is_null() {
-            let next = (*item).next;
+            let next = (*item).next_ptr();
             assert!(nested_observer.upgrade().is_some());
             assert!(!cmd_print(&*(*item).cmd_ptr()).as_bytes().is_empty());
             cmdq_free_detached(item);

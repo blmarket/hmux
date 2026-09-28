@@ -745,7 +745,7 @@ mod ownership_tests {
                 );
                 let item = cmdq_get_command(&commands, None);
                 assert!(!item.is_null());
-                assert!((*item).next.is_null());
+                assert!((*item).next_ptr().is_null());
                 drop(commands);
                 assert_eq!(result.strong_count(), 1, "queue retains its commands");
                 cmdq_free_detached(item);

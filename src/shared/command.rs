@@ -140,7 +140,8 @@ pub struct cmdq_item {
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
-    pub next: *mut cmdq_item,
+    /// Detached-item chain link; each linked item has its own sole owner.
+    pub next: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     /// Nonowning execution context, which can temporarily differ from the queue owner.
     pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub client_owner: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
@@ -162,6 +163,15 @@ pub struct cmdq_item {
 }
 
 impl cmdq_item {
+    /// Compatibility view while a detached item still owns itself.
+    pub fn next_ptr(&self) -> *mut cmdq_item {
+        if self.next.strong_count() == 0 {
+            std::ptr::null_mut()
+        } else {
+            self.next.as_ptr().cast_mut().cast()
+        }
+    }
+
     /// Project a legacy command pointer while its list owner remains live.
     pub fn cmd_ptr(&self) -> *mut cmd {
         if self.cmd.is_alive() {

@@ -314,8 +314,8 @@ pub unsafe fn cmdq_append(
     let mut queue: *mut cmdq_list = cmdq_get(owner);
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     loop {
-        next = (*item).next;
-        (*item).next = ::core::ptr::null_mut::<cmdq_item>();
+        next = (*item).next_ptr();
+        (*item).next = std::rc::Weak::new();
         (*item).client_owner = owner.cloned();
         (*item).client = owner.map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = queue;
@@ -348,9 +348,9 @@ pub unsafe fn cmdq_insert_after(
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut position = (*queue).position(after) + 1;
     loop {
-        next = (*item).next;
-        (*item).next = (*after).next;
-        (*after).next = item;
+        next = (*item).next_ptr();
+        (*item).next = (*after).next.clone();
+        (*after).next = (*item).observer.clone();
         (*item).client_owner = c_owner.clone();
         (*item).client = c_owner.as_ref().map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = queue;
@@ -528,7 +528,7 @@ pub unsafe fn cmdq_get_command(
             first = item;
         }
         if !last.is_null() {
-            (*last).next = item;
+            (*last).next = (*item).observer.clone();
         }
         last = item;
     }
@@ -1092,7 +1092,7 @@ mod client_observer_tests {
                 seen.set(seen.get() + 1);
                 CMD_RETURN_NORMAL
             })));
-            (*waiting).next = following;
+            (*waiting).next = (*following).observer.clone();
             cmdq_append(Some(&owner), waiting);
             assert_eq!(cmdq_next(Some(&owner)), 0);
             assert_eq!(calls.get(), 0);
@@ -1116,7 +1116,7 @@ mod client_observer_tests {
             let observer = Rc::downgrade(&owner);
             let first = cmdq_get_callback_owned(c"first".as_ptr(), None);
             let second = cmdq_get_callback_owned(c"second".as_ptr(), None);
-            (*first).next = second;
+            (*first).next = (*second).observer.clone();
             assert_eq!(cmdq_append(Some(&owner), first), second);
             let inserted = cmdq_get_callback_owned(c"inserted".as_ptr(), None);
             assert_eq!(cmdq_insert_after(first, inserted), inserted);
@@ -1124,7 +1124,7 @@ mod client_observer_tests {
             assert!(Rc::ptr_eq(&cmdq_get_client(inserted).unwrap(), &owner));
             assert!(Rc::ptr_eq(&cmdq_get_client(first).unwrap(), &owner));
             assert!(Rc::ptr_eq(&cmdq_get_client(second).unwrap(), &owner));
-            assert_eq!((*first).next, inserted);
+            assert_eq!((*first).next_ptr(), inserted);
             drop(owner);
             let retained = observer.upgrade().expect("queued items retain their client");
             let queue = (*retained.get()).queue.as_deref_mut().unwrap();
@@ -1247,6 +1247,14 @@ mod item_owner_tests {
             let stale = (*detached).observer.clone();
             cmdq_free_detached(detached);
             assert!(stale.upgrade().is_none());
+
+            let first = cmdq_get_callback_owned(c"chain first".as_ptr(), None);
+            let second = cmdq_get_callback_owned(c"chain second".as_ptr(), None);
+            (*first).next = (*second).observer.clone();
+            assert_eq!((*first).next_ptr(), second);
+            cmdq_free_detached(second);
+            assert!((*first).next_ptr().is_null());
+            cmdq_free_detached(first);
         }
     }
 }

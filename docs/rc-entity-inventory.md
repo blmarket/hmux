@@ -2486,3 +2486,10 @@ self-handle. Queue traversal installs it, and removal, abort or empty traversal
 clears it. The legacy `cmdq_running` pointer view checks that the item remains
 owned before use. The queue removal regression verifies expiry, reducing the
 raw-field count to 55.
+
+## Implemented weak detached queue chain
+
+`cmdq_item.next` now records a weak identity of the next detached item.
+Append and insert resolve it before moving the next item's sole owner into
+the queue. An expired next link returns no item; a regression frees a detached
+successor and verifies the link expires. The raw-field count is now 54.
