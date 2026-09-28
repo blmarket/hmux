@@ -1680,9 +1680,9 @@ pub unsafe fn window_find_string(
     }
     return window_get_active_at(window_owner, x, y);
 }
-pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+    let wp = pane_owner.get();
     let mut w: *mut window = (*wp).window as *mut window;
-    let mut wp1: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lg: layout_geometry = layout_geometry {
         sx: 0,
@@ -1704,16 +1704,18 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
     (*wp).flags |= PANE_ZOOMED;
-    wp1 = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp1.is_null() {
+    let mut cursor = window_pane_first(w.as_ref());
+    while let Some(owner) = cursor {
+        let wp1 = &mut *owner.get();
         (*wp1).saved_layout_cell = (*wp1).layout_cell as *mut layout_cell;
         (*wp1).layout_cell = ::core::ptr::null_mut::<layout_cell>();
-        wp1 = window_pane_next(wp1.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp1));
     }
     (*w).saved_layout_root = (*w).layout_root.take();
     layout_init(w, wp);
-    wp1 = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp1.is_null() {
+    let mut cursor = window_pane_first(w.as_ref());
+    while let Some(owner) = cursor {
+        let wp1 = owner.get();
         lc = (*wp1).saved_layout_cell;
         if !(wp1 == wp
             || !(*wp1).flags & PANE_FLOATOVERZOOM != 0
@@ -1728,7 +1730,7 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
             lc = layout_floating_pane(w, wp, &raw mut lg);
             layout_assign_pane(lc, wp1, 0 as ::core::ffi::c_int);
         }
-        wp1 = window_pane_next(wp1.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp1));
     }
     if (*(*wp).saved_layout_cell).flags & LAYOUT_CELL_FLOATING != 0 {
         window_pane_z_remove(w, wp);
@@ -1755,16 +1757,16 @@ unsafe fn window_unzoom_internal(
     notify: ::core::ffi::c_int,
     resize_panes: bool,
 ) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut zoomed: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let mut zoomed_owner = None;
     let mut slc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     if !(*w).flags & WINDOW_ZOOMED != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
+    let mut cursor = window_pane_first(w.as_ref());
+    while let Some(owner) = cursor {
+        let wp = &mut *owner.get();
         if (*wp).flags & PANE_ZOOMED != 0 {
-            zoomed = wp;
+            zoomed_owner = Some(owner.clone());
         }
         if !(!(*wp).flags & PANE_FLOATOVERZOOM != 0) {
             if !((*wp).flags & PANE_ZOOMED != 0) {
@@ -1783,34 +1785,36 @@ unsafe fn window_unzoom_internal(
                 }
             }
         }
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp));
     }
     (*w).flags &= !WINDOW_ZOOMED;
     layout_free(w);
     (*w).layout_root = (*w).saved_layout_root.take();
-    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
+    let mut cursor = window_pane_first(w.as_ref());
+    while let Some(owner) = cursor {
+        let wp = &mut *owner.get();
         (*wp).layout_cell = (*wp).saved_layout_cell as *mut layout_cell;
         (*wp).saved_layout_cell = ::core::ptr::null_mut::<layout_cell>();
         (*wp).flags &= !PANE_ZOOMED;
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp));
     }
-    if !zoomed.is_null() && window_pane_is_floating(&*zoomed) != 0 {
+    if let Some(zoomed_owner) = zoomed_owner.filter(|owner| window_pane_is_floating(&*owner.get()) != 0) {
+        let zoomed = zoomed_owner.get();
         window_pane_z_remove(w, zoomed);
         if zoomed == (*w).active {
             window_pane_z_insert_front(w, zoomed);
         } else {
-            wp = window_pane_z_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !wp.is_null() {
-                if window_pane_is_floating(&*wp) == 0 {
+            let mut before = window_pane_z_first(w.as_ref());
+            while let Some(owner) = before.as_ref() {
+                if window_pane_is_floating(&*owner.get()) == 0 {
                     break;
                 }
-                wp = window_pane_z_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                before = window_pane_z_next(Some(&*owner.get()));
             }
-            if wp.is_null() {
-                window_pane_z_insert_back(w, zoomed);
+            if let Some(before) = before {
+                window_pane_z_insert_before(w, before.get(), zoomed);
             } else {
-                window_pane_z_insert_before(w, wp, zoomed);
+                window_pane_z_insert_back(w, zoomed);
             }
         }
     }
@@ -1898,7 +1902,7 @@ pub unsafe fn window_pop_zoom(mut w: *mut window) -> ::core::ffi::c_int {
             pane_owner = active;
         }
         if let Some(owner) = pane_owner {
-            return (window_zoom(owner.get()) == 0) as ::core::ffi::c_int;
+            return (window_zoom(&owner) == 0) as ::core::ffi::c_int;
         }
     }
     return 0 as ::core::ffi::c_int;

@@ -91,7 +91,6 @@ pub unsafe fn resize_window(
     mut xpixel: ::core::ffi::c_int,
     mut ypixel: ::core::ffi::c_int,
 ) {
-    let mut zwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut old_sx: u_int = (*w).sx;
     let mut old_sy: u_int = (*w).sy;
     if sx < WINDOW_MINIMUM as u_int {
@@ -107,8 +106,7 @@ pub unsafe fn resize_window(
         sy = WINDOW_MAXIMUM as u_int;
     }
     let zoomed_owner = window_zoomed_pane(&*w);
-    zwp = zoomed_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !zwp.is_null() {
+    if zoomed_owner.is_some() {
         window_unzoom(w, 1 as ::core::ffi::c_int);
     }
     layout_resize(w, sx, sy);
@@ -128,8 +126,10 @@ pub unsafe fn resize_window(
         ((*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sx) as u32,
         ((*(*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root)).g.sy) as u32
     ));
-    if !zwp.is_null() && window_has_pane(&*w, &(*zwp).observer) {
-        window_zoom(zwp);
+    if let Some(zoomed_owner) = zoomed_owner {
+        if window_has_pane(&*w, &(*zoomed_owner.get()).observer) {
+            window_zoom(&zoomed_owner);
+        }
     }
     tty_update_window_offset(w);
     server_redraw_window(w);

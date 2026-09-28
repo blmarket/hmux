@@ -546,7 +546,7 @@ pub unsafe fn mode_tree_zoom(tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode
     let mut wp: *mut window_pane = mode_pane;
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         (*mtd).zoomed = (*(*wp).window).flags & WINDOW_ZOOMED;
-        if (*mtd).zoomed == 0 && window_zoom(wp) == 0 as ::core::ffi::c_int {
+        if (*mtd).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
             server_redraw_window((*wp).window as *mut window);
         }
     } else {

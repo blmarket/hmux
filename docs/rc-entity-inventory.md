@@ -1729,3 +1729,20 @@ in pane creation and destruction consume Option directly.
 `cargo test --workspace` and `git diff --check` passed. Several callers still
 project traversal results into raw locals, and pane-to-window relationships and
 ordering mutation APIs remain pending.
+
+## Implemented retained pane traversal during zoom restoration
+
+Zoom accepts a retained pane handle. Mode initialization, saved-zoom restoration
+and resize callers forward their existing owners; the resize-pane command upgrades
+its target once and holds it through dispatch. Window resizing keeps its optional
+zoomed owner directly instead of introducing a nullable raw pane local.
+
+Zoom and unzoom traversal retain the current pane while saving/restoring layout
+links. Unzoom also retains the selected zoomed pane across layout replacement and
+the insertion neighbor while restoring stacking order. Pure field updates use
+scoped mutable pane borrows. The raw window input to internal unzoom remains:
+window final-drop cleanup invokes it after upgrading that window is impossible.
+Legacy layout and ordering-mutation boundaries still use raw projections.
+
+`cargo test --workspace` and `git diff --check` passed. Raw model relationships and
+remaining zoom/unzoom window APIs are still pending.

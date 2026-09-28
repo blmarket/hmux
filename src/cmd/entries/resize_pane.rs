@@ -68,7 +68,8 @@ pub static cmd_resize_pane_entry: cmd_entry = {
 unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
+    let wp = pane_owner.get();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut w: *mut window = (*wl).window_ptr();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
@@ -112,7 +113,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         if (*w).flags & WINDOW_ZOOMED != 0 {
             window_unzoom(w, 1 as ::core::ffi::c_int);
         } else {
-            window_zoom(wp);
+            window_zoom(&pane_owner);
         }
         server_redraw_window(w);
         return CMD_RETURN_NORMAL;

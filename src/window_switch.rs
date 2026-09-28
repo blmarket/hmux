@@ -527,7 +527,7 @@ unsafe fn window_switch_init(
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
         (*data).zoomed = (*(*wp).window).flags & WINDOW_ZOOMED;
-        if (*data).zoomed == 0 && window_zoom(wp) == 0 as ::core::ffi::c_int {
+        if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
             server_redraw_window((*wp).window as *mut window);
         }
     }

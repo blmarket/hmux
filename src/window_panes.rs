@@ -1720,7 +1720,7 @@ unsafe fn window_panes_init(
         if (*data).zoomed == 0 {
             window_panes_set_preview(data);
         }
-        if (*data).zoomed == 0 && window_zoom(wp) == 0 as ::core::ffi::c_int {
+        if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
             server_redraw_window(w);
         }
     }
