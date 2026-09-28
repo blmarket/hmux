@@ -6,11 +6,13 @@ entity can have owning, weak, and borrowed holders simultaneously.
 
 ## Classification rules
 
-- **Owning:** construction, cloning, or an upgrade supplies a strong reference;
-  the holder releases that reference on completion, cancellation, or destruction.
-  A corresponding `remove_ref`, `unref`, or consuming `free` is evidence of an
-  owning holder. Follow the actual value passed to release, not just its type.
-  Use `Rc`, `Option<Rc>`, or the existing release-policy guard.
+- **Owning:** a stored strong reference needs a matching model-reference increase
+  under the translated tmux lifecycle, then a corresponding `remove_ref`,
+  `unref`, consuming `free`, or established ordinary drop. A Rust clone or weak
+  upgrade increments the Rust strong count but does not itself prove that tmux
+  intended a new lasting reference. Follow the actual value passed to release,
+  not just its type. Use `Rc`, `Option<Rc>`, or the existing release-policy guard
+  only when that ownership is established.
 - **Weak:** stored observation across operations without a matching strong release.
   Use `Weak` and retain the upgraded owner throughout access. Weak expiry detects
   allocation destruction, not logical destruction: still check dead/destroyed flags
@@ -20,6 +22,8 @@ entity can have owning, weak, and borrowed holders simultaneously.
   A raw pointer projected from an owner is only a borrowed view; it must not outlive
   that owner. In particular, immediately dropping an upgrade after extracting its
   pointer does not make subsequent pointer use safe.
+- A local weak upgrade can guard one synchronous operation without making the
+  originating weak field an owner. Keep the guard live through its final access.
 - A function named `free` may perform logical teardown without releasing every
   strong reference. Conversely, ordinary Rust `Drop` releases an owner without a
   named release function. Do not infer ownership from names alone.
