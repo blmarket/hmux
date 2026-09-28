@@ -421,7 +421,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let c = client_rc_ptr(&client_owner);
     let session_owner = change.s.upgrade();
     let s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    let pane_owner = change.wp.as_ref().and_then(|pane| window_pane_upgrade(pane));
+    let pane_owner = window_pane_upgrade(&change.wp);
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -646,7 +646,7 @@ mod hooks_events_tests {
                 c: Weak::new(),
                 s: Rc::downgrade(&session_owner),
                 wl: (*wl).observer.clone(),
-                wp: None,
+                wp: Weak::new(),
             };
             let observer = change.wl.clone();
             let calls = Rc::new(Cell::new(0));

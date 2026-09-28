@@ -2739,10 +2739,10 @@ their borrowed bytes remain live through the synchronous log call.
 
 `monitor_change.c` and `.s` now store plain `Weak` handles. Their consumers only
 upgrade them; an empty handle and an expired handle both mean no live model.
-The monitor set's optional client remains distinct because `None` selects a
-global monitor, while an expired explicit client must not select that path.
-The callback's optional pane remains distinct because control subscriptions
-check whether an explicitly selected pane expired.
+The monitor set's client now uses an empty weak handle to select a global
+monitor; an expired explicit client retains its identity and cannot select that
+path. The callback's pane similarly uses an empty handle for no pane, while
+control subscriptions reject an expired explicit pane.
 
 `key_event.client` now uses an empty `Weak` for no explicit dispatch target.
 `Weak::ptr_eq` distinguishes that sentinel from an expired explicit target,

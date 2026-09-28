@@ -1545,8 +1545,8 @@ unsafe fn control_sub_change(change: &monitor_change) {
         return;
     }
     let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
-    let pane_owner = change.wp.as_ref().and_then(|pane| crate::src::window::window_pane_upgrade(pane));
-    if change.wp.is_some() && pane_owner.is_none() {
+    let pane_owner = crate::src::window::window_pane_upgrade(&change.wp);
+    if !std::rc::Weak::ptr_eq(&change.wp, &std::rc::Weak::new()) && pane_owner.is_none() {
         session_remove_ref(session_owner, c"control_sub_change");
         server_client_unref_owned(client_owner);
         return;

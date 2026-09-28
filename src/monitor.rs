@@ -55,8 +55,12 @@ pub unsafe fn monitor_window_new() -> *mut monitor_window {
     .cast()
 }
 
+unsafe fn monitor_has_client(ms: *mut monitor_set) -> bool {
+    !std::rc::Weak::ptr_eq(&(*ms).client, &std::rc::Weak::new())
+}
+
 unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>> {
-    let client = (*ms).client.as_ref().and_then(std::rc::Weak::upgrade)?;
+    let client = (*ms).client.upgrade()?;
     if (*rc::as_ptr(&client)).flags & CLIENT_DEAD as uint64_t != 0 {
         server_client_unref_owned(client);
         return None;
@@ -66,7 +70,7 @@ unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>>
 
 // Client and session lifetime guards outlive each format expansion and report.
 unsafe fn monitor_get_session(ms: *mut monitor_set, c: *mut client) -> Option<Rc<UnsafeCell<session>>> {
-    let s = if (*ms).client.is_some() {
+    let s = if monitor_has_client(ms) {
         if c.is_null() { return None; }
         (*c).session_ptr()
     } else {
@@ -143,7 +147,7 @@ unsafe fn monitor_report(
         c: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        wp: None,
+        wp: std::rc::Weak::new(),
     };
     log_debug(format_args!(
         "{}: {} changed to {}",
@@ -153,10 +157,10 @@ unsafe fn monitor_report(
     ));
     (*me).fire_count = (*me).fire_count.wrapping_add(1);
     (*me).fire_time = current_time;
-    change.c = (*ms).client.clone().unwrap_or_default();
+    change.c = (*ms).client.clone();
     change.s = if s.is_null() { std::rc::Weak::new() } else { (*s).observer.clone() };
     change.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
-    change.wp = (!wp.is_null()).then(|| (*wp).observer.clone());
+    change.wp = if wp.is_null() { std::rc::Weak::new() } else { (*wp).observer.clone() };
     // The callback may destroy the monitor set while it is running.
     let callback = (*ms).cb.clone();
     callback(&change);
@@ -206,7 +210,7 @@ unsafe fn monitor_check_session(
 ) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -235,7 +239,7 @@ unsafe fn monitor_check_session(
 unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -301,7 +305,7 @@ unsafe fn monitor_check_all_panes_one(
 ) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -355,7 +359,7 @@ unsafe fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_i
 unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -429,7 +433,7 @@ unsafe fn monitor_check_all_windows_one(
 ) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -492,7 +496,7 @@ unsafe fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u
 unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -553,7 +557,7 @@ unsafe fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
 unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -615,7 +619,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
 unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -673,7 +677,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     let mut ms: *mut monitor_set = data as *mut monitor_set;
     let client_owner = monitor_client(ms);
     let c = client_rc_ptr(&client_owner);
-    if (*ms).client.is_some() && c.is_null() {
+    if monitor_has_client(ms) && c.is_null() {
         return;
     }
 
@@ -726,7 +730,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
     Box::into_raw(Box::new(monitor_set {
-        client: None,
+        client: std::rc::Weak::new(),
         session: None,
         cb,
         items: monitor_items { storage: None },
@@ -737,7 +741,7 @@ unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
 pub unsafe fn monitor_create_client(mut c: *mut client, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
-    (*ms).client = (!c.is_null()).then(|| (*c).observer.clone());
+    (*ms).client = if c.is_null() { std::rc::Weak::new() } else { (*c).observer.clone() };
     return ms as *mut monitor_set;
 }
 pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mut monitor_set {
@@ -1270,6 +1274,7 @@ mod last_owner_tests {
                 let c = rc::as_ptr(&client);
                 let observer = Rc::downgrade(&client);
                 let set = monitor_create_client(c, Rc::new(|_| {}));
+                assert!(monitor_has_client(set));
 
                 // The client exists, but the missing session ends the scan early.
                 monitor_check_sessions(set);
@@ -1285,11 +1290,15 @@ mod last_owner_tests {
                     event_loop();
                 }
                 assert!(observer.upgrade().is_none());
+                assert!(monitor_has_client(set), "expired explicit client remains selected");
                 assert!(monitor_client(set).is_none());
                 monitor_check_sessions(set);
                 monitor_destroy(set);
                 shutdown_runtime();
             }
+            let global = monitor_create(Rc::new(|_| {}));
+            assert!(!monitor_has_client(global));
+            monitor_destroy(global);
         }
     }
 

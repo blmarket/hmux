@@ -20,7 +20,7 @@ pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int
 /// Box-owned by monitor_create; its callback and weak observers expire on destroy.
 #[repr(C)]
 pub struct monitor_set {
-    pub client: Option<Weak<UnsafeCell<client>>>,
+    pub client: Weak<UnsafeCell<client>>,
     pub session: Option<Rc<UnsafeCell<session>>>,
     pub cb: monitor_cb,
     pub items: monitor_items,
@@ -37,7 +37,7 @@ pub struct monitor_change<'a> {
     pub c: Weak<UnsafeCell<client>>,
     pub s: Weak<UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
-    pub wp: Option<Weak<UnsafeCell<window_pane>>>,
+    pub wp: Weak<UnsafeCell<window_pane>>,
 }
 
 pub type monitor_cb = std::rc::Rc<dyn Fn(&monitor_change)>;
