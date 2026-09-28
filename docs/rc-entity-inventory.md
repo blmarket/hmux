@@ -1033,3 +1033,14 @@ state does not independently own the client; its caller retains it throughout.
 `cargo test --workspace` and `git diff --check` passed. Callback registrations and
 all state consumers compile against the typed client field. Session callback
 arguments, downstream client APIs and local raw projections remain pending.
+
+## Implemented typed session inputs for mode callbacks
+
+The unused session argument has been removed from all seven mode key callbacks.
+Mode command callbacks borrow an optional Rc session. Send-keys upgrades its saved
+target directly; copy mode clones the borrowed owner and retains its existing
+session_remove_ref cleanup, preserving deferred release behavior.
+
+`cargo test --workspace` and `git diff --check` passed. All callback registrations
+and callers compile against the updated signatures. Winlink arguments, downstream
+session APIs and local raw model projections remain pending.

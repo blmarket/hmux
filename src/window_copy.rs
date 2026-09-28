@@ -369,7 +369,7 @@ pub static window_copy_mode: window_mode = {
                 as unsafe fn(
                     *mut window_mode_entry,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-                    *mut session,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
                     *mut winlink,
                     *mut args,
                     *mut mouse_event,
@@ -411,7 +411,7 @@ pub static window_view_mode: window_mode = {
                 as unsafe fn(
                     *mut window_mode_entry,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-                    *mut session,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
                     *mut winlink,
                     *mut args,
                     *mut mouse_event,
@@ -5119,12 +5119,12 @@ pub const WINDOW_COPY_CMD_FLAG_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi
 unsafe fn window_copy_command(
     wme: *mut window_mode_entry,
     client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    s: *mut session,
+    session: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     wl: *mut winlink,
     args: *mut args,
     m: *mut mouse_event,
 ) {
-    let session_owner = s.as_ref().and_then(|s| s.observer.upgrade());
+    let session_owner = session.cloned();
     window_copy_command_with_session(wme, client_owner, session_owner.as_deref(), wl, args, m);
     if let Some(owner) = session_owner {
         crate::src::session::session_remove_ref(owner, c"window_copy_command");

@@ -3417,7 +3417,7 @@ pub unsafe fn window_pane_key(
         }
         if (*(*wme).mode).key.is_some() && !c.is_null() {
             key &= !KEYC_MASK_FLAGS;
-            (*(*wme).mode).key.expect("non-null function pointer")(wme, &(*c).observer.upgrade().expect("mode key client"), s, wl, key, m);
+            (*(*wme).mode).key.expect("non-null function pointer")(wme, &(*c).observer.upgrade().expect("mode key client"), wl, key, m);
         }
         return 0 as ::core::ffi::c_int;
     }

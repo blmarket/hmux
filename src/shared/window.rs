@@ -199,7 +199,6 @@ pub struct window_mode {
         unsafe fn(
             *mut window_mode_entry,
             &std::rc::Rc<std::cell::UnsafeCell<client>>,
-            *mut session,
             *mut winlink,
             key_code,
             *mut mouse_event,
@@ -210,7 +209,7 @@ pub struct window_mode {
         unsafe fn(
             *mut window_mode_entry,
             Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-            *mut session,
+            Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
             *mut winlink,
             *mut args,
             *mut mouse_event,

@@ -230,7 +230,6 @@ pub static window_tree_mode: window_mode = {
                 as unsafe fn(
                     *mut window_mode_entry,
                     &std::rc::Rc<std::cell::UnsafeCell<client>>,
-                    *mut session,
                     *mut winlink,
                     key_code,
                     *mut mouse_event,
@@ -1538,7 +1537,6 @@ unsafe fn window_tree_menu(
     window_tree_key(
         wme,
         c,
-        ::core::ptr::null_mut::<session>(),
         ::core::ptr::null_mut::<winlink>(),
         key,
         ::core::ptr::null_mut::<mouse_event>(),
@@ -2158,7 +2156,6 @@ unsafe fn window_tree_mouse(
 unsafe fn window_tree_key(
     mut wme: *mut window_mode_entry,
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    _s: *mut session,
     _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
