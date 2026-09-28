@@ -61,7 +61,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         args_has(args, 'Z' as i32 as u_char),
     );
     if args_has(args, 'D' as i32 as u_char) != 0 {
-        wp = window_pane_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pane_list_remove(w, wp);
         window_pane_list_insert_front(w, wp);
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -69,9 +69,9 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         yoff = (*wp).yoff as u_int;
         sx = (*wp).sx;
         sy = (*wp).sy;
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
-            wp2 = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp2 = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if wp2.is_null() {
                 break;
             }
@@ -82,7 +82,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
             window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
@@ -91,12 +91,12 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(wp, sx, sy);
-        wp = window_pane_previous((*w).active).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_previous(((*w).active).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
-            wp = window_pane_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     } else {
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         window_pane_list_remove(w, wp);
         window_pane_list_insert_back(w, wp);
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -104,9 +104,9 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         yoff = (*wp).yoff as u_int;
         sx = (*wp).sx;
         sy = (*wp).sy;
-        wp = window_pane_last(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
-            wp2 = window_pane_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp2 = window_pane_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if wp2.is_null() {
                 break;
             }
@@ -117,7 +117,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
             window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
-            wp = window_pane_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
@@ -126,9 +126,9 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(wp, sx, sy);
-        wp = window_pane_next((*w).active).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(((*w).active).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
-            wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);

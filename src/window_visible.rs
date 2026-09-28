@@ -54,7 +54,7 @@ pub unsafe fn window_visible_ranges(
         nx: width,
     });
     let mut found_self = false;
-    let mut cursor = window_pane_z_last(w);
+    let mut cursor = window_pane_z_last(w.as_ref());
     while let Some(pane_owner) = cursor {
         let wp = pane_owner.get();
         if std::ptr::eq(&*wp, base_wp) {
@@ -141,6 +141,6 @@ pub unsafe fn window_visible_ranges(
                 }
             }
         }
-        cursor = window_pane_z_previous(wp);
+        cursor = window_pane_z_previous(wp.as_ref());
     }
 }

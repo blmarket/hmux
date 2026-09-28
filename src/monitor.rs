@@ -575,7 +575,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     }
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(((*wl).window_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             ft = monitor_create_formats(c, s, wl, wp);
             me = monitor_items_minmax(&(*ms).items);
@@ -591,7 +591,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
                 me = me1;
             }
             format_free(ft);
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         wl = winlinks_next(&*wl);
     }

@@ -51,13 +51,13 @@ pub static cmd_swap_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_swap_pane_next_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
     while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return wp;
 }
 unsafe fn cmd_swap_pane_prev_tiled_pane(mut wp: *mut window_pane) -> *mut window_pane {
     while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-        wp = window_pane_previous(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return wp;
 }
@@ -104,10 +104,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return CMD_RETURN_ERROR;
         }
         src_w = dst_w;
-        src_wp = window_pane_next(dst_wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        src_wp = window_pane_next(dst_wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         src_wp = cmd_swap_pane_next_tiled_pane(src_wp);
         if src_wp.is_null() {
-            src_wp = window_pane_first(dst_w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            src_wp = window_pane_first(dst_w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             src_wp = cmd_swap_pane_next_tiled_pane(src_wp);
         }
     } else if args_has(args, 'U' as i32 as u_char) != 0 {
@@ -118,10 +118,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return CMD_RETURN_ERROR;
         }
         src_w = dst_w;
-        src_wp = window_pane_previous(dst_wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        src_wp = window_pane_previous(dst_wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         src_wp = cmd_swap_pane_prev_tiled_pane(src_wp);
         if src_wp.is_null() {
-            src_wp = window_pane_last(dst_w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            src_wp = window_pane_last(dst_w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             src_wp = cmd_swap_pane_prev_tiled_pane(src_wp);
         }
     }

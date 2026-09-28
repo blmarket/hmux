@@ -1715,3 +1715,17 @@ status mapping and zoomed-mode status suppression are preserved.
 checks inherited numeric values, local overrides and fallback after
 removal through the shared accessor. Raw pane/window relationships, active-mode
 pointers and option parent links still require unsafe access and remain pending.
+
+## Implemented borrowed pane-order traversal inputs
+
+All ten pane-order traversal helpers now take shared window/pane borrows, with
+optional inputs preserving null-input behavior. Ordering collections observe panes
+with Weak handles; successful traversal returns an owning Rc. Window-only and
+history traversal are safe Rust. Advancing from a pane still requires unsafe
+access to its raw parent-window relationship. Callers across layout, commands,
+rendering, sessions and server dispatch supply scoped borrows. Empty-order checks
+in pane creation and destruction consume Option directly.
+
+`cargo test --workspace` and `git diff --check` passed. Several callers still
+project traversal results into raw locals, and pane-to-window relationships and
+ordering mutation APIs remain pending.

@@ -152,14 +152,14 @@ pub unsafe fn layout_set_previous(mut w: *mut window) -> u_int {
 }
 unsafe fn layout_set_first_tiled(mut w: *mut window) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !(*wp).layout_cell.is_null()
             && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) != 0
         {
             return wp;
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
@@ -170,13 +170,13 @@ unsafe fn layout_set_link_floating(
 ) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if layout_cell_is_tiled(lc) == 0 {
             layout_cells_push_back(lcroot, layout_take_leaf(leaves, lc));
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 
@@ -226,7 +226,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, type_0);
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         lcchild = (*wp).layout_cell as *mut layout_cell;
         layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, lcchild));
@@ -235,7 +235,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
             (*lcchild).g.sx = (*w).sx;
             (*lcchild).g.sy = (*w).sy;
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     layout_spread_cell(w, lcroot);
     assert!(leaves.is_empty(), "all detached pane cells were reinserted");
@@ -377,9 +377,9 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, lcmain));
     if n == 1 as u_int {
-        wp = window_pane_next(wpmain).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wpmain.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, (*wp).layout_cell as *mut layout_cell));
         (*(*wp).layout_cell).parent = lcroot;
@@ -403,7 +403,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
         );
         layout_make_node(lcother, LAYOUT_LEFTRIGHT);
         layout_cells_push_back(lcroot, lcother_owner);
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -419,7 +419,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
                     );
                 }
             }
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_spread_cell(w, lcother);
     }
@@ -535,9 +535,9 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, lcmain));
     if n == 1 as u_int {
-        wp = window_pane_next(wpmain).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wpmain.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_cells_push_front(lcroot, layout_take_leaf(&mut leaves, (*wp).layout_cell as *mut layout_cell));
         (*(*wp).layout_cell).parent = lcroot;
@@ -561,7 +561,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
         );
         layout_make_node(lcother, LAYOUT_LEFTRIGHT);
         layout_cells_push_front(lcroot, lcother_owner);
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -577,7 +577,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
                     );
                 }
             }
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_spread_cell(w, lcother);
     }
@@ -693,9 +693,9 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, lcmain));
     if n == 1 as u_int {
-        wp = window_pane_next(wpmain).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wpmain.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, (*wp).layout_cell as *mut layout_cell));
         (*(*wp).layout_cell).parent = lcroot;
@@ -719,7 +719,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
             0 as ::core::ffi::c_int,
         );
         layout_cells_push_back(lcroot, lcother_owner);
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -735,7 +735,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
                     );
                 }
             }
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_spread_cell(w, lcother);
     }
@@ -851,9 +851,9 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, layout_take_leaf(&mut leaves, lcmain));
     if n == 1 as u_int {
-        wp = window_pane_next(wpmain).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wpmain.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_cells_push_front(lcroot, layout_take_leaf(&mut leaves, (*wp).layout_cell as *mut layout_cell));
         (*(*wp).layout_cell).parent = lcroot;
@@ -877,7 +877,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
             0 as ::core::ffi::c_int,
         );
         layout_cells_push_front(lcroot, lcother_owner);
-        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -893,7 +893,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
                     );
                 }
             }
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         layout_spread_cell(w, lcother);
     }
@@ -995,11 +995,11 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, LAYOUT_TOPBOTTOM);
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     j = 0 as u_int;
     while j < rows {
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if wp.is_null() {
             break;
@@ -1015,7 +1015,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         } else {
             let mut lcrow_owner = layout_create_cell();
         lcrow = &mut *lcrow_owner;
@@ -1039,11 +1039,11 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                 while !wp.is_null()
                     && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0
                 {
-                    wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                    wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                 }
                 if wp.is_null() {
                     break;

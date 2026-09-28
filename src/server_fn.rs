@@ -575,7 +575,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     server_client_remove_pane(wp);
     layout_close_pane(wp);
     window_remove_pane(w, pane_owner);
-    if window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+    if window_pane_first(w.as_ref()).is_none() {
         server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
     } else {
         window_pop_zoom(w);

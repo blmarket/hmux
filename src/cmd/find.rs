@@ -694,7 +694,7 @@ unsafe fn cmd_find_get_pane_with_window(
         return 0 as ::core::ffi::c_int;
     }
     if strcmp(pane, b"!\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        (*fs).set_wp(window_pane_stack_first((*fs).w_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
+        (*fs).set_wp(window_pane_stack_first(((*fs).w_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()));
         if (*fs).wp_ptr().is_null() {
             return -(1 as ::core::ffi::c_int);
         }

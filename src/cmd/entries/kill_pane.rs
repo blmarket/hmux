@@ -72,9 +72,9 @@ unsafe fn cmd_kill_pane_all(
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();
     server_unzoom_window((*wl).window_ptr());
-    let mut cursor = window_pane_first((*wl).window_ptr());
+    let mut cursor = window_pane_first(((*wl).window_ptr()).as_ref());
     while let Some(pane_owner) = cursor {
-        cursor = window_pane_next(pane_owner.get());
+        cursor = window_pane_next((pane_owner.get()).as_ref());
         if pane_owner.get() != wp
             && cmd_kill_pane_filter(item, s, wl, &pane_owner, filter) != 0
         {

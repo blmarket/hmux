@@ -534,14 +534,14 @@ pub unsafe fn layout_parse(
                     }
                     let mut floating = Vec::new();
                     if pctx.version == 1 as int64_t {
-                        wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                         while !wp.is_null() {
                             if !(window_pane_is_floating(&*wp) == 0) {
                                 lcchild = (*wp).layout_cell as *mut layout_cell;
                                 floating.push(layout_cells_remove((*lcchild).parent, lcchild).expect("floating cell is owned"));
                                 (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
                             }
-                            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
                         }
                     }
                     drop((*w).layout_root.take());
@@ -990,7 +990,7 @@ unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse
             break;
         }
     }
-    while let Some(pane_owner) = window_pane_stack_first(w) {
+    while let Some(pane_owner) = window_pane_stack_first(w.as_ref()) {
         wp = pane_owner.get();
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }

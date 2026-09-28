@@ -1704,15 +1704,15 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
     (*wp).flags |= PANE_ZOOMED;
-    wp1 = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp1 = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp1.is_null() {
         (*wp1).saved_layout_cell = (*wp1).layout_cell as *mut layout_cell;
         (*wp1).layout_cell = ::core::ptr::null_mut::<layout_cell>();
-        wp1 = window_pane_next(wp1).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp1 = window_pane_next(wp1.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     (*w).saved_layout_root = (*w).layout_root.take();
     layout_init(w, wp);
-    wp1 = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp1 = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp1.is_null() {
         lc = (*wp1).saved_layout_cell;
         if !(wp1 == wp
@@ -1728,7 +1728,7 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
             lc = layout_floating_pane(w, wp, &raw mut lg);
             layout_assign_pane(lc, wp1, 0 as ::core::ffi::c_int);
         }
-        wp1 = window_pane_next(wp1).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp1 = window_pane_next(wp1.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if (*(*wp).saved_layout_cell).flags & LAYOUT_CELL_FLOATING != 0 {
         window_pane_z_remove(w, wp);
@@ -1761,7 +1761,7 @@ unsafe fn window_unzoom_internal(
     if !(*w).flags & WINDOW_ZOOMED != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if (*wp).flags & PANE_ZOOMED != 0 {
             zoomed = wp;
@@ -1783,29 +1783,29 @@ unsafe fn window_unzoom_internal(
                 }
             }
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     (*w).flags &= !WINDOW_ZOOMED;
     layout_free(w);
     (*w).layout_root = (*w).saved_layout_root.take();
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         (*wp).layout_cell = (*wp).saved_layout_cell as *mut layout_cell;
         (*wp).saved_layout_cell = ::core::ptr::null_mut::<layout_cell>();
         (*wp).flags &= !PANE_ZOOMED;
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if !zoomed.is_null() && window_pane_is_floating(&*zoomed) != 0 {
         window_pane_z_remove(w, zoomed);
         if zoomed == (*w).active {
             window_pane_z_insert_front(w, zoomed);
         } else {
-            wp = window_pane_z_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_z_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !wp.is_null() {
                 if window_pane_is_floating(&*wp) == 0 {
                     break;
                 }
-                wp = window_pane_z_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                wp = window_pane_z_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             if wp.is_null() {
                 window_pane_z_insert_back(w, zoomed);
@@ -1914,7 +1914,7 @@ pub unsafe fn window_add_pane(
         other = (*w).active;
     }
     wp = window_pane_create(w, (*w).sx, (*w).sy, hlimit);
-    if window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+    if window_pane_first(w.as_ref()).is_none() {
         log_debug(format_args!(
             "{}: @{} at start",
             "window_add_pane",
@@ -2082,10 +2082,10 @@ pub unsafe fn window_count_panes(
     })
 }
 pub unsafe fn window_destroy_panes(w: *mut window) {
-    while let Some(owner) = window_pane_stack_first(w) {
+    while let Some(owner) = window_pane_stack_first(w.as_ref()) {
         window_pane_stack_remove(&raw mut (*w).last_panes, owner.get());
     }
-    while let Some(owner) = window_pane_first(w) {
+    while let Some(owner) = window_pane_first(w.as_ref()) {
         let wp = owner.get();
         window_pane_list_remove(w, wp);
         window_pane_z_remove(w, wp);
@@ -2156,7 +2156,7 @@ pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> std::ffi:
         pos = pos + 1;
         flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
-    if wp == window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+    if wp == window_pane_stack_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         let fresh13 = pos;
         pos = pos + 1;
         flags[fresh13 as usize] = '-' as i32 as ::core::ffi::c_char;
@@ -2217,84 +2217,51 @@ pub(crate) unsafe fn window_pane_upgrade(
     Some(owner)
 }
 
-pub unsafe fn window_pane_first(w: *mut window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.is_null() {
-        None
-    } else {
-        (*w).panes.first()
-    }
+pub fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    w?.panes.first()
 }
 
-pub unsafe fn window_pane_last(w: *mut window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.is_null() {
-        None
-    } else {
-        (*w).panes.last()
-    }
+pub fn window_pane_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    w?.panes.last()
 }
 
-pub unsafe fn window_pane_next(wp: *mut window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if wp.is_null() {
-        None
-    } else {
-        (*(*wp).window).panes.next(&(*wp).observer)
-    }
+pub unsafe fn window_pane_next(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    let wp = wp?;
+    (*wp.window).panes.next(&wp.observer)
 }
 
-pub unsafe fn window_pane_previous(wp: *mut window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if wp.is_null() {
-        None
-    } else {
-        (*(*wp).window).panes.previous(&(*wp).observer)
-    }
+pub unsafe fn window_pane_previous(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    let wp = wp?;
+    (*wp.window).panes.previous(&wp.observer)
 }
 
-pub unsafe fn window_pane_z_first(w: *mut window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.is_null() {
-        None
-    } else {
-        (*w).z_index.first()
-    }
+pub fn window_pane_z_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    w?.z_index.first()
 }
 
-pub unsafe fn window_pane_z_last(w: *mut window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.is_null() {
-        None
-    } else {
-        (*w).z_index.last()
-    }
+pub fn window_pane_z_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    w?.z_index.last()
 }
 
-pub unsafe fn window_pane_z_next(wp: *mut window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if wp.is_null() {
-        None
-    } else {
-        (*(*wp).window).z_index.next(&(*wp).observer)
-    }
+pub unsafe fn window_pane_z_next(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    let wp = wp?;
+    (*wp.window).z_index.next(&wp.observer)
 }
 
-pub unsafe fn window_pane_z_previous(wp: *mut window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if wp.is_null() {
-        None
-    } else {
-        (*(*wp).window).z_index.previous(&(*wp).observer)
-    }
+pub unsafe fn window_pane_z_previous(wp: Option<&window_pane>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    let wp = wp?;
+    (*wp.window).z_index.previous(&wp.observer)
 }
 
-pub unsafe fn window_pane_stack_first(w: *mut window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.is_null() {
-        None
-    } else {
-        (*w).last_panes.first()
-    }
+pub fn window_pane_stack_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    w?.last_panes.first()
 }
 
-pub unsafe fn window_pane_stack_next(w: *mut window, wp: *mut window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.is_null() {
-        None
-    } else {
-        (*w).last_panes.next(&(*wp).observer)
-    }
+pub fn window_pane_stack_next(
+    w: Option<&window>,
+    wp: &window_pane,
+) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+    w?.last_panes.next(&wp.observer)
 }
 
 pub unsafe fn window_pane_list_remove(w: *mut window, wp: *mut window_pane) {
@@ -3329,7 +3296,7 @@ unsafe fn window_pane_copy_paste(
 ) {
     let wp = owner.get();
     let window_owner = (*(*wp).window).observer.upgrade().expect("pane window");
-    let mut cursor = window_pane_first(window_owner.get());
+    let mut cursor = window_pane_first((window_owner.get()).as_ref());
     while let Some(pane_owner) = cursor {
         let loop_0 = pane_owner.get();
         if loop_0 != wp
@@ -3349,13 +3316,13 @@ unsafe fn window_pane_copy_paste(
             ));
             bufferevent_write((*loop_0).event, bytes.as_ptr().cast(), bytes.len());
         }
-        cursor = window_pane_next(loop_0);
+        cursor = window_pane_next(loop_0.as_ref());
     }
 }
 unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, key: key_code) {
     let wp = owner.get();
     let window_owner = (*(*wp).window).observer.upgrade().expect("pane window");
-    let mut cursor = window_pane_first(window_owner.get());
+    let mut cursor = window_pane_first((window_owner.get()).as_ref());
     while let Some(pane_owner) = cursor {
         let loop_0 = pane_owner.get();
         if loop_0 != wp
@@ -3370,7 +3337,7 @@ unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_
         {
             input_key_pane(&pane_owner, key, ::core::ptr::null_mut::<mouse_event>());
         }
-        cursor = window_pane_next(loop_0);
+        cursor = window_pane_next(loop_0.as_ref());
     }
 }
 pub unsafe fn window_pane_paste(

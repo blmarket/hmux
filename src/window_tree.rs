@@ -1079,7 +1079,7 @@ unsafe fn window_tree_draw_window(
         visible = total;
     }
     current = 0 as u_int;
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
             if wp == (*w).active {
@@ -1087,7 +1087,7 @@ unsafe fn window_tree_draw_window(
             }
             current = current.wrapping_add(1);
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if current < visible {
         start = 0 as u_int;
@@ -1179,7 +1179,7 @@ unsafe fn window_tree_draw_window(
     (*data).each = each;
     loop_0 = 0 as u_int;
     i = loop_0;
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
             if loop_0 == end {
@@ -1259,7 +1259,7 @@ unsafe fn window_tree_draw_window(
                 i = i.wrapping_add(1);
             }
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 unsafe fn window_tree_draw_info(
@@ -2182,9 +2182,9 @@ unsafe fn window_tree_mouse(
             return KEYC_NONE;
         }
         let wl = target.winlink.as_ptr();
-        let mut pane = window_pane_first((*wl).window_ptr());
+        let mut pane = window_pane_first(((*wl).window_ptr()).as_ref());
         for _ in 0..(*data).start.wrapping_add(x) {
-            pane = pane.as_ref().and_then(|owner| window_pane_next(owner.get()));
+            pane = pane.as_ref().and_then(|owner| window_pane_next((owner.get()).as_ref()));
             if pane.is_none() {
                 break;
             }
