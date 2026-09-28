@@ -1,4 +1,3 @@
-use crate::src::server_client::server_client_unref_owned;
 use crate::src::session::session_remove_ref;
 use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::{
@@ -62,7 +61,7 @@ unsafe fn monitor_has_client(ms: *mut monitor_set) -> bool {
 unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>> {
     let client = (*ms).client.upgrade()?;
     if (*rc::as_ptr(&client)).flags & CLIENT_DEAD as uint64_t != 0 {
-        server_client_unref_owned(client);
+        drop(client);
         return None;
     }
     Some(client)
@@ -216,7 +215,7 @@ unsafe fn monitor_check_session(
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -231,9 +230,9 @@ unsafe fn monitor_check_session(
         &value,
         &raw mut (*me).last,
     );
-    session_remove_ref(session_owner, c"monitor_check_session");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
@@ -245,7 +244,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -265,9 +264,9 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
     let lookup_wp_owner = window_pane_find_by_id((*me).id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
-        session_remove_ref(session_owner, c"monitor_check_pane");
+        drop(session_owner);
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     }
@@ -291,9 +290,9 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         }
         wl = window_winlinks_next(w, wl);
     }
-    session_remove_ref(session_owner, c"monitor_check_pane");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_check_all_panes_one(
@@ -311,7 +310,7 @@ unsafe fn monitor_check_all_panes_one(
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -336,9 +335,9 @@ unsafe fn monitor_check_all_panes_one(
     }
     (*mp).generation = (*ms).generation;
     monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
-    session_remove_ref(session_owner, c"monitor_check_all_panes_one");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
@@ -365,7 +364,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -387,9 +386,9 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         crate::src::shared::window::WindowOwner::as_ptr,
     );
     if w.is_null() {
-        session_remove_ref(session_owner, c"monitor_check_window");
+        drop(session_owner);
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     }
@@ -420,9 +419,9 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         }
         wl = window_winlinks_next(w, wl);
     }
-    session_remove_ref(session_owner, c"monitor_check_window");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_check_all_windows_one(
@@ -439,7 +438,7 @@ unsafe fn monitor_check_all_windows_one(
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -473,9 +472,9 @@ unsafe fn monitor_check_all_windows_one(
         &value,
         &raw mut (*mw).last,
     );
-    session_remove_ref(session_owner, c"monitor_check_all_windows_one");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u_int) {
@@ -502,7 +501,7 @@ unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -529,9 +528,9 @@ unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
         me = me1;
     }
     format_free(ft);
-    session_remove_ref(session_owner, c"monitor_check_sessions");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
@@ -563,7 +562,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -611,9 +610,9 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
         }
         me = me1;
     }
-    session_remove_ref(session_owner, c"monitor_check_all_panes");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
@@ -625,7 +624,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
 
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -668,9 +667,9 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
         }
         me = me1;
     }
-    session_remove_ref(session_owner, c"monitor_check_all_windows");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
@@ -693,7 +692,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     event_add(&raw mut (*ms).timer, &raw mut tv);
     let Some(session_owner) = monitor_get_session(ms, c) else {
         if let Some(client) = client_owner {
-            server_client_unref_owned(client);
+            drop(client);
         }
         return;
     };
@@ -723,9 +722,9 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     if have_all_windows != 0 {
         monitor_check_all_windows(ms);
     }
-    session_remove_ref(session_owner, c"monitor_timer");
+    drop(session_owner);
     if let Some(client) = client_owner {
-        server_client_unref_owned(client);
+        drop(client);
     }
 }
 unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
@@ -1259,7 +1258,7 @@ mod last_owner_tests {
     use super::*;
 
     #[test]
-    fn client_references_defer_release_on_missing_session_and_dead_client() {
+    fn client_scan_guards_release_immediately_on_missing_session_and_dead_client() {
         use crate::src::reactor::{event_loop, shutdown_runtime};
 
         unsafe {
@@ -1272,12 +1271,13 @@ mod last_owner_tests {
 
                 // The client exists, but the missing session ends the scan early.
                 monitor_check_sessions(set);
-                assert_eq!(observer.strong_count(), 2);
+                assert_eq!(observer.strong_count(), 1);
                 (*c).flags |= CLIENT_DEAD as uint64_t;
                 assert!(monitor_client(set).is_none());
-                assert_eq!(observer.strong_count(), 3);
+                assert_eq!(observer.strong_count(), 1);
 
                 drop(client);
+                assert!(observer.upgrade().is_none());
                 if cancel {
                     shutdown_runtime();
                 } else {
@@ -1297,7 +1297,7 @@ mod last_owner_tests {
     }
 
     #[test]
-    fn session_guards_defer_release_on_early_return_normal_exit_and_teardown() {
+    fn session_scan_guards_release_immediately_and_monitor_owner_releases_on_teardown() {
         use crate::src::reactor::{event_loop, shutdown_runtime};
         use crate::src::session::{sessions_insert, sessions_remove};
 
@@ -1321,7 +1321,7 @@ mod last_owner_tests {
             // Empty scans exercise the normal exit paths.
             monitor_check_all_panes(set);
             monitor_check_all_windows(set);
-            assert_eq!(observer.strong_count(), 6);
+            assert_eq!(observer.strong_count(), 2);
             event_loop();
             assert_eq!(observer.strong_count(), 2);
 
