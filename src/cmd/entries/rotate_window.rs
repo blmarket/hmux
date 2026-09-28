@@ -81,7 +81,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             }
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
-            window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
+            window_pane_resize(&cursor, (*wp2).sx, (*wp2).sy);
             cursor = window_pane_next(Some(&*wp)).expect("rotation neighbor remains in order");
         }
         let wp = cursor.get();
@@ -91,7 +91,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
-        window_pane_resize(wp, sx, sy);
+        window_pane_resize(&cursor, sx, sy);
         window_pane_previous(((*w).active).as_ref())
             .or_else(|| window_pane_last(Some(&*w)))
     } else {
@@ -117,7 +117,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             }
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
-            window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
+            window_pane_resize(&cursor, (*wp2).sx, (*wp2).sy);
             cursor = window_pane_previous(Some(&*wp)).expect("rotation neighbor remains in order");
         }
         let wp = cursor.get();
@@ -127,7 +127,7 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
-        window_pane_resize(wp, sx, sy);
+        window_pane_resize(&cursor, sx, sy);
         window_pane_next(((*w).active).as_ref())
             .or_else(|| window_pane_first(Some(&*w)))
     }.expect("rotation window has an active candidate");

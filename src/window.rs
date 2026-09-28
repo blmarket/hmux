@@ -1265,7 +1265,7 @@ pub unsafe fn window_resize(
     }
     redraw_invalidate_scene(w);
 }
-pub unsafe fn window_pane_send_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy: u_int) {
+pub unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     let mut w: *mut window = (*wp).window as *mut window;
     let mut ws: winsize = winsize {
         ws_row: 0,
@@ -2733,7 +2733,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     if event_initialized(&(*wp).sb_auto_timer) != 0 {
         event_del(&raw mut (*wp).sb_auto_timer);
     }
-    window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
+    window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
     window_pane_remove_ref(
         owner,
         b"window_pane_destroy\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2836,13 +2836,14 @@ pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
     ));
     bufferevent_enable((*wp).event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
 }
-pub unsafe fn window_pane_clear_resizes(
-    mut wp: *mut window_pane,
+pub fn window_pane_clear_resizes(
+    wp: &mut window_pane,
     mut except: *mut window_pane_resize,
 ) {
-    (*wp).resize_queue.clear_except(except);
+    wp.resize_queue.clear_except(except);
 }
-pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy: u_int) {
+pub unsafe fn window_pane_resize(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>, sx: u_int, sy: u_int) {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,

@@ -178,10 +178,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         yoff = (*src_wp).yoff as u_int;
         (*src_wp).xoff = (*dst_wp).xoff;
         (*src_wp).yoff = (*dst_wp).yoff;
-        window_pane_resize(src_wp, (*dst_wp).sx, (*dst_wp).sy);
+        window_pane_resize(&src_pane_owner, (*dst_wp).sx, (*dst_wp).sy);
         (*dst_wp).xoff = xoff as ::core::ffi::c_int;
         (*dst_wp).yoff = yoff as ::core::ffi::c_int;
-        window_pane_resize(dst_wp, sx, sy);
+        window_pane_resize(&dst_pane_owner, sx, sy);
         if args_has(args, 'd' as i32 as u_char) == 0 {
             if src_w != dst_w {
                 window_set_active_pane(src_w, dst_wp, 1 as ::core::ffi::c_int);

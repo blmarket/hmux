@@ -3470,7 +3470,7 @@ pub unsafe fn screen_write_alternateon(
         return;
     }
     if !wp.is_null() {
-        window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
+        window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
         if event_initialized(&(*wp).resize_timer) != 0 {
             event_del(&raw mut (*wp).resize_timer);
         }
@@ -3479,8 +3479,8 @@ pub unsafe fn screen_write_alternateon(
             ::core::ptr::null_mut::<window_pane>(),
         );
         if !(*wp).resize_queue.is_empty() {
-            window_pane_send_resize(wp, (*wp).sx, (*wp).sy);
-            window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
+            window_pane_send_resize(&*wp, (*wp).sx, (*wp).sy);
+            window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
         }
         server_redraw_window_borders((*wp).window as *mut window);
     }

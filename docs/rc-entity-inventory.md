@@ -1785,3 +1785,15 @@ using a raw pane local.
 `cargo test --workspace` and `git diff --check` passed. The active-pane relationship
 and legacy resize/focus/layout calls still require raw projections from retained
 models; these remain pending.
+
+## Implemented retained pane resize inputs
+
+Pane resize requires a retained Rc handle, including across mode-resize callbacks
+and event creation. Rotation, swap and respawn forward existing owners; layout
+repair now retains each traversed pane through resize and subsequent field checks.
+Resize-queue cleanup is safe Rust using a mutable pane borrow. Terminal-size
+notification takes a shared pane borrow because it only reads model data before
+issuing the ioctl.
+
+`cargo test --workspace` and `git diff --check` passed. The raw parent-window link,
+mode-entry pointers and internal event/resize projections remain pending.

@@ -3575,15 +3575,15 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
         )
     };
     if queue_len == 1 {
-        window_pane_send_resize(wp, first_sx, first_sy);
-        window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
+        window_pane_send_resize(&*wp, first_sx, first_sy);
+        window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
     } else if last_sx != first_osx || last_sy != first_osy {
-        window_pane_send_resize(wp, last_sx, last_sy);
-        window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
+        window_pane_send_resize(&*wp, last_sx, last_sy);
+        window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
     } else {
         let (sx, sy) = previous.expect("multiple resize entries have a predecessor");
-        window_pane_send_resize(wp, sx, sy);
-        window_pane_clear_resizes(wp, last_ptr);
+        window_pane_send_resize(&*wp, sx, sy);
+        window_pane_clear_resizes(&mut *wp, last_ptr);
         tv.tv_usec = 10000 as __suseconds_t;
     }
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);

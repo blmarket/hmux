@@ -315,7 +315,7 @@ pub unsafe fn spawn_window(
         window_destroy_panes(w);
         window_pane_list_insert_front(&mut *w, &*source_pane);
         window_pane_z_insert_back(&mut *w, &*source_pane);
-        window_pane_resize(source_pane, (*w).sx, (*w).sy);
+        window_pane_resize(&source_pane_owner, (*w).sx, (*w).sy);
         layout_init(w, source_pane);
         (*w).active = ::core::ptr::null_mut::<window_pane>();
         window_set_active_pane(w, source_pane, 0 as ::core::ffi::c_int);

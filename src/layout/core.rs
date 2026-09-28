@@ -416,7 +416,6 @@ pub unsafe fn layout_add_horizontal_border(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut root: *mut layout_cell = (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut status: ::core::ffi::c_int = 0;
@@ -429,8 +428,9 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
     let mut sy: u_int = 0;
     let mut old_sx: u_int = 0;
     let mut old_sy: u_int = 0;
-    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
+    let mut cursor = window_pane_first(w.as_ref());
+    while let Some(pane_owner) = cursor {
+        let wp = pane_owner.get();
         lc = (*wp).layout_cell as *mut layout_cell;
         if !(lc.is_null() || wp == skip) {
             old_xoff = (*wp).xoff;
@@ -476,7 +476,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
                 }
                 (*wp).flags |= PANE_REDRAWSCROLLBAR;
             }
-            window_pane_resize(wp, sx, sy);
+            window_pane_resize(&pane_owner, sx, sy);
             if (*wp).xoff != old_xoff
                 || (*wp).yoff != old_yoff
                 || (*wp).sx != old_sx
@@ -485,7 +485,7 @@ pub unsafe fn layout_fix_panes(mut w: *mut window, mut skip: *mut window_pane) {
                 changed = 1 as ::core::ffi::c_int;
             }
         }
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp));
     }
     if changed != 0 {
         redraw_invalidate_scene(w);
