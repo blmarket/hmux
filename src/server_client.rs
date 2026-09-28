@@ -5330,10 +5330,11 @@ pub unsafe fn server_client_remove_pane(mut wp: *mut window_pane) {
     }
 }
 pub unsafe fn server_client_print(
-    mut c: *mut client,
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut parse: ::core::ffi::c_int,
     mut evb: &mut evbuffer,
 ) {
+    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut data: *mut ::core::ffi::c_void =
         evbuffer_pullup(evb, -1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
@@ -5381,7 +5382,7 @@ pub unsafe fn server_client_print(
                 if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                     control_write(c, |out| write_cstr(out, sanitized.as_ptr()));
                 } else {
-                    file_print(c, |out| {
+                    file_print(client_owner, |out| {
                         write_cstr(out, sanitized.as_ptr())?;
                         out.write_all(b"\n")
                     });
@@ -5389,7 +5390,7 @@ pub unsafe fn server_client_print(
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                 control_write(c, |out| write_cstr(out, msg));
             } else {
-                file_print(c, |out| {
+                file_print(client_owner, |out| {
                     write_cstr(out, msg)?;
                     out.write_all(b"\n")
                 });

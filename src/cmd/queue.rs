@@ -951,8 +951,7 @@ pub unsafe fn cmdq_guard(
 }
 pub unsafe fn cmdq_print_data(mut item: *mut cmdq_item, mut evb: &mut evbuffer) {
     let client = cmdq_get_client(item);
-    let client_ptr = client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    server_client_print(client_ptr, 1 as ::core::ffi::c_int, evb);
+    server_client_print(client.as_ref(), 1 as ::core::ffi::c_int, evb);
 }
 pub unsafe fn cmdq_print(
     mut item: *mut cmdq_item,
@@ -1021,7 +1020,7 @@ pub unsafe fn cmdq_error(
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_write(c, |out| write_cstr(out, msg.as_ptr()));
         } else {
-            file_error(c, |out| {
+            file_error(c_owner.as_ref(), |out| {
                 write_cstr(out, msg.as_ptr())?;
                 out.write_all(b"\n")
             });

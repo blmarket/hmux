@@ -17,7 +17,7 @@ use crate::src::server_client::server_client_get_cwd;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{
-    client_retain, client, client_file, client_file_cb, client_file_entry, client_file_event, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_file_event, client_files,
     client_rc_ptr,
 };
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
@@ -279,37 +279,29 @@ pub unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
         }
     }
 }
-pub unsafe fn file_can_print(mut c: *mut client) -> ::core::ffi::c_int {
-    if c.is_null()
-        || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
-        || (*c).flags & CLIENT_DEAD as uint64_t != 0
-        || (*c).flags & CLIENT_CONTROL as uint64_t != 0
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+pub fn file_can_print(c: Option<&client>) -> ::core::ffi::c_int {
+    c.is_some_and(|c| c.flags & (CLIENT_ATTACHED | CLIENT_DEAD | CLIENT_CONTROL) as uint64_t == 0) as ::core::ffi::c_int
 }
 pub unsafe fn file_print(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let transfer_owner;
+    let Some(client_owner) = client_owner else { return; };
+    let c = client_owner.get();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
         fd: 0,
         flags: 0,
     };
-    if file_can_print(c) == 0 {
+    if file_can_print(Some(&*c)) == 0 {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
     let file_owner = client_files_find(&(*c).files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
-        transfer_owner = file_create_with_client(client_retain(c).as_ref(), 1 as ::core::ffi::c_int, None);
-        cf = rc::as_ptr(&transfer_owner);
+    if file_owner.is_none() {
+        let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
+        let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
         msg.stream = 1 as ::core::ffi::c_int;
@@ -323,32 +315,32 @@ pub unsafe fn file_print(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
+        let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
 pub unsafe fn file_print_buffer(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut ::core::ffi::c_void,
     mut size: size_t,
 ) {
-    let transfer_owner;
+    let Some(client_owner) = client_owner else { return; };
+    let c = client_owner.get();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
         fd: 0,
         flags: 0,
     };
-    if file_can_print(c) == 0 {
+    if file_can_print(Some(&*c)) == 0 {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
     let file_owner = client_files_find(&(*c).files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
-        transfer_owner = file_create_with_client(client_retain(c).as_ref(), 1 as ::core::ffi::c_int, None);
-        cf = rc::as_ptr(&transfer_owner);
+    if file_owner.is_none() {
+        let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
+        let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add(&mut *(*cf).buffer, data, size);
         msg.stream = 1 as ::core::ffi::c_int;
@@ -362,31 +354,31 @@ pub unsafe fn file_print_buffer(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
+        let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
         evbuffer_add(&mut *(*cf).buffer, data, size);
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
 pub unsafe fn file_error(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let transfer_owner;
+    let Some(client_owner) = client_owner else { return; };
+    let c = client_owner.get();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
         fd: 0,
         flags: 0,
     };
-    if file_can_print(c) == 0 {
+    if file_can_print(Some(&*c)) == 0 {
         return;
     }
     find.stream = 2 as ::core::ffi::c_int;
     let file_owner = client_files_find(&(*c).files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
-        transfer_owner = file_create_with_client(client_retain(c).as_ref(), 2 as ::core::ffi::c_int, None);
-        cf = rc::as_ptr(&transfer_owner);
+    if file_owner.is_none() {
+        let transfer_owner = file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
+        let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
         msg.stream = 2 as ::core::ffi::c_int;
@@ -400,6 +392,7 @@ pub unsafe fn file_error(
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
     } else {
+        let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
         file_push(file_owner.as_ref().expect("looked-up file"));
     };

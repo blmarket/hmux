@@ -1969,3 +1969,16 @@ at the constructor boundary.
 
 `cargo test --workspace` and `git diff --check` passed. Raw printing inputs,
 transfer internals and broader model relationships remain pending.
+
+## Implemented typed client inputs for printing
+
+File printing, byte-buffer printing and error output accept optional borrowed Rc
+client handles. Eligibility checking is safe Rust with an optional shared client
+borrow. Record creation forwards the handle directly, eliminating raw-pointer
+client retention from file printing. New and existing output records are accessed
+through scoped borrows from owners. Server printing and command/capture/display
+callers forward existing client handles through the output path.
+
+`cargo test --workspace` and `git diff --check` passed. Transfer and display
+internals still project retained models through UnsafeCell; raw model relationship
+fields and other APIs remain pending.

@@ -187,7 +187,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
             out.write_all(b"%message ")?;
             write_cstr(out, msg.as_ptr())
         });
-        server_client_print(tc, 0 as ::core::ffi::c_int, &mut *evb);
+        server_client_print(tc_owner.as_ref(), 0 as ::core::ffi::c_int, &mut *evb);
     } else if !tc.is_null() {
         status_message_set(tc, delay, 0 as ::core::ffi::c_int, Nflag, Cflag, |out| {
             write_cstr(out, msg.as_ptr())

@@ -617,12 +617,12 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 )
             });
         } else {
-            if file_can_print(c) == 0 {
+            if file_can_print(c.as_ref()) == 0 {
                 cmdq_error(item, |out| out.write_all(b"can't write to client"));
                 return CMD_RETURN_ERROR;
             }
-            file_print_buffer(c, buf.as_mut_ptr().cast(), len);
-            file_print(c, |out| out.write_all(b"\n"));
+            file_print_buffer(c_owner.as_ref(), buf.as_mut_ptr().cast(), len);
+            file_print(c_owner.as_ref(), |out| out.write_all(b"\n"));
         }
     } else {
         bufname = ::core::ptr::null::<::core::ffi::c_char>();
