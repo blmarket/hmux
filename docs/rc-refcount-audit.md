@@ -19,6 +19,12 @@ the current copy function clones the wrapper. `window_mode` only mentions `Rc`
 in callback parameter types. Client mode rows now implement `Clone` explicitly
 so an action snapshot gets a scoped guard and immediate drop.
 
+A field-declaration scan across `src/` also found no unclassified direct model
+`Rc` holder: the registry and mode containers are covered by the inventory, and
+the remaining direct fields appear in the ownership table below. This scan does
+not cover values hidden in callback captures or infer ownership from function
+parameters; those paths require the separate call-site review.
+
 ## Completed field reviews
 
 | Holder | Result | Evidence |
