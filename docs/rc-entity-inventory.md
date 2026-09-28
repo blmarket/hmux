@@ -2159,3 +2159,15 @@ introduced.
 `cargo test --workspace` and `git diff --check` passed, including menu row growth,
 separator, expansion ownership and client reference-count coverage. Menu display
 and formatting interfaces still require migration.
+
+## Implemented typed client input for menu display
+
+Menu display accepts an optional borrowed existing client Rc. Mode-tree and
+command callers forward their current holders. With an explicit target no client
+is required; otherwise target resolution borrows the client to follow its current
+session. The overlay continues to observe its window weakly, preserving callback
+replacement and window-destruction behavior. No new Rc-managed type is added.
+
+`cargo test --workspace` and `git diff --check` passed, including menu replacement
+and target-window destruction coverage. Raw window access in menu display and raw
+session relationships still require migration.

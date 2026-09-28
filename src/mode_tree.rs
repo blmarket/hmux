@@ -1823,7 +1823,7 @@ unsafe fn mode_tree_display_menu(
         None,
         x,
         y,
-        client_owner.get(),
+        Some(client_owner),
         BOX_LINES_DEFAULT,
         None,
         None,

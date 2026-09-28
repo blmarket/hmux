@@ -1020,7 +1020,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_r
         Some(&*event),
         px,
         py,
-        tc,
+        tc_owner.as_ref(),
         lines,
         (!style.is_null()).then(|| std::ffi::CStr::from_ptr(style)),
         (!selected_style.is_null()).then(|| std::ffi::CStr::from_ptr(selected_style)),

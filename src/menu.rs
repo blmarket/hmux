@@ -608,7 +608,7 @@ pub unsafe fn menu_display(
     event: Option<&key_event>,
     mut px: u_int,
     mut py: u_int,
-    c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut lines: box_lines,
     style: Option<&CStr>,
     selected_style: Option<&CStr>,
@@ -617,7 +617,8 @@ pub unsafe fn menu_display(
     cb: menu_choice_cb,
 ) {
     let w = if fs.is_null() {
-        (*(*(*c).session).curw).window_ptr()
+        let client = &*client_owner.expect("menu without a target requires a client").get();
+        (*(*client.session).curw).window_ptr()
     } else {
         (*fs).w_ptr()
     };
@@ -1019,7 +1020,7 @@ mod tests {
                     None,
                     0,
                     0,
-                    std::ptr::null_mut(),
+                    None,
                     BOX_LINES_NONE,
                     None,
                     None,
