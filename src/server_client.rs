@@ -1709,12 +1709,19 @@ unsafe fn server_client_in_scrollbar_area(
     return (px >= start && px <= end) as ::core::ffi::c_int;
 }
 unsafe fn server_client_update_scrollbar_hover(
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut type_0: ::core::ffi::c_int,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
 ) {
-    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
+    let c = client_owner.get();
+    let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
+        return;
+    };
+    let window_owner = crate::src::shared::window::WindowOwner::adopt(
+        (*(*session_owner.get()).curw).window_owner.as_ref().expect("hover window").as_rc().clone(),
+    );
+    let w = window_owner.as_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
         return;
@@ -1917,15 +1924,22 @@ unsafe fn server_client_check_mouse_in_pane(
     }
     return KEYC_MOUSE_LOCATION_NOWHERE;
 }
-unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_event) -> key_code {
+unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut event: *mut key_event) -> key_code {
+    let c = client_owner.get();
     let mut hit_pane_owner = None;
     let lookup_fwp_owner;
     let lookup_lwp_owner;
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut s: *mut session = (*c).session;
+    let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
+        return KEYC_UNKNOWN;
+    };
+    let s = session_owner.get();
     let mut fs: *mut session = ::core::ptr::null_mut::<session>();
-    let mut w: *mut window = (*(*s).curw).window_ptr();
+    let window_owner = crate::src::shared::window::WindowOwner::adopt(
+        (*(*s).curw).window_owner.as_ref().expect("mouse window").as_rc().clone(),
+    );
+    let w = window_owner.as_ptr();
     let mut fwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2195,7 +2209,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         ));
         if px > sx || py > sy {
             server_client_update_scrollbar_hover(
-                c,
+                client_owner,
                 type_0 as ::core::ffi::c_int,
                 -(1 as ::core::ffi::c_int),
                 -(1 as ::core::ffi::c_int),
@@ -2220,7 +2234,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                 (*m).w = (*(*wp).window).id as ::core::ffi::c_int;
             } else {
                 server_client_update_scrollbar_hover(
-                    c,
+                    client_owner,
                     type_0 as ::core::ffi::c_int,
                     -(1 as ::core::ffi::c_int),
                     -(1 as ::core::ffi::c_int),
@@ -2245,7 +2259,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             }
         }
         server_client_update_scrollbar_hover(
-            c,
+            client_owner,
             type_0 as ::core::ffi::c_int,
             px as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
@@ -2257,8 +2271,8 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             {
                 wp = lwp;
             } else {
-                let hit_window_owner = (*w).observer.upgrade().expect("mouse window");
-                hit_pane_owner = window_get_active_at(&hit_window_owner, px, py);
+                let hit_window_owner = window_owner.as_rc();
+                hit_pane_owner = window_get_active_at(hit_window_owner, px, py);
                 wp = hit_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
@@ -2318,7 +2332,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         }
     } else {
         server_client_update_scrollbar_hover(
-            c,
+            client_owner,
             type_0 as ::core::ffi::c_int,
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),
@@ -2423,8 +2437,8 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         (*c).tty.mouse_drag_flag =
             (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
         if lwp.is_null() {
-            let hit_window_owner = (*w).observer.upgrade().expect("mouse window");
-            hit_pane_owner = window_get_active_at(&hit_window_owner, px, py);
+            let hit_window_owner = window_owner.as_rc();
+            hit_pane_owner = window_get_active_at(hit_window_owner, px, py);
             wp = hit_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             lwp = wp;
             if !wp.is_null() {
@@ -2793,7 +2807,7 @@ unsafe fn server_client_key_callback(
             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
                 current_block = 1578459965781631232;
             } else {
-                key = server_client_check_mouse(c, event);
+                key = server_client_check_mouse(&c_owner, event);
                 if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                     current_block = 1578459965781631232;
                 } else {

@@ -1655,3 +1655,15 @@ upgrades the selected pane observer before dispatching the hit test.
 `cargo test --workspace` and `git diff --check` passed. Initial mouse target
 selection, parent-window access, hover client arguments and geometry helper
 internals still contain raw projections and remain pending.
+
+## Implemented retained client/session/window mouse dispatch
+
+Mouse checking and scrollbar-hover updates borrow the queued dispatch's client
+owner. Each retains the current session and its window while inspecting models
+and invoking nested helpers. Coordinate lookup reuses the retained window handle;
+WindowOwner preserves window release notifications. Detached clients return
+without accessing a missing session.
+
+`cargo test --workspace` and `git diff --check` passed. Client session links,
+pane selection locals, winlink access and other internal raw projections remain
+pending; retained allocation lifetime does not replace logical liveness checks.
