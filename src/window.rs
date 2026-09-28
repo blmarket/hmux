@@ -97,7 +97,7 @@ use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS,
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     window_pane, window_pane_history, window_pane_modes, window_pane_prompt,
-    window_pane_tree_entry, window_panes,
+    window_pane_tree_entry, window_panes, PaneScreenSource,
 };
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
@@ -2465,10 +2465,21 @@ unsafe fn window_pane_mode_promote(wp: *mut window_pane, wme: *mut window_mode_e
 mod window_mode_collection_tests {
     use super::*;
 
+    unsafe fn test_mode_display(wme: *mut window_mode_entry) -> *mut screen {
+        let owner = (*wme).wp.upgrade().expect("mode belongs to pane");
+        &raw mut (*owner.get()).status_screen
+    }
+
     unsafe fn check_mode_cleanup(wme: *mut window_mode_entry) {
         let owner = (*wme).wp.upgrade().expect("cleanup retains parent pane");
         let pane = &mut *owner.get();
         assert_ne!(pane.modes.active_ptr(), wme);
+        let expected = if pane.modes.active_ptr().is_null() {
+            &raw mut pane.base
+        } else {
+            &raw mut pane.status_screen
+        };
+        assert_eq!(pane.screen_ptr(), expected);
         pane.sx += 1;
     }
 
@@ -2476,6 +2487,7 @@ mod window_mode_collection_tests {
     fn freeing_modes_keeps_parent_alive_until_all_callbacks_finish() {
         static MODE: std::sync::LazyLock<window_mode> = std::sync::LazyLock::new(|| window_mode {
             free: Some(check_mode_cleanup),
+            display_screen: Some(test_mode_display),
             ..window_mode::default()
         });
         unsafe {
@@ -2492,7 +2504,7 @@ mod window_mode_collection_tests {
             assert_eq!((*wp).sx, 3);
             assert!((*wp).modes.active_ptr().is_null());
             assert!((*wp).modes.storage.is_none());
-            assert_eq!((*wp).screen, &raw mut (*wp).base);
+            assert_eq!((*wp).screen_ptr(), &raw mut (*wp).base);
             drop(owner);
             assert!(observer.upgrade().is_none());
         }
@@ -2605,7 +2617,7 @@ unsafe fn window_pane_create(
     colour_palette_init(&mut (*wp).palette);
     colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
     screen_init(&mut (*wp).base, sx, sy, hlimit);
-    (*wp).screen = &raw mut (*wp).base;
+    (*wp).screen_source = PaneScreenSource::Base;
     window_pane_default_cursor(wp);
     screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&raw mut (*wp).border_status_line.ranges);
@@ -2663,10 +2675,16 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     while !(*wp).modes.active_ptr().is_null() {
         wme = (*wp).modes.active_ptr();
         let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
+        let next = (*wp).modes.active_ptr();
+        (*wp).screen_source = if next.is_null() {
+            PaneScreenSource::Base
+        } else {
+            PaneScreenSource::Mode(window_pane_mode_weak(next))
+        };
         (*(*wme).mode).free.expect("non-null function pointer")(wme);
         drop(entry);
     }
-    (*wp).screen = &raw mut (*wp).base;
+    (*wp).screen_source = PaneScreenSource::Base;
 }
 unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
@@ -2984,7 +3002,7 @@ pub unsafe fn window_pane_set_mode(
         0 as ::core::ffi::c_int
     };
     assert!(!mode_screen.is_null(), "active mode has a screen");
-    (*wp).screen = mode_screen;
+    (*wp).screen_source = PaneScreenSource::Mode(window_pane_mode_weak(wme));
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     server_redraw_window_borders(&*((*wp).window));
@@ -3020,21 +3038,30 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     p = (*(*wme).mode).name.as_ptr();
     kill_0 = (*wme).kill;
     let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
+    next = (*wp).modes.active_ptr();
+    (*wp).screen_source = if next.is_null() {
+        PaneScreenSource::Base
+    } else {
+        PaneScreenSource::Mode(window_pane_mode_weak(next))
+    };
     (*(*wme).mode).free.expect("non-null function pointer")(wme);
     drop(entry);
     next = (*wp).modes.active_ptr();
+    (*wp).screen_source = if next.is_null() {
+        PaneScreenSource::Base
+    } else {
+        PaneScreenSource::Mode(window_pane_mode_weak(next))
+    };
     if next.is_null() {
         (*wp).flags &= !PANE_UNSEENCHANGES;
         log_debug(format_args!("{}: no next mode", "window_pane_reset_mode"));
-        (*wp).screen = &raw mut (*wp).base;
     } else {
         log_debug(format_args!(
             "{}: next mode is {}",
             "window_pane_reset_mode",
             log_cstr(((*(*next).mode).name.as_ptr()) as *const _)
         ));
-        (*wp).screen = (*(*next).mode).display_screen.expect("mode display screen getter")(next);
-        assert!(!(*wp).screen.is_null(), "restored mode has a screen");
+        assert!(!(*wp).screen_ptr().is_null(), "restored mode has a screen");
         if (*(*next).mode).resize.is_some() {
             (*(*next).mode).resize.expect("non-null function pointer")(next, (*wp).sx, (*wp).sy);
         }
@@ -3370,7 +3397,7 @@ pub unsafe fn window_pane_paste(
             == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong)
-        && !(*(*wp).screen).mode & MODE_BRACKETPASTE != 0
+        && !(*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0
     {
         return;
     }
@@ -3927,7 +3954,7 @@ pub unsafe fn window_pane_update_used_data(
     (*wpo).used = (*wpo).used.wrapping_add(size);
 }
 pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
-    screen_set_default_cursor(&mut *(*wp).screen, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
+    screen_set_default_cursor(&mut *(*wp).screen_ptr(), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
 }
 pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
     if !wp.modes.active_ptr().is_null() {
@@ -4174,7 +4201,7 @@ pub unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCel
     if !(*wp).flags & PANE_THEMECHANGED != 0 {
         return;
     }
-    if !(*(*wp).screen).mode & MODE_THEME_UPDATES != 0 {
+    if !(*(*wp).screen_ptr()).mode & MODE_THEME_UPDATES != 0 {
         return;
     }
     theme = window_pane_get_theme(wp);
@@ -4810,7 +4837,7 @@ mod zoom_teardown_tests {
         (*pane).sx = 80;
         (*pane).sy = 24;
         (*pane).base.grid = Some(grid_create(80, 24, 0));
-        (*pane).screen = &raw mut (*pane).base;
+        (*pane).screen_source = PaneScreenSource::Base;
         (*pane).flags = PANE_ZOOMED;
         (*w).set_active(pane);
         (*w).panes.push_back((*pane).observer.clone());

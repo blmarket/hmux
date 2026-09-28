@@ -840,13 +840,13 @@ unsafe fn format_cb_cursor_colour(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() || (*wp).screen.is_null() {
+    if wp.is_null() || (*wp).screen_ptr().is_null() {
         return None;
     }
-    if (*(*wp).screen).ccolour != -(1 as ::core::ffi::c_int) {
-        return Some(colour_format((*(*wp).screen).ccolour));
+    if (*(*wp).screen_ptr()).ccolour != -(1 as ::core::ffi::c_int) {
+        return Some(colour_format((*(*wp).screen_ptr()).ccolour));
     }
-    return Some(colour_format((*(*wp).screen).default_ccolour));
+    return Some(colour_format((*(*wp).screen_ptr()).default_ccolour));
 }
 unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
     let mouse_pane_owner;
@@ -920,7 +920,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
         return None;
     }
     gd = (*wp).base.grid_mut();
-    return format_grid_hyperlink_cstring(&*gd, x, (*gd).hsize.wrapping_add(y), &*(*wp).screen);
+    return format_grid_hyperlink_cstring(&*gd, x, (*gd).hsize.wrapping_add(y), &*(*wp).screen_ptr());
 }
 unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
     let mouse_pane_owner;
@@ -1067,8 +1067,8 @@ unsafe fn format_cb_alternate_saved_y(mut ft: *mut format_tree) -> Option<CStrin
 unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen.is_null() {
-        if (*(*format_pane).screen).mode & MODE_BRACKETPASTE != 0 {
+    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
+        if (*(*format_pane).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1452,8 +1452,8 @@ unsafe fn format_cb_cursor_flag(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_cursor_shape(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen.is_null() {
-        match (*(*format_pane).screen).cstyle as ::core::ffi::c_uint {
+    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
+        match (*(*format_pane).screen_ptr()).cstyle as ::core::ffi::c_uint {
             1 => {
                 return Some(c"block".to_owned());
             }
@@ -1473,8 +1473,8 @@ unsafe fn format_cb_cursor_shape(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_cursor_very_visible(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen.is_null() {
-        if (*(*format_pane).screen).mode & MODE_CURSOR_VERY_VISIBLE != 0 {
+    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
+        if (*(*format_pane).screen_ptr()).mode & MODE_CURSOR_VERY_VISIBLE != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1506,8 +1506,8 @@ unsafe fn format_cb_cursor_y(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_cursor_blinking(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen.is_null() {
-        if (*(*format_pane).screen).mode & MODE_CURSOR_BLINKING != 0 {
+    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
+        if (*(*format_pane).screen_ptr()).mode & MODE_CURSOR_BLINKING != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2182,8 +2182,8 @@ unsafe fn format_cb_pane_unseen_changes(mut ft: *mut format_tree) -> Option<CStr
 unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen.is_null() {
-        match (*(*format_pane).screen).mode & EXTENDED_KEY_MODES {
+    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
+        match (*(*format_pane).screen_ptr()).mode & EXTENDED_KEY_MODES {
             MODE_KEYS_EXTENDED => {
                 return Some(c"Ext 1".to_owned());
             }

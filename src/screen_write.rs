@@ -362,7 +362,7 @@ unsafe fn screen_write_initctx(
     }
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
         if !write_pane.is_null()
-            && (write_pane != (*(*write_pane).window).active_ptr() || (*write_pane).screen != &raw mut (*write_pane).base)
+            && (write_pane != (*(*write_pane).window).active_ptr() || (*write_pane).screen_ptr() != &raw mut (*write_pane).base)
         {
             ttyctx.flags |= TTY_CTX_SYNC;
         } else {
@@ -415,7 +415,7 @@ pub unsafe fn screen_write_start_pane(
 ) {
     let wp = pane_owner.get();
     if s.is_null() {
-        s = (*wp).screen;
+        s = (*wp).screen_ptr();
     }
     screen_write_init(ctx, s);
     ctx.wp = std::rc::Rc::downgrade(pane_owner);

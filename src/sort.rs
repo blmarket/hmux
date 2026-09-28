@@ -218,7 +218,7 @@ unsafe fn sort_pane_cmp(
             result = (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as ::core::ffi::c_int;
         }
         4 => {
-            result = strcmp((*(*a).screen).title.as_ptr(), (*(*b).screen).title.as_ptr());
+            result = strcmp((*(*a).screen_ptr()).title.as_ptr(), (*(*b).screen_ptr()).title.as_ptr());
         }
         7 => {
             let ai = window_pane_zindex(a);
@@ -228,7 +228,7 @@ unsafe fn sort_pane_cmp(
         3 | 5 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*(*a).screen).title.as_ptr(), (*(*b).screen).title.as_ptr());
+        result = strcmp((*(*a).screen_ptr()).title.as_ptr(), (*(*b).screen_ptr()).title.as_ptr());
     }
     return sort_ordering(result, sort_crit.reversed);
 }

@@ -203,7 +203,7 @@ pub struct window_pane {
     /// Observes the runtime-owned pipe stream; pipe_fd controls its lifetime.
     pub pipe_event: crate::src::reactor::StreamHandle,
     pub pipe_offset: window_pane_offset,
-    pub screen: *mut screen,
+    pub screen_source: PaneScreenSource,
     pub base: screen,
     pub status_screen: screen,
     /// Pane-owned non-intrusive mode stack, drained before pane free.
@@ -225,6 +225,20 @@ pub struct window_pane {
 }
 
 impl window_pane {
+    /// Resolve the displayed screen while the pane and selected mode are live.
+    pub unsafe fn screen_ptr(&self) -> *mut screen {
+        match &self.screen_source {
+            PaneScreenSource::Base => (&raw const self.base).cast_mut(),
+            PaneScreenSource::Mode(observer) => {
+                if !observer.is_alive() {
+                    return std::ptr::null_mut();
+                }
+                let entry = observer.as_ptr().cast_mut();
+                (*(*entry).mode).display_screen.expect("mode display screen getter")(entry)
+            }
+        }
+    }
+
     pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
         Self::empty().into_shared()
     }
@@ -239,6 +253,13 @@ impl window_pane {
     pub fn empty() -> Self {
         Self::default()
     }
+}
+
+#[derive(Default)]
+pub enum PaneScreenSource {
+    #[default]
+    Base,
+    Mode(refbox::Weak<window_mode_entry>),
 }
 
 #[derive(Default)]

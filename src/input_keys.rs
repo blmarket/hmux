@@ -512,7 +512,7 @@ pub unsafe fn input_key_pane(
         return 0 as ::core::ffi::c_int;
     }
     return (*wp).event.with_ptr(|event| unsafe {
-        input_key((*wp).screen, event, key)
+        input_key((*wp).screen_ptr(), event, key)
     }).unwrap_or(0);
 }
 unsafe fn input_key_write(
@@ -1004,7 +1004,7 @@ pub unsafe fn input_key_get_mouse(
 }
 unsafe fn input_key_mouse(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut m: *mut mouse_event) {
     let wp = pane_owner.get();
-    let mut s: *mut screen = (*wp).screen;
+    let mut s: *mut screen = (*wp).screen_ptr();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut buf = [0; 40];

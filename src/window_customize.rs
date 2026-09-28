@@ -644,7 +644,7 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut screen = (*mode_pane).screen;
+    let mut s: *mut screen = (*mode_pane).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],

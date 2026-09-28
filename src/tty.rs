@@ -1336,9 +1336,9 @@ unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
         view.oy = c.pan_oy;
         return view;
     }
-    if (*(*wp).screen).mode & MODE_CURSOR != 0 {
-        let cx = ((*wp).xoff as u_int).wrapping_add((*(*wp).screen).cx);
-        let cy = ((*wp).yoff as u_int).wrapping_add((*(*wp).screen).cy);
+    if (*(*wp).screen_ptr()).mode & MODE_CURSOR != 0 {
+        let cx = ((*wp).xoff as u_int).wrapping_add((*(*wp).screen_ptr()).cx);
+        let cy = ((*wp).yoff as u_int).wrapping_add((*(*wp).screen_ptr()).cy);
         view.ox = if cx < view.sx {
             0
         } else if cx > (*w).sx.wrapping_sub(view.sx) {

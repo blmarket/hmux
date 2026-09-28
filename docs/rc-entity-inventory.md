@@ -2622,3 +2622,10 @@ Each mode exposes a `display_screen` callback, which resolves the embedded
 screen when the pane promotes or restores that mode. Copy mode keeps its
 separate `get_screen` callback for the backing screen used by `capture-pane`.
 The raw-field count is 36.
+
+## Implemented pane display screen source
+
+`window_pane.screen` is now `PaneScreenSource`: either the pane's embedded base
+screen or a weak selected mode entry. Readers resolve mode screens through the
+mode's display callback. Mode reset and teardown switch to the next source
+before freeing the old payload. The raw-field count is 35.

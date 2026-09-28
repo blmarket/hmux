@@ -1078,7 +1078,7 @@ unsafe fn redraw_draw_pane_span(
     let c = client_owner.get();
     let mut tty: *mut tty = &raw mut (*c).tty;
     let wp = pane_owner.get();
-    let mut s: *mut screen = (*wp).screen;
+    let mut s: *mut screen = (*wp).screen_ptr();
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1336,7 +1336,7 @@ unsafe fn redraw_draw_scrollbar_span(
     let scene = dctx.scene;
     let Some(pane_owner) = span.data.scrollbar().wp.upgrade() else { return; };
     let wp = pane_owner.get();
-    let mut s: *mut screen = (*wp).screen;
+    let mut s: *mut screen = (*wp).screen_ptr();
     let Some(client_owner) = scene.c.upgrade() else { return; };
     let tty = &raw mut (*client_owner.get()).tty;
     let mut sb_style: *mut style = &raw mut (*wp).scrollbar_style;

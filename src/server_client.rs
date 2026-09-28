@@ -3899,7 +3899,7 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
         (cx, cy) = menu_get_cursor(md);
         s = menu_screen(md);
     } else if !wp.is_null() && (*c).prompt.is_none() {
-        s = (*wp).screen;
+        s = (*wp).screen_ptr();
     } else {
         s = (*c).status.active_screen();
     }
@@ -4014,7 +4014,7 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
             let mut cursor = window_pane_first(Some(&*w));
             while let Some(pane_owner) = cursor {
                 let pane = &*pane_owner.get();
-                if (*pane.screen).mode & MODE_MOUSE_ALL != 0 {
+                if (*pane.screen_ptr()).mode & MODE_MOUSE_ALL != 0 {
                     mode |= MODE_MOUSE_ALL;
                 }
                 cursor = window_pane_next(Some(pane));

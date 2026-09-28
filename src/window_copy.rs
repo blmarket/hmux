@@ -1208,7 +1208,7 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
         &*gd,
         x,
         (*gd).hsize.wrapping_add(y),
-        &*(*wp).screen,
+        &*(*wp).screen_ptr(),
     );
 }
 unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {

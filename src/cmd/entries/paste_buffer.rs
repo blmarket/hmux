@@ -88,7 +88,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             }
         }
         let separator = CStr::from_ptr(sepstr).to_bytes();
-        if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {
+        if bracket != 0 && (*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
             let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
                 event,
                 b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char
@@ -113,7 +113,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                 });
             }
         }
-        if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {
+        if bracket != 0 && (*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
             let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
                 event,
                 b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char

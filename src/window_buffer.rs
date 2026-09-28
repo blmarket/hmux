@@ -601,7 +601,7 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut screen = (*mode_pane).screen;
+    let mut s: *mut screen = (*mode_pane).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
