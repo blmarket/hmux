@@ -2507,3 +2507,11 @@ tree does not keep a detached queue item alive. The raw-field count is 53.
 The prompt callback retains an upgrade through insertion and continuation,
 and skips that path if the item expired. Tests cover both a live production
 item and an expired handle. The raw-field count is 52.
+
+## Implemented weak load-buffer wait item
+
+`cmd_load_buffer_data.item` now observes its waiting queue item weakly. The
+file wait cancels its callback before queue removal. Completion retains an
+upgrade through error reporting and continuation, and an expired callback
+skips those queue operations. A regression covers expired error completion.
+The raw-field count is 51.
