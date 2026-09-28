@@ -30,14 +30,14 @@ use crate::src::shared::event::*;
 use crate::src::shared::session::session;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 pub struct cmd_source_file_data {
-    pub item: *mut cmdq_item,
+    pub item: Weak<UnsafeCell<cmdq_item>>,
     pub client: Option<Rc<UnsafeCell<client>>>,
     depth_active: bool,
     pub flags: ::core::ffi::c_int,
-    pub after: *mut cmdq_item,
+    pub after: Weak<UnsafeCell<cmdq_item>>,
     pub retval: cmd_retval,
     pub current: u_int,
     pub files: Vec<CString>,
@@ -148,7 +148,10 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
     if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_ptr().is_null() {
         (*c).retval = 1;
     }
-    let after = cdata.after;
+    let Some(after_owner) = cdata.after.upgrade().or_else(|| cdata.item.upgrade()) else {
+        return;
+    };
+    let after = after_owner.get();
     let new_item = cmdq_get_callback_owned(
         c"cmd_source_file_complete_cb".as_ptr(),
         Some(Box::new(move |item| unsafe {
@@ -159,8 +162,9 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
 }
 
 unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
+    let Some(item_owner) = cdata.item.upgrade() else { return };
     let client_owner = cdata.client.clone();
-    let item = cdata.item;
+    let item = item_owner.get();
     let path = cdata.files[cdata.current as usize].as_ptr();
     file_read_with_cmdq_wait(client_owner.as_ref(), path, cdata.into_read_callback(), item, None);
 }
@@ -171,8 +175,9 @@ unsafe fn cmd_source_file_done(
     error: ::core::ffi::c_int,
     buffer: &mut evbuffer,
 ) {
+    let Some(item_owner) = cdata.item.upgrade() else { return };
+    let item = item_owner.get();
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
-    let item = cdata.item;
     // Progress does not coalesce the buffer; only complete files are parsed.
     let bdata = evbuffer_pullup(buffer, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
@@ -187,12 +192,13 @@ unsafe fn cmd_source_file_done(
             write_cstr(out, path)
         });
     } else if bsize != 0 {
+        let after_owner = cdata.after.upgrade().unwrap_or_else(|| Rc::clone(&item_owner));
         if load_cfg_from_buffer(
             bdata,
             bsize,
             path,
             cdata.client.as_ref(),
-            cdata.after,
+            after_owner.get(),
             target,
             cdata.flags,
             &mut new_item,
@@ -200,7 +206,7 @@ unsafe fn cmd_source_file_done(
         {
             cdata.retval = CMD_RETURN_ERROR;
         } else if !new_item.is_null() {
-            cdata.after = new_item;
+            cdata.after = (*new_item).observer.clone();
         }
     }
     cdata.current = cdata.current.wrapping_add(1);
@@ -268,7 +274,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         ));
     }
     let mut cdata = Box::new(cmd_source_file_data {
-        item,
+        item: (*item).observer.clone(),
         client: if c.is_null() {
             None
         } else {
@@ -280,7 +286,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         },
         depth_active: true,
         flags: 0,
-        after: ::core::ptr::null_mut(),
+        after: Weak::new(),
         retval: CMD_RETURN_NORMAL,
         current: 0,
         files: Vec::new(),
@@ -360,7 +366,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
         i = i.wrapping_add(1);
     }
-    cdata.after = item;
+    cdata.after = (*item).observer.clone();
     cdata.retval = retval;
     if !cdata.files.is_empty() {
         cmd_source_file_read(cdata);
@@ -375,21 +381,21 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::queue::cmdq_free_detached;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use crate::src::reactor::{evbuffer_new, shutdown_runtime};
     use crate::src::shared::client::client_file_event;
     use std::ptr::NonNull;
 
     fn data(
-        item: &mut cmdq_item,
+        item: *mut cmdq_item,
         client: Option<Rc<UnsafeCell<client>>>,
     ) -> Box<cmd_source_file_data> {
         Box::new(cmd_source_file_data {
-            item,
+            item: unsafe { (*item).observer.clone() },
             client,
             depth_active: true,
             flags: 0,
-            after: item,
+            after: unsafe { (*item).observer.clone() },
             retval: CMD_RETURN_NORMAL,
             current: 0,
             files: vec![c"owned.conf".to_owned()],
@@ -403,8 +409,8 @@ mod tests {
                 let client = client::new();
                 (*client.get()).source_file_depth = 1;
                 let observer = Rc::downgrade(&client);
-                let mut source = cmdq_item::empty();
-                let owner = data(&mut source, Some(client.clone()));
+                let source = cmdq_get_callback_owned(c"source wait test".as_ptr(), None);
+                let owner = data(source, Some(client.clone()));
                 let item = cmdq_get_callback_owned(
                     c"source-file-test".as_ptr(),
                     Some(Box::new(move |item| {
@@ -417,6 +423,7 @@ mod tests {
                     assert_eq!((*client.get()).source_file_depth, 0);
                 }
                 cmdq_free_detached(item);
+                cmdq_free_detached(source);
                 assert_eq!((*client.get()).source_file_depth, 0);
                 drop(client);
                 assert!(observer.upgrade().is_some());
@@ -432,9 +439,9 @@ mod tests {
             let saved = (cfg_finished, cmd_source_file_depth);
             cfg_finished = 0;
             cmd_source_file_depth = 7;
-            let mut item = cmdq_item::empty();
-            item.flags = CMDQ_WAITING;
-            let mut callback = data(&mut item, None).into_read_callback().unwrap();
+            let item = cmdq_get_callback_owned(c"source wait test".as_ptr(), None);
+            (*item).flags = CMDQ_WAITING;
+            let mut callback = data(item, None).into_read_callback().unwrap();
             let mut buffer = evbuffer_new();
             callback(client_file_event {
                 client: None,
@@ -444,9 +451,24 @@ mod tests {
                 buffer: Some(&mut buffer),
             });
             drop(callback);
-            assert_eq!(item.flags & CMDQ_WAITING, 0);
+            assert_eq!((*item).flags & CMDQ_WAITING, 0);
             assert_eq!(*(&raw const cmd_source_file_depth), 7);
+            cmdq_free_detached(item);
             (cfg_finished, cmd_source_file_depth) = saved;
+        }
+    }
+
+    #[test]
+    fn expired_source_wait_releases_depth_without_reading_the_item() {
+        unsafe {
+            let client = client::new();
+            (*client.get()).source_file_depth = 1;
+            let item = cmdq_get_callback_owned(c"expired source wait".as_ptr(), None);
+            let cdata = data(item, Some(Rc::clone(&client)));
+            cmdq_free_detached(item);
+            let mut buffer = evbuffer_new();
+            cmd_source_file_done(cdata, Some(c"owned.conf"), 0, &mut buffer);
+            assert_eq!((*client.get()).source_file_depth, 0);
         }
     }
 }

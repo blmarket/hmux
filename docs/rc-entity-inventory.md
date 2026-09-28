@@ -2588,3 +2588,12 @@ skips queue continuation for expired items. The raw-field count is 42.
 flush retain upgrades through queue continuation; list and wake paths prune
 expired waiters and lockers. A regression covers both expired channel queues.
 The raw-field count is 41.
+
+## Implemented weak source-file wait and insertion anchor
+
+`cmd_source_file_data.item` observes the waiting source command weakly, and
+`after` observes the most recent inserted command. Reads retain upgrades
+through parsing and insertion; an expired anchor falls back to the source
+command. If the source expired, callback state drops and decrements nesting
+depth without dereferencing it. Tests use owned detached commands and cover
+the expired wait. The raw-field count is 39.
