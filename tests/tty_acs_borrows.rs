@@ -12,12 +12,13 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
         assert_eq!(tty_acs_needed(None), 0);
         assert_eq!(tty_acs_get(None, b'q'), Some(c"─"));
         assert!(tty_acs_get(None, b'A').is_none());
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_U8 as usize + 1].into_boxed_slice();
         term.acs[b'q' as usize] = [0x80, 0];
         let mut terminal = tty {
-            client: &mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             ..Default::default()
         };

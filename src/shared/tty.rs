@@ -328,7 +328,8 @@ pub struct tty_window_view {
 
 #[derive(Default)]
 pub struct tty {
-    pub client: *mut client,
+    /// The client owns its terminal; this backreference must not retain it.
+    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub start_timer: event,
     pub clipboard_timer: event,
     pub last_requests: time_t,

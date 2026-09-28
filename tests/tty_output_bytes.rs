@@ -90,11 +90,12 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
                 (u32::MAX, u32::MAX),
             ),
         ] {
-            let mut client = client::empty();
+            let client_owner = client::new();
+            let client = &mut *client_owner.get();
             let mut term = tty_term::empty();
             term.flags = if no_auto_margin { TERM_NOAM } else { 0 };
             let mut terminal = tty {
-                client: &raw mut client,
+                client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 sx: 8,
@@ -120,10 +121,11 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
 fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
     unsafe {
         for count in [0, 1, 499, 500, 501, 1001] {
-            let mut client = client::empty();
+            let client_owner = client::new();
+            let client = &mut *client_owner.get();
             let mut term = tty_term::empty();
             let mut terminal = tty {
-                client: &raw mut client,
+                client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 sx: 2000,
@@ -143,9 +145,10 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
 #[test]
 fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
     unsafe {
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut terminal = tty {
-            client: &raw mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             out: Some(evbuffer_new()),
             cx: 3,
             cy: 1,

@@ -71,9 +71,10 @@ fn character(text: &str, width: u8) -> grid_cell {
 #[test]
 fn codeset_conversion_preserves_cells_and_independent_results() {
     unsafe {
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut tty = tty::empty();
-        tty.client = &mut client;
+        tty.client = std::rc::Rc::downgrade(&client_owner);
 
         let wide = character("漢", 2);
         let first = tty_check_codeset(&tty, &wide);

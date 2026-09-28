@@ -640,7 +640,8 @@ pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
     if tty_term_has(tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term), TTYC_U8) != 0 && tty_term_number(tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term), TTYC_U8) == 0 {
         return 1;
     }
-    ((*terminal.client).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
+    let owner = terminal.client.upgrade().expect("terminal client");
+    ((*owner.get()).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
 }
 
 /// The terminal and its capabilities must remain valid while the result is borrowed.

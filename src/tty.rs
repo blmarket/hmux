@@ -148,27 +148,10 @@ pub unsafe fn tty_init(mut tty: *mut tty, mut c: *mut client) -> ::core::ffi::c_
     if isatty((*c).fd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    // Drop owned buffers and the key tree before the translated field reset below.
-    (*tty).in_0 = None;
-    (*tty).out = None;
     tty_keys_free(tty);
-    // `r` owns a Vec now, so preserve its valid empty value while resetting
-    // the translated C fields around it.
-    (*tty).r.clear();
-    let range_offset = ::core::mem::offset_of!(tty, r);
-    let range_end = range_offset + ::core::mem::size_of::<visible_ranges>();
-    let tty_size = ::core::mem::size_of::<tty>();
-    memset(
-        tty as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        range_offset as size_t,
-    );
-    memset(
-        (tty as *mut u8).add(range_end) as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        tty_size.wrapping_sub(range_end) as size_t,
-    );
-    (*tty).client = c;
+    // Reset Rust-owned fields normally; byte-zeroing would invalidate Weak.
+    *tty = crate::src::shared::tty::tty::empty();
+    (*tty).client = (*c).observer.clone();
     (*tty).cstyle = SCREEN_CURSOR_DEFAULT;
     (*tty).ccolour = -(1 as ::core::ffi::c_int);
     (*tty).bg = -(1 as ::core::ffi::c_int);
@@ -180,7 +163,9 @@ pub unsafe fn tty_init(mut tty: *mut tty, mut c: *mut client) -> ::core::ffi::c_
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn tty_resize(mut tty: *mut tty) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut ws: winsize = winsize {
         ws_row: 0,
         ws_col: 0,
@@ -252,7 +237,9 @@ pub unsafe fn tty_set_size(
 }
 unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut name: *const ::core::ffi::c_char = ((*c).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -277,7 +264,7 @@ unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
             ));
         }
         event_del(&raw mut (*tty).event_in);
-        server_client_lost((*tty).client);
+        server_client_lost(terminal_client);
         return;
     }
     log_debug(format_args!(
@@ -290,7 +277,9 @@ unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn tty_timer_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
@@ -319,7 +308,9 @@ unsafe fn tty_timer_callback(mut data: *mut ::core::ffi::c_void) {
     event_add(&raw mut (*tty).timer, &raw mut tv);
 }
 unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -358,7 +349,9 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
 }
 unsafe fn tty_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut nwrite: ::core::ffi::c_int = 0;
     nwrite = evbuffer_write((*tty).out.as_deref_mut().expect("open TTY buffer"), (*c).fd);
@@ -400,7 +393,9 @@ unsafe fn tty_write_callback(mut data: *mut ::core::ffi::c_void) {
     }
 }
 pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     // The synchronous terminfo constructor borrows these string pointers.
     let mut caps: Vec<_> = (*c)
         .term_caps
@@ -461,7 +456,9 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
 }
 unsafe fn tty_start_timer_callback(mut data: *mut ::core::ffi::c_void) {
     let mut tty: *mut tty = data as *mut tty;
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     log_debug(format_args!(
         "{}: start timer fired",
         log_cstr(
@@ -478,7 +475,9 @@ unsafe fn tty_start_timer_callback(mut data: *mut ::core::ffi::c_void) {
     (*tty).flags &= !(TTY_WAITBG | TTY_WAITFG);
 }
 unsafe fn tty_start_start_timer(mut tty: *mut tty) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut tv: timeval = timeval {
         tv_sec: TTY_QUERY_TIMEOUT as __time_t,
         tv_usec: 0,
@@ -496,7 +495,9 @@ unsafe fn tty_start_start_timer(mut tty: *mut tty) {
     event_add(&raw mut (*tty).start_timer, &raw mut tv);
 }
 pub unsafe fn tty_start_tty(mut tty: *mut tty) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut tio: termios = termios {
         c_iflag: 0,
         c_oflag: 0,
@@ -630,7 +631,9 @@ pub unsafe fn tty_send_requests(mut tty: *mut tty) {
     (*tty).last_requests = time(::core::ptr::null_mut::<time_t>());
 }
 pub unsafe fn tty_repeat_requests(mut tty: *mut tty, mut force: ::core::ffi::c_int) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut t: time_t = time(::core::ptr::null_mut::<time_t>());
     let mut n: u_int = (t - (*tty).last_requests) as u_int;
     if !(*tty).flags & TTY_STARTED != 0 {
@@ -674,16 +677,19 @@ pub unsafe fn tty_repeat_requests(mut tty: *mut tty, mut force: ::core::ffi::c_i
     tty_start_start_timer(tty);
 }
 pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
-    let mut c: *mut client = (*tty).client;
+    if (*tty).flags & TTY_STARTED == 0 {
+        return;
+    }
+
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut ws: winsize = winsize {
         ws_row: 0,
         ws_col: 0,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if (*tty).flags & TTY_STARTED == 0 {
-        return;
-    }
     (*tty).flags &= !TTY_STARTED;
     event_del(&raw mut (*tty).start_timer);
     event_del(&raw mut (*tty).clipboard_timer);
@@ -793,7 +799,9 @@ pub unsafe fn tty_free(mut tty: *mut tty) {
     (*tty).r.clear();
 }
 pub unsafe fn tty_update_features(mut tty: *mut tty) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if tty_apply_features((*tty).term.as_deref_mut().expect("open terminal")) != 0 {
         tty_term_apply_overrides((*tty).term.as_deref_mut().expect("open terminal"));
     }
@@ -827,7 +835,9 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     tty_invalidate(tty);
 }
 pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut n: ssize_t = 0;
     let mut slen: ssize_t = 0;
     let mut i: u_int = 0;
@@ -915,8 +925,10 @@ pub unsafe fn tty_putcode_ss(
     }
 }
 unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let len = buf.len();
-    let mut c: *mut client = (*tty).client;
+    let mut c: *mut client = terminal_client;
     if (*tty).flags & TTY_BLOCK != 0 {
         (*tty).discarded = (*tty).discarded.wrapping_add(len);
         return;
@@ -1173,8 +1185,10 @@ unsafe fn tty_update_cursor(
     return cmode;
 }
 pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, s: Option<&screen>) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let mut term: *const tty_term = tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term);
-    let mut c: *mut client = (*tty).client;
+    let mut c: *mut client = terminal_client;
     let mut changed: ::core::ffi::c_int = 0;
     if (*tty).flags & TTY_NOCURSOR != 0 {
         mode &= !MODE_CURSOR;
@@ -1252,7 +1266,9 @@ pub unsafe fn tty_repeat_space(tty: *mut tty, mut n: u_int) {
     }
 }
 pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(&*c)) < (*w).sy)
         as ::core::ffi::c_int;
@@ -1393,7 +1409,9 @@ pub unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     if tty_large_region(ctx) != 0 || ctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         log_debug(format_args!(
@@ -1496,7 +1514,9 @@ unsafe fn tty_clear_line(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut i: u_int = 0;
@@ -1552,7 +1572,9 @@ unsafe fn tty_clear_pane_line(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut i: u_int = 0;
@@ -1661,7 +1683,9 @@ unsafe fn tty_clear_area(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let defaults = &ctx.style_ctx.defaults;
     let mut yy: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
@@ -1749,6 +1773,8 @@ unsafe fn tty_clear_pane_area(
     }
 }
 unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_int) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let mut nx: u_int = ctx.sx;
     let mut j: u_int = 0;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
@@ -1757,7 +1783,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_
         "{}: {} {}",
         "tty_draw_pane",
         log_cstr(
-            (((*(*tty).client).name)
+            (((*terminal_client).name)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
@@ -1860,7 +1886,10 @@ pub unsafe fn tty_check_codeset(tty: &tty, gc: &grid_cell) -> grid_cell {
     if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
         return *gc;
     }
-    if (*tty.client).flags & CLIENT_UTF8 as uint64_t != 0 {
+
+    let terminal_client_owner = tty.client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    if (*terminal_client).flags & CLIENT_UTF8 as uint64_t != 0 {
         return *gc;
     }
     let mut new = *gc;
@@ -1890,7 +1919,9 @@ pub unsafe fn tty_check_overlay_range(
     mut py: u_int,
     mut nx: u_int,
 ) -> *mut visible_ranges {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if let Some(ranges) = server_client_overlay_check(c, px, py, nx) {
         (*tty).r = ranges;
     } else {
@@ -1902,6 +1933,8 @@ pub unsafe fn tty_check_overlay_range(
     &raw mut (*tty).r
 }
 pub unsafe fn tty_sync_start(mut tty: *mut tty) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     if (*tty).flags & TTY_BLOCK != 0 {
         return;
     }
@@ -1913,7 +1946,7 @@ pub unsafe fn tty_sync_start(mut tty: *mut tty) {
         log_debug(format_args!(
             "{} sync start",
             log_cstr(
-                (((*(*tty).client).name)
+                (((*terminal_client).name)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
@@ -1923,6 +1956,8 @@ pub unsafe fn tty_sync_start(mut tty: *mut tty) {
     }
 }
 pub unsafe fn tty_sync_end(mut tty: *mut tty) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     if (*tty).flags & TTY_BLOCK != 0 {
         return;
     }
@@ -1934,7 +1969,7 @@ pub unsafe fn tty_sync_end(mut tty: *mut tty) {
         log_debug(format_args!(
             "{} sync end",
             log_cstr(
-                (((*(*tty).client).name)
+                (((*terminal_client).name)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
@@ -1987,7 +2022,9 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
     }
 }
 pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
@@ -2002,7 +2039,9 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &scre
     tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, ctx.data.count());
 }
 pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
@@ -2021,7 +2060,9 @@ pub unsafe fn tty_cmd_clearcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_clear_pane_line(tty, ctx, ctx.ocy, ctx.ocx, ctx.data.count(), ctx.bg);
 }
 pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
@@ -2043,7 +2084,9 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     (*tty).cx = (*tty).cy;
 }
 pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
@@ -2065,7 +2108,9 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     (*tty).cx = (*tty).cy;
 }
 pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if ctx.ocy != ctx.orupper {
         return;
     }
@@ -2093,7 +2138,9 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen)
     };
 }
 pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
@@ -2131,8 +2178,10 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     };
 }
 pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let mut i: u_int = 0;
-    let mut c: *mut client = (*tty).client;
+    let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
             && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0
@@ -2211,7 +2260,9 @@ pub unsafe fn tty_cmd_clearscreen(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_clear_pane_area(tty, ctx, py, ny, px, nx, ctx.bg);
 }
 pub unsafe fn tty_cmd_alignmenttest(mut tty: *mut tty, ctx: &tty_ctx) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0 || (*c).overlay_check.is_some() {
@@ -2381,7 +2432,9 @@ pub unsafe fn tty_cmd_rawstring(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_invalidate(tty);
 }
 pub unsafe fn tty_cmd_syncstart(mut tty: *mut tty, ctx: &tty_ctx) {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 && ctx.flags & TTY_CTX_SYNC != 0 {
         tty_sync_start(tty);
     } else if !ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 {
@@ -2759,6 +2812,8 @@ unsafe fn tty_dim_default_colour(
     mut c: ::core::ffi::c_int,
     mut foreground: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let mut theme: client_theme = THEME_UNKNOWN;
     if !(c == 8 as ::core::ffi::c_int || c == 9 as ::core::ffi::c_int) {
         return c;
@@ -2769,7 +2824,7 @@ unsafe fn tty_dim_default_colour(
     if foreground == 0 && (*tty).bg != -(1 as ::core::ffi::c_int) {
         return (*tty).bg;
     }
-    theme = (*(*tty).client).theme;
+    theme = (*terminal_client).theme;
     if theme as ::core::ffi::c_uint == THEME_DARK as ::core::ffi::c_int as ::core::ffi::c_uint {
         return if foreground != 0 {
             7 as ::core::ffi::c_int
@@ -2948,6 +3003,8 @@ unsafe fn tty_map_theme_colour(
     mut tty: *mut tty,
     mut colour: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0;
     let mut m: ::core::ffi::c_int = 0;
@@ -2959,7 +3016,7 @@ unsafe fn tty_map_theme_colour(
         return 8 as ::core::ffi::c_int;
     }
     if tty.is_null() || {
-        c = (*tty).client;
+        c = terminal_client;
         c.is_null()
     } {
         return 8 as ::core::ffi::c_int;

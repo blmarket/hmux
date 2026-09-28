@@ -7,12 +7,13 @@ use std::ffi::CStr;
 #[test]
 fn strings_preserve_bytes_and_title_and_path_require_both_delimiters() {
     unsafe {
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_TSL.max(TTYC_SWD).max(TTYC_FSL) as usize + 1]
             .into_boxed_slice();
         let mut terminal = tty {
-            client: &raw mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             cx: 4,

@@ -30,12 +30,13 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             (true, b"\x7f".as_slice(), 1, false, b"".as_slice()),
             (true, b"A".as_slice(), 1, true, b"".as_slice()),
         ] {
-            let mut client = client::empty();
+            let client_owner = client::new();
+            let client = &mut *client_owner.get();
             client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
             let mut terminal = tty {
-                client: &raw mut client,
+                client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 cell: grid_default_cell,
@@ -78,14 +79,15 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
 #[test]
 fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
     unsafe {
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_COLORS as usize] = tty_code::Number(8);
         term.codes[TTYC_SETAF as usize] = tty_code::String(c"F%p1%d".to_owned());
         term.codes[TTYC_SETAB as usize] = tty_code::String(c"B%p1%d".to_owned());
         let mut terminal = tty {
-            client: &raw mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             cell: grid_default_cell,
@@ -132,12 +134,13 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
             (false, 0, 6, b"__AB__".as_slice()),
             (true, 1, 4, b" AB ".as_slice()),
         ] {
-            let mut client = client::empty();
+            let client_owner = client::new();
+            let client = &mut *client_owner.get();
             client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
             let mut terminal = tty {
-                client: &raw mut client,
+                client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
                 cell: grid_default_cell,
@@ -203,14 +206,15 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
     use hmux2::src::tty::tty_update_mode;
 
     unsafe {
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_CNORM as usize] = tty_code::String(c"N".to_owned());
         term.codes[TTYC_CIVIS as usize] = tty_code::String(c"I".to_owned());
         term.codes[TTYC_SS as usize] = tty_code::String(c"S%p1%d".to_owned());
         let mut terminal = tty {
-            client: &raw mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             ccolour: -1,
@@ -250,7 +254,8 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
     use hmux2::src::style::colour::{colour_palette_init, colour_palette_set};
 
     unsafe {
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         client.flags = CLIENT_UTF8 as u64;
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
@@ -259,7 +264,7 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
         term.codes[TTYC_SETAB as usize] = tty_code::String(c"B%p1%d".to_owned());
         term.codes[TTYC_SETULC1 as usize] = tty_code::String(c"U%p1%d".to_owned());
         let mut terminal = tty {
-            client: &raw mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             cell: grid_default_cell,

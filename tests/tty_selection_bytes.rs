@@ -14,11 +14,12 @@ use std::os::unix::net::UnixStream;
 fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
     unsafe {
         let (writer, _reader) = UnixStream::pair().unwrap();
-        let mut client = client::empty();
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_MS as usize + 1].into_boxed_slice();
         let mut terminal = tty {
-            client: &raw mut client,
+            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
             ..Default::default()

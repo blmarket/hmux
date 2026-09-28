@@ -842,3 +842,17 @@ now uses a real Rc pane and verifies that a detached entry neither retains its
 parent nor traverses an expired stack. The existing copy snapshot regression also
 passes with weak parent/source handles. Mode-entry callback pointers, local raw
 model projections and other model fields/APIs remain pending.
+
+## Implemented terminal client observer
+
+`tty.client` now stores a weak backreference to its owning client. Terminal I/O,
+key parsing, drawing, capabilities and terminal diagnostics retain an upgraded
+client during access. The unopened-terminal stop path needs no client. Terminal
+initialization replaces the old byte reset with a normal default assignment,
+keeping Weak and the other Rust-owned fields valid and releasing their contents.
+
+`cargo test --workspace` and `git diff --check` passed. Terminal, overlay and byte
+output fixtures now use real Rc clients. The terminal-record lifecycle regression
+also verifies that a surviving terminal does not keep its client alive. Raw
+terminal/event callback pointers, model API arguments and local raw projections
+remain pending.

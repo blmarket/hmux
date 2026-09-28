@@ -309,7 +309,8 @@ pub unsafe fn tty_feature_present(
     let mut i: u_int = 0;
     if strcmp(name, b"utf8\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
-        return ((*(*(*term).tty).client).flags & CLIENT_UTF8 as uint64_t != 0 as uint64_t)
+        let owner = (*(*term).tty).client.upgrade().expect("terminal client");
+        return ((*owner.get()).flags & CLIENT_UTF8 as uint64_t != 0 as uint64_t)
             as ::core::ffi::c_int;
     }
     i = 0 as u_int;
@@ -350,7 +351,8 @@ pub unsafe fn tty_feature_present(
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*(*term).tty).client;
+    let owner = (*(*term).tty).client.upgrade().expect("terminal client");
+    let c = owner.get();
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut feat: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;

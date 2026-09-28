@@ -1424,7 +1424,9 @@ unsafe fn tty_keys_next1(
     mut size: *mut size_t,
     mut expired: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -1523,7 +1525,9 @@ unsafe fn tty_keys_winsz(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut end: size_t = 0;
     let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
     let mut sx: u_int = 0;
@@ -1624,8 +1628,10 @@ unsafe fn tty_keys_winsz(
     return -(1 as ::core::ffi::c_int);
 }
 pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     let mut current_block: u64;
-    let mut c: *mut client = (*tty).client;
+    let mut c: *mut client = terminal_client;
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -2234,7 +2240,9 @@ unsafe fn tty_keys_extended_key(
     mut size: *mut size_t,
     mut key: *mut key_code,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut end: size_t = 0;
     let mut number: u_int = 0;
     let mut modifiers: u_int = 0;
@@ -2389,7 +2397,9 @@ unsafe fn tty_keys_mouse(
     mut size: *mut size_t,
     mut m: *mut mouse_event,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -2554,7 +2564,9 @@ unsafe fn tty_keys_clipboard(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut end: size_t = 0;
     let mut terminator: size_t = 0 as size_t;
     let mut needed: size_t = 0;
@@ -2676,7 +2688,9 @@ unsafe fn tty_keys_device_attributes(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut n: u_int = 0 as u_int;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
@@ -2850,7 +2864,9 @@ unsafe fn tty_keys_sync(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let prefix = b"\x1B[?2026;\0";
     let mut i: size_t = 0;
     let mut status: ::core::ffi::c_int = 0;
@@ -2928,7 +2944,9 @@ unsafe fn tty_keys_device_attributes2(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut n: u_int = 0 as u_int;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
@@ -3070,7 +3088,9 @@ unsafe fn tty_keys_extended_device_attributes(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
     *size = 0 as size_t;
@@ -3209,7 +3229,9 @@ pub unsafe fn tty_keys_colours(
     mut fg: *mut ::core::ffi::c_int,
     mut bg: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
     let mut n: ::core::ffi::c_int = 0;
@@ -3338,7 +3360,9 @@ unsafe fn tty_keys_palette(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -3491,10 +3515,10 @@ mod key_tree_tests {
 
     #[test]
     fn ambiguous_key_waits_until_timeout_or_completion() {
-        let mut owner = client::empty();
-        owner.name = Some(c"key-tree-test".to_owned());
+        let owner = unsafe { client::new() };
+        unsafe { (*owner.get()).name = Some(c"key-tree-test".to_owned()); }
         let mut terminal = tty {
-            client: &mut owner,
+            client: std::rc::Rc::downgrade(&owner),
             ..Default::default()
         };
         tty_keys_add1(&mut terminal.key_tree, b"ab", 1);

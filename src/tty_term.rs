@@ -1256,7 +1256,9 @@ pub unsafe fn tty_term_create(
     mut caps: *mut *mut ::core::ffi::c_char,
     mut ncaps: u_int,
 ) -> Result<Box<tty_term>, CString> {
-    let mut c: *mut client = (*tty).client;
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
+    let mut c: *mut client = terminal_client;
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -1789,10 +1791,11 @@ mod term_string_owner_tests {
             for name in [c"terminal-features", c"terminal-overrides"] {
                 options_empty(global_options, options_search(name.as_ptr()).expect("terminal option definition"));
             }
-            let mut client = client::empty();
+            let client_owner = client::new();
+            let client = &mut *client_owner.get();
             client.environ = Some(crate::src::environ::environ_create());
             let mut terminal = tty::empty();
-            terminal.client = &raw mut client;
+            terminal.client = std::rc::Rc::downgrade(&client_owner);
             let name = c"owner-test".as_ptr().cast_mut();
 
             // A failed constructor must remove its already-published address.
@@ -1811,6 +1814,8 @@ mod term_string_owner_tests {
             assert_eq!(second.entry.le_next, initial_head);
             drop(second);
             assert_eq!(tty_terms.lh_first, initial_head);
+            drop(client_owner);
+            assert!(terminal.client.upgrade().is_none());
             global_options = saved;
         }
     }

@@ -5503,9 +5503,10 @@ mod overlay_dispatch_tests {
         let mut link = Box::new(winlink::default());
         let mut session = Box::new(session::empty());
         session.curw = &mut *link;
-        let mut client = Box::new(client::empty());
+        let client_owner = client::new();
+        let client = &mut *client_owner.get();
         client.session = &mut *session;
-        client.tty.client = &mut *client;
+        client.tty.client = std::rc::Rc::downgrade(&client_owner);
         test(&mut *client);
         server_client_clear_overlay(&mut *client);
         client.session = std::ptr::null_mut();

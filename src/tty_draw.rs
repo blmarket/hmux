@@ -35,10 +35,12 @@ unsafe fn tty_draw_line_clear(
     mut bg: u_int,
     mut wrapped: ::core::ffi::c_int,
 ) {
+    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client = terminal_client_owner.get();
     if nx == 0 as u_int {
         return;
     }
-    if (*(*tty).client).overlay_check.is_none()
+    if (*terminal_client).overlay_check.is_none()
         && wrapped == 0
         && nx >= 10 as u_int
         && tty_fake_bce(&*tty, defaults, bg) == 0
