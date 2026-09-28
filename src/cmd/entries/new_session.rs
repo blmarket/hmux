@@ -158,7 +158,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut dsy: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut sc: spawn_context = spawn_context {
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
@@ -563,7 +563,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         let session_owner = session_create(prefix.as_deref(), (!sname.is_null()).then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
                                                                 .expect("new session environment"), oo.take(), tiop.as_ref());
                                                         s = session_owner.get();
-                                                        sc.item = item;
+                                                        sc.item = (*item).observer.clone();
                                                         sc.s = Some(session_owner.clone());
                                                         if detached == 0 {
                                                             sc.tc = c_owner.clone();

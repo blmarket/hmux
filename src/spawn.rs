@@ -436,7 +436,8 @@ pub unsafe fn spawn_pane(
 ) -> *mut window_pane {
     let source_pane_owner = (*sc).wp0.clone();
     let source_pane = source_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut item: *mut cmdq_item = (*sc).item;
+    let item_owner = (*sc).item.upgrade();
+    let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let session_owner = (*sc).s.clone().expect("spawn context session");
@@ -1080,7 +1081,7 @@ pub(crate) unsafe fn spawn_editor(
     };
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
@@ -1270,7 +1271,7 @@ mod tests {
             let session_owner = session::new();
             let session_observer = std::rc::Rc::downgrade(&session_owner);
             let mut context = spawn_context {
-                item: std::ptr::null_mut(), s: Some(session_owner.clone()),
+                item: std::rc::Weak::new(), s: Some(session_owner.clone()),
                 wl: refbox::Weak::new(), tc: Some(owner.clone()),
                 wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
                 name: None, argv: Vec::new(), environ: None,

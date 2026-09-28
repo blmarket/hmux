@@ -77,7 +77,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
@@ -199,7 +199,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             idx = (*target).idx;
         }
     }
-    sc.item = item;
+    sc.item = (*item).observer.clone();
     sc.s = (*s).observer.upgrade();
     sc.tc = tc_owner.clone();
     sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());

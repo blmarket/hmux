@@ -127,7 +127,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let current = cmdq_get_state_owned(item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
@@ -290,7 +290,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             }
         };
     }
-    sc.item = item;
+    sc.item = (*item).observer.clone();
     sc.s = (*s).observer.upgrade();
     sc.set_wl(wl);
     sc.wp0 = (*wp).observer.upgrade();

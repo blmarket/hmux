@@ -2538,3 +2538,10 @@ regression covers an expired wait. The raw-field count is 49.
 teardown upgrades and retains the item through result reporting and queue
 continuation. An unpublished or expired overlay does not resume an item. Popup
 tests now use production detached queue item owners. The raw-field count is 48.
+
+## Implemented weak spawn command item
+
+`spawn_context.item` now observes the caller's queue item weakly. Synchronous
+pane spawn retains an upgrade throughout item access. New window, session,
+split and respawn callers copy the item's self-observer; editor spawns use an
+empty handle. The raw-field count is 47.
